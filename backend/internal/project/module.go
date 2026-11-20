@@ -93,6 +93,7 @@ func New(p ModuleParams) *Module {
 		},
 		Deploy:             p.Service.deployProject,
 		RewriteComposeName: p.Service.rewriteComposeName,
+		ProjectRoot:        p.Service.ProjectRootDirectory,
 		Activities:         p.Activity,
 	})
 	return &Module{

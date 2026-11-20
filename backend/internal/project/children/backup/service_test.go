@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -43,6 +45,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
@@ -302,6 +305,46 @@ func TestRestoreToHoldsTheVolumesItWasAskedToLock(t *testing.T) {
 	require.True(t, admitted)
 	lease.Release(t.Context())
 	locks.Lock("new_data")()
+}
+
+func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		external string
+		project  string
+		own      bool
+	}{
+		// In place, the restored link leads to the file the project uses, which keeps its mode.
+		{name: "in place", external: "TOKEN=restored"},
+		// A new project must not share or change the original's file.
+		{name: "as a new project", own: true, external: "TOKEN=current\n", project: "TOKEN=restored"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			projectsRoot := t.TempDir()
+			projectPath := filepath.Join(projectsRoot, "web")
+			require.NoError(t, os.Mkdir(projectPath, 0o755))
+			external := filepath.Join(t.TempDir(), "web.env")
+			require.NoError(t, os.WriteFile(external, []byte("TOKEN=current\n"), 0o600))
+			envPath := filepath.Join(projectPath, projects.EffectiveEnvFileName)
+			require.NoError(t, os.Symlink(external, envPath))
+
+			require.NoError(t, restoreEnv(t.Context(), projectsRoot, types.ProjectBackupRestore{ProjectPath: projectPath, OwnEnv: test.own}, "TOKEN=restored"))
+			content, err := os.ReadFile(external)
+			require.NoError(t, err)
+			assert.Equal(t, test.external, string(content))
+			info, err := os.Stat(external)
+			require.NoError(t, err)
+			assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+			info, err = os.Lstat(envPath)
+			require.NoError(t, err)
+			assert.Equal(t, test.own, info.Mode().IsRegular())
+			if test.own {
+				content, err = os.ReadFile(envPath)
+				require.NoError(t, err)
+				assert.Equal(t, test.project, string(content))
+			}
+		})
+	}
 }
 
 func TestRestoreInputRestoresOnlyTheTargets(t *testing.T) {

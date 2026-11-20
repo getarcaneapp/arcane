@@ -149,6 +149,9 @@ type (
 		Volumes []ProjectBackupRestoreVolume
 		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
 		LockVolumes bool
+		// OwnEnv writes the .env contents a backup stored for a link outside the project directory as the project's own
+		// file in place of the link, so a new project neither shares nor changes the original's file.
+		OwnEnv bool
 	}
 
 	// ProjectBackupRestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.

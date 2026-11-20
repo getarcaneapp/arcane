@@ -87,7 +87,9 @@ type (
 		Deploy func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		// RewriteComposeName sets the Compose project name in the project's files, as an import does.
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
-		Activities         activity.MessageAppender
+		// ProjectRoot returns the projects directory holding the project directory, which project file writes stay in.
+		ProjectRoot func(ctx context.Context, projectPath string) (string, error)
+		Activities  activity.MessageAppender
 	}
 
 	Service struct {
@@ -2164,6 +2166,33 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 	}
 	if restoreErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.id, target, options); restoreErr != nil {
 		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
+	}
+	// The snapshot holds only the link of a .env kept outside the project directory, so its contents come from beside
+	// the manifest. A rollback restores the safety backup through here too, which puts the earlier contents back.
+	if opts.ProjectPath == "" || !manifest.ExternalEnv {
+		return nil
+	}
+	env, err := s.deps.Engine.ReadSnapshotTextFile(ctx, dockerClient, source.repository, source.password, source.id, path.Join("meta", envName))
+	if err != nil {
+		return fmt.Errorf("read the .env file the backup stored: %w", err)
+	}
+	projectsRoot, err := s.deps.ProjectRoot(ctx, opts.ProjectPath)
+	if err != nil {
+		return err
+	}
+	return restoreEnv(ctx, projectsRoot, opts, env)
+}
+
+// restoreEnv writes a .env kept outside the project directory through the link the snapshot restored, as an edit of
+// the .env does; with OwnEnv it replaces the link with a file of its own, as an import of an export does.
+func restoreEnv(ctx context.Context, projectsRoot string, opts types.ProjectBackupRestore, content string) error {
+	if opts.OwnEnv {
+		if err := projects.RemoveProjectFile(ctx, projectsRoot, opts.ProjectPath, projects.EffectiveEnvFileName); err != nil {
+			return err
+		}
+	}
+	if err := projects.WriteProjectFile(ctx, projectsRoot, opts.ProjectPath, projects.EffectiveEnvFileName, content); err != nil {
+		return fmt.Errorf("restore the .env file the backup stored: %w", err)
 	}
 	return nil
 }

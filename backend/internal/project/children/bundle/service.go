@@ -727,8 +727,10 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	defer unlock()
 	projectID, err := s.deps.CreateProject(ctx, NewProject{
 		User: opts.User,
+		// The new project gets its own copy of a .env the original keeps outside its directory, so it never changes the
+		// original's file and the import can set the new Compose name in it.
 		Fill: func(ctx context.Context, projectPath string) error {
-			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{ProjectID: opts.ProjectID, BackupID: opts.BackupID, ProjectPath: projectPath})
+			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{ProjectID: opts.ProjectID, BackupID: opts.BackupID, ProjectPath: projectPath, OwnEnv: true})
 		},
 		ID:           newID,
 		Name:         request.Name,
