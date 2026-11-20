@@ -94,6 +94,11 @@ type (
 		Writable bool
 	}
 
+	// LocalRepositoryOptions picks how the local repository's storage is mounted.
+	LocalRepositoryOptions struct {
+		ReadOnly bool
+	}
+
 	CreateSnapshotInput struct {
 		Mounts  []mount.Mount
 		Sources []string
@@ -1153,8 +1158,8 @@ func storageMountFromMounts(ctx context.Context, mounts []container.MountPoint, 
 	return mirroredMount
 }
 
-func (r *VolumeRepository) Local(ctx context.Context, dockerClient *client.Client, readOnly bool) (Repository, error) {
-	storage, err := r.StorageMount(ctx, dockerClient, "/repository", readOnly)
+func (r *VolumeRepository) Local(ctx context.Context, dockerClient *client.Client, opts LocalRepositoryOptions) (Repository, error) {
+	storage, err := r.StorageMount(ctx, dockerClient, "/repository", opts.ReadOnly)
 	if err != nil {
 		return Repository{}, err
 	}
@@ -1206,7 +1211,7 @@ func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Cl
 			continue
 		}
 		if repository.ID == localVolumeRepositoryID {
-			writable, localErr := r.Local(ctx, dockerClient, false)
+			writable, localErr := r.Local(ctx, dockerClient, LocalRepositoryOptions{})
 			if localErr != nil {
 				slog.WarnContext(ctx, "could not open the local volume backup repository for re-keying", "error", localErr.Error())
 				continue
@@ -1232,7 +1237,7 @@ func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string
 	if err != nil {
 		return err
 	}
-	local, err := r.Local(ctx, dockerClient, false)
+	local, err := r.Local(ctx, dockerClient, LocalRepositoryOptions{})
 	if err != nil {
 		return err
 	}

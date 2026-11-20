@@ -729,7 +729,7 @@ func (s *Service) repository(ctx context.Context, dockerClient *client.Client, p
 	if remote {
 		return s.deps.Repository.Remote(ctx, p.S3DestinationID, "")
 	}
-	return s.deps.Repository.Local(ctx, dockerClient, false)
+	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 }
 
 // execute takes the snapshot unless it already exists, then replicates a local snapshot to S3 when both are enabled.
@@ -747,7 +747,7 @@ func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if err != nil {
 		return err
 	}
-	local, err := s.deps.Repository.Local(ctx, dockerClient, true)
+	local, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
@@ -1194,7 +1194,7 @@ func (s *Service) removeAll(ctx context.Context, entries []*ProjectBackup) error
 	var removeErr error
 	changed := make(map[string]bool)
 	if len(localIDs) > 0 {
-		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, false)
+		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if repoErr == nil {
 			repoErr = s.forgetSnapshots(ctx, dockerClient, repository, localIDs)
 		}
