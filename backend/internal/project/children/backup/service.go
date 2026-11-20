@@ -2275,7 +2275,8 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 			return (err == nil && current != nil && current.Enabled) || s.unfinished(ctx, jobID)
 		},
 		// A run whose workflow cannot be resumed still restarts the containers it stopped and backs up the rest of its
-		// projects. Nothing retries a fallback, so it waits for a busy admission instead of handing the run back.
+		// projects. Nothing retries a fallback, so it waits for a busy admission instead of handing the run back. A failed
+		// container restart is rejected too but leaves the admissions free, so attempts back off until the containers start.
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			// Each attempt goes on from what the one before it saved, so containers a later backup stopped are restarted
 			// rather than backed up again.
@@ -2289,8 +2290,13 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 				return s.backUpGlobal(tracked, globalRun{PolicyID: policyID}, latest)
 			}
 			outcome, err := attempt()
-			for errors.Is(err, actor.ErrJobRejected) {
-				if waitErr := s.awaitCheckpointAdmissions(ctx, latest); waitErr != nil {
+			for retry := 0; errors.Is(err, actor.ErrJobRejected); retry++ {
+				slog.WarnContext(ctx, "Retrying an interrupted global project backup", "policyId", policyID, "error", err)
+				waitErr := fallbackBackoff.Sleep(ctx, retry)
+				if waitErr == nil {
+					waitErr = s.awaitCheckpointAdmissions(ctx, latest)
+				}
+				if waitErr != nil {
 					return types.SchedulerOutcome{}, waitErr
 				}
 				outcome, err = attempt()
