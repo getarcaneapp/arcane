@@ -462,7 +462,7 @@ func TestRestoreTargetsMapKeysToTheProjectsCurrentVolumes(t *testing.T) {
 		Name:        "Web",
 		ComposeName: "shop",
 		Path:        "/app/data/projects/web",
-		Volumes: composetypes.Volumes{
+		Volumes: composeTypes.Volumes{
 			"data":   {Name: "shop_data"},
 			"cache":  {Name: "web_cache"},
 			"shared": {Name: "shared", External: true},
@@ -478,7 +478,7 @@ func TestRestoreTargetsMapKeysToTheProjectsCurrentVolumes(t *testing.T) {
 		Name:        "Web",
 		ComposeName: "web",
 		Path:        "/app/data/projects/web",
-		Volumes: composetypes.Volumes{
+		Volumes: composeTypes.Volumes{
 			"cache":  {Name: "web_cache"},
 			"shared": {Name: "shared", External: true},
 			"nfs":    {Name: "web_nfs", DriverOpts: map[string]string{"type": "nfs"}},
@@ -491,7 +491,7 @@ func TestRestoreTargetsMapKeysToTheProjectsCurrentVolumes(t *testing.T) {
 		Name:        "Web",
 		ComposeName: "web",
 		Path:        "/app/data/projects/web",
-		Volumes: composetypes.Volumes{
+		Volumes: composeTypes.Volumes{
 			"data":   {Name: "web_data", DriverOpts: map[string]string{"type": "nfs"}},
 			"cache":  {Name: "web_cache"},
 			"shared": {Name: "shared", External: true},
@@ -1158,7 +1158,7 @@ func TestRestoreRefusesContainersThatKeepDataInUnnamedVolumes(t *testing.T) {
 	require.ErrorContains(t, err, "container web-app-1 keeps data at /data in an unnamed volume")
 	require.NoError(t, refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{named}}}))
 	// A generated name the project adopts as an external volume is attached again by Compose.
-	project.Volumes["adopted"] = composetypes.VolumeConfig{Name: generated, External: true}
+	project.Volumes["adopted"] = composeTypes.VolumeConfig{Name: generated, External: true}
 	require.NoError(t, refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{unnamed}}}))
 }
 
