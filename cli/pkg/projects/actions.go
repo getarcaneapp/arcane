@@ -508,5 +508,6 @@ func newImportCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Name of the new project (default: the archive's file name)")
 	cmd.Flags().BoolVar(&opts.start, "start", false, "Deploy the project after the import")
+	cmdutil.SetScope(cmdutil.ScopeDestination, cmd)
 	return cmd
 }
