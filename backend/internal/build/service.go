@@ -56,7 +56,7 @@ type (
 		workspace       *workspace.Service
 		builder         buildtypes.Builder
 		gitProbeFn      func(context.Context, string, git.AuthConfig) error
-		gitCloneFn      func(context.Context, string, string, git.AuthConfig, int) (string, error)
+		gitCloneFn      func(context.Context, string, string, git.AuthConfig) (string, error)
 		gitCleanupFn    func(string) error
 	}
 
@@ -86,7 +86,7 @@ func NewBuildService(p BuildServiceParams) (*BuildService, error) {
 		gitRepository:   p.GitRepository,
 		eventService:    p.EventService,
 		gitProbeFn:      p.GitRepository.ProbeRemote,
-		gitCloneFn:      p.GitRepository.Clone,
+		gitCloneFn:      p.GitRepository.CloneRef,
 		gitCleanupFn:    os.RemoveAll,
 		workspace:       workspace.NewService(p.LocalSettings),
 	}
@@ -304,7 +304,7 @@ func (s *BuildService) resolveBuildRequest(
 		}
 	}
 
-	repoPath, err := s.gitCloneFn(ctx, source.RepositoryURL, source.Ref, authConfig, 0)
+	repoPath, err := s.gitCloneFn(ctx, source.RepositoryURL, source.Ref, authConfig)
 	if err != nil {
 		return buildtypes.BuildRequest{}, func() error { return nil }, err
 	}

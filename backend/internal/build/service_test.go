@@ -49,7 +49,7 @@ type (
 func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T) {
 	contextDir := t.TempDir()
 	svc := &BuildService{
-		gitCloneFn: func(context.Context, string, string, git.AuthConfig, int) (string, error) {
+		gitCloneFn: func(context.Context, string, string, git.AuthConfig) (string, error) {
 			require.FailNow(t, "git clone should not run for local contexts")
 			return "", nil
 		},
@@ -78,7 +78,7 @@ func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {
 			require.FailNow(t, "git remote probe should not run for .git URLs")
 			return nil
 		},
-		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth git.AuthConfig, _ int) (string, error) {
+		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth git.AuthConfig) (string, error) {
 			assert.Equal(t, "https://github.com/getarcaneapp/arcane.git", repositoryURL)
 			assert.Equal(t, "main", ref)
 			assert.Equal(t, git.AuthConfig{}, auth)
@@ -117,7 +117,7 @@ func TestBuildService_ResolveBuildRequest_ProbesAndClonesRemoteGitContextWithout
 			assert.Equal(t, git.AuthConfig{}, auth)
 			return nil
 		},
-		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth git.AuthConfig, _ int) (string, error) {
+		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth git.AuthConfig) (string, error) {
 			cloneCalled = true
 			assert.True(t, probeCalled)
 			assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts", repositoryURL)
@@ -149,7 +149,7 @@ func TestBuildService_ResolveBuildRequest_RejectsNonGitHTTPContextViaProbeFailur
 			assert.Equal(t, git.AuthConfig{}, auth)
 			return assert.AnError
 		},
-		gitCloneFn: func(context.Context, string, string, git.AuthConfig, int) (string, error) {
+		gitCloneFn: func(context.Context, string, string, git.AuthConfig) (string, error) {
 			require.FailNow(t, "git clone should not run when remote probe fails")
 			return "", nil
 		},
@@ -206,7 +206,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 				assert.Equal(t, "token-123", auth.Token)
 				return nil
 			},
-			gitCloneFn: func(_ context.Context, repositoryURL, _ string, auth git.AuthConfig, _ int) (string, error) {
+			gitCloneFn: func(_ context.Context, repositoryURL, _ string, auth git.AuthConfig) (string, error) {
 				assert.Equal(t, "https://github.com/getarcaneapp/private-build", repositoryURL)
 				assert.Equal(t, "http", auth.AuthType)
 				assert.Equal(t, "builder", auth.Username)
@@ -233,7 +233,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 				require.FailNow(t, "git remote probe should not run for ssh URLs")
 				return nil
 			},
-			gitCloneFn: func(_ context.Context, _, _ string, auth git.AuthConfig, _ int) (string, error) {
+			gitCloneFn: func(_ context.Context, _, _ string, auth git.AuthConfig) (string, error) {
 				assert.Equal(t, "ssh", auth.AuthType)
 				assert.Equal(t, "ssh-private-key", auth.SSHKey)
 				assert.Equal(t, "strict", auth.SSHHostKeyVerification)
@@ -280,7 +280,7 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 				captured = req
 			},
 		},
-		gitCloneFn: func(_ context.Context, _, _ string, _ git.AuthConfig, _ int) (string, error) {
+		gitCloneFn: func(_ context.Context, _, _ string, _ git.AuthConfig) (string, error) {
 			return repoPath, nil
 		},
 		gitCleanupFn: func(string) error { return nil },

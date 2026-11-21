@@ -14,6 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -918,4 +921,80 @@ func TestBrowseTree_ListsSymlinksWithoutFollowingThemOutOfTheClone(t *testing.T)
 
 	_, err = client.ReadFile(t.Context(), repoPath, "outside.yaml")
 	require.Error(t, err)
+}
+
+func TestCloneRef(t *testing.T) {
+	ctx := t.Context()
+	repoURL := newBareRepoURL(t)
+	barePath := strings.TrimPrefix(repoURL, "http://localhost")
+
+	commit1 := pushCommit(t, repoURL, "main", "v1 release", map[string]string{
+		"Dockerfile": "FROM alpine:3.19\n",
+		"v1.txt":     "only-in-v1\n",
+	})
+
+	bareRepo, err := git.PlainOpen(barePath)
+	require.NoError(t, err)
+	require.NoError(t, bareRepo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	_ = pushCommit(t, repoURL, "main", "v2 update", map[string]string{
+		"Dockerfile": "FROM alpine:3.20\n",
+		"v2.txt":     "added-in-v2\n",
+	})
+	featureCommit := pushCommit(t, repoURL, "feature/sub", "feature change", map[string]string{
+		"Dockerfile": "FROM alpine:3.21\n",
+	})
+
+	require.NoError(t, bareRepo.Storer.SetReference(plumbing.NewHashReference(plumbing.NewTagReferenceName("v0.1.0"), plumbing.NewHash(commit1))))
+	tagger := &object.Signature{Name: "Arcane", Email: "arcane@localhost", When: time.Now()}
+	_, err = bareRepo.CreateTag("v0.2.0", plumbing.NewHash(commit1), &git.CreateTagOptions{
+		Tagger:  tagger,
+		Message: "annotated release v0.2.0",
+	})
+	require.NoError(t, err)
+	require.NoError(t, bareRepo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/pull/42/head"), plumbing.NewHash(featureCommit))))
+
+	for _, tt := range []struct {
+		name           string
+		ref            string
+		wantCommit     string
+		wantDockerfile string
+		absentFile     string
+	}{
+		{name: "branch", ref: "feature/sub", wantCommit: featureCommit, wantDockerfile: "FROM alpine:3.21\n"},
+		{name: "lightweight tag", ref: "v0.1.0", wantCommit: commit1, wantDockerfile: "FROM alpine:3.19\n", absentFile: "v2.txt"},
+		{name: "annotated tag", ref: "v0.2.0", wantCommit: commit1, wantDockerfile: "FROM alpine:3.19\n", absentFile: "v2.txt"},
+		{name: "custom ref", ref: "refs/pull/42/head", wantCommit: featureCommit, wantDockerfile: "FROM alpine:3.21\n"},
+		{name: "commit SHA", ref: commit1, wantCommit: commit1, wantDockerfile: "FROM alpine:3.19\n", absentFile: "v2.txt"},
+		{name: "short commit SHA", ref: commit1[:7], wantCommit: commit1, wantDockerfile: "FROM alpine:3.19\n", absentFile: "v2.txt"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewClient(t.TempDir())
+			repoPath, cloneErr := client.CloneRef(ctx, repoURL, tt.ref, noAuth())
+			require.NoError(t, cloneErr)
+			t.Cleanup(func() { client.Discard(ctx, repoPath) })
+
+			gotCommit, headErr := client.GetCurrentCommit(ctx, repoPath)
+			require.NoError(t, headErr)
+			assert.Equal(t, tt.wantCommit, gotCommit)
+
+			dockerfile, readErr := client.ReadFile(ctx, repoPath, "Dockerfile")
+			require.NoError(t, readErr)
+			assert.Equal(t, tt.wantDockerfile, dockerfile)
+
+			if tt.absentFile != "" {
+				assert.False(t, client.FileExists(ctx, repoPath, tt.absentFile))
+			}
+		})
+	}
+
+	t.Run("missing ref cleans up scratch dir", func(t *testing.T) {
+		workDir := t.TempDir()
+		_, cloneErr := NewClient(workDir).CloneRef(ctx, repoURL, "does-not-exist", noAuth())
+		require.Error(t, cloneErr)
+
+		entries, readDirErr := os.ReadDir(workDir)
+		require.NoError(t, readDirErr)
+		assert.Empty(t, entries)
+	})
 }
