@@ -14,6 +14,11 @@ import type {
 	RunSystemVolumeBackupsRequest
 } from '#lib/types/backup.js';
 import type { MessageResponse, Paginated } from '#lib/types/base.js';
+import type {
+	GlobalProjectBackupOption,
+	GlobalProjectBackupPolicyCollection,
+	UpdateGlobalProjectBackupPolicy
+} from '#lib/types/project.js';
 import type { BackupFileBrowseRequest } from '#lib/types/ui/backup.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
@@ -63,6 +68,22 @@ class SystemBackupService extends BaseAPIService {
 
 	async runSystemVolumeBackups(request: RunSystemVolumeBackupsRequest = {}): Promise<BackupRunAccepted> {
 		return this.handleResponse(this.api.post('/backups/volumes/run', request));
+	}
+
+	async getProjectConfig(): Promise<GlobalProjectBackupPolicyCollection> {
+		return this.handleResponse(this.api.get('/backups/projects/config'));
+	}
+
+	async updateProjectConfig(policies: UpdateGlobalProjectBackupPolicy[]): Promise<GlobalProjectBackupPolicyCollection> {
+		return this.handleResponse(this.api.put('/backups/projects/config', { policies }));
+	}
+
+	async listProjectOptions(): Promise<GlobalProjectBackupOption[]> {
+		return this.handleResponse(this.api.get('/backups/projects/options'));
+	}
+
+	async runProjectBackups(policyId: string): Promise<BackupRunAccepted> {
+		return this.handleResponse(this.api.post('/backups/projects/run', { policyId }));
 	}
 
 	async getPolicies(): Promise<SystemBackupPolicyCollection> {

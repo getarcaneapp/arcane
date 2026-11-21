@@ -87,7 +87,7 @@ export type CreateSystemBackupRequest = {
 	policyId?: string;
 };
 
-export type BackupManagementType = 'system' | 'volume';
+export type BackupManagementType = 'system' | 'volume' | 'project';
 
 export type SystemVolumeSelectionMode = 'all' | 'allowlist' | 'blocklist';
 
@@ -156,6 +156,8 @@ export type SystemVolumeBackupHistoryEntry = {
 	type: BackupManagementType;
 	resourceType: string;
 	resourceName: string;
+	resourceId?: string;
+	resourceMissing?: boolean;
 	size: number;
 };
 

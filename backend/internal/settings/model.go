@@ -225,6 +225,7 @@ type (
 
 		SystemBackupsCategoryPlaceholder SettingVariable `key:"systemBackupsCategory,internal" default:"" meta:"label=Backups;type=internal;keywords=backup,recovery,restore,configuration,secrets;category=systembackups;description=Back up and restore this Arcane instance" catmeta:"id=systembackups;title=Backups;icon=backup;url=/system/backups;description=Create encrypted recovery backups of Arcane data and configuration"`
 		SystemVolumeBackupConfig         SettingVariable `key:"systemVolumeBackupConfig,internal" default:"{\"policies\":[]}"`
+		ProjectBackupConfig              SettingVariable `key:"projectBackupConfig,internal" default:"{\"policies\":[]}"`
 
 		FederatedCredentialsCategoryPlaceholder SettingVariable `key:"federatedCredentialsCategory,internal" default:"" meta:"label=Federated Credentials;type=internal;keywords=federated,credentials,workload,identity,oidc,token exchange,ci,github,gitlab;category=authentication;description=Manage workload identity federation credentials"`
 		WebhooksCategoryPlaceholder             SettingVariable `key:"webhooksCategory,internal" default:"" meta:"label=Webhooks;type=internal;keywords=webhooks,trigger,inbound,http,container,stack,gitops,updater,automation,ci,cd;category=webhooks;description=Manage inbound webhooks to trigger updates" catmeta:"id=webhooks;title=Webhooks;icon=globe;url=/system/webhooks;description=Create and manage inbound webhooks to trigger container, stack, or GitOps updates"`

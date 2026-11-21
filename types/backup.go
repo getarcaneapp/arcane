@@ -141,6 +141,7 @@ type (
 		RecoveryKey     string `json:"recoveryKey"`
 	}
 
+	// BackupManagementType is the kind of backup: Arcane's own (system), a volume's, or a project's.
 	BackupManagementType string
 
 	SystemVolumeSelectionMode string
@@ -229,6 +230,8 @@ type (
 		Type              BackupManagementType    `json:"type" sortable:"true"`
 		ResourceType      string                  `json:"resourceType"`
 		ResourceName      string                  `json:"resourceName" sortable:"true"`
+		ResourceID        string                  `json:"resourceId,omitempty" doc:"ID of the backed up project"`
+		ResourceMissing   bool                    `json:"resourceMissing,omitempty" doc:"True when the backed up project no longer exists"`
 		Size              int64                   `json:"size" sortable:"true"`
 	}
 
@@ -265,9 +268,13 @@ const (
 	SystemBackupTriggerSafety    = "safety"
 	SystemBackupTriggerManager   = "manager"
 
-	BackupManagementTypeSystem     BackupManagementType      = "system"
-	BackupManagementTypeVolume     BackupManagementType      = "volume"
-	SystemVolumePolicyPrefix                                 = "system-volume:"
+	BackupManagementTypeSystem  BackupManagementType = "system"
+	BackupManagementTypeVolume  BackupManagementType = "volume"
+	BackupManagementTypeProject BackupManagementType = "project"
+	SystemVolumePolicyPrefix                         = "system-volume:"
+	// GlobalProjectPolicyPrefix starts the policy ID of each project's backups from a global project policy, followed by
+	// the policy ID, ":" and the project ID.
+	GlobalProjectPolicyPrefix                                = "global-project:"
 	SystemVolumeManualSeriesOwner                            = "manual"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
@@ -281,9 +288,21 @@ const (
 	VolumeBackupTriggerSafety    = "safety"
 )
 
+// Valid reports whether m is all, allowlist or blocklist.
+func (m SystemVolumeSelectionMode) Valid() bool {
+	return m == SystemVolumeSelectionAll || m == SystemVolumeSelectionAllowlist || m == SystemVolumeSelectionBlocklist
+}
+
+// Selects reports whether a resource is selected, given whether it is listed.
+func (m SystemVolumeSelectionMode) Selects(listed bool) bool {
+	return m == SystemVolumeSelectionAll || (m == SystemVolumeSelectionAllowlist && listed) || (m == SystemVolumeSelectionBlocklist && !listed)
+}
+
+// BackupManagementTypeForPolicy is the kind of a volume or project backup with the policy ID; the global volume policies'
+// backups are volume backups too.
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {
-	if strings.HasPrefix(policyID, SystemVolumePolicyPrefix) {
-		return BackupManagementTypeSystem
+	if strings.HasPrefix(policyID, GlobalProjectPolicyPrefix) {
+		return BackupManagementTypeProject
 	}
 	return BackupManagementTypeVolume
 }
