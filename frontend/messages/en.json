@@ -4765,5 +4765,5 @@
   "auto_heal_include_description": "Choose the containers Arcane should restart automatically when they become unhealthy.",
   "included_by_label": "Included by label",
   "auto_update_enabled_by_label": "Turned on by the label {label}. Change the label to turn it off.",
-  "auto_update_include_dependents_hint": "Containers that depend on an included container, for example through network_mode: service:..., are only restarted after its update when they are included too."
+  "auto_update_include_dependents_hint": "Containers started with network_mode: container:... are only restarted after the container they depend on is updated when they are included too. Compose services that use network_mode: service:... are recreated with the updated service either way."
 }

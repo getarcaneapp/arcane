@@ -94,6 +94,8 @@
 	const containers = $derived([
 		...new Map((containersQuery.data?.data ?? []).map((container) => [containerName(container), container])).values()
 	]);
+	// Rows merge same-named containers from several environments, so a label only decides a row when all of them carry it.
+	const containersByName = $derived(Map.groupBy(containersQuery.data?.data ?? [], containerName));
 
 	let updateSearchTerm = $state('');
 	let autoHealSearchTerm = $state('');
@@ -112,7 +114,7 @@
 	const autoHealListKey = $derived<ContainerListKey>(
 		autoHealIncludeMode ? 'autoHealIncludedContainers' : 'autoHealExcludedContainers'
 	);
-	// Containers that are not included are not restarted when a container they depend on is updated.
+	// Standalone containers that are not included are not restarted when a container they depend on is updated.
 	const autoUpdateListHelp = $derived(
 		[
 			m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` }),
@@ -128,16 +130,20 @@
 		return container.names[0] || container.id.substring(0, 12);
 	}
 
+	function allNamed(container: ContainerSummary, test: (labels?: Record<string, string>) => boolean): boolean {
+		return (containersByName.get(containerName(container)) ?? [container]).every((entry) => test(entry.labels));
+	}
+
 	function autoUpdateLabelState(container: ContainerSummary): LabelState | undefined {
-		if (isContainerLabelDisabled(container.labels, AUTO_UPDATE_LABEL))
+		if (allNamed(container, (labels) => isContainerLabelDisabled(labels, AUTO_UPDATE_LABEL)))
 			return { hint: m.jobs_container_label_excluded(), selected: false };
-		if (autoUpdateIncludeMode && isContainerLabelEnabled(container.labels, AUTO_UPDATE_LABEL))
+		if (autoUpdateIncludeMode && allNamed(container, (labels) => isContainerLabelEnabled(labels, AUTO_UPDATE_LABEL)))
 			return { hint: m.included_by_label(), selected: true };
 		return undefined;
 	}
 
 	function autoHealLabelState(container: ContainerSummary): LabelState | undefined {
-		if (autoHealIncludeMode && isContainerLabelEnabled(container.labels, AUTO_HEAL_LABEL))
+		if (autoHealIncludeMode && allNamed(container, (labels) => isContainerLabelEnabled(labels, AUTO_HEAL_LABEL)))
 			return { hint: m.included_by_label(), selected: true };
 		return undefined;
 	}
