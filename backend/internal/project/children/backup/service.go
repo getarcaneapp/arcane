@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -102,6 +103,8 @@ type (
 		restores  *flow.Workflow
 		scheduled *flow.Workflow
 		global    *flow.Workflow
+		// globalConfig serializes every read-modify-save of the global policies' setting.
+		globalConfig sync.Mutex
 	}
 
 	StartOptions struct {
@@ -1775,6 +1778,8 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 // UpdateGlobalPolicies replaces the global project backup policies, schedules the enabled ones and unschedules the
 // rest. Listed IDs of projects that do not exist are kept, and match nothing.
 func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
+	s.globalConfig.Lock()
+	defer s.globalConfig.Unlock()
 	existing, err := s.globalPolicies()
 	if err != nil {
 		return types.GlobalProjectBackupPolicyCollection{}, err
@@ -2130,7 +2135,9 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 		})
 	}
 	disabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		// Read again, so a concurrent edit or another run's disable is kept.
+		// Read again under the lock, so a concurrent edit or another run's disable is kept.
+		s.globalConfig.Lock()
+		defer s.globalConfig.Unlock()
 		policies, loadErr := s.globalPolicies()
 		if loadErr != nil {
 			return false, loadErr
