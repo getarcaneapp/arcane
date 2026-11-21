@@ -100,25 +100,36 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 
 func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/system/df") {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/system/df"):
+			if slices.Contains(r.URL.Query()["type"], "container") {
+				http.Error(w, "unexpected container disk usage request", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{`+
+				`"Images":[`+
+				`{"Id":"sha256:unused","Containers":0,"Size":500,"SharedSize":100},`+
+				`{"Id":"sha256:used","Containers":1,"Size":900,"SharedSize":0}],`+
+				`"Volumes":[`+
+				`{"Name":"orphan","Driver":"local","UsageData":{"RefCount":0,"Size":100}},`+
+				`{"Name":"mounted","Driver":"local","UsageData":{"RefCount":1,"Size":50}},`+
+				`{"Name":"arcane-backups","Driver":"local","UsageData":{"RefCount":0,"Size":200}}],`+
+				`"BuildCache":[`+
+				`{"ID":"idle","InUse":false,"Size":10},`+
+				`{"ID":"busy","InUse":true,"Size":20}]}`)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			if r.URL.Query().Get("size") != "1" {
+				http.Error(w, "missing size=1", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `[`+
+				`{"Id":"stopped","State":"exited","SizeRw":30},`+
+				`{"Id":"running","State":"running","SizeRw":70}]`)
+		default:
 			http.Error(w, "unexpected request "+r.Method+" "+r.URL.Path, http.StatusNotFound)
-			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{`+
-			`"Images":[`+
-			`{"Id":"sha256:unused","Containers":0,"Size":500,"SharedSize":100},`+
-			`{"Id":"sha256:used","Containers":1,"Size":900,"SharedSize":0}],`+
-			`"Containers":[`+
-			`{"Id":"stopped","State":"exited","SizeRw":30},`+
-			`{"Id":"running","State":"running","SizeRw":70}],`+
-			`"Volumes":[`+
-			`{"Name":"orphan","Driver":"local","UsageData":{"RefCount":0,"Size":100}},`+
-			`{"Name":"mounted","Driver":"local","UsageData":{"RefCount":1,"Size":50}},`+
-			`{"Name":"arcane-backups","Driver":"local","UsageData":{"RefCount":0,"Size":200}}],`+
-			`"BuildCache":[`+
-			`{"ID":"idle","InUse":false,"Size":10},`+
-			`{"ID":"busy","InUse":true,"Size":20}]}`)
 	}))
 	t.Cleanup(server.Close)
 
