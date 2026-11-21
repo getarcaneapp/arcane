@@ -5,10 +5,8 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
-	"path"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -164,22 +162,21 @@ func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p, true, false)
+	manifest := backupManifest(project, p, false)
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
 	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
-	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
+	require.False(t, manifest.Consistent, "nothing holds the project during a live backup, so it is never consistent")
 	require.False(t, manifest.ExternalEnv)
-	require.True(t, backupManifest(project, p, true, true).ExternalEnv)
-	require.True(t, backupManifest(project, p, false, false).Consistent, "nothing runs, so a live backup is consistent")
+	require.True(t, backupManifest(project, p, true).ExternalEnv)
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p, true, false).Consistent)
+	require.True(t, backupManifest(project, p, false).Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p, true, false).Consistent)
+	require.False(t, backupManifest(project, p, false).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
@@ -238,71 +235,34 @@ func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	require.ErrorIs(t, service.capture(waiting, &ProjectBackup{BaseModel: database.BaseModel{ID: "b1"}, ProjectID: "p1"}, p), context.DeadlineExceeded)
 }
 
-func TestContainersStopOnlyThisProject(t *testing.T) {
+func TestContainerUseCountsOnlyThisProject(t *testing.T) {
 	labelsFor := func(project, service string) map[string]string {
 		return map[string]string{api.ProjectLabel: project, api.ServiceLabel: service}
 	}
 	arcane := labelsFor("demo", "arcane")
 	arcane["com.getarcaneapp.arcane"] = "true"
-	var (
-		mu      sync.Mutex
-		stopped []string
-	)
-	states := map[string]container.ContainerState{
-		"web-1": container.StateRunning, "db-1": container.StateRestarting, "cache-1": container.StatePaused,
-		"arcane-1": container.StateRunning, "other-1": container.StateRunning,
-	}
 	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			all := []container.Summary{
-				{ID: "web-1", Labels: labelsFor("demo", "web"), State: states["web-1"]},
-				{ID: "db-1", Labels: labelsFor("demo", "db"), State: states["db-1"]},
-				{ID: "cache-1", Labels: labelsFor("demo", "cache"), State: states["cache-1"]},
-				{ID: "arcane-1", Labels: arcane, State: states["arcane-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_config"}}},
-				{ID: "other-1", Labels: labelsFor("other", "app"), State: states["other-1"], Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_data"}}},
-			}
-			// The project label filter is what keeps other projects out.
-			if filter := r.URL.Query().Get("filters"); filter != "" {
-				all = slices.DeleteFunc(all, func(c container.Summary) bool {
-					return !strings.Contains(filter, api.ProjectLabel+"="+c.Labels[api.ProjectLabel])
-				})
-			}
-			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, all))
-		case strings.HasSuffix(r.URL.Path, "/json"):
-			// Each container is inspected for its stop grace, which bounds how long its stop may take.
-			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
-				ID:         path.Base(path.Dir(r.URL.Path)),
-				Config:     &container.Config{StopTimeout: new(30)},
-				HostConfig: &container.HostConfig{},
-			}))
-		case strings.HasSuffix(r.URL.Path, "/stop"):
-			id := path.Base(path.Dir(r.URL.Path))
-			stopped = append(stopped, id)
-			states[id] = container.StateExited
-			w.WriteHeader(http.StatusNoContent)
-		default:
+		if !strings.HasSuffix(r.URL.Path, "/containers/json") {
 			http.NotFound(w, r)
+			return
 		}
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			{ID: "web-1", Labels: labelsFor("demo", "web"), State: container.StateRunning},
+			{ID: "db-1", Labels: labelsFor("demo", "db"), State: container.StateRestarting},
+			{ID: "cache-1", Labels: labelsFor("demo", "cache"), State: container.StatePaused},
+			{ID: "arcane-1", Labels: arcane, State: container.StateRunning, Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_config"}}},
+			{ID: "other-1", Labels: labelsFor("other", "app"), State: container.StateRunning, Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "demo_data"}}},
+		}))
 	}))
 	service := NewService(Dependencies{Docker: dockerService})
 
 	active, inUse, err := service.containerUse(t.Context(), "demo")
 	require.NoError(t, err)
+	// The paused cache, Arcane itself, and the other project are not stopped.
 	assert.Equal(t, []string{"web-1", "db-1"}, containerIDs(active))
 	// Another project's container and Arcane itself keep running, so their volumes count as in use.
 	assert.Equal(t, map[string]bool{"demo_config": true, "demo_data": true}, inUse)
-
-	summaries, err := service.stopContainers(t.Context(), "demo")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"web-1", "db-1"}, containerIDs(summaries))
-	// The paused cache, Arcane itself, and the other project keep their state.
-	assert.Equal(t, []string{"web-1", "db-1"}, stopped)
-	assert.Equal(t, container.StatePaused, states["cache-1"])
 }
 
 func containerIDs(summaries []container.Summary) []string {
