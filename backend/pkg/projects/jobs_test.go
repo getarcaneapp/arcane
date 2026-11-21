@@ -3,7 +3,7 @@ package projects
 import (
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,31 +13,31 @@ import (
 )
 
 func TestProjectJobs(t *testing.T) {
-	project := &composetypes.Project{
+	project := &composeTypes.Project{
 		Name: "demo",
-		Services: composetypes.Services{
+		Services: composeTypes.Services{
 			"db": {
 				Name:  "db",
 				Image: "postgres:17",
 			},
 		},
-		Jobs: composetypes.Jobs{
+		Jobs: composeTypes.Jobs{
 			"migrate": {
 				Name:      "migrate",
 				Image:     "demo/migrate:1",
-				DependsOn: composetypes.DependsOnConfig{"seed": {Condition: composetypes.ServiceConditionCompletedSuccessfully}},
+				DependsOn: composeTypes.DependsOnConfig{"seed": {Condition: composeTypes.ServiceConditionCompletedSuccessfully}},
 			},
 			"seed": {
 				Name:      "seed",
 				Image:     "demo/seed:1",
-				DependsOn: composetypes.DependsOnConfig{"db": {Condition: composetypes.ServiceConditionStarted}},
+				DependsOn: composeTypes.DependsOnConfig{"db": {Condition: composeTypes.ServiceConditionStarted}},
 			},
 			"backup": {
 				Name:  "backup",
 				Image: "demo/backup:1",
-				Triggers: &composetypes.TriggerConfig{
+				Triggers: &composeTypes.TriggerConfig{
 					Manual: new(false),
-					Schedule: []composetypes.ScheduleConfig{
+					Schedule: []composeTypes.ScheduleConfig{
 						{
 							Cron:     "0 3 * * *",
 							Timezone: "Europe/Paris",
@@ -46,7 +46,7 @@ func TestProjectJobs(t *testing.T) {
 				},
 			},
 		},
-		DisabledJobs: composetypes.Jobs{
+		DisabledJobs: composeTypes.Jobs{
 			"report": {
 				Name:     "report",
 				Image:    "demo/report:1",

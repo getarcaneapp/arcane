@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,9 +20,9 @@ import (
 )
 
 func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
-	containerID := c.Param("containerId")
-	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
+	containerID, ok, err := requireWSParam(c, "containerId", "Container ID")
+	if !ok {
+		return err
 	}
 
 	cols, _ := strconv.ParseUint(c.QueryParam("cols"), 10, 16)

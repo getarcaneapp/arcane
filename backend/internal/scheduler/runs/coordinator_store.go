@@ -9,7 +9,6 @@ import (
 	"maps"
 	"math/rand/v2"
 	"slices"
-	"sort"
 	"time"
 	"uuid"
 
@@ -282,7 +281,7 @@ func (q *Coordinator) List(ctx context.Context, environmentID, jobID string, pag
 			runs = append(runs, record.Runs...)
 		}
 	}
-	sort.Slice(runs, func(i, j int) bool { return runs[i].CreatedAt.After(runs[j].CreatedAt) })
+	slices.SortFunc(runs, func(a, b types.SchedulerRun) int { return b.CreatedAt.Compare(a.CreatedAt) })
 	page = max(1, page)
 	limit = min(100, max(1, limit))
 	start := len(runs)

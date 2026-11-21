@@ -145,14 +145,13 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 		return nil, err
 	}
 	session := &types.UploadSession{
-		ID:             path.Base(sessionDir),
-		Kind:           kind,
-		Filename:       filename,
-		Size:           request.Size,
-		ChunkSize:      chunkSize,
-		TotalChunks:    int((request.Size + chunkSize - 1) / chunkSize),
-		ReceivedChunks: []int{},
-		CreatedAt:      time.Now().UTC(),
+		ID:          path.Base(sessionDir),
+		Kind:        kind,
+		Filename:    filename,
+		Size:        request.Size,
+		ChunkSize:   chunkSize,
+		TotalChunks: int((request.Size + chunkSize - 1) / chunkSize),
+		CreatedAt:   time.Now().UTC(),
 	}
 	if writeErr := (acfs.Root{Path: s.root}).Write(ctx, path.Join(sessionDir, sessionDataFilename), nil, acfs.WriteOptions{Mode: 0o600}); writeErr != nil {
 		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, sessionDir)

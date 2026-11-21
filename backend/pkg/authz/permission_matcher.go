@@ -7,8 +7,6 @@ import (
 	"github.com/samber/mo"
 
 	"kit.getarcane.app"
-
-	"getarcane.dev/types/v3"
 )
 
 type (
@@ -27,7 +25,9 @@ type (
 )
 
 func NewPermissionMatcher() *PermissionMatcher {
-	return &PermissionMatcher{}
+	return &PermissionMatcher{
+		aggregates: make(map[string]struct{}),
+	}
 }
 
 func (m *PermissionMatcher) Add(method, pathTemplate, perm string) {
@@ -36,10 +36,6 @@ func (m *PermissionMatcher) Add(method, pathTemplate, perm string) {
 		segments: templateSegments(pathTemplate),
 		perm:     perm,
 	})
-}
-
-func (m *PermissionMatcher) AddPublic(method, pathTemplate string) {
-	m.Add(method, pathTemplate, "")
 }
 
 func (m *PermissionMatcher) AddActions(method, pathTemplate, param string, perms map[string]string) {
@@ -117,22 +113,10 @@ func templateSegments(t string) []string {
 	return segs
 }
 
-func VolumeWorkspaceRequiredPermissions(changes []types.VolumeWorkspaceFileChange) ([]string, bool) {
-	required := make([]string, 0, 3)
+func WorkspaceRequiredPermissions[T any](conditions PermissionConditions, changes []T, operation func(T) string) ([]string, bool) {
+	required := make([]string, 0, len(changes))
 	for _, change := range changes {
-		perms := VolumeWorkspaceConditions.Required("fileChanges.operation", change.Operation)
-		if len(perms) == 0 {
-			return nil, false
-		}
-		required = append(required, perms...)
-	}
-	return kit.Unique(required), true
-}
-
-func BuildWorkspaceRequiredPermissions(changes []types.WorkspaceFileChange) ([]string, bool) {
-	required := make([]string, 0, 2)
-	for _, change := range changes {
-		perms := BuildWorkspaceConditions.Required("fileChanges.operation", change.Operation)
+		perms := conditions.Required("fileChanges.operation", operation(change))
 		if len(perms) == 0 {
 			return nil, false
 		}

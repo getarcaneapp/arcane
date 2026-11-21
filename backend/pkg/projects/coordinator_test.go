@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,58 +17,58 @@ func TestNamespaceDependents(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		enabled  composetypes.Services
-		disabled composetypes.Services
+		enabled  composeTypes.Services
+		disabled composeTypes.Services
 		profiles []string
 		services []string
 		want     []string
 	}{
 		{
 			name:     "transitive network_mode chain",
-			enabled:  composetypes.Services{"a": {Name: "a"}},
-			disabled: composetypes.Services{"b": {Name: "b", NetworkMode: "service:a"}, "c": {Name: "c", NetworkMode: "service:b"}, "d": {Name: "d"}},
+			enabled:  composeTypes.Services{"a": {Name: "a"}},
+			disabled: composeTypes.Services{"b": {Name: "b", NetworkMode: "service:a"}, "c": {Name: "c", NetworkMode: "service:b"}, "d": {Name: "d"}},
 			services: []string{"a"},
 			want:     []string{"b", "c"},
 		},
 		{
 			name:     "ipc and pid refs",
-			enabled:  composetypes.Services{"a": {Name: "a"}},
-			disabled: composetypes.Services{"z": {Name: "z", Ipc: "service:a"}, "y": {Name: "y", Pid: "service:a"}, "x": {Name: "x", Ipc: "shareable"}},
+			enabled:  composeTypes.Services{"a": {Name: "a"}},
+			disabled: composeTypes.Services{"z": {Name: "z", Ipc: "service:a"}, "y": {Name: "y", Pid: "service:a"}, "x": {Name: "x", Ipc: "shareable"}},
 			services: []string{"a"},
 			want:     []string{"y", "z"},
 		},
 		{
 			name:     "volumes_from service matched and container skipped",
-			enabled:  composetypes.Services{"a": {Name: "a"}},
-			disabled: composetypes.Services{"b": {Name: "b", VolumesFrom: []string{"a:ro"}}, "c": {Name: "c", VolumesFrom: []string{"container:a"}}},
+			enabled:  composeTypes.Services{"a": {Name: "a"}},
+			disabled: composeTypes.Services{"b": {Name: "b", VolumesFrom: []string{"a:ro"}}, "c": {Name: "c", VolumesFrom: []string{"container:a"}}},
 			services: []string{"a"},
 			want:     []string{"b"},
 		},
 		{
 			name:     "profile-gated dependent excluded without profile",
-			enabled:  composetypes.Services{"a": {Name: "a"}},
-			disabled: composetypes.Services{"b": {Name: "b", NetworkMode: "service:a", Profiles: []string{"extra"}}},
+			enabled:  composeTypes.Services{"a": {Name: "a"}},
+			disabled: composeTypes.Services{"b": {Name: "b", NetworkMode: "service:a", Profiles: []string{"extra"}}},
 			services: []string{"a"},
 		},
 		{
 			name:     "profile-gated dependent included with profile",
-			enabled:  composetypes.Services{"a": {Name: "a"}},
-			disabled: composetypes.Services{"b": {Name: "b", NetworkMode: "service:a", Profiles: []string{"extra"}}},
+			enabled:  composeTypes.Services{"a": {Name: "a"}},
+			disabled: composeTypes.Services{"b": {Name: "b", NetworkMode: "service:a", Profiles: []string{"extra"}}},
 			profiles: []string{"extra"},
 			services: []string{"a"},
 			want:     []string{"b"},
 		},
 		{
 			name:     "inputs are excluded",
-			enabled:  composetypes.Services{"a": {Name: "a"}, "b": {Name: "b", NetworkMode: "service:a"}},
-			disabled: composetypes.Services{"c": {Name: "c", NetworkMode: "service:b"}},
+			enabled:  composeTypes.Services{"a": {Name: "a"}, "b": {Name: "b", NetworkMode: "service:a"}},
+			disabled: composeTypes.Services{"c": {Name: "c", NetworkMode: "service:b"}},
 			services: []string{"a", "b"},
 			want:     []string{"c"},
 		},
 		{
 			name:     "nil when nothing matches",
-			enabled:  composetypes.Services{"a": {Name: "a"}},
-			disabled: composetypes.Services{"b": {Name: "b", NetworkMode: "host"}},
+			enabled:  composeTypes.Services{"a": {Name: "a"}},
+			disabled: composeTypes.Services{"b": {Name: "b", NetworkMode: "host"}},
 			services: []string{"a"},
 		},
 	}
@@ -76,7 +76,7 @@ func TestNamespaceDependents(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			model := &composetypes.Project{Services: tt.enabled, DisabledServices: tt.disabled, Profiles: tt.profiles}
+			model := &composeTypes.Project{Services: tt.enabled, DisabledServices: tt.disabled, Profiles: tt.profiles}
 			assert.Equal(t, tt.want, NamespaceDependents(model, tt.services))
 		})
 	}
@@ -109,9 +109,9 @@ func TestCoordinatorUpdateServicesScopesDependents(t *testing.T) {
 		},
 	})
 
-	model := &composetypes.Project{
+	model := &composeTypes.Project{
 		Name: "stack",
-		Services: composetypes.Services{
+		Services: composeTypes.Services{
 			"app":     {Name: "app", Image: "example.com/app:2"},
 			"sidecar": {Name: "sidecar", Image: "example.com/sidecar:1", NetworkMode: "service:app"},
 			"dormant": {Name: "dormant", Image: "example.com/dormant:1", Pid: "service:app"},

@@ -721,7 +721,9 @@ func (h *EnvironmentHandler) DeleteEnrollmentToken(ctx context.Context, input *D
 
 func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *GetEnvironmentVersionInput) (*handlerutil.Out[types.VersionInfo], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.environmentService.AggregateVersions(ctx)
+		body, err := httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[types.VersionInfo]) types.VersionInfo {
+			return types.VersionInfo{}
+		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to get environment versions: " + err.Error())
 		}

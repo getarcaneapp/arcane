@@ -1,12 +1,13 @@
 package projects
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 
 	"kit.getarcane.app"
@@ -38,16 +39,16 @@ const (
 	ImagePullModeAlways
 )
 
-func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullStep {
+func ResolveServiceImagePullMode(svc composeTypes.ServiceConfig) ImagePullStep {
 	rawPolicy := strings.ToLower(strings.TrimSpace(svc.PullPolicy))
 	switch rawPolicy {
-	case composetypes.PullPolicyNever:
+	case composeTypes.PullPolicyNever:
 		return ImagePullStep{Mode: ImagePullModeNever}
-	case composetypes.PullPolicyAlways:
+	case composeTypes.PullPolicyAlways:
 		return ImagePullStep{Mode: ImagePullModeAlways}
-	case composetypes.PullPolicyMissing,
-		composetypes.PullPolicyIfNotPresent,
-		composetypes.PullPolicyBuild,
+	case composeTypes.PullPolicyMissing,
+		composeTypes.PullPolicyIfNotPresent,
+		composeTypes.PullPolicyBuild,
 		"":
 		return ImagePullStep{Mode: ImagePullModeIfMissing}
 	}
@@ -61,18 +62,18 @@ func ResolveServiceImagePullMode(svc composetypes.ServiceConfig) ImagePullStep {
 		return ImagePullStep{Mode: ImagePullModeIfMissing}
 	}
 	switch policy {
-	case composetypes.PullPolicyNever:
+	case composeTypes.PullPolicyNever:
 		return ImagePullStep{Mode: ImagePullModeNever}
-	case composetypes.PullPolicyAlways:
+	case composeTypes.PullPolicyAlways:
 		return ImagePullStep{Mode: ImagePullModeAlways}
-	case composetypes.PullPolicyRefresh:
+	case composeTypes.PullPolicyRefresh:
 		return ImagePullStep{Mode: ImagePullModeRefresh, RefreshAfter: refreshAfter}
 	default:
 		return ImagePullStep{Mode: ImagePullModeIfMissing}
 	}
 }
 
-func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullStep {
+func BuildImagePullPlan(project *composeTypes.Project) map[string]ImagePullStep {
 	plan := map[string]ImagePullStep{}
 	record := func(img string, step ImagePullStep) {
 		img = strings.TrimSpace(img)
@@ -103,20 +104,20 @@ func BuildImagePullPlan(project *composetypes.Project) map[string]ImagePullStep 
 			}
 		}
 		for _, vol := range svc.Volumes {
-			if vol.Type == composetypes.VolumeTypeImage {
+			if vol.Type == composeTypes.VolumeTypeImage {
 				record(vol.Source, ImagePullStep{Mode: ImagePullModeIfMissing})
 			}
 		}
 	}
 	for _, job := range project.Jobs {
 		if job.Build == nil {
-			record(job.Image, ResolveServiceImagePullMode(composetypes.ServiceConfig{
+			record(job.Image, ResolveServiceImagePullMode(composeTypes.ServiceConfig{
 				ContainerSpec: job.ContainerSpec,
 				WorkloadSpec:  job.WorkloadSpec,
 			}))
 		}
 		for _, vol := range job.Volumes {
-			if vol.Type == composetypes.VolumeTypeImage {
+			if vol.Type == composeTypes.VolumeTypeImage {
 				record(vol.Source, ImagePullStep{Mode: ImagePullModeIfMissing})
 			}
 		}
@@ -139,54 +140,38 @@ func NormalizeDeployPullPolicy(policy string) string {
 	}
 }
 
-func refreshWindowForPolicy(svc composetypes.ServiceConfig, policy string) (time.Duration, bool) {
+func refreshWindowForPolicy(svc composeTypes.ServiceConfig, policy string) (time.Duration, bool) {
 	normalized := svc
 	normalized.PullPolicy = policy
 	parsed, window, err := normalized.GetPullPolicy()
-	if err != nil || parsed != composetypes.PullPolicyRefresh {
+	if err != nil || parsed != composeTypes.PullPolicyRefresh {
 		return 0, false
 	}
 	return window, true
 }
 
-func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride string) DeployImageDecision {
-	policy := NormalizePullPolicy(svc.PullPolicy)
-	if policy == "" {
-		if override := NormalizeDeployPullPolicy(pullPolicyOverride); override != "" {
-			policy = override
-		}
-	}
+func DecideDeployImageAction(svc composeTypes.ServiceConfig, pullPolicyOverride string) DeployImageDecision {
+	policy := cmp.Or(NormalizePullPolicy(svc.PullPolicy), NormalizeDeployPullPolicy(pullPolicyOverride))
 	buildEnabled := svc.Build != nil
 
-	if buildEnabled {
-		switch policy {
-		case "build":
-			return DeployImageDecision{Build: true}
-		case "never":
-			return DeployImageDecision{RequireLocalOnly: true}
-		case "always":
-			return DeployImageDecision{PullAlways: true, FallbackBuildOnPullFail: true}
-		default:
-			if window, ok := refreshWindowForPolicy(svc, policy); ok {
-				return DeployImageDecision{
-					PullIfStale:             true,
-					StaleAfter:              window,
-					FallbackBuildOnPullFail: true,
-				}
-			}
-			return DeployImageDecision{PullIfMissing: true, FallbackBuildOnPullFail: true}
-		}
-	}
-
 	switch policy {
+	case "build":
+		if buildEnabled {
+			return DeployImageDecision{Build: true}
+		}
+		return DeployImageDecision{PullIfMissing: true}
 	case "never":
 		return DeployImageDecision{RequireLocalOnly: true}
 	case "always":
-		return DeployImageDecision{PullAlways: true}
+		return DeployImageDecision{PullAlways: true, FallbackBuildOnPullFail: buildEnabled}
 	default:
 		if window, ok := refreshWindowForPolicy(svc, policy); ok {
-			return DeployImageDecision{PullIfStale: true, StaleAfter: window}
+			return DeployImageDecision{
+				PullIfStale:             true,
+				StaleAfter:              window,
+				FallbackBuildOnPullFail: buildEnabled,
+			}
 		}
-		return DeployImageDecision{PullIfMissing: true}
+		return DeployImageDecision{PullIfMissing: true, FallbackBuildOnPullFail: buildEnabled}
 	}
 }

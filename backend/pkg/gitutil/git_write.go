@@ -12,7 +12,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -132,7 +131,7 @@ func CollectFiles(ctx context.Context, root string, selection []string, opts Col
 	if len(c.files) == 0 {
 		return nil, fmt.Errorf("the selection contains no files: %w", ErrSelectionInvalid)
 	}
-	sort.Slice(c.files, func(i, j int) bool { return c.files[i].Path < c.files[j].Path })
+	slices.SortFunc(c.files, func(a, b CommitFile) int { return strings.Compare(a.Path, b.Path) })
 	return c.files, nil
 }
 
@@ -384,9 +383,7 @@ func (c *Client) pushBranch(ctx context.Context, checkout *WriteCheckout, commit
 	pushOptions := &git.PushOptions{
 		RemoteName: "origin",
 		RefSpecs:   []config.RefSpec{config.RefSpec(refName.String() + ":" + refName.String())},
-	}
-	if authMethod != nil {
-		pushOptions.Auth = authMethod
+		Auth:       authMethod,
 	}
 	if pushContextErr := checkout.repo.PushContext(ctx, pushOptions); pushContextErr != nil && !errors.Is(pushContextErr, git.NoErrAlreadyUpToDate) {
 		if isPushRejected(pushContextErr) {
@@ -536,7 +533,7 @@ func directoryPrefix(directory string) string {
 }
 
 func historyEntry(commit *object.Commit, files []string) HistoryEntry {
-	sort.Strings(files)
+	slices.Sort(files)
 	return HistoryEntry{
 		Hash:    commit.Hash.String(),
 		Author:  commit.Author.Name,

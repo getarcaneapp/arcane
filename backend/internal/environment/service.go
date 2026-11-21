@@ -52,7 +52,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -356,9 +355,7 @@ func (s *EnvironmentService) ResolveAgentEnvironmentByToken(ctx context.Context,
 }
 
 func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environmentID string) string {
-	if strings.TrimSpace(environmentID) == "" {
-		environmentID = LocalEnvironmentID
-	}
+	environmentID = cmp.Or(strings.TrimSpace(environmentID), LocalEnvironmentID)
 	env, err := s.GetEnvironmentByIDCached(ctx, environmentID)
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
@@ -881,12 +878,6 @@ func (s *EnvironmentService) ListActiveRemoteEnvironments(ctx context.Context) (
 		return cmp.Compare(a.ID, b.ID)
 	})
 	return environments, nil
-}
-
-func (s *EnvironmentService) AggregateVersions(ctx context.Context) (types.ApiResponse[types.VersionInfo], error) {
-	return httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[types.VersionInfo]) types.VersionInfo {
-		return types.VersionInfo{}
-	})
 }
 
 func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id string) (*Environment, error) {

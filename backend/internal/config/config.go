@@ -171,10 +171,7 @@ func loadFromEnv(cfg *Config) error {
 			envValue, _, fromFile = kit.LookupEnvOrFile(envTag)
 		}
 		if !fromFile {
-			envValue = kit.TrimQuotes(envValue)
-			if envValue == "" {
-				envValue = fieldType.Tag.Get("default")
-			}
+			envValue = cmp.Or(kit.TrimQuotes(envValue), fieldType.Tag.Get("default"))
 		}
 
 		if err := setFieldValue(field, envValue); err != nil {

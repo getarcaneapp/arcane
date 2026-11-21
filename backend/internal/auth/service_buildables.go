@@ -19,16 +19,7 @@ func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*types.AutoLoginC
 		}, nil
 	}
 
-	localEnabled, err := s.IsLocalAuthEnabled(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to check local auth status for auto-login", "error", err)
-		return &types.AutoLoginConfig{
-			Enabled:  false,
-			Username: "",
-		}, nil
-	}
-
-	if !localEnabled {
+	if !s.settingsService.GetSettingsConfig().AuthLocalEnabled.IsTrue() {
 		slog.DebugContext(ctx, "Auto-login disabled because local auth is disabled")
 		return &types.AutoLoginConfig{
 			Enabled:  false,

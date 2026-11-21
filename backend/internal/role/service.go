@@ -80,12 +80,12 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 		desc string
 		perm []string
 	}{
-		authz.BuiltInRoleAdmin:         {"Admin", "Full administrative access", authz.AllPermissions()},
-		authz.BuiltInRoleEditor:        {"Editor", "Read and write on Docker resources", authz.BuiltInEditorPermissions()},
-		authz.BuiltInRoleNoShellEditor: {"No-Shell Editor", "Editor without interactive container shell access", authz.BuiltInNoShellEditorPermissions()},
-		authz.BuiltInRoleDeployer:      {"Deployer", "Deploy and lifecycle containers and projects", authz.BuiltInDeployerPermissions()},
-		authz.BuiltInRoleMonitor:       {"Monitor", "Observability-only access: logs, dashboards, events", authz.BuiltInMonitorPermissions()},
-		authz.BuiltInRoleViewer:        {"Viewer", "Read-only access to all resources", authz.BuiltInViewerPermissions()},
+		authz.BuiltInRoleAdmin:         {name: "Admin", desc: "Full administrative access", perm: authz.AllPermissions()},
+		authz.BuiltInRoleEditor:        {name: "Editor", desc: "Read and write on Docker resources", perm: authz.BuiltInEditorPermissions()},
+		authz.BuiltInRoleNoShellEditor: {name: "No-Shell Editor", desc: "Editor without interactive container shell access", perm: authz.BuiltInNoShellEditorPermissions()},
+		authz.BuiltInRoleDeployer:      {name: "Deployer", desc: "Deploy and lifecycle containers and projects", perm: authz.BuiltInDeployerPermissions()},
+		authz.BuiltInRoleMonitor:       {name: "Monitor", desc: "Observability-only access: logs, dashboards, events", perm: authz.BuiltInMonitorPermissions()},
+		authz.BuiltInRoleViewer:        {name: "Viewer", desc: "Read-only access to all resources", perm: authz.BuiltInViewerPermissions()},
 	}
 
 	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -493,37 +493,27 @@ func validateAssignmentsExist(tx *gorm.DB, desired []UserRoleAssignment) error {
 		}
 	}
 
-	if len(roleIDSet) > 0 {
-		roleIDs := slices.Collect(maps.Keys(roleIDSet))
-		var found []string
-		if err := tx.Model(&Role{}).Where("id IN ?", roleIDs).Pluck("id", &found).Error; err != nil {
-			return fmt.Errorf("failed to verify role ids: %w", err)
-		}
-		foundSet := make(map[string]struct{}, len(found))
-		for _, id := range found {
-			foundSet[id] = struct{}{}
-		}
-		for id := range roleIDSet {
-			if _, ok := foundSet[id]; !ok {
-				return common.Classify(common.ErrInvalidRoleAssignment, fmt.Errorf("invalid role assignment: role %q does not exist", id))
-			}
-		}
+	if err := verifyIDsExist(tx.Model(&Role{}), roleIDSet, "role"); err != nil {
+		return err
 	}
+	return verifyIDsExist(tx.Table("environments"), envIDSet, "environment")
+}
 
-	if len(envIDSet) > 0 {
-		envIDs := slices.Collect(maps.Keys(envIDSet))
-		var found []string
-		if err := tx.Table("environments").Where("id IN ?", envIDs).Pluck("id", &found).Error; err != nil {
-			return fmt.Errorf("failed to verify environment ids: %w", err)
-		}
-		foundSet := make(map[string]struct{}, len(found))
-		for _, id := range found {
-			foundSet[id] = struct{}{}
-		}
-		for id := range envIDSet {
-			if _, ok := foundSet[id]; !ok {
-				return common.Classify(common.ErrInvalidRoleAssignment, fmt.Errorf("invalid role assignment: environment %q does not exist", id))
-			}
+func verifyIDsExist(query *gorm.DB, idSet map[string]struct{}, kind string) error {
+	if len(idSet) == 0 {
+		return nil
+	}
+	var found []string
+	if err := query.Where("id IN ?", slices.Collect(maps.Keys(idSet))).Pluck("id", &found).Error; err != nil {
+		return fmt.Errorf("failed to verify %s ids: %w", kind, err)
+	}
+	foundSet := make(map[string]struct{}, len(found))
+	for _, id := range found {
+		foundSet[id] = struct{}{}
+	}
+	for id := range idSet {
+		if _, ok := foundSet[id]; !ok {
+			return common.Classify(common.ErrInvalidRoleAssignment, fmt.Errorf("invalid role assignment: %s %q does not exist", kind, id))
 		}
 	}
 	return nil
@@ -817,6 +807,20 @@ func (s *RoleService) CreateOidcMapping(ctx context.Context, claimValue, roleID 
 	return &mapping, nil
 }
 
+func loadEditableOidcMapping(tx *gorm.DB, id string) (*OidcRoleMapping, error) {
+	var existing OidcRoleMapping
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.Classify(common.ErrOidcMappingNotFound, errors.New("OIDC role mapping not found"))
+		}
+		return nil, fmt.Errorf("failed to load mapping: %w", err)
+	}
+	if existing.Source == OidcMappingSourceEnv {
+		return nil, common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by ARCANE_OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
+	}
+	return &existing, nil
+}
+
 func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, roleID string, environmentID *string) (*OidcRoleMapping, error) {
 	claimValue = strings.TrimSpace(claimValue)
 	roleID = strings.TrimSpace(roleID)
@@ -828,26 +832,20 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 	}
 	var out OidcRoleMapping
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing OidcRoleMapping
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return common.Classify(common.ErrOidcMappingNotFound, errors.New("OIDC role mapping not found"))
-			}
-			return fmt.Errorf("failed to load mapping: %w", err)
-		}
-		if existing.Source == OidcMappingSourceEnv {
-			return common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by ARCANE_OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
-		}
-		if err := validateAssignmentsExist(tx, []UserRoleAssignment{{RoleID: roleID, EnvironmentID: environmentID}}); err != nil {
+		existing, err := loadEditableOidcMapping(tx, id)
+		if err != nil {
 			return err
+		}
+		if validateErr := validateAssignmentsExist(tx, []UserRoleAssignment{{RoleID: roleID, EnvironmentID: environmentID}}); validateErr != nil {
+			return validateErr
 		}
 		existing.ClaimValue = claimValue
 		existing.RoleID = roleID
 		existing.EnvironmentID = environmentID
-		if err := tx.Save(&existing).Error; err != nil {
-			return fmt.Errorf("failed to update mapping: %w", err)
+		if saveErr := tx.Save(existing).Error; saveErr != nil {
+			return fmt.Errorf("failed to update mapping: %w", saveErr)
 		}
-		out = existing
+		out = *existing
 		return nil
 	})
 	if err != nil {
@@ -858,15 +856,8 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 
 func (s *RoleService) DeleteOidcMapping(ctx context.Context, id string) error {
 	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing OidcRoleMapping
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return common.Classify(common.ErrOidcMappingNotFound, errors.New("OIDC role mapping not found"))
-			}
-			return fmt.Errorf("failed to load mapping: %w", err)
-		}
-		if existing.Source == OidcMappingSourceEnv {
-			return common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by ARCANE_OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
+		if _, err := loadEditableOidcMapping(tx, id); err != nil {
+			return err
 		}
 		if err := tx.Delete(&OidcRoleMapping{}, "id = ?", id).Error; err != nil {
 			return fmt.Errorf("failed to delete mapping: %w", err)
@@ -958,9 +949,7 @@ func (s *RoleService) InvalidateApiKey(apiKeyID string) {
 func validatePermissions(perms []string) error {
 	for _, p := range perms {
 		if !authz.IsKnownPermission(p) {
-			return common.Classify(common.ErrUnknownPermission, errors.New("Unknown permission: "+
-
-				p))
+			return common.Classify(common.ErrUnknownPermission, errors.New("Unknown permission: "+p))
 		}
 	}
 	return nil
@@ -983,7 +972,7 @@ func (s *RoleService) ValidateRoleAssignmentAgainstCaller(ctx context.Context, c
 	if validatePermissionsErr := validatePermissions(desired); validatePermissionsErr != nil {
 		return validatePermissionsErr
 	}
-	return validatePermissionSetAgainstCaller(caller, desired, mo.PointerToOption(environmentID).OrEmpty())
+	return validatePermissionSetAgainstCaller(caller, desired, kit.FromPtr(environmentID))
 }
 
 func validatePermissionSetAgainstCaller(caller *authz.PermissionSet, desired []string, environmentID string) error {
@@ -991,9 +980,7 @@ func validatePermissionSetAgainstCaller(caller *authz.PermissionSet, desired []s
 		if len(desired) == 0 {
 			return nil
 		}
-		return common.Classify(common.ErrRolePermissionEscalation, errors.New("cannot grant a permission you do not hold: "+
-
-			desired[0]))
+		return common.Classify(common.ErrRolePermissionEscalation, errors.New("cannot grant a permission you do not hold: "+desired[0]))
 	}
 	if caller.Sudo {
 		return nil

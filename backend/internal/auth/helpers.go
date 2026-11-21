@@ -60,17 +60,21 @@ var tokenParseOptions = []jwt.ParseOption{
 	jwt.WithRequiredClaim(claimUserID),
 }
 
+func classifyJWTParseError(err error) error {
+	switch {
+	case errors.Is(err, jwt.TokenExpiredError{}):
+		return common.ErrExpiredToken
+	case errors.Is(err, jwt.MissingRequiredClaimError{}), errors.Is(err, jwt.ClaimValidationError{}):
+		return common.ErrTokenValidation
+	default:
+		return common.ErrInvalidToken
+	}
+}
+
 func parseAccessToken(ctx context.Context, rawToken string, key *mldsa.PublicKey) (*accessTokenClaims, error) {
 	token, err := jwt.ParseString(rawToken, append(tokenParseOptions, jwt.WithKey(jwa.MLDSA87(), key), jwt.WithContext(ctx))...)
 	if err != nil {
-		switch {
-		case errors.Is(err, jwt.TokenExpiredError{}):
-			return nil, common.ErrExpiredToken
-		case errors.Is(err, jwt.MissingRequiredClaimError{}), errors.Is(err, jwt.ClaimValidationError{}):
-			return nil, common.ErrTokenValidation
-		default:
-			return nil, common.ErrInvalidToken
-		}
+		return nil, classifyJWTParseError(err)
 	}
 
 	subject, _ := token.Subject()
@@ -93,14 +97,7 @@ func parseAccessToken(ctx context.Context, rawToken string, key *mldsa.PublicKey
 func parseBrowserToken(ctx context.Context, rawToken string, key []byte) (*accessTokenClaims, error) {
 	token, err := jwt.ParseString(rawToken, append(tokenParseOptions, jwt.WithKey(jwa.HS512(), key), jwt.WithContext(ctx))...)
 	if err != nil {
-		switch {
-		case errors.Is(err, jwt.TokenExpiredError{}):
-			return nil, common.ErrExpiredToken
-		case errors.Is(err, jwt.MissingRequiredClaimError{}), errors.Is(err, jwt.ClaimValidationError{}):
-			return nil, common.ErrTokenValidation
-		default:
-			return nil, common.ErrInvalidToken
-		}
+		return nil, classifyJWTParseError(err)
 	}
 
 	subject, _ := token.Subject()

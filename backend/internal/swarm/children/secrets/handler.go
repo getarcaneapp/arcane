@@ -6,8 +6,6 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 
-	"kit.getarcane.app"
-
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -62,7 +60,7 @@ func NewHandler(
 func (h *Handler) ListSecrets(ctx context.Context, input *ListSwarmSecretsInput) (*handlerutil.Page[types.SwarmSecret], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.Aggregate(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, secretPagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list swarm secrets: " + err.Error())
 		}
@@ -76,7 +74,7 @@ func (h *Handler) ListSecrets(ctx context.Context, input *ListSwarmSecretsInput)
 	return &handlerutil.Page[types.SwarmSecret]{
 		Body: types.Paginated[types.SwarmSecret]{
 			Success:    true,
-			Data:       kit.Ternary(items != nil, items, []types.SwarmSecret{}),
+			Data:       items,
 			Pagination: handlerutil.PaginationResponse(page),
 		},
 	}, nil

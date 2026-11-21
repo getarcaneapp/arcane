@@ -12,10 +12,6 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"kit.getarcane.app"
-
-	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 )
 
 func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -62,7 +58,12 @@ func TestPlanRenamePreservesStandaloneVolumeConfiguration(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	migration, err := PlanRename(t.Context(), newTestDockerClient(t, server), "source-data", "renamed-data", ToolsImage(""))
+	migration, err := PlanRename(t.Context(), PlanRenameConfig{
+		DockerClient: newTestDockerClient(t, server),
+		OldName:      "source-data",
+		NewName:      "renamed-data",
+		ToolsImage:   ToolsImage(""),
+	})
 	require.NoError(t, err)
 
 	planned, ok := migration.(*dockerProjectVolumeRenameMigration)
@@ -75,22 +76,4 @@ func TestPlanRenamePreservesStandaloneVolumeConfiguration(t *testing.T) {
 	require.Equal(t, "local", entry.CreateOptions.Driver)
 	require.Equal(t, map[string]string{"type": "none", "device": "/srv/data"}, entry.CreateOptions.DriverOpts)
 	require.Equal(t, map[string]string{"owner": "arcane"}, entry.CreateOptions.Labels)
-}
-
-func TestContainerSummaryMountsVolume(t *testing.T) {
-	summary := container.Summary{
-		Labels: map[string]string{
-			selfcontainer.InternalResourceLabel: "true",
-		},
-		Mounts: []container.MountPoint{
-			{Name: "web_data", Source: "/var/lib/docker/volumes/web_data/_data"},
-			{Name: "other", Source: "other"},
-		},
-	}
-
-	internal, valid := kit.ParseBool(summary.Labels[selfcontainer.InternalResourceLabel])
-	require.True(t, valid)
-	require.True(t, internal)
-	require.True(t, containerSummaryMountsVolume(summary, "web_data"))
-	require.False(t, containerSummaryMountsVolume(summary, "nginx_data"))
 }

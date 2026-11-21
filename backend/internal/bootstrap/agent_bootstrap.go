@@ -92,7 +92,7 @@ func newTunnelServer(p TunnelServerParams) *agent.TunnelServer {
 			return handleAgentEvent(ctx, envID, evt, p.EventService, p.NotificationService)
 		},
 		StreamWindowMiB: func() int {
-			return p.SettingsService.GetSettingsOrDefaults(p.Context).AgentTunnelStreamWindowMb.AsInt()
+			return p.SettingsService.GetSettingsConfig().AgentTunnelStreamWindowMb.AsInt()
 		},
 	})
 

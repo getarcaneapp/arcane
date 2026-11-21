@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
@@ -44,11 +44,7 @@ type (
 
 func NewPathMapper(containerDir, hostDir string) *PathMapper {
 	container := filepath.Clean(containerDir)
-	host := hostDir
-	if host == "" {
-		host = container
-	}
-	host = filepath.Clean(host)
+	host := filepath.Clean(cmp.Or(hostDir, container))
 
 	return &PathMapper{
 		containerPrefix: container,
@@ -186,7 +182,7 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, bool, error
 	return hostPath, true, nil
 }
 
-func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, translateFileResources bool) error {
+func (pm *PathMapper) TranslateVolumeSources(project *composeTypes.Project, translateFileResources bool) error {
 	if !pm.isNonMatching {
 		return nil
 	}
@@ -196,7 +192,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 		for vi := range service.Volumes {
 			volume := service.Volumes[vi]
 
-			if volume.Type != composetypes.VolumeTypeBind {
+			if volume.Type != composeTypes.VolumeTypeBind {
 				continue
 			}
 
@@ -211,11 +207,11 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 		project.Services[si] = service
 	}
 
-	for _, jobs := range []composetypes.Jobs{project.Jobs, project.DisabledJobs} {
+	for _, jobs := range []composeTypes.Jobs{project.Jobs, project.DisabledJobs} {
 		for _, job := range jobs {
 			for vi := range job.Volumes {
 				volume := &job.Volumes[vi]
-				if volume.Type != composetypes.VolumeTypeBind {
+				if volume.Type != composeTypes.VolumeTypeBind {
 					continue
 				}
 
@@ -271,7 +267,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 	return nil
 }
 
-func bindVolumeDevice(volume composetypes.VolumeConfig) (string, bool) {
+func bindVolumeDevice(volume composeTypes.VolumeConfig) (string, bool) {
 	if volume.Driver != "" && volume.Driver != "local" {
 		return "", false
 	}
@@ -286,7 +282,7 @@ func bindVolumeDevice(volume composetypes.VolumeConfig) (string, bool) {
 func RemapEscapedRelativeSources(
 	ctx context.Context,
 	pathMapper types.VolumeSourcePathMapper,
-	project *composetypes.Project,
+	project *composeTypes.Project,
 	containerWorkingDir string,
 	rawSources map[string]string,
 	includeFileResources bool,
@@ -328,7 +324,7 @@ func RemapEscapedRelativeSources(
 	}
 }
 
-func remapTargets(project *composetypes.Project, includeFileResources bool) []remapTarget {
+func remapTargets(project *composeTypes.Project, includeFileResources bool) []remapTarget {
 	var targets []remapTarget
 
 	for name, service := range project.Services {
@@ -336,7 +332,7 @@ func remapTargets(project *composetypes.Project, includeFileResources bool) []re
 			// Mutating through the pointer is enough: the slice shares its backing
 			// array with the ServiceConfig held in project.Services.
 			volume := &service.Volumes[i]
-			if volume.Type != composetypes.VolumeTypeBind {
+			if volume.Type != composeTypes.VolumeTypeBind {
 				continue
 			}
 			targets = append(targets, remapTarget{
@@ -349,11 +345,11 @@ func remapTargets(project *composetypes.Project, includeFileResources bool) []re
 		}
 	}
 
-	for _, jobs := range []composetypes.Jobs{project.Jobs, project.DisabledJobs} {
+	for _, jobs := range []composeTypes.Jobs{project.Jobs, project.DisabledJobs} {
 		for name, job := range jobs {
 			for i := range job.Volumes {
 				volume := &job.Volumes[i]
-				if volume.Type != composetypes.VolumeTypeBind {
+				if volume.Type != composeTypes.VolumeTypeBind {
 					continue
 				}
 				targets = append(targets, remapTarget{
