@@ -349,16 +349,9 @@ func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bo
 	if err != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, err)
 	}
-	var probe struct {
-		Kind          string `json:"kind"`
-		FormatVersion int    `json:"formatVersion"`
-	}
-	if json.Unmarshal(content, &probe) != nil || probe.Kind != types.ProjectManifestKindExport || probe.FormatVersion == 0 {
-		return types.ProjectManifest{}, false, nil
-	}
 	var manifest types.ProjectManifest
-	if decodeErr := json.Unmarshal(content, &manifest); decodeErr != nil {
-		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, decodeErr)
+	if json.Unmarshal(content, &manifest) != nil || manifest.Kind != types.ProjectManifestKindExport || manifest.FormatVersion == 0 {
+		return types.ProjectManifest{}, false, nil
 	}
 	return manifest, true, nil
 }
