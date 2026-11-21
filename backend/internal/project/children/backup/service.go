@@ -831,11 +831,15 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 }
 
 // startContainers starts the stopped containers' services with Compose, in dependency order, and the rest directly: a
-// one-off, a service the Compose files no longer name or with a container the backup didn't stop, such as a replica
-// stopped by hand, or all of them when the files don't load in time or the start fails.
+// service with a container the backup didn't stop, such as a replica stopped by hand, first, so the services Compose
+// starts find it running; then a one-off, a service the Compose files no longer name, or all of them when the files
+// don't load in time or the start fails.
 func (s *Service) startContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
 	model, partial, err := s.restartPlan(ctx, projectID, stopped)
-	var services []string
+	var (
+		services []string
+		replicas []container.Summary
+	)
 	direct := stopped
 	if err == nil {
 		direct = nil
@@ -844,13 +848,16 @@ func (s *Service) startContainers(ctx context.Context, projectID string, stopped
 			_, enabled := model.Services[service]
 			_, disabled := model.DisabledServices[service]
 			switch {
-			case (!enabled && !disabled) || partial[service] || c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
+			case (!enabled && !disabled) || c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
 				direct = append(direct, c)
+			case partial[service]:
+				replicas = append(replicas, c)
 			case !slices.Contains(services, service):
 				services = append(services, service)
 			}
 		}
 	}
+	_, replicasErr := s.deps.Containers.StartContainers(ctx, replicas, types.SystemUser)
 	var startErr error
 	if len(services) > 0 {
 		startErr = projects.ComposeStart(ctx, types.ComposeTarget{Project: model, DockerHost: s.deps.Docker.DockerHost(), Services: services})
@@ -860,7 +867,7 @@ func (s *Service) startContainers(ctx context.Context, projectID string, stopped
 		direct = stopped
 	}
 	_, err = s.deps.Containers.StartContainers(ctx, direct, types.SystemUser)
-	return errors.Join(startErr, err)
+	return errors.Join(replicasErr, startErr, err)
 }
 
 // restartPlan loads the project's Compose files and names the services with a stopped container the backup didn't
