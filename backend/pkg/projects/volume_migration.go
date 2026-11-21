@@ -9,31 +9,46 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"go.yaml.in/yaml/v4"
 
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
+	"kit.getarcane.app/updater/labels"
 
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
-type VolumeMigrationPlanConfig struct {
-	DockerClient   *client.Client
-	UsageCache     *docker.VolumeUsageCache
-	ComposeProject *composeTypes.Project
-	OldComposeName string
-	NewComposeName string
-	ToolsImage     string
-}
+type (
+	ResolveProjectVolumesOptions struct {
+		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
+		InUse   map[string]bool
+		// BackupStore names the volume holding Arcane's local backups. It is never included, so no copy reads it.
+		BackupStore string
+		Project     types.Project
+	}
+
+	VolumeMigrationPlanConfig struct {
+		DockerClient   *client.Client
+		UsageCache     *docker.VolumeUsageCache
+		ComposeProject *composeTypes.Project
+		OldComposeName string
+		NewComposeName string
+		ToolsImage     string
+	}
+)
 
 func PlanVolumeMigration(ctx context.Context, cfg VolumeMigrationPlanConfig) (types.VolumeMigration, error) {
 	if cfg.ComposeProject == nil || len(cfg.ComposeProject.Volumes) == 0 {
@@ -137,6 +152,118 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 	}, true, nil
 }
 
+func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
+	classified := make([]types.ProjectVolume, 0, len(project.Volumes))
+	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
+		config := project.Volumes[key]
+		kind := types.ProjectVolumeNamed
+		switch {
+		case bool(config.External):
+			kind = types.ProjectVolumeExternal
+		case len(config.DriverOpts) > 0:
+			kind = types.ProjectVolumeDriverOpts
+		}
+		classified = append(classified, types.ProjectVolume{
+			Labels:     config.Labels,
+			DriverOpts: config.DriverOpts,
+			Key:        key,
+			Name:       config.Name,
+			Kind:       kind,
+			Driver:     config.Driver,
+			Included:   kind == types.ProjectVolumeNamed || (kind == types.ProjectVolumeExternal && cmp.Or(config.Driver, "local") == "local" && len(config.DriverOpts) == 0),
+		})
+	}
+	return classified
+}
+
+func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOptions) ([]types.ProjectVolume, map[string]types.Volume, error) {
+	classified := ClassifyProjectVolumes(opts.Project)
+	resolved := make([]types.ProjectVolume, 0, len(classified))
+	inspected := map[string]types.Volume{}
+	for _, volume := range classified {
+		if opts.BackupStore != "" && volume.Name == opts.BackupStore {
+			resolved = append(resolved, types.ProjectVolume{
+				Labels:      volume.Labels,
+				DriverOpts:  volume.DriverOpts,
+				Key:         volume.Key,
+				Name:        volume.Name,
+				Kind:        volume.Kind,
+				Driver:      volume.Driver,
+				BackupStore: true,
+			})
+			continue
+		}
+		if !volume.Included {
+			resolved = append(resolved, volume)
+			continue
+		}
+		existing, exists, err := opts.Inspect(ctx, volume.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("inspect volume %s: %w", volume.Name, err)
+		}
+		included := exists && (volume.Kind == types.ProjectVolumeNamed || cmp.Or(existing.Driver, "local") == "local" && len(existing.Options) == 0)
+		inspected[volume.Name] = existing
+		resolved = append(resolved, types.ProjectVolume{
+			Labels:     volume.Labels,
+			DriverOpts: volume.DriverOpts,
+			Key:        volume.Key,
+			Name:       volume.Name,
+			Kind:       volume.Kind,
+			Driver:     volume.Driver,
+			Included:   included,
+			Missing:    !exists,
+			InUse:      included && opts.InUse[volume.Name],
+		})
+	}
+	return resolved, inspected, nil
+}
+
+func ProjectContainerUse(composeName string, containers []container.Summary) ([]container.Summary, map[string]bool) {
+	var active []container.Summary
+	inUse := map[string]bool{}
+	for _, c := range containers {
+		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
+			if c.State == container.StateRunning || c.State == container.StateRestarting {
+				active = append(active, c)
+			}
+			continue
+		}
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume {
+				inUse[m.Name] = true
+			}
+		}
+	}
+	return active, inUse
+}
+
+// ComposeVolumeTargetCreateOptions creates a restore target as Compose would, or as its own volume when it is external.
+func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (client.VolumeCreateOptions, error) {
+	if target.External {
+		return client.VolumeCreateOptions{Name: name, Driver: target.Driver, Labels: target.Labels}, nil
+	}
+	return ComposeVolumeCreateOptions(ComposeVolumeConfig(composeTypes.VolumeConfig{
+		Driver: target.Driver,
+		Labels: target.Labels,
+	}, target.Key, name, target.Project), nil)
+}
+
+// CreateNewVolume creates a restore target, refusing one that already exists so a restore never takes over, or later
+// removes, a volume it did not create.
+func CreateNewVolume(ctx context.Context, dockerClient *client.Client, options client.VolumeCreateOptions) error {
+	_, err := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
+	if err == nil {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", options.Name))
+	}
+	if !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("inspect volume %s: %w", options.Name, err)
+	}
+	if _, err = dockerClient.VolumeCreate(ctx, options); err != nil {
+		return fmt.Errorf("create volume %s: %w", options.Name, err)
+	}
+	return nil
+}
+
 func ComposeVolumeConfig(volumeConfig composeTypes.VolumeConfig, key, newName, newComposeName string) composeTypes.VolumeConfig {
 	newConfig := volumeConfig
 	newConfig.Name = newName
@@ -149,10 +276,10 @@ func ComposeVolumeConfig(volumeConfig composeTypes.VolumeConfig, key, newName, n
 }
 
 func ComposeVolumeCreateOptions(config composeTypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
-	labels := map[string]string{}
-	maps.Copy(labels, oldLabels)
-	maps.Copy(labels, config.Labels)
-	maps.Copy(labels, config.CustomLabels)
+	volumeLabels := map[string]string{}
+	maps.Copy(volumeLabels, oldLabels)
+	maps.Copy(volumeLabels, config.Labels)
+	maps.Copy(volumeLabels, config.CustomLabels)
 	raw, err := json.Marshal(composeTypes.VolumeConfig{
 		Name:       config.Name,
 		Driver:     cmp.Or(config.Driver, "local"),
@@ -163,8 +290,8 @@ func ComposeVolumeCreateOptions(config composeTypes.VolumeConfig, oldLabels map[
 	if err != nil {
 		return client.VolumeCreateOptions{}, fmt.Errorf("hash target volume %s: %w", config.Name, err)
 	}
-	labels[api.ConfigHashLabel] = digest.SHA256.FromBytes(raw).Encoded()
-	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: labels}, nil
+	volumeLabels[api.ConfigHashLabel] = digest.SHA256.FromBytes(raw).Encoded()
+	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: volumeLabels}, nil
 }
 
 func composeVolumeKeysWithExplicitName(ctx context.Context, composeFiles []string) (map[string]struct{}, error) {

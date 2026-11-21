@@ -323,31 +323,6 @@ func TestProjectsSnapshotPath(t *testing.T) {
 	}
 }
 
-func TestSourceMounts(t *testing.T) {
-	mounts := []container.MountPoint{
-		{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-		{Type: mount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
-		{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
-	}
-	data, err := sourceMounts(mounts, true, "/app/data", "/data")
-	require.NoError(t, err)
-	require.Equal(t, []mount.Mount{
-		{Type: mount.TypeVolume, Source: "arcane-data", Target: "/data", ReadOnly: true},
-		{Type: mount.TypeBind, Source: "/host/projects", Target: "/data/projects", ReadOnly: true},
-	}, data)
-
-	external, err := sourceMounts(mounts, true, "/srv/projects", "/projects")
-	require.NoError(t, err)
-	require.Equal(t, []mount.Mount{{Type: mount.TypeBind, Source: "/host/external", Target: "/projects", ReadOnly: true}}, external)
-
-	_, err = sourceMounts(mounts, true, "/opt/projects", "/projects")
-	require.ErrorContains(t, err, "/opt/projects must be mounted into the Arcane container")
-
-	host, err := sourceMounts(nil, false, "/tmp/data", "/data")
-	require.NoError(t, err)
-	require.Equal(t, []mount.Mount{{Type: mount.TypeBind, Source: "/tmp/data", Target: "/data", ReadOnly: true}}, host)
-}
-
 func TestNestedDataPath(t *testing.T) {
 	tests := []struct {
 		name          string

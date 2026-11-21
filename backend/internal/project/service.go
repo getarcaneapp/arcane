@@ -112,9 +112,11 @@ type (
 	}
 
 	CreateProjectOptions struct {
-		EnvContent     *string
-		Uploads        map[int][]byte
-		TagColors      map[string]types.ProjectTagColor
+		EnvContent *string
+		Uploads    map[int][]byte
+		TagColors  map[string]types.ProjectTagColor
+		// Restore fills the new project directory the way Archive would.
+		Restore        func(ctx context.Context, projectPath string) error
 		Actor          types.Actor
 		Manifest       types.CreateProjectWorkspaceManifest
 		Name           string
@@ -127,6 +129,7 @@ type (
 	}
 
 	projectArchiveUnpack struct {
+		Restore            func(ctx context.Context, projectPath string) error
 		Archive            io.Reader
 		ProjectsDirectory  string
 		GlobalEnvDirectory string
@@ -173,11 +176,6 @@ type (
 		EventService    *event.EventService
 		DockerService   *dockerInternal.DockerClientService
 		ImageService    *image.ImageService
-	}
-
-	DestroyOptions struct {
-		RemoveFiles   bool
-		RemoveVolumes bool
 	}
 
 	ServiceUpdateOptions struct {
@@ -600,6 +598,70 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 		return nil, common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	return proj, nil
+}
+
+func (s *ProjectService) stopProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	model, err := s.loadComposeProjectForProject(ctx, proj, nil)
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	// A stop cancelled partway would leave a slow container to exit after the restart skipped it.
+	if stopErr := composeStopProjectServices(context.WithoutCancel(ctx), types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); stopErr != nil {
+		return stopErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStop, projectID, proj.Name, user, database.JSON{
+		"action":      "stop",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"services":    services,
+	}, "could not log project stop action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
+}
+
+func (s *ProjectService) startProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	// Callers restart uncancelled while holding the project's locks, so the load gives up with the Docker API.
+	loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
+	model, err := s.loadComposeProjectForProject(loadCtx, proj, nil)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); startErr != nil {
+		return startErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStart, projectID, proj.Name, user, database.JSON{
+		"action":      "start",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"services":    services,
+	}, "could not log project start action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning))
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -1572,8 +1634,9 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	}
 
 	composePath := filepath.Join(projectPath, projects.DefaultComposeFileName)
-	if opts.Archive != nil {
+	if opts.Archive != nil || opts.Restore != nil {
 		detected, unpackErr := s.unpackProjectArchive(ctx, projectArchiveUnpack{
+			Restore:            opts.Restore,
 			Archive:            opts.Archive,
 			ProjectsDirectory:  projectsDirectory,
 			GlobalEnvDirectory: globalEnvDirectory,
@@ -1668,7 +1731,11 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 // unpackProjectArchive extracts an imported project, renames its Compose
 // identity to the requested name, and returns the compose file path.
 func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projectArchiveUnpack) (string, error) {
-	if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
+	if unpack.Restore != nil {
+		if restoreErr := unpack.Restore(ctx, unpack.ProjectPath); restoreErr != nil {
+			return "", fmt.Errorf("restore the project files: %w", restoreErr)
+		}
+	} else if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr))
 	}
 	detected, detectErr := projects.DetectComposeFile(ctx, unpack.ProjectsDirectory, unpack.ProjectPath)
@@ -1717,7 +1784,7 @@ func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types
 		return nil, err
 	}
 	defer cleanupSession()
-	proj, err := s.CreateProject(ctx, CreateProjectOptions{
+	return s.importArchive(ctx, CreateProjectOptions{
 		Archive:   archive,
 		Actor:     user,
 		Name:      request.Name,
@@ -1725,10 +1792,37 @@ func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types
 		Tags:      request.Tags,
 		ExactName: true,
 	})
+}
+
+// importArchive creates an imported or restored project under exactly its requested name.
+func (s *ProjectService) importArchive(ctx context.Context, opts CreateProjectOptions) (*Project, error) {
+	proj, err := s.CreateProject(ctx, opts)
 	if errors.Is(err, projects.ErrProjectDirExists) {
-		return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", request.Name))
+		return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", opts.Name))
 	}
 	return proj, err
+}
+
+// rewriteComposeName sets the Compose project name in the project's files, as an import does.
+func (s *ProjectService) rewriteComposeName(ctx context.Context, projectID, name string) error {
+	projectsDir, err := s.GetProjectsDirectory(ctx)
+	if err != nil {
+		return err
+	}
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
+	if err != nil {
+		return fmt.Errorf("resolve the compose file of project %s: %w", proj.Name, err)
+	}
+	return projects.RewriteComposeProjectName(ctx, projects.ComposeProjectNameRewrite{
+		ProjectsDirectory: projectsDir,
+		ProjectPath:       proj.Path,
+		ComposeFile:       composeFile,
+		Name:              name,
+	})
 }
 
 func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID string) (*types.UploadSession, error) {
@@ -1736,35 +1830,16 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 	if err != nil {
 		return nil, err
 	}
-	projectsDirectory, err := s.GetProjectsDirectory(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get projects directory: %w", err)
+	pack := func(w io.Writer) error {
+		return projects.PackProjectDirectory(ctx, proj.Path, w)
 	}
-	archive, archiveLogical, err := acfs.Root{Path: projectsDirectory}.CreateTemp(ctx, "/", ".project-export-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create project archive: %w", err)
-	}
-	defer func() {
-		if closeErr := archive.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
-			slog.WarnContext(ctx, "failed to close temporary project archive", "projectId", projectID, "path", archiveLogical, "error", closeErr)
-		}
-		if removeErr := (acfs.Root{Path: projectsDirectory}).Remove(context.WithoutCancel(ctx), archiveLogical); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			slog.WarnContext(ctx, "failed to remove temporary project archive", "projectId", projectID, "path", archiveLogical, "error", removeErr)
-		}
-	}()
-	if packErr := projects.PackProjectDirectory(ctx, proj.Path, archive); packErr != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, packErr)
-	}
-	info, err := archive.Stat()
+	session, err := s.uploads.WriteSession(ctx, upload.WriteSessionOptions{
+		Write:    pack,
+		Kind:     types.UploadKindProjectArchive,
+		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
-	}
-	if _, seekErr := archive.Seek(0, io.SeekStart); seekErr != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, seekErr)
-	}
-	session, err := s.uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", info.Size(), archive)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store project archive: %w", err)
 	}
 	return session, nil
 }
@@ -1788,7 +1863,7 @@ func (s *ProjectService) createRootDirectory(ctx context.Context, directory stri
 	})
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectId", projectID,
 		"removeFiles", opts.RemoveFiles,
@@ -1801,7 +1876,10 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		return err
 	}
 	defer unlock()
+	return s.destroyProject(ctx, projectID, opts, user)
+}
 
+func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1815,8 +1893,10 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
-	if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
-		return fmt.Errorf("failed to bring down project: %w", downErr)
+	if !opts.KeepContainers {
+		if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
+			return fmt.Errorf("failed to bring down project: %w", downErr)
+		}
 	}
 
 	if opts.RemoveVolumes {
@@ -1878,6 +1958,62 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 	return nil
 }
 
+// runsArcane reports whether the project's containers include the running Arcane container; a failed listing reports
+// false, skipping the guard.
+func (s *ProjectService) runsArcane(ctx context.Context, proj *Project) bool {
+	containers, err := s.details.ComposeContainers(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", err)
+		return false
+	}
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
+	return slices.ContainsFunc(listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj)), func(c container.Summary) bool {
+		return labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
+			CurrentErr:         currentContainerErr,
+			Labels:             c.Labels,
+			ContainerID:        c.ID,
+			CurrentContainerID: currentContainerID,
+		})
+	})
+}
+
+// soleDirectory refuses a project directory that is a projects directory or holds another project, since restoring
+// its files would replace theirs too.
+func (s *ProjectService) soleDirectory(ctx context.Context, project types.Project) error {
+	roots, err := s.projectsRoots(ctx)
+	if err != nil {
+		return err
+	}
+	// A project recorded through a followed symlink is compared by the directory it resolves to as well.
+	resolve := func(path string) string {
+		resolved, _ := projects.ResolveDirectoryIdentity(path)
+		return cmp.Or(resolved, path)
+	}
+	dir := resolve(project.Path)
+	holds := func(path string) bool {
+		return projects.IsSafeSubdirectory(project.Path, path) || projects.IsSafeSubdirectory(dir, resolve(path))
+	}
+	for _, root := range roots {
+		if holds(root.ContainerPath) {
+			return common.Classify(common.ErrValidation, fmt.Errorf(
+				"project %s is the projects directory %s, so restoring its files would replace other projects' files too; restore only its volumes", project.Name, root.ContainerPath,
+			))
+		}
+	}
+	var others []Project
+	if err = s.db.WithContext(ctx).Select("name", "path").Where("id <> ?", project.ID).Find(&others).Error; err != nil {
+		return fmt.Errorf("list projects: %w", err)
+	}
+	for _, other := range others {
+		if holds(other.Path) {
+			return common.Classify(common.ErrValidation, fmt.Errorf(
+				"the directory of project %s holds project %s, so restoring its files would replace that project's files too; restore only its volumes", project.Name, other.Name,
+			))
+		}
+	}
+	return nil
+}
+
 func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error {
 	unlock, err := s.LockProject(ctx, "redeploy project", projectID)
 	if err != nil {
@@ -1894,22 +2030,9 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return resolveProjectComposeFileErr
 	}
 
-	// Arcane's own container goes through the system upgrade flow; a failed listing skips the guard.
-	if containers, listErr := s.details.ComposeContainers(ctx); listErr != nil {
-		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", listErr)
-	} else {
-		currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-		projectContainers := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj))
-		if slices.ContainsFunc(projectContainers, func(c container.Summary) bool {
-			return labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
-				CurrentErr:         currentContainerErr,
-				Labels:             c.Labels,
-				ContainerID:        c.ID,
-				CurrentContainerID: currentContainerID,
-			})
-		}) {
-			return common.ErrSelfRedeployBlocked
-		}
+	// Arcane's own container goes through the system upgrade flow.
+	if s.runsArcane(ctx, proj) {
+		return common.ErrSelfRedeployBlocked
 	}
 
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)

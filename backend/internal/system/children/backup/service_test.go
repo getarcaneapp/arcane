@@ -169,6 +169,7 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 			Config:        &config.Config{},
 			DB:            db,
 			DockerService: dockerService,
+			Repository:    backupengine.NewVolumeRepository(backupengine.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
 		Engine:         engine,
 		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),

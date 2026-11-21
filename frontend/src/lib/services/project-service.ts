@@ -1,8 +1,13 @@
 import { m } from '#lib/paraglide/messages.js';
 import type { MessageResponse, Paginated } from '#lib/types/base.js';
 import type {
+	CreateProjectBackupRequest,
+	ExportProjectArchiveRequest,
+	ImportProjectArchiveRequest,
 	Project,
 	ProjectDeployOptions,
+	ProjectBackup,
+	ProjectExportOptions,
 	ProjectStatusCounts,
 	ProjectsDirectoryStatus,
 	ProjectTag,
@@ -13,16 +18,23 @@ import type {
 	ProjectTransferResource,
 	ProjectTransferStarted,
 	ProjectUpdateInfo,
-	ProjectUrl
+	ProjectUrl,
+	RestoreProjectBackupAsNewRequest,
+	RestoreProjectBackupRequest
 } from '#lib/types/project.js';
 import type { OperationStreamFrame } from '#lib/types/stream.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import type { ProjectUpdate } from '#lib/types/ui/project.js';
+import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
 import type { WorkspaceFileDraft } from '#lib/types/ui/workspace.js';
+import type { UploadSession } from '#lib/types/upload.js';
+import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
+import { tryCatch } from '#lib/utils/try-catch.js';
 
 import BaseAPIService, { type APIRequestConfig, withSessionSignal } from './api-service';
+import { uploadService } from './upload-service';
 
 class ProjectService extends BaseAPIService {
 	async getProjectsForEnvironment(
@@ -284,6 +296,80 @@ class ProjectService extends BaseAPIService {
 
 	async createTransferResource(projectId: string, resource: ProjectTransferResource, environmentId: string): Promise<void> {
 		await this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/transfer/resources`, resource));
+	}
+
+	async getExportOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/export`));
+	}
+
+	async getBackupOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/backup-options`));
+	}
+
+	async listBackups(
+		projectId: string,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string
+	): Promise<Paginated<ProjectBackup>> {
+		const res = await this.api.get<Paginated<ProjectBackup>>(`/agents/${environmentId}/projects/${projectId}/backups`, {
+			params: transformPaginationParams(options)
+		});
+		return res.data;
+	}
+
+	async createBackup(projectId: string, request: CreateProjectBackupRequest, environmentId: string): Promise<ProjectBackup> {
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/backups`, request));
+	}
+
+	async deleteBackup(projectId: string, backupId: string, environmentId: string): Promise<MessageResponse> {
+		return this.handleResponse(this.api.delete(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}`));
+	}
+
+	async restoreBackup(
+		projectId: string,
+		backupId: string,
+		request: RestoreProjectBackupRequest,
+		environmentId: string
+	): Promise<MessageResponse> {
+		return this.handleResponse(
+			this.api.post(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}/restore`, request)
+		);
+	}
+
+	async restoreBackupAsNew(
+		projectId: string,
+		backupId: string,
+		request: RestoreProjectBackupAsNewRequest,
+		environmentId: string
+	): Promise<Project> {
+		return this.handleResponse(
+			this.api.post(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}/restore-as-new`, request)
+		);
+	}
+
+	async exportProject(projectId: string, request: ExportProjectArchiveRequest, environmentId: string): Promise<void> {
+		const session = await this.handleResponse<UploadSession>(
+			this.api.post(`/agents/${environmentId}/projects/${projectId}/export`, request)
+		);
+		downloadFromUrl(
+			`${this.api.defaults.baseURL}/agents/${environmentId}/uploads/${session.kind}/${session.id}/download`,
+			session.filename
+		);
+	}
+
+	async importProject(
+		file: File,
+		request: ImportProjectArchiveRequest,
+		environmentId: string,
+		onProgress?: UploadProgressCallback
+	): Promise<Project> {
+		const uploadId = await uploadService.uploadFile(environmentId, 'project-archive', file, onProgress);
+		const result = await tryCatch(
+			this.handleResponse<Project>(this.api.post(`/agents/${environmentId}/projects/import`, { ...request, uploadId }))
+		);
+		if (result.error === null) return result.data;
+		await tryCatch(uploadService.deleteSession(environmentId, 'project-archive', uploadId));
+		throw result.error;
 	}
 
 	async destroyProject(projectName: string, removeVolumes = false, environmentId: string): Promise<void> {
