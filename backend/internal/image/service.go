@@ -1330,12 +1330,12 @@ func BuildCombinedUsageMap(
 		}
 	}
 
-	refByImageID := make(map[string]string)
+	refsByImageID := make(map[string][]string)
 	for _, di := range dockerImages {
 		for _, repoTag := range di.RepoTags {
 			normalized := strings.ToLower(refs.NormalizeImageUpdateRef(repoTag))
 			if normalized != "" {
-				refByImageID[di.ID] = normalized
+				refsByImageID[di.ID] = append(refsByImageID[di.ID], normalized)
 			}
 		}
 	}
@@ -1349,23 +1349,23 @@ func BuildCombinedUsageMap(
 			trimmed = trimmed[:idx]
 		}
 		if normalized := strings.ToLower(refs.NormalizeImageUpdateRef(trimmed)); normalized != "" {
-			if _, exists := refByImageID[c.ImageID]; !exists {
-				refByImageID[c.ImageID] = normalized
-			}
+			refsByImageID[c.ImageID] = append(refsByImageID[c.ImageID], normalized)
 		}
 	}
 
-	for imageID, ref := range refByImageID {
+	for imageID, imageRefs := range refsByImageID {
 		if seenProject[imageID] == nil {
 			seenProject[imageID] = make(map[string]struct{})
 		}
-		for _, usage := range projectRefUsage[ref] {
-			key := cmp.Or(usage.ID, usage.Name)
-			if _, seen := seenProject[imageID][key]; seen {
-				continue
+		for _, ref := range imageRefs {
+			for _, usage := range projectRefUsage[ref] {
+				key := cmp.Or(usage.ID, usage.Name)
+				if _, seen := seenProject[imageID][key]; seen {
+					continue
+				}
+				seenProject[imageID][key] = struct{}{}
+				usageMap[imageID] = append(usageMap[imageID], usage)
 			}
-			seenProject[imageID][key] = struct{}{}
-			usageMap[imageID] = append(usageMap[imageID], usage)
 		}
 	}
 	return usageMap

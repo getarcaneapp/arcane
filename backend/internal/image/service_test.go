@@ -1306,3 +1306,18 @@ func TestImageService_GetImageDetail_IncludesUsedBy(t *testing.T) {
 	assert.Equal(t, "grafana", detail.UsedBy[0].Name)
 	assert.True(t, detail.InUse)
 }
+
+func TestBuildCombinedUsageMap_MatchesEveryTagOfAnImage(t *testing.T) {
+	// A project references app:1 while the image also carries app:latest.
+	// Whichever tag the loop sees last, the project badge must survive.
+	refUsage := map[string][]types.ImageUsedBy{
+		refs.NormalizeImageUpdateRef("example/app:1"): {{Type: "project", Name: "app", ID: "proj-app"}},
+	}
+	dockerImages := []image.Summary{
+		{ID: "sha256:app", RepoTags: []string{"example/app:latest", "example/app:1"}},
+	}
+
+	usage := BuildCombinedUsageMap(dockerImages, nil, nil, refUsage)
+	require.Len(t, usage["sha256:app"], 1)
+	assert.Equal(t, "app", usage["sha256:app"][0].Name)
+}
