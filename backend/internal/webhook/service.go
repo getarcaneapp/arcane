@@ -34,8 +34,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/updater"
 	"getarcane.dev/arcane/v3/pkg/authz"
-	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
@@ -203,6 +201,7 @@ func NewWebhookService(p WebhookServiceParams) *WebhookService {
 		gitOpsSyncService:  p.GitOpsSyncService,
 		eventService:       p.EventService,
 		environmentService: p.EnvironmentService,
+		tokenHashes:        make(map[string]struct{}),
 	}
 }
 
@@ -436,9 +435,6 @@ func (s *WebhookService) CreateWebhook(
 	}
 
 	s.tokenMu.Lock()
-	if s.tokenHashes == nil {
-		s.tokenHashes = make(map[string]struct{})
-	}
 	s.tokenHashes[hash] = struct{}{}
 	s.tokenMu.Unlock()
 
@@ -500,30 +496,6 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 
 	result := webhookPagination.SearchOrderAndPaginate(summaries, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
-}
-
-func (s *WebhookService) AggregateWebhookSummaries(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Webhook], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.Webhook]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.Webhook]{}, err
-	}
-
-	pages := make([]pagination.EnvironmentPage[types.Webhook], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.Webhook]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
-	data, resp := pagination.MergeEnvironmentPages(webhookPagination, pages, params)
-
-	return types.Paginated[types.Webhook]{
-		Success:            true,
-		Data:               data,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
 }
 
 func (s *WebhookService) remoteWebhookTargetNames(ctx context.Context, environmentID string, webhooks []Webhook) map[string]map[string]string {

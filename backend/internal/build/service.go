@@ -41,7 +41,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
@@ -182,44 +181,23 @@ func (
 
 	if buildRecordID != "" {
 		output := logCapture.String()
-		var outputPtr *string
-		if output != "" {
-			outputPtr = &output
-		}
-
-		provider := s.effectiveBuildProvider(req.Provider)
-		var digest *string
-		if result != nil {
-			if result.Provider != "" {
-				provider = result.Provider
-			}
-			if result.Digest != "" {
-				digest = &result.Digest
-			}
-		}
-
-		status := ImageBuildStatusSuccess
+		digest := kit.FromPtr(result).Digest
 		var errMsg *string
 		if err != nil {
-			status = ImageBuildStatusFailed
 			errMsg = new(err.Error())
 		}
 
 		if updateErr := s.completeBuildRecord(
 			ctx,
 			buildRecordID,
-			status,
-			outputPtr,
+			kit.Ternary(err != nil, ImageBuildStatusFailed, ImageBuildStatusSuccess),
+			kit.Ternary(output != "", &output, nil),
 			logCapture.Truncated(),
 			errMsg,
-			digest,
-			provider,
+			kit.Ternary(digest != "", &digest, nil),
+			cmp.Or(kit.FromPtr(result).Provider, s.effectiveBuildProvider(req.Provider)),
 			completedAt,
-			new(
-				completedAt.Sub(
-					startedAt,
-				).Milliseconds(),
-			),
+			new(completedAt.Sub(startedAt).Milliseconds()),
 		); updateErr != nil {
 			slog.WarnContext(ctx, "failed to update build history record", "error", updateErr)
 		}
@@ -287,12 +265,10 @@ func sanitizeBuildContextForEvent(raw string) string {
 }
 
 func (s *BuildService) effectiveBuildProvider(provider string) string {
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	if provider != "" {
+	if provider = strings.ToLower(strings.TrimSpace(provider)); provider != "" {
 		return provider
 	}
-	provider = strings.ToLower(strings.TrimSpace(s.settings.GetSettingsConfig().BuildProvider.Value))
-	return kit.Ternary(provider == "", "local", provider)
+	return cmp.Or(strings.ToLower(strings.TrimSpace(s.settings.GetSettingsConfig().BuildProvider.Value)), "local")
 }
 
 func (s *BuildService) resolveBuildRequest(
@@ -306,7 +282,7 @@ func (s *BuildService) resolveBuildRequest(
 		return buildtypes.BuildRequest{}, func() error { return nil }, err
 	}
 	if !ok || source == nil {
-		if contextsource.IsPotentialRemoteBuildContextSource(req.ContextDir) {
+		if gitkit.IsSupportedRepositoryURL(req.ContextDir) {
 			return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("unsupported remote build context source %q: only git repository URLs are supported", req.ContextDir)
 		}
 		return req, func() error { return nil }, nil
@@ -431,20 +407,6 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 }
 
 func (s *BuildService) AggregateImageBuilds(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.ImageBuildRecord], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.ImageBuildRecord]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.ImageBuildRecord]{}, err
-	}
-
-	pages := make([]pagination.EnvironmentPage[types.ImageBuildRecord], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.ImageBuildRecord]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
-
 	config := pagination.Config[types.ImageBuildRecord]{SortBindings: []pagination.SortBinding[types.ImageBuildRecord]{
 		{
 			Key: "createdAt",
@@ -462,14 +424,7 @@ func (s *BuildService) AggregateImageBuilds(ctx context.Context, params paginati
 			return strings.Compare(a.Status, b.Status)
 		}},
 	}}
-	data, resp := pagination.MergeEnvironmentPages(config, pages, params)
-
-	return types.Paginated[types.ImageBuildRecord]{
-		Success:            true,
-		Data:               data,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
+	return handlerutil.AggregatePaginated(ctx, config, params)
 }
 
 func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, buildID string) (*types.ImageBuildRecord, error) {
@@ -482,9 +437,9 @@ func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, bui
 }
 
 func (s *BuildService) createBuildRecord(ctx context.Context, environmentID string, req buildtypes.BuildRequest, user *types.Actor) (*ImageBuild, error) {
-	buildArgs := mapToJSON(req.BuildArgs)
-	labels := mapToJSON(req.Labels)
-	ulimits := mapToJSON(req.Ulimits)
+	buildArgs := database.JSONFromMap(req.BuildArgs)
+	labels := database.JSONFromMap(req.Labels)
+	ulimits := database.JSONFromMap(req.Ulimits)
 
 	var userID *string
 	var username *string
@@ -590,15 +545,6 @@ func (s *BuildService) PruneHistory(ctx context.Context, retentionDays int) (int
 }
 
 func buildToRecord(build ImageBuild, includeOutput bool) types.ImageBuildRecord {
-	buildArgs := jsonToStringMap(build.BuildArgs)
-	labels := jsonToStringMap(build.Labels)
-	ulimits := jsonToStringMap(build.Ulimits)
-
-	var output *string
-	if includeOutput {
-		output = build.Output
-	}
-
 	return types.ImageBuildRecord{
 		ID:              build.ID,
 		EnvironmentID:   build.EnvironmentID,
@@ -611,8 +557,8 @@ func buildToRecord(build ImageBuild, includeOutput bool) types.ImageBuildRecord 
 		Target:          build.Target,
 		Tags:            build.Tags,
 		Platforms:       build.Platforms,
-		BuildArgs:       buildArgs,
-		Labels:          labels,
+		BuildArgs:       build.BuildArgs.ToStringMap(),
+		Labels:          build.Labels.ToStringMap(),
 		CacheFrom:       build.CacheFrom,
 		CacheTo:         build.CacheTo,
 		NoCache:         build.NoCache,
@@ -620,7 +566,7 @@ func buildToRecord(build ImageBuild, includeOutput bool) types.ImageBuildRecord 
 		Network:         build.BuildNetwork,
 		Isolation:       build.Isolation,
 		ShmSize:         build.ShmSize,
-		Ulimits:         ulimits,
+		Ulimits:         build.Ulimits.ToStringMap(),
 		Entitlements:    build.Entitlements,
 		Privileged:      build.Privileged,
 		ExtraHosts:      build.ExtraHosts,
@@ -628,32 +574,10 @@ func buildToRecord(build ImageBuild, includeOutput bool) types.ImageBuildRecord 
 		Load:            build.Load,
 		Digest:          build.Digest,
 		ErrorMessage:    build.ErrorMessage,
-		Output:          output,
+		Output:          kit.Ternary(includeOutput, build.Output, nil),
 		OutputTruncated: build.OutputTruncated,
 		CompletedAt:     build.CompletedAt,
 		DurationMs:      build.DurationMs,
 		CreatedAt:       build.CreatedAt,
 	}
-}
-
-func mapToJSON(input map[string]string) database.JSON {
-	if len(input) == 0 {
-		return nil
-	}
-
-	out := database.JSON{}
-	for key, value := range input {
-		out[key] = value
-	}
-
-	return kit.Ternary(len(out) == 0, nil, out)
-}
-
-func jsonToStringMap(input database.JSON) map[string]string {
-	out := map[string]string{}
-	for key, value := range input {
-		out[key] = fmt.Sprint(value)
-	}
-
-	return kit.Ternary(len(out) == 0, nil, out)
 }

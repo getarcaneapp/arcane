@@ -188,6 +188,5 @@ func EnvIDFromPath(path string) string {
 		// which is org-level.
 		return ""
 	}
-	id := before
-	return id
+	return before
 }

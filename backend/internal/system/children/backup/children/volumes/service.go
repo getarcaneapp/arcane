@@ -252,7 +252,7 @@ func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input t
 		S3Enabled:       update.S3Enabled,
 		S3DestinationID: update.S3DestinationID,
 		SelectionMode:   input.SelectionMode,
-		VolumeNames:     kit.Ternary(input.SelectionMode == types.SystemVolumeSelectionAll || names == nil, []string{}, names),
+		VolumeNames:     kit.Ternary(input.SelectionMode == types.SystemVolumeSelectionAll, nil, names),
 		IgnoreAnonymous: input.IgnoreAnonymous,
 	}, nil
 }

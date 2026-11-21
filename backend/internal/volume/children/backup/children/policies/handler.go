@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -90,13 +91,9 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 		},
 	}, func(activityCtx context.Context) error {
 		if input.EnvironmentID != "0" {
-			hasS3 := false
-			for _, policy := range input.Body.Policies {
-				if policy.S3Enabled {
-					hasS3 = true
-					break
-				}
-			}
+			hasS3 := slices.ContainsFunc(input.Body.Policies, func(policy types.UpdateBackupPolicy) bool {
+				return policy.S3Enabled
+			})
 			h.environmentService.ForgetSyncState(input.EnvironmentID)
 			if syncErr := h.environmentService.SyncS3DestinationsToEnvironment(activityCtx, input.EnvironmentID); syncErr != nil {
 				if hasS3 {
@@ -129,9 +126,6 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 		return updateErr
 	})
 	if err != nil {
-		if errorStatus == http.StatusInternalServerError {
-			return nil, huma.Error500InternalServerError(err.Error())
-		}
 		if errorStatus == http.StatusBadGateway || errorStatus == http.StatusNotFound {
 			return nil, huma.NewError(errorStatus, err.Error())
 		}

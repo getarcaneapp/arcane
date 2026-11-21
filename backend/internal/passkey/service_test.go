@@ -210,7 +210,7 @@ func TestPasskeyService_RecoveryCodeConsumptionIsAtomicAndSingleUse(t *testing.T
 	transaction := newAuthTransaction(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, types.SessionMeta{
 		UserAgent: "test-agent",
 		IPAddress: "127.0.0.1",
-	}, nil)
+	}, nil, nil)
 	require.NoError(t, db.Create(transaction).Error)
 
 	_, err = service.FinishRecoveryCode(ctx, transaction.ID, "not-a-recovery-code")
@@ -302,7 +302,7 @@ func TestPasskeyService_ResetMFARevokesSessionsAndPreservesPasskeys(t *testing.T
 	_, rows, err := generateRecoveryCodeRows(user.ID)
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&rows).Error)
-	transaction := newAuthTransaction(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, types.SessionMeta{}, nil)
+	transaction := newAuthTransaction(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, types.SessionMeta{}, nil, nil)
 	require.NoError(t, db.Create(transaction).Error)
 	ceremony := &PasskeyCeremony{
 		ID:                "reset-ceremony",

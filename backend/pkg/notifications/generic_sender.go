@@ -30,41 +30,8 @@ const (
 // genericHTTPClient bounds generic webhook sends; Shoutrrr's default client has no timeout.
 var genericHTTPClient = httpx.NewHTTPClient(httpx.ClientConfig{Timeout: 15 * time.Second})
 
-func resolveWebhookURL(config GenericConfig) (*url.URL, error) {
-	if config.WebhookURL == "" {
-		return nil, errors.New("webhook URL is empty")
-	}
-
-	parsed, err := url.Parse(config.WebhookURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid webhook URL: %w", err)
-	}
-
-	hasScheme := strings.Contains(config.WebhookURL, "://")
-	if parsed.Host == "" && !hasScheme {
-		scheme := kit.Ternary(config.DisableTLS, "http", "https")
-		normalized := strings.TrimPrefix(config.WebhookURL, "//")
-		parsed, err = url.Parse(fmt.Sprintf("%s://%s", scheme, normalized))
-		if err != nil {
-			return nil, fmt.Errorf("invalid webhook URL: %w", err)
-		}
-	}
-
-	if parsed.Host == "" {
-		return nil, errors.New("invalid webhook URL: missing host")
-	}
-
-	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https":
-	default:
-		return nil, fmt.Errorf("invalid webhook URL scheme: %s", parsed.Scheme)
-	}
-
-	return parsed, nil
-}
-
 func BuildGenericURL(config GenericConfig) (string, error) {
-	webhookURL, err := resolveWebhookURL(config)
+	webhookURL, err := parseWebhookURL(config.WebhookURL, kit.Ternary(config.DisableTLS, "http", "https"), "webhook URL")
 	if err != nil {
 		return "", err
 	}
@@ -236,7 +203,7 @@ func SendGenericWithTitle(ctx context.Context, config GenericConfig, title, mess
 
 // Kept separate from SendGenericWithTitle to stay under the gocognit limit.
 func sendGenericDirect(ctx context.Context, config GenericConfig, title, message string, vars map[string]string) error {
-	webhookURL, err := resolveWebhookURL(config)
+	webhookURL, err := parseWebhookURL(config.WebhookURL, kit.Ternary(config.DisableTLS, "http", "https"), "webhook URL")
 	if err != nil {
 		return err
 	}

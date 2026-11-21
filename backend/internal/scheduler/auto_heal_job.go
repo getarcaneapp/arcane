@@ -264,10 +264,7 @@ func (j *AutoHealJob) processCandidate(
 		return target, err
 	}
 
-	if inspect.State == nil || inspect.State.Health == nil {
-		return target, nil
-	}
-	if inspect.State.Health.Status != container.Unhealthy {
+	if kit.FromPtr(kit.FromPtr(inspect.State).Health).Status != container.Unhealthy {
 		return target, nil
 	}
 

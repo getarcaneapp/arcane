@@ -583,15 +583,10 @@ func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifa
 			ArtifactType:  cmp.Or(artifactDescriptor.ArtifactType, manifest.ArtifactType),
 			PredicateType: cmp.Or(statement.PredicateType, annotationPredicate),
 			StatementType: statement.Type,
-			Subject:       kit.Ternary(statement.Subject == nil, []types.ImageAttestationSubject{}, statement.Subject),
+			Subject:       statement.Subject,
 			Platform:      platform,
 			Size:          cmp.Or(layerDescriptor.Size, int64(len(rawStatement))),
-			Statement: func() []byte {
-				if !query.IncludeStatement {
-					return nil
-				}
-				return append([]byte(nil), rawStatement...)
-			}(),
+			Statement:     kit.Ternary(query.IncludeStatement, rawStatement, nil),
 		})
 	}
 	return attestations, nil

@@ -112,10 +112,7 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	j.restartMu.Lock()
 	defer j.restartMu.Unlock()
 
-	localSettings, err := j.settingsService.GetSettings(ctx)
-	if err != nil {
-		return err
-	}
+	localSettings := j.settingsService.GetSettingsConfig()
 	enabledRoots, err := j.projectService.EnabledProjectsRoots(ctx)
 	if err != nil {
 		return err
@@ -182,10 +179,7 @@ func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) erro
 	j.restartMu.Lock()
 	defer j.restartMu.Unlock()
 
-	localSettings, err := j.settingsService.GetSettings(ctx)
-	if err != nil {
-		return err
-	}
+	localSettings := j.settingsService.GetSettingsConfig()
 	roots, err := j.projectService.EnabledProjectsRoots(ctx)
 	if err != nil {
 		return err

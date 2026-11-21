@@ -121,7 +121,7 @@ func ParseIncludesFromContent(ctx context.Context, composeFilePath string, conte
 	// Look for include at root level only (per Docker Compose spec)
 	includes, ok := composeData["include"]
 	if !ok {
-		return []IncludeFile{}, nil
+		return nil, nil
 	}
 
 	composeDir := filepath.Dir(composeFilePath)
@@ -144,7 +144,7 @@ func ParseIncludesFromContent(ctx context.Context, composeFilePath string, conte
 		includeFiles = append(includeFiles, incs...)
 	case nil:
 		// `include:` key present but null (e.g. `include: ~`) — treat as empty.
-		return []IncludeFile{}, nil
+		return nil, nil
 	default:
 		return nil, errors.New("invalid include type")
 	}

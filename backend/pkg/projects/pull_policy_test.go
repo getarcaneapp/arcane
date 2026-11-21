@@ -4,69 +4,69 @@ import (
 	"testing"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestResolveServiceImagePullMode(t *testing.T) {
 	tests := []struct {
-		service  composetypes.ServiceConfig
+		service  composeTypes.ServiceConfig
 		name     string
 		expected ImagePullStep
 	}{
 		{
 			name:     "default policy is missing",
-			service:  composetypes.ServiceConfig{},
+			service:  composeTypes.ServiceConfig{},
 			expected: ImagePullStep{Mode: ImagePullModeIfMissing},
 		},
 		{
 			name:     "always policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyAlways},
+			service:  composeTypes.ServiceConfig{PullPolicy: composeTypes.PullPolicyAlways},
 			expected: ImagePullStep{Mode: ImagePullModeAlways},
 		},
 		{
 			name:     "bare refresh policy has a zero refresh window",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyRefresh},
+			service:  composeTypes.ServiceConfig{PullPolicy: composeTypes.PullPolicyRefresh},
 			expected: ImagePullStep{Mode: ImagePullModeRefresh, RefreshAfter: 0},
 		},
 		{
 			name:     "daily policy is a 24h refresh window",
-			service:  composetypes.ServiceConfig{PullPolicy: "daily"},
+			service:  composeTypes.ServiceConfig{PullPolicy: "daily"},
 			expected: ImagePullStep{Mode: ImagePullModeRefresh, RefreshAfter: 24 * time.Hour},
 		},
 		{
 			name:     "weekly policy is a 7d refresh window",
-			service:  composetypes.ServiceConfig{PullPolicy: "weekly"},
+			service:  composeTypes.ServiceConfig{PullPolicy: "weekly"},
 			expected: ImagePullStep{Mode: ImagePullModeRefresh, RefreshAfter: 7 * 24 * time.Hour},
 		},
 		{
 			name:     "every_12h policy parses its window",
-			service:  composetypes.ServiceConfig{PullPolicy: "every_12h"},
+			service:  composeTypes.ServiceConfig{PullPolicy: "every_12h"},
 			expected: ImagePullStep{Mode: ImagePullModeRefresh, RefreshAfter: 12 * time.Hour},
 		},
 		{
 			name:     "every with invalid duration defaults to missing behavior",
-			service:  composetypes.ServiceConfig{PullPolicy: "every_bogus"},
+			service:  composeTypes.ServiceConfig{PullPolicy: "every_bogus"},
 			expected: ImagePullStep{Mode: ImagePullModeIfMissing},
 		},
 		{
 			name:     "missing policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyMissing},
+			service:  composeTypes.ServiceConfig{PullPolicy: composeTypes.PullPolicyMissing},
 			expected: ImagePullStep{Mode: ImagePullModeIfMissing},
 		},
 		{
 			name:     "if not present policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyIfNotPresent},
+			service:  composeTypes.ServiceConfig{PullPolicy: composeTypes.PullPolicyIfNotPresent},
 			expected: ImagePullStep{Mode: ImagePullModeIfMissing},
 		},
 		{
 			name:     "never policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyNever},
+			service:  composeTypes.ServiceConfig{PullPolicy: composeTypes.PullPolicyNever},
 			expected: ImagePullStep{Mode: ImagePullModeNever},
 		},
 		{
 			name:     "invalid policy defaults to missing behavior",
-			service:  composetypes.ServiceConfig{PullPolicy: "definitely_invalid"},
+			service:  composeTypes.ServiceConfig{PullPolicy: "definitely_invalid"},
 			expected: ImagePullStep{Mode: ImagePullModeIfMissing},
 		},
 	}
@@ -79,28 +79,28 @@ func TestResolveServiceImagePullMode(t *testing.T) {
 }
 
 func TestBuildProjectImagePullPlan(t *testing.T) {
-	project := &composetypes.Project{
+	project := &composeTypes.Project{
 		Name: "demo",
-		Services: composetypes.Services{
+		Services: composeTypes.Services{
 			"web": {
 				Name:       "web",
 				Image:      "redis:latest",
-				PullPolicy: composetypes.PullPolicyIfNotPresent,
+				PullPolicy: composeTypes.PullPolicyIfNotPresent,
 			},
 			"worker": {
 				Name:       "worker",
 				Image:      "redis:latest",
-				PullPolicy: composetypes.PullPolicyAlways,
+				PullPolicy: composeTypes.PullPolicyAlways,
 			},
 			"api": {
 				Name:       "api",
 				Image:      "nginx:latest",
-				PullPolicy: composetypes.PullPolicyNever,
+				PullPolicy: composeTypes.PullPolicyNever,
 			},
 			"empty-image": {
 				Name:       "empty-image",
 				Image:      "",
-				PullPolicy: composetypes.PullPolicyAlways,
+				PullPolicy: composeTypes.PullPolicyAlways,
 			},
 		},
 	}
@@ -113,9 +113,9 @@ func TestBuildProjectImagePullPlan(t *testing.T) {
 }
 
 func TestBuildImagePullPlanRefreshMerge(t *testing.T) {
-	project := &composetypes.Project{
+	project := &composeTypes.Project{
 		Name: "demo",
-		Services: composetypes.Services{
+		Services: composeTypes.Services{
 			"daily": {
 				Name:       "daily",
 				Image:      "shared:latest",
@@ -129,7 +129,7 @@ func TestBuildImagePullPlanRefreshMerge(t *testing.T) {
 			"missing": {
 				Name:       "missing",
 				Image:      "shared:latest",
-				PullPolicy: composetypes.PullPolicyMissing,
+				PullPolicy: composeTypes.PullPolicyMissing,
 			},
 			"weekly": {
 				Name:       "weekly",
@@ -139,7 +139,7 @@ func TestBuildImagePullPlanRefreshMerge(t *testing.T) {
 			"always": {
 				Name:       "always",
 				Image:      "other:latest",
-				PullPolicy: composetypes.PullPolicyAlways,
+				PullPolicy: composeTypes.PullPolicyAlways,
 			},
 		},
 	}
@@ -151,25 +151,25 @@ func TestBuildImagePullPlanRefreshMerge(t *testing.T) {
 }
 
 func TestBuildImagePullPlanDependentImages(t *testing.T) {
-	project := &composetypes.Project{
+	project := &composeTypes.Project{
 		Name: "demo",
-		Services: composetypes.Services{
+		Services: composeTypes.Services{
 			"web": {
 				Name:  "web",
 				Image: "nginx:latest",
-				PreStart: []composetypes.PreStartHook{{ContainerSpec: composetypes.ContainerSpec{
-					Image: "busybox:stable", Command: composetypes.ShellCommand{"true"},
+				PreStart: []composeTypes.PreStartHook{{ContainerSpec: composeTypes.ContainerSpec{
+					Image: "busybox:stable", Command: composeTypes.ShellCommand{"true"},
 				}}},
-				Volumes: []composetypes.ServiceVolumeConfig{
-					{Type: composetypes.VolumeTypeImage, Source: "content:latest", Target: "/data"},
+				Volumes: []composeTypes.ServiceVolumeConfig{
+					{Type: composeTypes.VolumeTypeImage, Source: "content:latest", Target: "/data"},
 				},
 			},
 			"local": {
 				Name:       "local",
 				Image:      "local:dev",
-				PullPolicy: composetypes.PullPolicyNever,
-				PreStart: []composetypes.PreStartHook{{ContainerSpec: composetypes.ContainerSpec{
-					Image: "skipped:hook", Command: composetypes.ShellCommand{"true"},
+				PullPolicy: composeTypes.PullPolicyNever,
+				PreStart: []composeTypes.PreStartHook{{ContainerSpec: composeTypes.ContainerSpec{
+					Image: "skipped:hook", Command: composeTypes.ShellCommand{"true"},
 				}}},
 			},
 		},
@@ -190,9 +190,9 @@ func TestNormalizePullPolicy(t *testing.T) {
 
 func TestDecideDeployImageAction(t *testing.T) {
 	t.Run("build service with explicit build policy", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{
+		svc := composeTypes.ServiceConfig{
 			PullPolicy: "build",
-			Build:      &composetypes.BuildConfig{Context: "."},
+			Build:      &composeTypes.BuildConfig{Context: "."},
 		}
 
 		decision := DecideDeployImageAction(svc, "")
@@ -201,7 +201,7 @@ func TestDecideDeployImageAction(t *testing.T) {
 	})
 
 	t.Run("build service default policy uses pull then fallback build", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{Build: &composetypes.BuildConfig{Context: "."}}
+		svc := composeTypes.ServiceConfig{Build: &composeTypes.BuildConfig{Context: "."}}
 		decision := DecideDeployImageAction(svc, "")
 		assert.True(t, decision.PullIfMissing)
 		assert.True(t, decision.FallbackBuildOnPullFail)
@@ -209,21 +209,21 @@ func TestDecideDeployImageAction(t *testing.T) {
 	})
 
 	t.Run("non-build service never policy requires local only", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{PullPolicy: "never"}
+		svc := composeTypes.ServiceConfig{PullPolicy: "never"}
 		decision := DecideDeployImageAction(svc, "")
 		assert.True(t, decision.RequireLocalOnly)
 		assert.False(t, decision.PullIfMissing)
 	})
 
 	t.Run("compose pull policy wins over deploy override", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{PullPolicy: "never"}
+		svc := composeTypes.ServiceConfig{PullPolicy: "never"}
 		decision := DecideDeployImageAction(svc, "always")
 		assert.True(t, decision.RequireLocalOnly)
 		assert.False(t, decision.PullAlways)
 	})
 
 	t.Run("refresh policy pulls when stale instead of always", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{PullPolicy: "daily"}
+		svc := composeTypes.ServiceConfig{PullPolicy: "daily"}
 		decision := DecideDeployImageAction(svc, "")
 		assert.True(t, decision.PullIfStale)
 		assert.Equal(t, 24*time.Hour, decision.StaleAfter)
@@ -231,9 +231,9 @@ func TestDecideDeployImageAction(t *testing.T) {
 	})
 
 	t.Run("refresh policy on build service pulls when stale", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{
+		svc := composeTypes.ServiceConfig{
 			PullPolicy: "every_6h",
-			Build:      &composetypes.BuildConfig{Context: "."},
+			Build:      &composeTypes.BuildConfig{Context: "."},
 		}
 		decision := DecideDeployImageAction(svc, "")
 		assert.True(t, decision.PullIfStale)
@@ -243,7 +243,7 @@ func TestDecideDeployImageAction(t *testing.T) {
 	})
 
 	t.Run("build service with deploy missing override falls back to build", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{Build: &composetypes.BuildConfig{Context: "."}}
+		svc := composeTypes.ServiceConfig{Build: &composeTypes.BuildConfig{Context: "."}}
 		decision := DecideDeployImageAction(svc, "missing")
 		assert.True(t, decision.PullIfMissing)
 		assert.True(t, decision.FallbackBuildOnPullFail)
@@ -251,9 +251,9 @@ func TestDecideDeployImageAction(t *testing.T) {
 	})
 
 	t.Run("build service with always policy falls back to build", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{
+		svc := composeTypes.ServiceConfig{
 			PullPolicy: "always",
-			Build:      &composetypes.BuildConfig{Context: "."},
+			Build:      &composeTypes.BuildConfig{Context: "."},
 		}
 		decision := DecideDeployImageAction(svc, "")
 		assert.True(t, decision.PullAlways)
@@ -262,7 +262,7 @@ func TestDecideDeployImageAction(t *testing.T) {
 	})
 
 	t.Run("non-build service never falls back to build", func(t *testing.T) {
-		decision := DecideDeployImageAction(composetypes.ServiceConfig{}, "always")
+		decision := DecideDeployImageAction(composeTypes.ServiceConfig{}, "always")
 		assert.True(t, decision.PullAlways)
 		assert.False(t, decision.FallbackBuildOnPullFail)
 	})

@@ -29,6 +29,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -300,7 +301,7 @@ func TestAggregateMergesEnvironments(t *testing.T) {
 		},
 	})
 
-	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	body, err := handlerutil.AggregatePaginated(ctx, (&Service{}).buildNodePaginationConfig(), pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 	require.NoError(t, err)
 
 	require.Len(t, body.Data, 2)
@@ -435,7 +436,9 @@ func TestAggregateJoinCandidatesKeepsManagerBreakdown(t *testing.T) {
 		},
 	})
 
-	body, err := (&Service{}).AggregateJoinCandidates(ctx)
+	body, err := httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[[]types.SwarmJoinCandidate]) []types.SwarmJoinCandidate {
+		return nil
+	})
 	require.NoError(t, err)
 
 	require.Empty(t, body.Data)

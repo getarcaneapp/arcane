@@ -41,7 +41,7 @@ func sortFunction[T any](items []T, params SortParams, sorts []SortBinding[T]) [
 		if binding.DescFn != nil {
 			fn = binding.DescFn
 		} else {
-			fn = reverSortFn(fn)
+			fn = reverseSortFn(fn)
 		}
 	}
 	if binding.Key != sorts[0].Key {
@@ -60,8 +60,8 @@ func chainSortFn[T any](primary, tieBreak SortOption[T]) SortOption[T] {
 	}
 }
 
-func reverSortFn[T any](fn SortOption[T]) SortOption[T] {
+func reverseSortFn[T any](fn SortOption[T]) SortOption[T] {
 	return func(a, b T) int {
-		return -1 * fn(a, b)
+		return -fn(a, b)
 	}
 }

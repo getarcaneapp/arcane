@@ -116,68 +116,36 @@ func (j *ScheduledPruneJob) Reschedule(ctx context.Context) error {
 
 func buildScheduledPruneRequest(ctx context.Context, settingsService *settings.SettingsService) types.PruneAllRequest {
 	return types.PruneAllRequest{
-		Containers: buildScheduledContainerPruneOptions(ctx, settingsService),
-		Images:     buildScheduledImagePruneOptions(ctx, settingsService),
-		Volumes:    buildScheduledVolumePruneOptions(ctx, settingsService),
-		Networks:   buildScheduledNetworkPruneOptions(ctx, settingsService),
-		BuildCache: buildScheduledBuildCachePruneOptions(ctx, settingsService),
+		Containers: buildScheduledPruneOption(ctx, settingsService, "pruneContainerMode", types.PruneContainerModeNone, func(mode types.PruneContainerMode) *types.PruneContainersOptions {
+			return &types.PruneContainersOptions{Mode: mode, Until: settingsService.GetStringSetting(ctx, "pruneContainerUntil")}
+		}),
+		Images: buildScheduledPruneOption(ctx, settingsService, "pruneImageMode", types.PruneImageModeNone, func(mode types.PruneImageMode) *types.PruneImagesOptions {
+			return &types.PruneImagesOptions{Mode: mode, Until: settingsService.GetStringSetting(ctx, "pruneImageUntil")}
+		}),
+		Volumes: buildScheduledPruneOption(ctx, settingsService, "pruneVolumeMode", types.PruneVolumeModeNone, func(mode types.PruneVolumeMode) *types.PruneVolumesOptions {
+			return &types.PruneVolumesOptions{Mode: mode}
+		}),
+		Networks: buildScheduledPruneOption(ctx, settingsService, "pruneNetworkMode", types.PruneNetworkModeNone, func(mode types.PruneNetworkMode) *types.PruneNetworksOptions {
+			return &types.PruneNetworksOptions{Mode: mode, Until: settingsService.GetStringSetting(ctx, "pruneNetworkUntil")}
+		}),
+		BuildCache: buildScheduledPruneOption(ctx, settingsService, "pruneBuildCacheMode", types.PruneBuildCacheModeNone, func(mode types.PruneBuildCacheMode) *types.PruneBuildCacheOptions {
+			return &types.PruneBuildCacheOptions{Mode: mode, Until: settingsService.GetStringSetting(ctx, "pruneBuildCacheUntil")}
+		}),
 	}
 }
 
-func buildScheduledContainerPruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneContainersOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneContainerMode")
-	if mode == "" || mode == string(types.PruneContainerModeNone) {
+func buildScheduledPruneOption[M ~string, T any](
+	ctx context.Context,
+	settingsService *settings.SettingsService,
+	modeKey string,
+	noneMode M,
+	build func(M) *T,
+) *T {
+	mode := settingsService.GetStringSetting(ctx, modeKey)
+	if mode == "" || mode == string(noneMode) {
 		return nil
 	}
-
-	return &types.PruneContainersOptions{
-		Mode:  types.PruneContainerMode(mode),
-		Until: settingsService.GetStringSetting(ctx, "pruneContainerUntil"),
-	}
-}
-
-func buildScheduledImagePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneImagesOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneImageMode")
-	if mode == "" || mode == string(types.PruneImageModeNone) {
-		return nil
-	}
-
-	return &types.PruneImagesOptions{
-		Mode:  types.PruneImageMode(mode),
-		Until: settingsService.GetStringSetting(ctx, "pruneImageUntil"),
-	}
-}
-
-func buildScheduledVolumePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneVolumesOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneVolumeMode")
-	if mode == "" || mode == string(types.PruneVolumeModeNone) {
-		return nil
-	}
-	return &types.PruneVolumesOptions{Mode: types.PruneVolumeMode(mode)}
-}
-
-func buildScheduledNetworkPruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneNetworksOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneNetworkMode")
-	if mode == "" || mode == string(types.PruneNetworkModeNone) {
-		return nil
-	}
-
-	return &types.PruneNetworksOptions{
-		Mode:  types.PruneNetworkMode(mode),
-		Until: settingsService.GetStringSetting(ctx, "pruneNetworkUntil"),
-	}
-}
-
-func buildScheduledBuildCachePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneBuildCacheOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneBuildCacheMode")
-	if mode == "" || mode == string(types.PruneBuildCacheModeNone) {
-		return nil
-	}
-
-	return &types.PruneBuildCacheOptions{
-		Mode:  types.PruneBuildCacheMode(mode),
-		Until: settingsService.GetStringSetting(ctx, "pruneBuildCacheUntil"),
-	}
+	return build(M(mode))
 }
 
 func (j *ScheduledPruneJob) Reconcile(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {

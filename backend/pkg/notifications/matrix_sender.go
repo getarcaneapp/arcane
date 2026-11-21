@@ -15,37 +15,30 @@ func BuildMatrixURL(config MatrixConfig) (string, error) {
 		return "", errors.New("matrix host is required")
 	}
 
-	u := &url.URL{
-		Scheme: "matrix",
-	}
-
+	var user *url.Userinfo
 	if config.Password != "" {
-		u.User = url.UserPassword(config.Username, config.Password)
+		user = url.UserPassword(config.Username, config.Password)
 	}
 
 	host := config.Host
 	if config.Port > 0 {
-		u.Host = fmt.Sprintf("%s:%d", host, config.Port)
-	} else {
-		u.Host = host
+		host = fmt.Sprintf("%s:%d", host, config.Port)
 	}
 
-	q := u.Query()
-
+	q := url.Values{}
 	if config.Rooms != "" {
 		q.Set("rooms", config.Rooms)
 	}
-
 	if config.DisableTLSVerification {
 		q.Set("disabletls", "yes")
 	}
 
-	rawQuery := q.Encode()
-	rawQuery = strings.ReplaceAll(rawQuery, "%21", "!") // required by Matrix notification syntax
-
-	u.RawQuery = rawQuery
-
-	return u.String(), nil
+	return (&url.URL{
+		Scheme:   "matrix",
+		User:     user,
+		Host:     host,
+		RawQuery: strings.ReplaceAll(q.Encode(), "%21", "!"), // required by Matrix notification syntax
+	}).String(), nil
 }
 
 func SendMatrix(ctx context.Context, config MatrixConfig, message string) error {

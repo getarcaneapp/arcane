@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path"
 	"slices"
-	"sort"
 	"strings"
 
 	"kit.getarcane.app"
@@ -224,18 +223,12 @@ func explicitSelectionCandidates(requestedPaths []string, eligible []types.Backu
 }
 
 func collapseSelectionCandidates(candidates []types.BackupFileEntry) []types.BackupFileEntry {
-	sort.SliceStable(candidates, func(i, j int) bool {
-		leftDepth := strings.Count(candidates[i].Path, "/")
-		rightDepth := strings.Count(candidates[j].Path, "/")
-		if leftDepth != rightDepth {
-			return leftDepth < rightDepth
-		}
-		leftPath := strings.ToLower(candidates[i].Path)
-		rightPath := strings.ToLower(candidates[j].Path)
-		if leftPath != rightPath {
-			return leftPath < rightPath
-		}
-		return candidates[i].Path < candidates[j].Path
+	slices.SortStableFunc(candidates, func(a, b types.BackupFileEntry) int {
+		return cmp.Or(
+			cmp.Compare(strings.Count(a.Path, "/"), strings.Count(b.Path, "/")),
+			strings.Compare(strings.ToLower(a.Path), strings.ToLower(b.Path)),
+			strings.Compare(a.Path, b.Path),
+		)
 	})
 	result := make([]types.BackupFileEntry, 0, len(candidates))
 	selectedDirectories := make([]string, 0, len(candidates))

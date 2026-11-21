@@ -95,9 +95,6 @@ func (s *ActivityService) Track(ctx context.Context, activityID string) context.
 
 	workCtx, cancel := context.WithCancelCause(ctx)
 	s.runningMu.Lock()
-	if s.running == nil {
-		s.running = map[string]context.CancelCauseFunc{}
-	}
 	if existing, ok := s.running[activityID]; ok {
 		// Replace any stale registration to avoid leaking the prior context.
 		existing(nil)
@@ -158,12 +155,12 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 	model := &Activity{
 		ID:                   req.ID,
 		EnvironmentID:        environmentID,
-		BatchID:              copyPtr(kit.Ternary(req.BatchID != nil, req.BatchID, mo.EmptyableToOption(activitylib.ActivityBatchIDFromContext(ctx)).ToPointer())),
+		BatchID:              kit.Ternary(req.BatchID != nil, mo.PointerToOption(req.BatchID).ToPointer(), mo.EmptyableToOption(activitylib.ActivityBatchIDFromContext(ctx)).ToPointer()),
 		Type:                 cmp.Or(req.Type, types.ActivityTypeAutoUpdate),
 		Status:               status,
-		ResourceType:         copyPtr(req.ResourceType),
-		ResourceID:           copyPtr(req.ResourceID),
-		ResourceName:         copyPtr(req.ResourceName),
+		ResourceType:         mo.PointerToOption(req.ResourceType).ToPointer(),
+		ResourceID:           mo.PointerToOption(req.ResourceID).ToPointer(),
+		ResourceName:         mo.PointerToOption(req.ResourceName).ToPointer(),
 		StartedByUserID:      mo.EmptyableToOption(strings.TrimSpace(startedBy.ID)).ToPointer(),
 		StartedByUsername:    mo.EmptyableToOption(strings.TrimSpace(startedBy.Username)).ToPointer(),
 		StartedByDisplayName: mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(startedBy.DisplayName))).ToPointer(),
@@ -171,7 +168,7 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 		Step:                 strings.TrimSpace(req.Step),
 		LatestMessage:        strings.TrimSpace(req.LatestMessage),
 		StartedAt:            now,
-		Metadata:             cloneJSON(req.Metadata),
+		Metadata:             database.JSONFromMap(req.Metadata),
 		CreatedAt:            now,
 	}
 
@@ -214,9 +211,6 @@ func (s *ActivityService) StartTrackedActivity(ctx context.Context, req StartAct
 		return nil, nil, err
 	}
 	workCtx, cancel := context.WithCancelCause(ctx)
-	if s.running == nil {
-		s.running = map[string]context.CancelCauseFunc{}
-	}
 	s.running[started.ID] = cancel
 	return started, workCtx, nil
 }
@@ -279,7 +273,7 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string,
 		updates["error"] = strings.TrimSpace(*req.Error)
 	}
 	if req.Metadata != nil {
-		updates["metadata"] = cloneJSON(req.Metadata)
+		updates["metadata"] = database.JSONFromMap(req.Metadata)
 	}
 
 	// Hold the per-activity publish lock across commit and publish so this
@@ -368,7 +362,7 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 			ActivityID: message.ActivityID,
 			Level:      message.Level,
 			Message:    message.Message,
-			Payload:    cloneJSON(message.Payload),
+			Payload:    database.JSONFromMap(message.Payload),
 			CreatedAt:  message.CreatedAt,
 		}
 		s.pubsub.PublishMessage(current.EnvironmentID, current.Type, dto)
@@ -399,7 +393,7 @@ func buildAppendBatch(activityID string, reqs []AppendActivityMessageRequest) ([
 			ActivityID: activityID,
 			Level:      level,
 			Message:    messageText,
-			Payload:    cloneJSON(req.Payload),
+			Payload:    database.JSONFromMap(req.Payload),
 			// Spread inside the shared timestamp so the created_at sort
 			// used for retrieval keeps the original line order.
 			CreatedAt: now.Add(time.Duration(len(messages)) * time.Microsecond),
@@ -711,7 +705,7 @@ func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID 
 		if err := tx.First(&record, "id = ?", activityID).Error; err != nil {
 			return fmt.Errorf("failed to load activity: %w", err)
 		}
-		merged := cloneJSON(record.Metadata)
+		merged := database.JSONFromMap(record.Metadata)
 		if merged == nil {
 			merged = database.JSON{}
 		}
@@ -751,8 +745,8 @@ func completeActivityUpdates(startedAt time.Time, status types.ActivityStatus, f
 			updates["step"] = step
 		}
 	}
-	if errMessage != nil && strings.TrimSpace(*errMessage) != "" {
-		updates["error"] = strings.TrimSpace(*errMessage)
+	if trimmed := strings.TrimSpace(kit.FromPtr(errMessage)); trimmed != "" {
+		updates["error"] = trimmed
 	}
 	if status == types.ActivityStatusSuccess {
 		updates["progress"] = 100
@@ -831,7 +825,7 @@ func (s *ActivityService) GetActivityDetail(ctx context.Context, environmentID, 
 			ActivityID: message.ActivityID,
 			Level:      message.Level,
 			Message:    message.Message,
-			Payload:    cloneJSON(message.Payload),
+			Payload:    database.JSONFromMap(message.Payload),
 			CreatedAt:  message.CreatedAt,
 		})
 	}
@@ -936,12 +930,12 @@ func activityToDTO(model *Activity) types.Activity {
 		ID:                  model.ID,
 		EnvironmentID:       model.EnvironmentID,
 		SourceEnvironmentID: model.EnvironmentID,
-		BatchID:             copyPtr(model.BatchID),
+		BatchID:             mo.PointerToOption(model.BatchID).ToPointer(),
 		Type:                model.Type,
 		Status:              model.Status,
-		ResourceType:        copyPtr(model.ResourceType),
-		ResourceID:          copyPtr(model.ResourceID),
-		ResourceName:        copyPtr(model.ResourceName),
+		ResourceType:        mo.PointerToOption(model.ResourceType).ToPointer(),
+		ResourceID:          mo.PointerToOption(model.ResourceID).ToPointer(),
+		ResourceName:        mo.PointerToOption(model.ResourceName).ToPointer(),
 		Progress:            clampProgressPtr(model.Progress),
 		Step:                model.Step,
 		LatestMessage:       model.LatestMessage,
@@ -957,20 +951,13 @@ func activityToDTO(model *Activity) types.Activity {
 			}
 		}(),
 		StartedAt:  model.StartedAt,
-		EndedAt:    copyPtr(model.EndedAt),
-		DurationMs: copyPtr(model.DurationMs),
-		Error:      copyPtr(model.Error),
-		Metadata:   cloneJSON(model.Metadata),
+		EndedAt:    mo.PointerToOption(model.EndedAt).ToPointer(),
+		DurationMs: mo.PointerToOption(model.DurationMs).ToPointer(),
+		Error:      mo.PointerToOption(model.Error).ToPointer(),
+		Metadata:   database.JSONFromMap(model.Metadata),
 		CreatedAt:  model.CreatedAt,
-		UpdatedAt:  copyPtr(model.UpdatedAt),
+		UpdatedAt:  mo.PointerToOption(model.UpdatedAt).ToPointer(),
 	}
-}
-
-func copyPtr[T any](value *T) *T {
-	if value == nil {
-		return nil
-	}
-	return new(*value)
 }
 
 func clampProgressPtr(value *int) *int {
@@ -978,15 +965,6 @@ func clampProgressPtr(value *int) *int {
 		return nil
 	}
 	return new(min(max(*value, 0), 100))
-}
-
-func cloneJSON(input database.JSON) database.JSON {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(database.JSON, len(input))
-	maps.Copy(out, input)
-	return out
 }
 
 func deleteActivitiesByID(tx *gorm.DB, activityIDs []string) (int64, error) {
@@ -1247,7 +1225,7 @@ func (s *ActivityService) ListRemoteActivities(
 	params pagination.QueryParams,
 ) ([]types.Activity, pagination.Response, error) {
 	params = normalizeRemoteActivityParams(params)
-	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit+kit.Ternary(params.SkipCount, 1, 0))
+	window := params.FetchWindow()
 	activities, localTotal, err := collectActivityWindow(window, func(start, limit int) ([]types.Activity, int64, error) {
 		local := params
 		local.Start, local.Limit = start, limit
