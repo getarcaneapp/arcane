@@ -264,7 +264,6 @@ var (
 	errPolicyGone         = errors.New("backup policy disabled or deleted")
 	errRemoteOnlyDisabled = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
 	errProjectSkipped     = errors.New("the project is no longer selected or has its own enabled backup policy")
-	fallbackBackoff       = concurrency.Backoff{Base: 5 * time.Second, Max: 5 * time.Minute}
 	projectDetails        = types.ProjectDetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeIncludeFiles:   true,
@@ -1640,33 +1639,6 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, true, nil
 }
 
-// resumable reports whether the target is a backup an interrupted attempt checkpointed and left running.
-func resumable(target types.TargetOutcome) bool {
-	return target.ResourceType == targetType && target.Status == types.RunStatusRunning && len(target.RecoveryData) > 0
-}
-
-// awaitCheckpointAdmissions waits until every admission the still-running checkpointed backups need is free, then lets
-// them go, so a resume can take them.
-func (s *Service) awaitCheckpointAdmissions(ctx context.Context, previous types.SchedulerRun) error {
-	for _, target := range previous.Outcome.Targets {
-		if !resumable(target) {
-			continue
-		}
-		var recorded plan
-		if err := json.Unmarshal(target.RecoveryData, &recorded); err != nil {
-			return err
-		}
-		for _, key := range admissions(recorded.ProjectID, recorded.volumeNames()) {
-			lease, err := s.deps.Engine.AwaitRun(ctx, key.Scope, key.ID)
-			if err != nil {
-				return err
-			}
-			lease.Release(context.WithoutCancel(ctx))
-		}
-	}
-	return nil
-}
-
 // admitScheduled waits for the project's admission, then for the leases of the volumes its policy captures. Everything
 // the backup relies on is read again once they are all held: the policy and its S3 repository through read, and the
 // plan. Volumes that changed while it waited are leased in turn and checked again. The backup is recorded under policyID.
@@ -2158,34 +2130,10 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 			current, err := s.globalPolicy(policyID)
 			return (err == nil && current != nil && current.Enabled) || s.unfinished(ctx, jobID)
 		},
-		// A run whose workflow cannot be resumed still restarts the containers it stopped and backs up the rest of its
-		// projects. Nothing retries a fallback, so it waits for a busy admission instead of handing the run back. A failed
-		// container restart is rejected too but leaves the admissions free, so attempts back off until the containers start.
+		// A run whose workflow cannot be resumed still finishes, or fails, the backups it checkpointed and backs up the
+		// rest of its projects, once, as a project policy's fallback does.
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
-			// Each attempt goes on from what the one before it saved, so containers a later backup stopped are restarted
-			// rather than backed up again.
-			latest := previous
-			latest.Outcome.Targets = slices.Clone(previous.Outcome.Targets)
-			attempt := func() (types.SchedulerOutcome, error) {
-				tracked := jobcontext.WithExecution(ctx, latest, func(target types.TargetOutcome) error {
-					latest.Outcome.Targets = jobcontext.Merge(latest.Outcome.Targets, target)
-					return jobcontext.Progress(ctx, target)
-				})
-				return s.backUpGlobal(tracked, globalRun{PolicyID: policyID}, latest)
-			}
-			outcome, err := attempt()
-			for retry := 0; errors.Is(err, actor.ErrJobRejected); retry++ {
-				slog.WarnContext(ctx, "Retrying an interrupted global project backup", "policyId", policyID, "error", err)
-				waitErr := fallbackBackoff.Sleep(ctx, retry)
-				if waitErr == nil {
-					waitErr = s.awaitCheckpointAdmissions(ctx, latest)
-				}
-				if waitErr != nil {
-					return types.SchedulerOutcome{}, waitErr
-				}
-				outcome, err = attempt()
-			}
-			return outcome, err
+			return s.backUpGlobal(ctx, globalRun{PolicyID: policyID}, previous)
 		},
 	})
 }
@@ -2200,8 +2148,8 @@ func (s *Service) runGlobal(ctx context.Context, t flow.Task) (any, error) {
 }
 
 // backUpGlobal backs up the projects a global policy selects one at a time, each through the path of a project's
-// scheduled backup. A resumed run first finishes the backups the interrupted attempt checkpointed, restarting the
-// containers they stopped, then backs up the rest of the projects that attempt planned.
+// scheduled backup. A resumed run first finishes, or fails, the backups the interrupted attempt checkpointed, as a
+// project policy's resumed run does, then backs up the rest of the projects that attempt planned.
 func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	lease, admitted, err := s.deps.Engine.AcquireRun(ctx, globalAdmissionScope, input.PolicyID, input.Claim)
 	switch {
@@ -2209,7 +2157,7 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		// A scheduled run or a fallback waits for the other run of the policy.
 		lease, err = s.deps.Engine.AwaitRun(ctx, globalAdmissionScope, input.PolicyID)
 	case err == nil && !admitted && len(previous.Outcome.Targets) > 0:
-		// A resumed run may have left containers stopped, so it is handed back instead of failing.
+		// A resumed run is handed back instead of failing, so a retry still settles the backups it checkpointed.
 		return types.SchedulerOutcome{}, fmt.Errorf("%w: %w", actor.ErrJobRejected, errGlobalRunning)
 	case err == nil && !admitted:
 		return types.SchedulerOutcome{}, errGlobalRunning
@@ -2234,7 +2182,7 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			finished[target.ID] = target
 			continue
 		}
-		if !resumable(target) {
+		if len(target.RecoveryData) == 0 {
 			continue
 		}
 		var recorded plan
@@ -2242,11 +2190,14 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			return types.SchedulerOutcome{}, decodeErr
 		}
 		resumeErr := s.resume(ctx, previous, input.Requester, recorded)
-		if ctx.Err() != nil {
+		switch {
+		case ctx.Err() != nil:
 			return types.SchedulerOutcome{}, ctx.Err()
-		}
-		if errors.Is(resumeErr, actor.ErrJobRejected) {
+		case errors.Is(resumeErr, actor.ErrJobRejected):
 			return types.SchedulerOutcome{}, resumeErr
+		case errors.Is(resumeErr, backup.ErrBackupSettled):
+			// The backup failed, for one interrupted with its containers stopped, so a new one runs, as for a project policy.
+			continue
 		}
 		// A resumed backup that fails keeps its snapshots, so it counts against retention as well.
 		s.retain(ctx, recorded.ProjectID, recorded.PolicyID)
@@ -2287,9 +2238,9 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			backupErr = s.backUpScheduled(ctx, admitted)
 			release(context.WithoutCancel(ctx), admitted.leases)
 		}
-		// Shutdown interrupted this project, or it could not be started again; its checkpoint resumes it first.
-		if ctx.Err() != nil || errors.Is(backupErr, actor.ErrJobRejected) {
-			return types.SchedulerOutcome{}, cmp.Or(ctx.Err(), backupErr)
+		// Shutdown interrupted this project; its checkpoint resumes it first.
+		if ctx.Err() != nil {
+			return types.SchedulerOutcome{}, ctx.Err()
 		}
 		var outcome types.TargetOutcome
 		switch {

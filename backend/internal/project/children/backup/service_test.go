@@ -1673,7 +1673,7 @@ func TestGlobalPolicyRunsOneAtATime(t *testing.T) {
 	_, err = f.service.backUpGlobal(t.Context(), manual, types.SchedulerRun{})
 	require.ErrorIs(t, err, errGlobalRunning)
 	require.NotErrorIs(t, err, actor.ErrJobRejected)
-	// A resumed manual run may have left containers stopped, so it is handed back instead.
+	// A resumed manual run is handed back instead, so a retry still settles its checkpointed backups.
 	resumed := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
 		{ResourceType: "backup_plan", ID: globalPlanTarget, Status: types.RunStatusSucceeded, RecoveryData: []byte(`{"projectIds":["p1"]}`)},
 	}}}
@@ -1706,31 +1706,6 @@ func TestGlobalPolicyRunsOneAtATime(t *testing.T) {
 	}
 	// Every run released the policy's admission.
 	f.hold(t, globalAdmissionScope, policy.ID).Release(t.Context())
-}
-
-func TestCheckpointAdmissionsSkipFinishedProjects(t *testing.T) {
-	f := newPolicyFixture(t)
-	checkpoint := func(projectID string) []byte {
-		encoded, err := json.Marshal(plan{BackupID: projectID, ProjectID: projectID, Volumes: []types.ProjectVolume{{Name: projectID + "_data", Included: true}}})
-		require.NoError(t, err)
-		return encoded
-	}
-	previous := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
-		{ResourceType: targetType, ID: "p1", Status: types.RunStatusSucceeded, RecoveryData: checkpoint("p1")},
-		{ResourceType: targetType, ID: "p2", Status: types.RunStatusRunning, RecoveryData: checkpoint("p2")},
-	}}}
-	// Another run holds the project the interrupted run already finished; recovery does not wait for it.
-	held := f.hold(t, admissionScope, "p1")
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	require.NoError(t, f.service.awaitCheckpointAdmissions(ctx, previous))
-	held.Release(t.Context())
-	// It still waits for the project left running.
-	held = f.hold(t, backup.VolumeAdmissionScope, "p2_data")
-	ctx, cancel = context.WithTimeout(t.Context(), 300*time.Millisecond)
-	defer cancel()
-	require.ErrorIs(t, f.service.awaitCheckpointAdmissions(ctx, previous), context.DeadlineExceeded)
-	held.Release(t.Context())
 }
 
 func TestGlobalRetentionKeepsTheNewestBackupsPerProject(t *testing.T) {
@@ -1894,7 +1869,7 @@ func TestInterruptedGlobalBackupsKeepTheirJobs(t *testing.T) {
 		})
 	}
 
-	// A global run interrupted with a project stopped resumes through its policy's job, even when that policy is off.
+	// An interrupted global run resumes, or fails, through its policy's job, even when that policy is off.
 	f.service.RegisterJobsOnStartup(t.Context())
 	require.True(t, f.jobs.HasJob("project-backup:"+types.GlobalProjectPolicyPrefix+"g-disabled"))
 	require.True(t, f.jobs.HasJob("project-backup:"+types.GlobalProjectPolicyPrefix+"g-deleted"))
