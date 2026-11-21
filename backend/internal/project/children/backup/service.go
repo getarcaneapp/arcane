@@ -15,6 +15,7 @@ import (
 	"time"
 	"uuid"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
@@ -55,11 +56,13 @@ type (
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
-		// Containers starts the containers a backup stopped again, as it does for volume backups.
+		// Containers starts the stopped containers Compose can't start, as it does for volume backups.
 		Containers *backup.Containers
 		// LockVolumes waits for the named volumes' workspace locks, which volume backups and restores also take.
 		LockVolumes func(ctx context.Context, names []string) (func(), error)
 		Project     func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
+		// ComposeProject loads the project's Compose files, so the stopped services start in dependency order.
+		ComposeProject func(ctx context.Context, projectID string) (*composetypes.Project, error)
 		// Volume inspects a Docker volume and reports whether it exists.
 		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
 		// BackupStore names the volume holding local backup storage, which a backup never copies.
@@ -577,7 +580,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 			if len(stopped) == 0 {
 				return
 			}
-			if _, startErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, types.SystemUser); startErr != nil {
+			if startErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped); startErr != nil {
 				err = errors.Join(err, fmt.Errorf("restart project containers: %w", startErr))
 			}
 		}()
@@ -705,6 +708,38 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 		}
 	}
 	return stopped, nil
+}
+
+// startContainers starts the stopped containers' services with Compose, in dependency order, and the rest directly: a
+// one-off, a service the Compose files no longer name, or all of them when the files don't load or the start fails.
+func (s *Service) startContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
+	model, err := s.deps.ComposeProject(ctx, projectID)
+	var services []string
+	direct := stopped
+	if err == nil {
+		direct = nil
+		for _, c := range stopped {
+			service := docker.ComposeServiceLabel(c.Labels)
+			_, enabled := model.Services[service]
+			_, disabled := model.DisabledServices[service]
+			switch {
+			case (!enabled && !disabled) || c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
+				direct = append(direct, c)
+			case !slices.Contains(services, service):
+				services = append(services, service)
+			}
+		}
+	}
+	var startErr error
+	if len(services) > 0 {
+		startErr = projects.ComposeStart(ctx, types.ComposeTarget{Project: model, DockerHost: s.deps.Docker.DockerHost(), Services: services})
+	}
+	if err != nil || startErr != nil {
+		slog.WarnContext(ctx, "Starting the stopped project containers without Compose", "projectId", projectID, "error", cmp.Or(err, startErr))
+		direct = stopped
+	}
+	_, err = s.deps.Containers.StartContainers(ctx, direct, types.SystemUser)
+	return errors.Join(startErr, err)
 }
 
 // checkPlanVolumes fails when the project's volumes changed after the backup was queued, for example by a compose edit
