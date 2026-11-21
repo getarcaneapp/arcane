@@ -1457,7 +1457,7 @@ func TestInterruptedScheduledBackupsKeepTheirJobs(t *testing.T) {
 		})
 	}
 
-	// After a restart, a run interrupted with the project stopped can only resume through its policy's job.
+	// After a restart, an interrupted run can only resume, or fail, through its policy's job.
 	f.service.RegisterJobsOnStartup(t.Context())
 	require.True(t, f.jobs.HasJob("project-backup:"+enabled.ID))
 	require.True(t, f.jobs.HasJob("project-backup:"+disabled.ID))
@@ -1611,15 +1611,13 @@ func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	require.ErrorIs(t, service.capture(waiting, &ProjectBackup{BaseModel: database.BaseModel{ID: "b1"}, ProjectID: "p1"}, p), context.DeadlineExceeded)
 }
 
-// A user cancel fails its backup, except while the project's containers are still stopped: the running backup is what
-// keeps their restart recoverable.
-func TestUserCancelKeepsABackupRunningOnlyWhileContainersAreDown(t *testing.T) {
+// A user cancel fails its backup; a rejected run nobody cancelled is retried.
+func TestUserCancelFailsTheBackup(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(errors.New("activity cancelled by user"))
 
 	require.False(t, handedBack(ctx, ctx.Err()))
 	require.False(t, handedBack(ctx, fmt.Errorf("%w: busy", actor.ErrJobRejected)))
-	require.True(t, handedBack(ctx, fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, ctx.Err())))
 	require.True(t, handedBack(t.Context(), fmt.Errorf("%w: busy", actor.ErrJobRejected)))
 }
 

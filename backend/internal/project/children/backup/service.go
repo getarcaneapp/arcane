@@ -235,10 +235,7 @@ var (
 	errAlreadyRunning     = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
 	errPolicyGone         = errors.New("backup policy disabled or deleted")
 	errRemoteOnlyDisabled = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
-	// errContainersDown marks a failure that left the project's containers stopped; its checkpoint still lists them.
-	errContainersDown = errors.New("project containers left stopped")
-	fallbackBackoff   = concurrency.Backoff{Base: 5 * time.Second, Max: 5 * time.Minute}
-	projectDetails    = types.ProjectDetailsOptions{
+	projectDetails        = types.ProjectDetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeIncludeFiles:   true,
 	}
@@ -565,8 +562,8 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 // backup, one that stopped containers fails instead, since they may have changed since. A scheduled backup has no
 // requester.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) (err error) {
-	// A resume that ends for good, a user cancel included, fails its backup as a first attempt does; shutdown, busy
-	// admissions and containers still stopped retry it.
+	// A resume that ends for good, a user cancel included, fails its backup as a first attempt does; shutdown and busy
+	// admissions retry it.
 	defer func() {
 		if err != nil && !handedBack(ctx, err) && !errors.Is(err, backup.ErrBackupSettled) {
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.BackupID, err.Error()))
@@ -581,10 +578,6 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 	entry, err := s.load(ctx, recorded.BackupID)
 	if err != nil {
 		return err
-	}
-	if entry.Status == types.VolumeBackupStatusRunning && entry.Error != "" {
-		// The interrupted attempt rejected its snapshot after the copy; with the project running again, the backup fails.
-		return errors.New(entry.Error)
 	}
 	switch entry.Status {
 	case types.VolumeBackupStatusFailed:
@@ -1105,12 +1098,8 @@ func (s *Service) complete(ctx context.Context, entry *ProjectBackup, err error)
 }
 
 // handedBack reports whether a failed attempt leaves its backup running for a retry to resume. A shutdown cancel and a
-// rejected run that nobody cancelled are retried; a user cancel never is, so its backup is failed now, unless the
-// project's containers are still stopped: the running backup keeps their restart recoverable.
+// rejected run that nobody cancelled are retried; a user cancel never is, so its backup is failed now.
 func handedBack(ctx context.Context, err error) bool {
-	if errors.Is(err, errContainersDown) {
-		return true
-	}
 	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
 		return true
 	}
@@ -1415,7 +1404,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 }
 
 // RegisterJobsOnStartup schedules every enabled project backup policy, and keeps the job of a disabled or deleted one
-// whose backup was interrupted, so the run can resume and start the containers it stopped.
+// whose backup was interrupted, so the run can resume or fail it.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	db := s.deps.DB.WithContext(ctx)
 	unfinished := db.Model(&ProjectBackup{}).Select("policy_id").
@@ -1504,22 +1493,9 @@ func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
 			loadErr := s.deps.DB.WithContext(ctx).Where("id = ?", policyID).First(&current).Error
 			return (loadErr == nil && current.Enabled) || s.unfinished(ctx, policyID)
 		},
-		// A run whose workflow cannot be resumed still restarts the containers it stopped and finishes its backup. Nothing
-		// retries a fallback, so it waits for a busy admission instead of handing the run back. A failed container restart
-		// is rejected too but leaves the admissions free, so attempts back off until the containers start.
+		// A run whose workflow cannot be resumed still finishes, or fails, its backup.
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous)
-			for attempt := 0; errors.Is(resumeErr, actor.ErrJobRejected); attempt++ {
-				slog.WarnContext(ctx, "Retrying an interrupted scheduled project backup", "policyId", policyID, "error", resumeErr)
-				waitErr := fallbackBackoff.Sleep(ctx, attempt)
-				if waitErr == nil {
-					waitErr = s.awaitCheckpointAdmissions(ctx, previous)
-				}
-				if waitErr != nil {
-					return types.SchedulerOutcome{}, waitErr
-				}
-				outcome, resumed, resumeErr = s.resumeScheduled(ctx, previous)
-			}
 			if resumed || resumeErr != nil {
 				return outcome, resumeErr
 			}
@@ -1571,30 +1547,20 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, nil
 }
 
-// checkpointedPlan decodes the plan an interrupted scheduled attempt checkpointed; it reports false when there is none.
-func checkpointedPlan(previous types.SchedulerRun) (plan, bool, error) {
+// resumeScheduled finishes the backup an interrupted attempt checkpointed; it reports false when there is none, or when
+// that backup already failed and a new one should run.
+func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, bool, error) {
 	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ResourceType == targetType && len(target.RecoveryData) > 0
 	})
 	if index < 0 {
-		return plan{}, false, nil
-	}
-	var recorded plan
-	err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded)
-	return recorded, true, err
-}
-
-// resumeScheduled finishes the backup an interrupted attempt checkpointed; it reports false when there is none, or when
-// that backup already failed and a new one should run.
-func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, bool, error) {
-	recorded, found, err := checkpointedPlan(previous)
-	if !found {
 		return types.SchedulerOutcome{}, false, nil
 	}
-	if err != nil {
+	var recorded plan
+	if err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded); err != nil {
 		return types.SchedulerOutcome{}, true, err
 	}
-	err = s.resume(ctx, previous, nil, recorded)
+	err := s.resume(ctx, previous, nil, recorded)
 	if errors.Is(err, backup.ErrBackupSettled) {
 		return types.SchedulerOutcome{}, false, nil
 	}
@@ -1604,23 +1570,6 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 		return types.SchedulerOutcome{}, true, err
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, true, nil
-}
-
-// awaitCheckpointAdmissions waits until every admission the checkpointed backup needs is free, then lets them go, so a
-// resume can take them.
-func (s *Service) awaitCheckpointAdmissions(ctx context.Context, previous types.SchedulerRun) error {
-	recorded, found, err := checkpointedPlan(previous)
-	if !found || err != nil {
-		return err
-	}
-	for _, key := range admissions(recorded.ProjectID, recorded.volumeNames()) {
-		lease, leaseErr := s.deps.Engine.AwaitRun(ctx, key.Scope, key.ID)
-		if leaseErr != nil {
-			return leaseErr
-		}
-		lease.Release(context.WithoutCancel(ctx))
-	}
-	return nil
 }
 
 // admitScheduled waits for the project's admission, then for the leases of the volumes its policy captures. Everything

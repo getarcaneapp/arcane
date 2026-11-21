@@ -38,8 +38,7 @@ type (
 
 	// BackupDependencies are the shared backup plumbing project backups run on.
 	BackupDependencies struct {
-		// Ctx is Arcane's context, which the policies' scheduled jobs and the recovery of projects a backup left
-		// stopped run on.
+		// Ctx is Arcane's context, which the policies' scheduled jobs run on.
 		Ctx            context.Context
 		Scheduler      types.DynamicScheduler
 		Admission      *runs.Admission
