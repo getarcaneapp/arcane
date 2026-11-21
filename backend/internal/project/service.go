@@ -597,7 +597,7 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 	return proj, nil
 }
 
-func (s *ProjectService) stopProject(ctx context.Context, projectID string, user types.Actor) error {
+func (s *ProjectService) stopProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
@@ -606,11 +606,15 @@ func (s *ProjectService) stopProject(ctx context.Context, projectID string, user
 	if err != nil {
 		return fmt.Errorf("failed to load compose project: %w", err)
 	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
 	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
 	if stopErr := composeStopProjectServices(ctx, types.ComposeTarget{
 		Project:    model,
 		DockerHost: s.dockerService.DockerHost(),
-		Services:   model.ServiceNames(),
+		Services:   services,
 	}); stopErr != nil {
 		return stopErr
 	}
@@ -618,6 +622,7 @@ func (s *ProjectService) stopProject(ctx context.Context, projectID string, user
 		"action":      "stop",
 		"projectID":   projectID,
 		"projectName": proj.Name,
+		"services":    services,
 	}, "could not log project stop action")
 	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
 }
@@ -631,11 +636,7 @@ func (s *ProjectService) startProject(ctx context.Context, projectID string, ser
 	if err != nil {
 		return fmt.Errorf("failed to load compose project: %w", err)
 	}
-	// Compose rejects the whole start for a service an undeployed edit removed; an empty list would start them all.
-	services = slices.DeleteFunc(slices.Clone(services), func(name string) bool {
-		_, ok := model.Services[name]
-		return !ok
-	})
+	services = knownServices(model, services)
 	if len(services) == 0 {
 		return nil
 	}

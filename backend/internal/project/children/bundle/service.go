@@ -38,7 +38,7 @@ type (
 		ExportProject       func(ctx context.Context, projectID string) (*types.UploadSession, error)
 		ImportProject       func(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
 		LockProject         func(ctx context.Context, op, projectID string) (func(), error)
-		StopProject         func(ctx context.Context, projectID string, user types.Actor) error
+		StopProject         func(ctx context.Context, projectID string, services []string, user types.Actor) error
 		StartProject        func(ctx context.Context, projectID string, services []string, user types.Actor) error
 		DeployProject       func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		RemoveProject       func(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error
@@ -160,12 +160,6 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		return exportState{}, fmt.Errorf("list containers: %w", err)
 	}
 	activeContainers, inUse := projects.ProjectContainerUse(project.ComposeName, running.Items)
-	var services []string
-	for _, c := range activeContainers {
-		if service := docker.ComposeServiceLabel(c.Labels); projects.IsServiceContainer(c.Labels) && !slices.Contains(services, service) {
-			services = append(services, service)
-		}
-	}
 	arcaneOfProject := func(c container.Summary) bool {
 		return project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName && labels.IsArcaneContainer(c.Labels)
 	}
@@ -180,7 +174,7 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 	return exportState{
 		docker:     inspected,
 		volumes:    resolved,
-		services:   services,
+		services:   projects.ContainerServices(activeContainers),
 		active:     len(activeContainers) > 0,
 		runsArcane: slices.ContainsFunc(running.Items, arcaneOfProject),
 	}, nil
@@ -282,7 +276,7 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 				err = errors.Join(err, fmt.Errorf("start project %s again: %w", manifest.Project.Name, startErr))
 			}
 		}()
-		if stopErr := s.deps.StopProject(ctx, opts.ProjectID, opts.User); stopErr != nil {
+		if stopErr := s.deps.StopProject(ctx, opts.ProjectID, state.services, opts.User); stopErr != nil {
 			return fmt.Errorf("stop project %s: %w", manifest.Project.Name, stopErr)
 		}
 	}
