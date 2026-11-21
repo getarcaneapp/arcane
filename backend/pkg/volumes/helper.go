@@ -1,17 +1,14 @@
 package volumes
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"runtime"
 	"slices"
 	"strings"
-	"uuid"
 
 	ref "github.com/distribution/reference"
 	"github.com/moby/moby/api/types/container"
@@ -33,17 +30,11 @@ type (
 		Entrypoint []string
 		Command    []string
 	}
-
-	ClaimedVolume struct {
-		Options client.VolumeCreateOptions
-		Claim   string
-	}
 )
 
 const (
 	toolsRepoPath  = "getarcaneapp/tools"
 	ContainerLabel = "com.getarcaneapp.volume-helper"
-	ClaimLabel     = "com.getarcaneapp.volume-claim"
 )
 
 func ToolsImage(registrySetting string) string {
@@ -181,25 +172,4 @@ func buildRuntimeImage(image string, entrypoint, command []string, source string
 func isArcaneFallbackImage(helperImage string) bool {
 	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage))
 	return err != nil || ref.Path(named) != toolsRepoPath
-}
-
-func CreateClaimed(ctx context.Context, dockerClient *client.Client, volume ClaimedVolume) (bool, error) {
-	options := volume.Options
-	claim := cmp.Or(volume.Claim, uuid.New().String())
-	labels := maps.Clone(options.Labels)
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	labels[ClaimLabel] = claim
-	created, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
-		Name:              options.Name,
-		Driver:            options.Driver,
-		DriverOpts:        options.DriverOpts,
-		Labels:            labels,
-		ClusterVolumeSpec: options.ClusterVolumeSpec,
-	})
-	if err != nil {
-		return false, fmt.Errorf("create volume %s: %w", options.Name, err)
-	}
-	return created.Volume.Labels[ClaimLabel] == claim, nil
 }

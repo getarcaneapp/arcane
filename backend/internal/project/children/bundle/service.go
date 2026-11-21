@@ -27,23 +27,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/projects"
-	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
 type (
-	Environment interface {
-		Project(ctx context.Context, projectID string) (types.Project, error)
-		Volume(ctx context.Context, name string) (types.Volume, bool, error)
-		ComposeProjectInUse(ctx context.Context, name string) (bool, error)
-		ExportProject(ctx context.Context, projectID string) (types.UploadSession, error)
-		ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
-		ExportVolume(ctx context.Context, name string) (types.UploadSession, error)
-		RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
-		DeleteVolume(ctx context.Context, name string, user types.Actor) error
-		DeleteUpload(ctx context.Context, kind, uploadID string) error
-	}
-
 	// Backups reads project backups and restores them into another project's directory and volumes.
 	Backups interface {
 		Manifest(ctx context.Context, projectID, backupID string) (types.ProjectManifest, error)
@@ -51,30 +38,36 @@ type (
 	}
 
 	Dependencies struct {
-		Environment  Environment
-		Backups      Backups
-		Docker       *dockerInternal.DockerClientService
-		Uploads      *upload.UploadService
-		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
+		Backups Backups
+		Docker  *dockerInternal.DockerClientService
+		Uploads *upload.UploadService
+		// BackupStore names the volume holding Arcane's local backups, which an export never copies.
+		BackupStore         func(ctx context.Context) string
+		Project             func(ctx context.Context, projectID string) (types.Project, error)
+		Volume              func(ctx context.Context, name string) (types.Volume, bool, error)
+		ComposeProjectInUse func(ctx context.Context, name string) (bool, error)
+		DeleteUpload        func(ctx context.Context, kind, uploadID string) error
+		ExportProject       func(ctx context.Context, projectID string) (*types.UploadSession, error)
+		ImportProject       func(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
+		LockProject         func(ctx context.Context, op, projectID string) (func(), error)
+		StopProject         func(ctx context.Context, projectID string, user types.Actor) error
+		StartProject        func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
+		RemoveProject       func(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error
+		ExportVolume        func(ctx context.Context, name string) (*types.UploadSession, error)
+		RestoreVolume       func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
+		DeleteVolume        func(ctx context.Context, name string, user types.Actor) error
 		// CreateProject creates a project as an import does, with files that fill writes into its directory.
 		CreateProject func(ctx context.Context, project NewProject) (string, error)
-		// BackupStore names the volume holding Arcane's local backups, which an export never copies.
-		BackupStore   func(ctx context.Context) string
-		LockProject   func(ctx context.Context, op, projectID string) (func(), error)
-		StopProject   func(ctx context.Context, projectID string, user types.Actor) error
-		StartProject  func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
-		RemoveProject func(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error
 		// Activities receives what a restore as a new project left as it is, on the activity that runs it.
 		Activities activity.MessageAppender
 	}
 
 	// NewProject is a project created from files written into its directory.
 	NewProject struct {
-		User         types.Actor
-		Fill         func(ctx context.Context, projectPath string) error
-		ID           string
-		Name         string
-		ComposeFiles []string
+		User types.Actor
+		Fill func(ctx context.Context, projectPath string) error
+		ID   string
+		Name string
 	}
 
 	Service struct {
@@ -127,8 +120,7 @@ type (
 		User        types.Actor
 		ProjectID   string
 		ProjectName string
-		Claim       string
-		Attempted   []types.ProjectVolume
+		Restored    []string
 	}
 )
 
@@ -137,7 +129,7 @@ func New(deps Dependencies) *Service {
 }
 
 func (s *Service) Options(ctx context.Context, projectID string) (types.ProjectExportOptions, error) {
-	project, err := s.deps.Environment.Project(ctx, projectID)
+	project, err := s.deps.Project(ctx, projectID)
 	if err != nil {
 		return types.ProjectExportOptions{}, err
 	}
@@ -153,18 +145,14 @@ func (s *Service) Options(ctx context.Context, projectID string) (types.ProjectE
 
 func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.UploadSession, error) {
 	if len(opts.Request.Volumes) == 0 {
-		files, err := s.deps.Environment.ExportProject(ctx, opts.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-		return &files, nil
+		return s.deps.ExportProject(ctx, opts.ProjectID)
 	}
 	unlock, err := s.deps.LockProject(ctx, "export project", opts.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	project, err := s.deps.Environment.Project(ctx, opts.ProjectID)
+	project, err := s.deps.Project(ctx, opts.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -172,15 +160,10 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 	if err != nil {
 		return nil, err
 	}
-	if state.active && opts.Request.StopProject {
-		if state.runsArcane {
-			return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be stopped for the export; export it without stopping it", project.Name))
-		}
-		if unnamedErr := s.refuseUnnamedVolumes(ctx, project); unnamedErr != nil {
-			return nil, unnamedErr
-		}
+	if state.active && opts.Request.StopProject && state.runsArcane {
+		return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be stopped for the export; export it without stopping it", project.Name))
 	}
-	manifest, err := s.manifest(ctx, project, opts.Request, state)
+	manifest, err := s.manifest(project, opts.Request, state)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +196,7 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 	}
 	resolved, inspected, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
 		Project:     project,
-		Inspect:     s.deps.Environment.Volume,
+		Inspect:     s.deps.Volume,
 		InUse:       inUse,
 		BackupStore: s.deps.BackupStore(ctx),
 	})
@@ -228,13 +211,9 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 	}, nil
 }
 
-func (s *Service) manifest(ctx context.Context, project types.Project, request types.ExportProjectArchive, state exportState) (types.ProjectManifest, error) {
+func (s *Service) manifest(project types.Project, request types.ExportProjectArchive, state exportState) (types.ProjectManifest, error) {
 	if project.ComposeName == "" {
 		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before exporting its volumes", project.Name))
-	}
-	composeFiles, err := s.deps.ComposeFiles(ctx, project.ID)
-	if err != nil {
-		return types.ProjectManifest{}, err
 	}
 	byKey := map[string]types.ProjectVolume{}
 	for _, volume := range state.volumes {
@@ -275,30 +254,20 @@ func (s *Service) manifest(ctx context.Context, project types.Project, request t
 			continue
 		}
 		consistent = consistent && !volume.InUse
-		archive, archiveErr := projects.ProjectBundleVolumeArchive(volume.Key)
-		if archiveErr != nil {
-			return types.ProjectManifest{}, common.Classify(common.ErrValidation, archiveErr)
-		}
 		first, shared := archived[volume.Name]
 		if shared && first.Kind != volume.Kind {
 			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf(
 				"volumes %s and %s both name the Docker volume %s but are %s and %s volumes", first.Key, volume.Key, volume.Name, first.Kind, volume.Kind,
 			))
 		}
-		// Only an external volume keeps its own Docker labels, without the claim an earlier import set.
-		dockerLabels := kit.Ternary(volume.Kind == types.ProjectVolumeExternal, maps.Clone(state.docker[volume.Name].Labels), nil)
-		delete(dockerLabels, volumes.ClaimLabel)
-		if labelErr := projects.ValidateVolumeLabels(dockerLabels); labelErr != nil {
-			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("external volume %s: %w", volume.Key, labelErr))
-		}
 		entry := types.ProjectVolume{
 			Labels:       volume.Labels,
-			DockerLabels: dockerLabels,
+			DockerLabels: kit.Ternary(volume.Kind == types.ProjectVolumeExternal, state.docker[volume.Name].Labels, nil),
 			Key:          volume.Key,
 			Name:         volume.Name,
 			Kind:         volume.Kind,
 			Driver:       volume.Driver,
-			Archive:      kit.Ternary(shared, first.Archive, archive),
+			Archive:      kit.Ternary(shared, first.Archive, projects.ProjectBundleVolumeArchive(volume.Key)),
 			Included:     true,
 			InUse:        volume.InUse,
 		}
@@ -316,7 +285,6 @@ func (s *Service) manifest(ctx context.Context, project types.Project, request t
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
 		},
-		ComposeFiles:  composeFiles,
 		Volumes:       manifestVolumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
 		Consistent:    consistent,
@@ -328,7 +296,7 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 	if err != nil {
 		return err
 	}
-	files, err := s.deps.Environment.ExportProject(ctx, opts.ProjectID)
+	files, err := s.deps.ExportProject(ctx, opts.ProjectID)
 	if err != nil {
 		return fmt.Errorf("export project files: %w", err)
 	}
@@ -341,12 +309,12 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 				err = errors.Join(err, fmt.Errorf("start project %s again: %w", manifest.Project.Name, startErr))
 			}
 		}()
-		if downErr := s.deps.StopProject(ctx, opts.ProjectID, opts.User); downErr != nil {
-			return fmt.Errorf("stop project %s: %w", manifest.Project.Name, downErr)
+		if stopErr := s.deps.StopProject(ctx, opts.ProjectID, opts.User); stopErr != nil {
+			return fmt.Errorf("stop project %s: %w", manifest.Project.Name, stopErr)
 		}
 	}
 	if opts.Request.StopProject {
-		current, currentErr := s.deps.Environment.Project(ctx, opts.ProjectID)
+		current, currentErr := s.deps.Project(ctx, opts.ProjectID)
 		if currentErr != nil {
 			return fmt.Errorf("check project %s: %w", manifest.Project.Name, currentErr)
 		}
@@ -371,7 +339,7 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 			continue
 		}
 		written[volume.Archive] = true
-		session, exportErr := s.deps.Environment.ExportVolume(ctx, volume.Name)
+		session, exportErr := s.deps.ExportVolume(ctx, volume.Name)
 		if exportErr != nil {
 			return fmt.Errorf("export volume %s: %w", volume.Name, exportErr)
 		}
@@ -386,25 +354,6 @@ func (s *Service) writeBundle(ctx context.Context, w io.Writer, opts ExportOptio
 		}
 	}
 	return writer.Close()
-}
-
-func (s *Service) refuseUnnamedVolumes(ctx context.Context, project types.Project) error {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	found, err := projects.ListComposeProjectContainers(ctx, dockerClient, project.ComposeName)
-	if err != nil {
-		return err
-	}
-	if c, m, detached := projects.UnnamedVolumeMount(project, found); detached {
-		return common.Classify(common.ErrValidation, fmt.Errorf(
-			"container %s keeps data at %s in an unnamed volume, which stopping the project for the export would detach; "+
-				"export it without stopping it, or move that data to a named volume",
-			docker.ContainerNameFromNames(c.Names), m.Destination,
-		))
-	}
-	return nil
 }
 
 func (s *Service) checkNoWriters(ctx context.Context, names []string) error {
@@ -426,10 +375,10 @@ func (s *Service) checkNoWriters(ctx context.Context, names []string) error {
 	return nil
 }
 
-func (s *Service) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, name string, session types.UploadSession) error {
+func (s *Service) appendUpload(ctx context.Context, writer *projects.ProjectBundleWriter, name string, session *types.UploadSession) error {
 	file, consumed, cleanup, err := s.deps.Uploads.Consume(ctx, session.Kind, session.ID)
 	if err != nil {
-		return errors.Join(err, s.deps.Environment.DeleteUpload(context.WithoutCancel(ctx), session.Kind, session.ID))
+		return errors.Join(err, s.deps.DeleteUpload(context.WithoutCancel(ctx), session.Kind, session.ID))
 	}
 	defer cleanup()
 	return writer.Add(name, consumed.Size, file)
@@ -447,12 +396,11 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 		}
 	}
 	request := types.ImportProjectArchive{
-		UploadID:     opts.Request.UploadID,
-		Name:         opts.Request.Name,
-		ProjectID:    cmp.Or(opts.Request.ProjectID, uuid.New().String()),
-		Tags:         opts.Request.Tags,
-		ComposeFiles: opts.Request.ComposeFiles,
-		Start:        opts.Request.Start,
+		UploadID:  opts.Request.UploadID,
+		Name:      opts.Request.Name,
+		ProjectID: cmp.Or(opts.Request.ProjectID, uuid.New().String()),
+		Tags:      opts.Request.Tags,
+		Start:     opts.Request.Start,
 	}
 	unlock, err := s.deps.LockProject(ctx, "import project", request.ProjectID)
 	if err != nil {
@@ -475,64 +423,54 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 
 func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled bool) (string, error) {
 	if !bundled {
-		return s.deps.Environment.ImportProject(ctx, opts.Request, opts.User)
+		return s.deps.ImportProject(ctx, opts.Request, opts.User)
 	}
 	archive, _, cleanupSession, err := s.deps.Uploads.Consume(ctx, types.UploadKindProjectArchive, opts.Request.UploadID)
 	if err != nil {
 		return "", err
 	}
 	defer cleanupSession()
-	checkSpace := func(_ string, size int64, _ io.Reader) error {
-		return s.deps.Uploads.CheckFreeSpace(ctx, size)
-	}
-	manifest, _, err := projects.ReadProjectBundle(archive, checkSpace)
-	if err != nil {
-		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project bundle: %w", err))
-	}
-	if _, err = archive.Seek(0, io.SeekStart); err != nil {
-		return "", fmt.Errorf("read project archive: %w", err)
-	}
-	var included []types.ProjectVolume
-	for _, volume := range manifest.Volumes {
-		if volume.Included {
-			included = append(included, volume)
-		}
-	}
-	if len(included) > 0 && !opts.RestoreVolumes {
-		return "", common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the bundle's volumes requires volumes:create and volumes:upload"))
-	}
-	if checkErr := s.checkNewVolumeNames(ctx, manifest, included, opts.Request.Name); checkErr != nil {
-		return "", checkErr
-	}
-	claim := uuid.New().String()
 	var (
 		projectID string
 		target    importTarget
-		attempted []types.ProjectVolume
+		included  []types.ProjectVolume
+		restored  []string
+		visitErr  error
 	)
-	visit := func(name string, size int64, body io.Reader) error {
+	importFiles := func(manifest types.ProjectManifest, size int64, body io.Reader) error {
+		for _, volume := range manifest.Volumes {
+			if volume.Included {
+				included = append(included, volume)
+			}
+		}
+		if len(included) > 0 && !opts.RestoreVolumes {
+			return common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the bundle's volumes requires volumes:create and volumes:upload"))
+		}
+		files, importErr := s.deps.Uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.ProjectBundleProject, size, body)
+		if importErr != nil {
+			return fmt.Errorf("store the project files: %w", importErr)
+		}
+		projectID, importErr = s.deps.ImportProject(ctx, types.ImportProjectArchive{
+			UploadID:  files.ID,
+			Name:      opts.Request.Name,
+			ProjectID: opts.Request.ProjectID,
+			Tags:      opts.Request.Tags,
+		}, opts.User)
+		if importErr != nil {
+			return errors.Join(importErr, s.deps.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindProjectArchive, files.ID))
+		}
+		target, importErr = s.importTarget(ctx, projectID, included)
+		return importErr
+	}
+	visit := func(manifest types.ProjectManifest, name string, size int64, body io.Reader) error {
 		if name == projects.ProjectBundleProject {
-			files, importErr := s.deps.Uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.ProjectBundleProject, size, body)
-			if importErr != nil {
-				return fmt.Errorf("store the project files: %w", importErr)
-			}
-			projectID, importErr = s.deps.Environment.ImportProject(ctx, types.ImportProjectArchive{
-				UploadID:     files.ID,
-				Name:         opts.Request.Name,
-				ProjectID:    opts.Request.ProjectID,
-				Tags:         opts.Request.Tags,
-				ComposeFiles: manifest.ComposeFiles,
-			}, opts.User)
-			if importErr != nil {
-				return errors.Join(importErr, s.deps.Environment.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindProjectArchive, files.ID))
-			}
-			target, importErr = s.importTarget(ctx, projectID, included)
-			return importErr
+			visitErr = importFiles(manifest, size, body)
+			return visitErr
 		}
 		index := target.restores[name]
 		volume := target.volumes[index]
 		external := volume.Kind == types.ProjectVolumeExternal
-		restoreErr := s.restoreVolume(ctx, volumeRestore{
+		visitErr = s.restoreVolume(ctx, volumeRestore{
 			User: opts.User,
 			Body: body,
 			Name: volume.Name,
@@ -541,21 +479,24 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 				Project:  target.composeName,
 				Key:      volume.Key,
 				Driver:   volume.Driver,
-				Claim:    claim,
 				External: external,
 			},
 			Size: size,
 		})
-		attempted = append(attempted, volume)
-		return restoreErr
+		if visitErr == nil {
+			restored = append(restored, volume.Name)
+		}
+		return visitErr
 	}
 	if _, _, err = projects.ReadProjectBundle(archive, visit); err != nil {
+		if !errors.Is(err, visitErr) {
+			err = common.Classify(common.ErrValidation, fmt.Errorf("invalid project bundle: %w", err))
+		}
 		return "", s.rollback(ctx, err, importRollback{
 			User:        opts.User,
 			ProjectID:   projectID,
 			ProjectName: opts.Request.Name,
-			Claim:       claim,
-			Attempted:   attempted,
+			Restored:    restored,
 		})
 	}
 	return projectID, nil
@@ -564,7 +505,7 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 // checkComposeNameFree refuses a new project's name when Docker already runs a Compose stack under it.
 func (s *Service) checkComposeNameFree(ctx context.Context, name string) error {
 	composeName := projects.NormalizeProjectName(name)
-	stackExists, err := s.deps.Environment.ComposeProjectInUse(ctx, composeName)
+	stackExists, err := s.deps.ComposeProjectInUse(ctx, composeName)
 	if err != nil {
 		return fmt.Errorf("check Compose project %s: %w", composeName, err)
 	}
@@ -574,34 +515,8 @@ func (s *Service) checkComposeNameFree(ctx context.Context, name string) error {
 	return nil
 }
 
-// checkNewVolumeNames refuses a new project whose volumes already exist. Only names that can't change are checked
-// before the project exists: an external volume's, and one the new project doesn't rename; the rest are checked with
-// its real names, and a conflict there rolls it back.
-func (s *Service) checkNewVolumeNames(ctx context.Context, manifest types.ProjectManifest, included []types.ProjectVolume, name string) error {
-	var certain, predicted []types.ProjectVolume
-	for _, volume := range included {
-		targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
-			SourceProject: manifest.Project.ComposeName,
-			Key:           volume.Key,
-			SourceName:    volume.Name,
-			TargetProject: name,
-		})
-		if volume.Kind == types.ProjectVolumeExternal || targetName == volume.Name {
-			certain = append(certain, volume)
-			predicted = append(predicted, types.ProjectVolume{
-				Key:  volume.Key,
-				Name: volume.Name,
-				Kind: volume.Kind,
-			})
-		}
-	}
-	_, err := s.checkVolumeTargets(ctx, certain, predicted)
-	return err
-}
-
 // RestoreAsNew creates a project from a backup's files and the data of its selected volumes, restored into new
-// volumes, by the rules of a bundle import: refusals come before anything is created, and a failure removes the new
-// project and only the volumes it created.
+// volumes, by the rules of a bundle import: a failure removes the new project and the volumes it created.
 func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (string, error) {
 	request := opts.Request
 	if !*cmp.Or(request.Files, new(true)) {
@@ -644,9 +559,6 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	if nameErr := s.checkComposeNameFree(ctx, request.Name); nameErr != nil {
 		return "", nameErr
 	}
-	if volumeErr := s.checkNewVolumeNames(ctx, manifest, included, request.Name); volumeErr != nil {
-		return "", volumeErr
-	}
 	// The new project stays locked until its volumes are restored and it is started, so nothing starts it on data still
 	// being copied.
 	newID := uuid.New().String()
@@ -672,26 +584,23 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 				OwnEnv:      true,
 			})
 		},
-		ID:           newID,
-		Name:         request.Name,
-		ComposeFiles: manifest.ComposeFiles,
+		ID:   newID,
+		Name: request.Name,
 	})
 	if err != nil {
 		return "", err
 	}
 	target, err := s.importTarget(ctx, projectID, included)
-	claim := uuid.New().String()
-	var created []types.ProjectVolume
+	var created []string
 	if err == nil {
-		created, err = s.restoreBackupVolumes(ctx, opts, target, included, claim)
+		created, err = s.restoreBackupVolumes(ctx, opts, target, included)
 	}
 	if err != nil {
 		return "", s.rollback(ctx, err, importRollback{
 			User:        opts.User,
 			ProjectID:   projectID,
 			ProjectName: request.Name,
-			Claim:       claim,
-			Attempted:   created,
+			Restored:    created,
 		})
 	}
 	if !request.Start {
@@ -704,9 +613,9 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 }
 
 // restoreBackupVolumes creates the new project's volumes, once for volumes that share one, and restores the backup's
-// data into them; it returns the volumes it created, also when a step fails.
-func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOptions, target importTarget, included []types.ProjectVolume, claim string) ([]types.ProjectVolume, error) {
-	var created []types.ProjectVolume
+// data into them; it returns the names of the volumes it created, also when a step fails.
+func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOptions, target importTarget, included []types.ProjectVolume) ([]string, error) {
+	var created []string
 	restores := make([]types.ProjectBackupRestoreVolume, 0, len(target.restores))
 	for _, archive := range slices.Sorted(maps.Keys(target.restores)) {
 		index := target.restores[archive]
@@ -722,23 +631,13 @@ func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOpt
 		if err != nil {
 			return created, err
 		}
-		// Docker hands back a volume made since the check instead of failing, so only one carrying this call's claim is
-		// the new project's; another is refused, never restored over or removed.
-		made, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
-			return volumes.CreateClaimed(ctx, dockerClient, volumes.ClaimedVolume{
-				Options: options,
-				Claim:   claim,
-			})
-		})
-		if made {
-			created = append(created, volume)
+		// importTarget checked that none of the volumes exists yet.
+		if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+			return dockerClient.VolumeCreate(ctx, options)
+		}); err != nil {
+			return created, fmt.Errorf("create volume %s: %w", volume.Name, err)
 		}
-		switch {
-		case err != nil:
-			return created, err
-		case !made:
-			return created, common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", volume.Name))
-		}
+		created = append(created, volume.Name)
 		restores = append(restores, types.ProjectBackupRestoreVolume{Key: volume.Key, Snapshot: included[index].Name, Name: volume.Name})
 	}
 	return created, s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
@@ -750,7 +649,7 @@ func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOpt
 }
 
 func (s *Service) importTarget(ctx context.Context, projectID string, included []types.ProjectVolume) (importTarget, error) {
-	imported, err := s.deps.Environment.Project(ctx, projectID)
+	imported, err := s.deps.Project(ctx, projectID)
 	if err != nil {
 		return importTarget{}, fmt.Errorf("load the imported project: %w", err)
 	}
@@ -765,16 +664,19 @@ func (s *Service) importTarget(ctx context.Context, projectID string, included [
 	for _, volume := range included {
 		target, ok := targets[volume.Key]
 		if !ok || target.Kind != volume.Kind || !target.Included {
-			return importTarget{composeName: imported.ComposeName}, fmt.Errorf("volume %s is not a Docker-managed %s volume of the imported project", volume.Key, volume.Kind)
+			return importTarget{}, fmt.Errorf("volume %s is not a Docker-managed %s volume of the imported project", volume.Key, volume.Kind)
 		}
 		resolved = append(resolved, target)
 	}
 	restores, err := s.checkVolumeTargets(ctx, included, resolved)
+	if err != nil {
+		return importTarget{}, err
+	}
 	return importTarget{
 		restores:    restores,
 		composeName: imported.ComposeName,
 		volumes:     resolved,
-	}, err
+	}, nil
 }
 
 func (s *Service) checkVolumeTargets(ctx context.Context, included, targets []types.ProjectVolume) (map[string]int, error) {
@@ -800,7 +702,7 @@ func (s *Service) checkVolumeTargets(ctx context.Context, included, targets []ty
 		}
 		byName[target.Name] = index
 		restores[included[index].Archive] = index
-		_, exists, err := s.deps.Environment.Volume(ctx, target.Name)
+		_, exists, err := s.deps.Volume(ctx, target.Name)
 		if err != nil {
 			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, err)
 		}
@@ -819,13 +721,13 @@ func (s *Service) restoreVolume(ctx context.Context, restore volumeRestore) erro
 	if err != nil {
 		return fmt.Errorf("store the data of volume %s: %w", restore.Compose.Key, err)
 	}
-	if err = s.deps.Environment.RestoreVolume(ctx, restore.Name, types.RestoreVolumeUploadRequest{
+	if err = s.deps.RestoreVolume(ctx, restore.Name, types.RestoreVolumeUploadRequest{
 		ComposeVolume: &restore.Compose,
 		UploadID:      session.ID,
 	}, restore.User); err != nil {
 		return errors.Join(
 			fmt.Errorf("restore volume %s: %w", restore.Name, err),
-			s.deps.Environment.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindVolumeBackup, session.ID),
+			s.deps.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindVolumeBackup, session.ID),
 		)
 	}
 	return nil
@@ -843,13 +745,9 @@ func (s *Service) rollback(ctx context.Context, cause error, rollback importRoll
 	}, rollback.User); err != nil {
 		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", rollback.ProjectName, err))
 	}
-	for _, volume := range rollback.Attempted {
-		existing, exists, err := s.deps.Environment.Volume(ctx, volume.Name)
-		if err == nil && exists && existing.Labels[volumes.ClaimLabel] == rollback.Claim {
-			err = s.deps.Environment.DeleteVolume(ctx, volume.Name, rollback.User)
-		}
-		if err != nil {
-			leftovers = append(leftovers, fmt.Sprintf("volume %s (%v)", volume.Name, err))
+	for _, name := range rollback.Restored {
+		if err := s.deps.DeleteVolume(ctx, name, rollback.User); err != nil {
+			leftovers = append(leftovers, fmt.Sprintf("volume %s (%v)", name, err))
 		}
 	}
 	if len(leftovers) > 0 {

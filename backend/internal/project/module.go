@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/moby/moby/api/types/container"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -40,11 +39,9 @@ type (
 	BackupDependencies struct {
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
+		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
-		// Ctx and TryLockVolumes run the recovery of projects a backup left stopped.
-		Ctx            context.Context
-		TryLockVolumes func(names []string) (func(), error)
 	}
 )
 
@@ -54,28 +51,19 @@ func New(p ModuleParams) *Module {
 		deps:     p.Transfer,
 	}
 	backups := projectbackup.NewService(projectbackup.Dependencies{
-		DB:              p.Service.db,
-		Docker:          p.Service.dockerService,
-		Engine:          p.Backups.Engine,
-		Repository:      p.Backups.Repository,
-		S3Destinations:  p.Backups.S3Destinations,
-		Settings:        p.Service.settingsService,
-		LockVolumes:     p.Backups.LockVolumes,
-		Project:         p.Service.GetProjectDetails,
-		Volume:          local.Volume,
-		BackupStore:     p.Backups.Repository.StorageVolume,
-		StartContainers: p.Service.startStoppedContainers,
-		ComposeFiles:    p.Service.LoadedComposeFiles,
-		LockProject:     p.Service.LockProject,
-		NoteStopped: func(ctx context.Context, projectID string, stopped []container.Summary) error {
-			return p.Service.noteStopped(ctx, projectID, types.SystemUser, stopped)
-		},
-		ForgetStopped: p.Service.forgetStopped,
-		NotedStopped:  p.Service.notedStopped,
-		RecoverStopped: func() {
-			p.Service.RecoverStoppedProjects(p.Backups.Ctx, p.Backups.TryLockVolumes)
-		},
-		SoleDirectory: p.Service.soleDirectory,
+		DB:             p.Service.db,
+		Docker:         p.Service.dockerService,
+		Engine:         p.Backups.Engine,
+		Repository:     p.Backups.Repository,
+		S3Destinations: p.Backups.S3Destinations,
+		Settings:       p.Service.settingsService,
+		LockVolumes:    p.Backups.LockVolumes,
+		Project:        p.Service.GetProjectDetails,
+		Volume:         local.Volume,
+		BackupStore:    p.Backups.Repository.StorageVolume,
+		Containers:     p.Backups.Containers,
+		LockProject:    p.Service.LockProject,
+		SoleDirectory:  p.Service.soleDirectory,
 		RunsArcane: func(ctx context.Context, projectID string) (bool, error) {
 			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
 			if err != nil {
@@ -107,32 +95,38 @@ func New(p ModuleParams) *Module {
 		service:  p.Service,
 		activity: p.Activity,
 		bundles: bundle.New(bundle.Dependencies{
-			Environment:  local,
-			Backups:      backups,
-			Docker:       p.Service.dockerService,
-			Uploads:      p.Service.uploads,
-			ComposeFiles: p.Service.LoadedComposeFiles,
-			BackupStore:  p.Backups.Repository.StorageVolume,
+			Backups:             backups,
+			Docker:              p.Service.dockerService,
+			Uploads:             p.Service.uploads,
+			BackupStore:         p.Backups.Repository.StorageVolume,
+			Project:             local.Project,
+			Volume:              local.Volume,
+			ComposeProjectInUse: local.ComposeProjectInUse,
+			DeleteUpload:        local.DeleteUpload,
+			ExportProject:       p.Service.ExportProjectArchive,
+			ImportProject:       local.ImportProject,
+			LockProject:         p.Service.LockProject,
+			StopProject:         p.Service.stopProject,
+			StartProject:        p.Service.deployProject,
+			RemoveProject:       p.Service.destroyProject,
+			ExportVolume:        p.Transfer.ExportVolume,
+			RestoreVolume:       p.Transfer.RestoreVolume,
+			DeleteVolume:        local.DeleteVolume,
 			// A restore as a new project fills the project directory from the backup's snapshot.
 			CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
 				proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
-					Restore:      project.Fill,
-					Actor:        project.User,
-					Name:         project.Name,
-					ID:           project.ID,
-					ComposeFiles: project.ComposeFiles,
-					ExactName:    true,
+					Restore:   project.Fill,
+					Actor:     project.User,
+					Name:      project.Name,
+					ID:        project.ID,
+					ExactName: true,
 				})
 				if err != nil {
 					return "", err
 				}
 				return proj.ID, nil
 			},
-			LockProject:   p.Service.LockProject,
-			StopProject:   p.Service.stopForExport,
-			StartProject:  p.Service.deployProject,
-			RemoveProject: p.Service.destroyProject,
-			Activities:    p.Activity,
+			Activities: p.Activity,
 		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
