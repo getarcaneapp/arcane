@@ -549,13 +549,15 @@ func checkoutRevision(ctx context.Context, repo *git.Repository, authMethod tran
 	if errors.Is(err, plumbing.ErrReferenceNotFound) && plumbing.IsHash(rev) {
 		// Retry exact SHA-1 fetch for commits not reachable from advertised branches or tags.
 		refSpec := config.RefSpec(fmt.Sprintf("+%s:refs/remotes/%s/%s", rev, git.DefaultRemoteName, rev))
-		if fetchErr := repo.FetchContext(ctx, &git.FetchOptions{
+		fetchErr := repo.FetchContext(ctx, &git.FetchOptions{
 			RemoteName: git.DefaultRemoteName,
 			Auth:       authMethod,
 			RefSpecs:   []config.RefSpec{refSpec},
-		}); fetchErr == nil || errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
-			hash, err = repo.ResolveRevision(plumbing.Revision(rev))
+		})
+		if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+			return fmt.Errorf("failed to fetch ref %q: %w", rev, fetchErr)
 		}
+		hash, err = repo.ResolveRevision(plumbing.Revision(rev))
 	}
 	if err != nil {
 		return fmt.Errorf("failed to resolve ref %q: %w", rev, err)
