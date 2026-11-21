@@ -106,7 +106,7 @@ const STRUCTURED_RULES: StructuredRule[] = [
 			k.startsWith('app.getarcane.') ||
 			k.startsWith('io.getarcane.') ||
 			k === 'com.arcane.created' ||
-			k in ICON_VARIANTS,
+			Object.hasOwn(ICON_VARIANTS, k),
 		prefixes: ['com.getarcaneapp.arcane.', 'com.getarcaneapp.', 'app.getarcane.', 'io.getarcane.', 'arcane.', 'com.arcane.']
 	},
 	{
@@ -225,8 +225,8 @@ const KNOWN_FIELD_LABELS: Record<string, () => string> = {
 };
 
 function resolveFieldLabel(suffix: string, rawKey: string): string {
-	const labelFn = KNOWN_FIELD_LABELS[suffix.toLowerCase()];
-	if (labelFn) return labelFn();
+	const key = suffix.toLowerCase();
+	if (Object.hasOwn(KNOWN_FIELD_LABELS, key)) return KNOWN_FIELD_LABELS[key]!();
 	return suffix || rawKey;
 }
 
@@ -235,7 +235,7 @@ function formatFieldValue(rawKey: string, suffix: string, rawValue: string, icon
 	const lowerSuffix = suffix.toLowerCase();
 	const lastSegment = lowerSuffix.split('.').at(-1) ?? lowerSuffix;
 
-	if (lowerKey in ICON_VARIANTS) {
+	if (Object.hasOwn(ICON_VARIANTS, lowerKey)) {
 		return { kind: 'icon', rawValue, previewUrl: resolveIconPreviewUrl(rawValue, ICON_VARIANTS[lowerKey]!, iconCatalog) };
 	}
 	if (lowerKey === 'com.getarcaneapp.arcane.updater.delay' && /^\d+$/.test(rawValue.trim())) {
