@@ -105,6 +105,16 @@ func RequireActionPermission(api huma.API, param string, perms map[string]string
 	}}
 }
 
+func RequirePermissions(ctx context.Context, environmentID string, perms []string) error {
+	ps, _ := PermissionsFromContext(ctx)
+	for _, perm := range perms {
+		if !ps.Allows(perm, environmentID) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
+	}
+	return nil
+}
+
 func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {
 	if scope, scoped := httpx.EnvironmentScopeFromContext(ctx.Context()); scoped && authz.IsEnvScoped(perm) {
 		return slices.ContainsFunc(scope.IDs, func(id string) bool {

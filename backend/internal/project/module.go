@@ -1,16 +1,24 @@
 package project
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
+	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -18,25 +26,126 @@ type (
 		service  *ProjectService
 		activity *activity.ActivityService
 		transfer *transfer.Service
+		backups  *projectbackup.Service
+		bundles  *bundle.Service
 	}
 
 	ModuleParams struct {
 		Service  *ProjectService
 		Activity *activity.ActivityService
 		Transfer TransferDependencies
+		Backups  BackupDependencies
+	}
+
+	// BackupDependencies are the shared backup plumbing project backups run on.
+	BackupDependencies struct {
+		// Ctx is Arcane's context, which the policies' scheduled jobs run on.
+		Ctx            context.Context
+		Scheduler      types.DynamicScheduler
+		Admission      *runs.Admission
+		Engine         *backup.Engine
+		Repository     *backup.VolumeRepository
+		S3Destinations *s3.S3DestinationService
+		LockVolumes    func(ctx context.Context, names []string) (func(), error)
 	}
 )
 
 func New(p ModuleParams) *Module {
+	local := localTransferEnvironment{
+		projects: p.Service,
+		deps:     p.Transfer,
+	}
+	backups := projectbackup.NewService(projectbackup.Dependencies{
+		DB:             p.Service.db,
+		Docker:         p.Service.dockerService,
+		Engine:         p.Backups.Engine,
+		Repository:     p.Backups.Repository,
+		S3Destinations: p.Backups.S3Destinations,
+		Settings:       p.Service.settingsService,
+		LockVolumes:    p.Backups.LockVolumes,
+		Project:        p.Service.GetProjectDetails,
+		StopProject:    p.Service.stopProject,
+		StartProject:   p.Service.startProject,
+		Volume:         local.Volume,
+		BackupStore:    p.Backups.Repository.StorageVolume,
+		LockProject:    p.Service.LockProject,
+		SoleDirectory:  p.Service.soleDirectory,
+		RunsArcane: func(ctx context.Context, projectID string) (bool, error) {
+			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
+			if err != nil {
+				return false, err
+			}
+			return p.Service.runsArcane(ctx, proj), nil
+		},
+		// A restore holds the project lock, so it deploys the project without taking it again.
+		Deploy:             p.Service.deployProject,
+		RewriteComposeName: p.Service.rewriteComposeName,
+		ProjectName: func(ctx context.Context, projectID string) (string, error) {
+			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
+			if err != nil {
+				return "", err
+			}
+			return proj.Name, nil
+		},
+		ListProjects: p.Service.ListProjectReferences,
+		SyncProjects: p.Service.SyncProjectsFromFileSystem,
+		ProjectRoot:  p.Service.ProjectRootDirectory,
+		Projects: func(ctx context.Context) ([]types.ProjectRecord, error) {
+			all, err := p.Service.ListAllProjects(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return projectRecords(all), nil
+		},
+		DeleteVolume: local.DeleteVolume,
+		Activities:   p.Activity,
+		Config:       p.Service.config,
+		Ctx:          p.Backups.Ctx,
+		Scheduler:    p.Backups.Scheduler,
+		Admission:    p.Backups.Admission,
+	})
+	// A deleted project's policies stop running, and their backups age out as unmanaged ones.
+	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
+		bundles: bundle.New(bundle.Dependencies{
+			Backups:             backups,
+			Docker:              p.Service.dockerService,
+			Uploads:             p.Service.uploads,
+			BackupStore:         p.Backups.Repository.StorageVolume,
+			Project:             local.Project,
+			Volume:              local.Volume,
+			ComposeProjectInUse: local.ComposeProjectInUse,
+			ExportProject:       p.Service.ExportProjectArchive,
+			ImportProject:       local.ImportProject,
+			LockProject:         p.Service.LockProject,
+			StopProject:         p.Service.stopProject,
+			StartProject:        p.Service.startProject,
+			DeployProject:       p.Service.deployProject,
+			RemoveProject:       p.Service.destroyProject,
+			ExportVolume:        p.Transfer.ExportVolume,
+			RestoreVolume:       p.Transfer.RestoreVolume,
+			DeleteVolume:        local.DeleteVolume,
+			// A restore as a new project fills the project directory from the backup's snapshot.
+			CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
+				proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
+					Restore:   project.Fill,
+					Actor:     project.User,
+					Name:      project.Name,
+					ID:        project.ID,
+					ExactName: true,
+				})
+				if err != nil {
+					return "", err
+				}
+				return proj.ID, nil
+			},
+			Activities: p.Activity,
+		}),
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
-				Local: localTransferEnvironment{
-					projects: p.Service,
-					deps:     p.Transfer,
-				},
+				Local:     local,
 				Transport: p.Transfer.Transport,
 				Tunnels:   p.Transfer.Tunnels,
 			}.Get,
@@ -45,6 +154,7 @@ func New(p ModuleParams) *Module {
 			Activities:       p.Activity,
 			Backups:          p.Transfer.Backups,
 		}),
+		backups: backups,
 	}
 }
 
@@ -56,25 +166,54 @@ func (m *Module) Service() *ProjectService {
 }
 
 func (m *Module) RegisterWorkflows(engine *flow.Engine) error {
-	return m.transfer.RegisterWorkflows(engine)
+	if err := m.transfer.RegisterWorkflows(engine); err != nil {
+		return err
+	}
+	return m.backups.RegisterWorkflows(engine)
+}
+
+// ReconcileInterruptedBackups fails project backups the previous process left running, except protected ones that resume.
+func (m *Module) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
+	return m.backups.ReconcileInterruptedBackups(ctx, protectedIDs...)
+}
+
+// RegisterBackupJobsOnStartup schedules the enabled project backup policies.
+func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
+	m.backups.RegisterJobsOnStartup(ctx)
+}
+
+// DiscoverBackupsAfterRestore records, in the background, the project backups whose rows a system restore left out.
+func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) {
+	go func() {
+		if err := m.backups.DiscoverAfterRestore(ctx); err != nil {
+			slog.WarnContext(ctx, "Project backup discovery after a system restore failed; it runs again on the next start", "error", err)
+		}
+	}()
+}
+
+// PruneUnmanagedBackups deletes project backups that have been unmanaged for the unmanaged backup retention.
+func (m *Module) PruneUnmanagedBackups(ctx context.Context) error {
+	return m.backups.PruneUnmanagedBackups(ctx)
 }
 
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
-		RegisterProjects(api, nil, nil, appCtx)
+		RegisterProjects(api, &ProjectHandler{appCtx: appCtx.Context()})
 		transfer.RegisterRoutes(api, transfer.NewHandler(nil))
+		projectbackup.RegisterRoutes(api, projectbackup.NewHandler(nil, appCtx.Context()))
 		return
 	}
-	RegisterProjects(api, m.service, m.activity, appCtx)
+	RegisterProjects(api, &ProjectHandler{
+		projectService:  m.service,
+		activityService: m.activity,
+		appCtx:          appCtx.Context(),
+		bundles:         m.bundles,
+	})
 	transfer.RegisterRoutes(api, transfer.NewHandler(m.transfer))
+	projectbackup.RegisterRoutes(api, projectbackup.NewHandler(m.backups, appCtx.Context()))
 }
 
-func RegisterProjects(api huma.API, projectService *ProjectService, activityService *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
-	h := &ProjectHandler{
-		projectService:  projectService,
-		activityService: activityService,
-		appCtx:          appCtx.Context(),
-	}
+func RegisterProjects(api huma.API, h *ProjectHandler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-workspace",
 		Method:      http.MethodGet,
@@ -239,20 +378,57 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/projects/import",
 		Summary:     "Import project archive",
-		Description: "Create a project, without deploying it, from a complete project-archive upload session",
+		Description: "Create a project from a complete project-archive upload session holding a project archive or a project bundle. " +
+			"A bundle's volumes are restored too, which requires volumes:create and volumes:upload; start deploys the project and requires projects:deploy.",
+		Tags:     []string{"Projects"},
+		Security: handlerutil.DefaultOperationSecurity(),
+		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectImportConditions},
+	}, authz.PermProjectsCreate, h.ImportProjectArchive)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "restore-project-backup-as-new",
+		Method:      http.MethodPost,
+		Path:        "/agents/{id}/projects/{projectId}/backups/{backupId}/restore-as-new",
+		Summary:     "Restore project backup as a new project",
+		Description: "Create a project from the backup's files and the data of the selected volumes, restored into new volumes; the backed up project is left as it is. " +
+			"Requires projects:read, and volumes:create when volumes are restored; start deploys the project and requires projects:deploy.",
+		Tags:     []string{"Project Backup"},
+		Security: handlerutil.DefaultOperationSecurity(),
+		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectImportConditions},
+	}, authz.PermProjectsCreate, h.RestoreProjectBackupAsNew)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-project-export-options",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/projects/{projectId}/export",
+		Summary:     "Get project export options",
+		Description: "List the project's volumes, which of them an export includes by default, and whether the project is running",
 		Tags:        []string{"Projects"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsCreate, h.ImportProjectArchive)
+	}, authz.PermProjectsExport, h.GetProjectExportOptions)
+
+	// A backup picks its volumes from the same options, under the backup permission rather than the export one.
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-project-backup-options",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/projects/{projectId}/backup-options",
+		Summary:     "Get project backup options",
+		Description: "List the project's volumes, which of them a backup includes by default, and whether the project is running",
+		Tags:        []string{"Projects"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsBackup, h.GetProjectExportOptions)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "export-project-archive",
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/projects/{projectId}/export",
 		Summary:     "Export project archive",
-		Description: "Package the project's directory as a tar.gz into a complete project-archive upload session",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermProjectsRead, h.ExportProjectArchive)
+		Description: "Package the project's directory as a tar.gz into a complete project-archive upload session. " +
+			"With volumes the session holds a project bundle with their data, which requires volumes:backup; stopProject also requires projects:down and projects:deploy.",
+		Tags:     []string{"Projects"},
+		Security: handlerutil.DefaultOperationSecurity(),
+		Metadata: map[string]any{authz.MetaPermissionConditions: authz.ProjectExportConditions},
+	}, authz.PermProjectsExport, h.ExportProjectArchive)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project",

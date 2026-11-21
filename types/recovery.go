@@ -16,7 +16,9 @@ type (
 		DataPath      string            `json:"dataPath,omitempty"`
 		ProjectsPath  string            `json:"projectsPath,omitempty"`
 		DatabasePath  string            `json:"databasePath,omitempty"`
-		FormatVersion int               `json:"formatVersion"`
+		// ExcludedProjectRoots are the project folders, relative to DataPath, a backup without projects left out.
+		ExcludedProjectRoots []string `json:"excludedProjectRoots,omitempty"`
+		FormatVersion        int      `json:"formatVersion"`
 	}
 
 	RecoveryRestoreTarget struct {
@@ -30,28 +32,41 @@ type (
 	}
 
 	RecoveryRestoreStage struct {
+		// Swap restores into a staging folder inside the data folder and then swaps it in.
+		Swap       *RecoveryRestoreSwap      `json:"swap,omitempty"`
 		Target     RecoveryRestoreTarget     `json:"target"`
 		SnapshotID string                    `json:"snapshotId"`
 		SourcePath string                    `json:"sourcePath"`
+		Globs      []string                  `json:"globs,omitempty"`
 		Repository RecoveryRestoreRepository `json:"repository"`
 	}
 
+	RecoveryRestoreSwap struct {
+		// Directory is the live data folder as the recovery helper sees it.
+		Directory string `json:"directory"`
+		ID        string `json:"id"`
+		// Preserve lists paths relative to Directory that the swap never enters or changes.
+		Preserve []string `json:"preserve"`
+	}
+
 	RecoveryRestoreRequest struct {
-		SafetyBackup     *RecoverySafetyBackup  `json:"safetyBackup,omitempty"`
-		BackupID         string                 `json:"backupId"`
-		ContainerID      string                 `json:"containerId"`
-		ContainerImage   string                 `json:"containerImage"`
-		SnapshotID       string                 `json:"snapshotId"`
-		LocalSnapshotID  string                 `json:"localSnapshotId,omitempty"`
-		RemoteSnapshotID string                 `json:"remoteSnapshotId,omitempty"`
-		S3DestinationID  string                 `json:"s3DestinationId,omitempty"`
-		RecoveryKey      string                 `json:"recoveryKey"`
-		ProjectsSetting  string                 `json:"projectsSetting,omitempty"`
-		NetworkMode      string                 `json:"networkMode,omitempty"`
-		Stages           []RecoveryRestoreStage `json:"stages"`
-		RollbackStages   []RecoveryRestoreStage `json:"rollbackStages,omitempty"`
-		Size             int64                  `json:"size,omitempty"`
-		ProjectsIncluded bool                   `json:"projectsIncluded"`
+		SafetyBackup     *RecoverySafetyBackup `json:"safetyBackup,omitempty"`
+		BackupID         string                `json:"backupId"`
+		ContainerID      string                `json:"containerId"`
+		ContainerImage   string                `json:"containerImage"`
+		SnapshotID       string                `json:"snapshotId"`
+		LocalSnapshotID  string                `json:"localSnapshotId,omitempty"`
+		RemoteSnapshotID string                `json:"remoteSnapshotId,omitempty"`
+		S3DestinationID  string                `json:"s3DestinationId,omitempty"`
+		RecoveryKey      string                `json:"recoveryKey"`
+		ProjectsSetting  string                `json:"projectsSetting,omitempty"`
+		// ProjectsDirectoriesSetting is the current projectsDirectories value the restored instance keeps.
+		ProjectsDirectoriesSetting string                 `json:"projectsDirectoriesSetting,omitempty"`
+		NetworkMode                string                 `json:"networkMode,omitempty"`
+		Stages                     []RecoveryRestoreStage `json:"stages"`
+		RollbackStages             []RecoveryRestoreStage `json:"rollbackStages,omitempty"`
+		Size                       int64                  `json:"size,omitempty"`
+		ProjectsIncluded           bool                   `json:"projectsIncluded"`
 	}
 
 	RecoverySafetyBackup struct {
@@ -63,5 +78,8 @@ type (
 )
 
 const (
-	RecoveryManifestFormatVersion = 3
+	// RecoveryManifestFormatVersion is written by system backups that leave projects out.
+	RecoveryManifestFormatVersion = 4
+	// RecoveryManifestProjectsFormatVersion is written by safety backups that include projects.
+	RecoveryManifestProjectsFormatVersion = 3
 )

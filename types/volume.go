@@ -64,10 +64,11 @@ type (
 	}
 
 	ComposeVolumeTarget struct {
-		Labels  map[string]string `json:"labels,omitempty" doc:"Compose volume labels as declared in the compose file"`
-		Project string            `json:"project" required:"true" minLength:"1" doc:"Compose project name"`
-		Key     string            `json:"key" required:"true" minLength:"1" doc:"Volume key in the compose file's volumes section"`
-		Driver  string            `json:"driver,omitempty" doc:"Compose volume driver; defaults to local"`
+		Labels   map[string]string `json:"labels,omitempty" doc:"Compose volume labels as declared in the compose file; an external volume's own Docker labels"`
+		Project  string            `json:"project" required:"true" minLength:"1" doc:"Compose project name"`
+		Key      string            `json:"key" required:"true" minLength:"1" doc:"Volume key in the compose file's volumes section"`
+		Driver   string            `json:"driver,omitempty" doc:"Compose volume driver; defaults to local"`
+		External bool              `json:"external,omitempty" doc:"Create the volume without Compose labels, as Compose expects of an external volume"`
 	}
 
 	DiscoverVolumeBackupsRequest struct {
@@ -119,7 +120,7 @@ type (
 		S3DestinationName string                  `json:"s3DestinationName,omitempty" doc:"Name of the S3 destination used by the backup"`
 		PolicyID          string                  `json:"policyId,omitempty" doc:"Backup policy that created the backup"`
 		Error             string                  `json:"error,omitempty" doc:"Backup error when the run failed"`
-		Type              BackupManagementType    `json:"type" doc:"Whether the backup was system-managed or volume-managed"`
+		Type              BackupManagementType    `json:"type" doc:"Kind of backup, always volume"`
 		Size              int64                   `json:"size" doc:"Total size of the backup contents"`
 	}
 

@@ -98,49 +98,31 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("stop Arcane container: %w", containerStopErr)
 	}
 	restart := func() { _, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{}) }
-	if runStagesErr := runStages(ctx, dockerClient, request, inspect.Container.Mounts, request.Stages); runStagesErr != nil {
-		// Arcane restarts only when the rollback succeeds; otherwise it stays
-		// stopped rather than running with mismatched data and projects.
-		runStagesErr = fmt.Errorf("rustic system restore failed: %w", runStagesErr)
-		if len(request.RollbackStages) == 0 {
-			return errors.Join(runStagesErr, errors.New("no pre-restore system backup is available for rollback; Arcane was left stopped"))
+	rustic := func(ctx context.Context, stage types.RecoveryRestoreStage) error {
+		trust, trustErr := rusticruntime.TrustMounts(ctx, dockerClient, "/app/data", inspect.Container.Mounts)
+		if trustErr != nil {
+			return trustErr
 		}
-		if rollbackErr := runStages(context.WithoutCancel(ctx), dockerClient, request, inspect.Container.Mounts, request.RollbackStages); rollbackErr != nil {
-			return errors.Join(runStagesErr, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
+		command := []string{"restore", "--delete"}
+		for _, glob := range stage.Globs {
+			command = append(command, "--glob", glob)
 		}
-		rollbackManifest, readErr := acfs.Root{Path: "/app/data"}.ReadFile(context.WithoutCancel(ctx), "/.arcane-recovery.json")
-		var rollback types.RecoveryManifest
-		if readErr == nil {
-			readErr = json.Unmarshal(rollbackManifest, &rollback)
-		}
-		if readErr == nil {
-			readErr = francis.ClearRestoredHosts(context.WithoutCancel(ctx), schema.ManifestEnvironment(rollback)["ARCANE_DATABASE_URL"])
-		}
-		if readErr != nil {
-			return errors.Join(runStagesErr, fmt.Errorf("clear restored actor ownership; Arcane was left stopped: %w", readErr))
-		}
-		restart()
-		return fmt.Errorf("%w; the pre-restore system backup was restored", runStagesErr)
+		command = append(command, stage.SnapshotID+":"+stage.SourcePath, stage.Target.Path)
+		mounts := slices.Concat(stage.Repository.Mounts, stage.Target.Mounts, trust)
+		_, runErr := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode))
+		return runErr
+	}
+	if restoreErr := restoreData(ctx, request, rustic, restart); restoreErr != nil {
+		return restoreErr
 	}
 	if !request.ProjectsIncluded {
 		slog.WarnContext(ctx, "the restored system backup did not include the projects directory; the current projects directory was left untouched")
 	}
-	manifestData, err := acfs.Root{Path: "/app/data"}.ReadFile(ctx, "/.arcane-recovery.json")
+	manifest, err := readRestoredManifest(ctx, "/app/data")
 	if err != nil {
 		restart()
-		return fmt.Errorf("read restored recovery manifest: %w", err)
+		return err
 	}
-	var manifest types.RecoveryManifest
-	if unmarshalErr2 := json.Unmarshal(manifestData, &manifest); unmarshalErr2 != nil {
-		restart()
-		return fmt.Errorf("decode restored recovery manifest: %w", unmarshalErr2)
-	}
-	_ = acfs.Root{Path: "/app/data"}.Remove(ctx, "/.arcane-recovery.json")
-	if !slices.Contains([]int{1, 2, types.RecoveryManifestFormatVersion}, manifest.FormatVersion) || len(manifest.Environment) == 0 {
-		restart()
-		return errors.New("unsupported or incomplete Arcane recovery manifest")
-	}
-	manifest.Environment = schema.ManifestEnvironment(manifest)
 	if config.DirectAgentRequested(func(name string) string {
 		return manifest.Environment[name]
 	}) && manifest.Environment["ARCANE_AGENT"] != "true" {
@@ -150,6 +132,9 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	// Projects were restored into the current directory, so the recovered
 	// configuration must keep pointing there rather than at the backup-time path.
 	manifest.Environment[settings.EnvName("projectsDirectory", "")] = cmp.Or(request.ProjectsSetting, manifest.Environment[settings.EnvName("projectsDirectory", "")])
+	if name := settings.EnvName("projectsDirectories", ""); manifest.Environment[name] != "" {
+		manifest.Environment[name] = cmp.Or(request.ProjectsDirectoriesSetting, manifest.Environment[name])
+	}
 	if finalizeRestoredBackupErr := finalizeRestoredBackup(ctx, manifest.Environment, manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
 		return fmt.Errorf("finalize restored system backup: %w", finalizeRestoredBackupErr)
 	}
@@ -157,6 +142,25 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("recreate Arcane container with recovered configuration: %w", upgradeContainerErr)
 	}
 	return nil
+}
+
+// readRestoredManifest reads and removes the recovery manifest a restore put back in directory.
+func readRestoredManifest(ctx context.Context, directory string) (types.RecoveryManifest, error) {
+	root := acfs.Root{Path: directory}
+	manifestData, err := root.ReadFile(ctx, "/.arcane-recovery.json")
+	if err != nil {
+		return types.RecoveryManifest{}, fmt.Errorf("read restored recovery manifest: %w", err)
+	}
+	var manifest types.RecoveryManifest
+	if err = json.Unmarshal(manifestData, &manifest); err != nil {
+		return types.RecoveryManifest{}, fmt.Errorf("decode restored recovery manifest: %w", err)
+	}
+	_ = root.Remove(ctx, "/.arcane-recovery.json")
+	if manifest.FormatVersion < 1 || manifest.FormatVersion > types.RecoveryManifestFormatVersion || len(manifest.Environment) == 0 {
+		return types.RecoveryManifest{}, errors.New("unsupported or incomplete Arcane recovery manifest")
+	}
+	manifest.Environment = schema.ManifestEnvironment(manifest)
+	return manifest, nil
 }
 
 func finalizeRestoredBackup(ctx context.Context, environment map[string]string, manifestBackupID, manifestActivityID string, request types.RecoveryRestoreRequest) error {
@@ -201,16 +205,27 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	if preserveSafetyBackupErr := preserveSafetyBackup(db, request.SafetyBackup); preserveSafetyBackupErr != nil {
 		return preserveSafetyBackupErr
 	}
-	if value := strings.TrimSpace(request.ProjectsSetting); value != "" {
+	// The restored database keeps the current project folders and discovers later project backups on its next start.
+	for key, value := range map[string]string{
+		"projectsDirectory":             request.ProjectsSetting,
+		"projectsDirectories":           request.ProjectsDirectoriesSetting,
+		"projectBackupDiscoveryPending": "true",
+	} {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
 		operationErr := db.Model(&settings.SettingVariable{}).
 			Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.Assignments(map[string]any{"value": value})}).
-			Create(map[string]any{"key": "projectsDirectory", "value": value}).Error
+			Create(map[string]any{"key": key, "value": value}).Error
 		if operationErr != nil {
 			return operationErr
 		}
 	}
 	if finalizeRestoredActivityErr := finalizeRestoredActivity(db, manifestActivityID); finalizeRestoredActivityErr != nil {
 		return finalizeRestoredActivityErr
+	}
+	if failRestoredProjectRestoresErr := failRestoredProjectRestores(db); failRestoredProjectRestoresErr != nil {
+		return failRestoredProjectRestoresErr
 	}
 	return francis.ClearRestoredHosts(ctx, databaseURL)
 }
@@ -300,21 +315,98 @@ func finalizeRestoredActivity(db *gorm.DB, activityID string) error {
 	}).Error
 }
 
-func runStages(ctx context.Context, dockerClient *client.Client, request types.RecoveryRestoreRequest, arcaneMounts []container.MountPoint, stages []types.RecoveryRestoreStage) error {
-	for _, stage := range stages {
-		if len(stage.Target.Mounts) == 0 || strings.TrimSpace(stage.Target.Path) == "" {
-			return fmt.Errorf("restore stage for %s has no destination", stage.SourcePath)
+// failRestoredProjectRestores fails the project restores the system backup caught running.
+func failRestoredProjectRestores(db *gorm.DB) error {
+	var entries []activity.Activity
+	if err := db.Where("status = ?", types.ActivityStatusRunning).Find(&entries).Error; err != nil {
+		return err
+	}
+	const message = "Interrupted by a system restore; the project was left as it is"
+	for _, entry := range entries {
+		if action, _ := entry.Metadata["action"].(string); action != "restore_project_backup" {
+			continue
 		}
-		trust, err := rusticruntime.TrustMounts(ctx, dockerClient, "/app/data", arcaneMounts)
-		if err != nil {
-			return fmt.Errorf("restore %s: %w", stage.SourcePath, err)
-		}
-		mounts := slices.Concat(stage.Repository.Mounts, stage.Target.Mounts, trust)
-		command := []string{"restore", "--delete", stage.SnapshotID + ":" + stage.SourcePath, stage.Target.Path}
-		if _, runErr := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode)); runErr != nil {
-			slog.ErrorContext(ctx, "Rustic system restore stage failed", "source", stage.SourcePath, "error", runErr)
-			return fmt.Errorf("restore %s: %w", stage.SourcePath, runErr)
+		now := time.Now().UTC()
+		if err := db.Model(&activity.Activity{}).Where("id = ?", entry.ID).Updates(map[string]any{
+			"status": types.ActivityStatusFailed, "latest_message": message, "error": message,
+			"ended_at": now, "duration_ms": now.Sub(entry.StartedAt).Milliseconds(),
+		}).Error; err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// restoreData applies the restore stages. A failure before live data changed restarts Arcane; a later one rolls back to
+// the pre-restore backup and restarts Arcane only when that succeeds.
+func restoreData(
+	ctx context.Context,
+	request types.RecoveryRestoreRequest,
+	rustic func(context.Context, types.RecoveryRestoreStage) error,
+	restart func(),
+) error {
+	touched, err := runStages(ctx, request.Stages, rustic)
+	if err == nil {
+		return nil
+	}
+	err = fmt.Errorf("system restore failed: %w", err)
+	if !touched {
+		restart()
+		return fmt.Errorf("%w; Arcane's data was not changed and Arcane was restarted", err)
+	}
+	if len(request.RollbackStages) == 0 {
+		return errors.Join(err, errors.New("no pre-restore system backup is available for rollback; Arcane was left stopped"))
+	}
+	if _, rollbackErr := runStages(context.WithoutCancel(ctx), request.RollbackStages, rustic); rollbackErr != nil {
+		return errors.Join(err, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
+	}
+	rollback, readErr := readRestoredManifest(context.WithoutCancel(ctx), "/app/data")
+	if readErr == nil {
+		readErr = francis.ClearRestoredHosts(context.WithoutCancel(ctx), rollback.Environment["ARCANE_DATABASE_URL"])
+	}
+	if readErr != nil {
+		return errors.Join(err, fmt.Errorf("clear restored actor ownership; Arcane was left stopped: %w", readErr))
+	}
+	restart()
+	return fmt.Errorf("%w; the pre-restore system backup was restored", err)
+}
+
+// runStages applies stages in order and reports whether live data changed: a staged stage changes it only once its swap
+// applies, a direct stage as soon as Rustic starts.
+func runStages(ctx context.Context, stages []types.RecoveryRestoreStage, rustic func(context.Context, types.RecoveryRestoreStage) error) (bool, error) {
+	touched := false
+	for _, stage := range stages {
+		if len(stage.Target.Mounts) == 0 || strings.TrimSpace(stage.Target.Path) == "" {
+			return touched, fmt.Errorf("restore stage for %s has no destination", stage.SourcePath)
+		}
+		if stage.Swap == nil {
+			touched = true
+			if err := rustic(ctx, stage); err != nil {
+				slog.ErrorContext(ctx, "Rustic system restore stage failed", "source", stage.SourcePath, "error", err)
+				return touched, fmt.Errorf("restore %s: %w", stage.SourcePath, err)
+			}
+			continue
+		}
+		directory := stage.Swap.Directory
+		if err := backup.RemoveSwapLeftovers(ctx, directory); err != nil {
+			return touched, fmt.Errorf("remove an earlier restore's staging folders: %w", err)
+		}
+		if err := rustic(ctx, stage); err != nil {
+			slog.ErrorContext(ctx, "Rustic system restore stage failed", "source", stage.SourcePath, "error", err)
+			return touched, errors.Join(fmt.Errorf("restore %s: %w", stage.SourcePath, err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory))
+		}
+		plan, err := backup.PlanSwap(ctx, *stage.Swap)
+		if err != nil {
+			return touched, errors.Join(fmt.Errorf("check the restored data: %w", err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory))
+		}
+		err = plan.Apply(ctx)
+		if errors.Is(err, backup.ErrSwapNotApplied) {
+			return touched, errors.Join(fmt.Errorf("swap the restored data into %s: %w", directory, err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory))
+		}
+		touched = true
+		if err != nil {
+			return touched, fmt.Errorf("swap the restored data into %s: %w", directory, err)
+		}
+	}
+	return touched, nil
 }

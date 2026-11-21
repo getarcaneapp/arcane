@@ -230,10 +230,7 @@ func (s *Service) GetConfig(ctx context.Context) (*types.SystemVolumeBackupPolic
 }
 
 func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input types.UpdateSystemVolumeBackupPolicy) (types.SystemVolumeBackupPolicy, error) {
-	if !slices.Contains(
-		[]types.SystemVolumeSelectionMode{types.SystemVolumeSelectionAll, types.SystemVolumeSelectionAllowlist, types.SystemVolumeSelectionBlocklist},
-		input.SelectionMode,
-	) {
+	if !input.SelectionMode.Valid() {
 		return types.SystemVolumeBackupPolicy{}, errors.New("selectionMode must be all, allowlist, or blocklist")
 	}
 	update, err := backup.ValidatePolicyUpdate(ctx, "system-managed volume", input.UpdateBackupPolicy, s.s3Destinations)
@@ -537,8 +534,11 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 		if !policy.S3Enabled {
 			return nil
 		}
-		root := path.Join(backup.VolumeRoot, s.settings.GetSettingsConfig().InstanceID.Value)
-		return backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "volume_backups", policy.S3DestinationID, root)
+		return backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, backup.ScheduledRemoteRequest{
+			DestinationID: policy.S3DestinationID,
+			Root:          path.Join(backup.VolumeRoot, s.settings.GetSettingsConfig().InstanceID.Value),
+			Tables:        backup.VolumeRepositoryTables,
+		})
 	}()
 	remoteDisabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
 		collection, loadErr := s.settings.SystemVolumeBackupPolicies()
@@ -810,10 +810,7 @@ func selectSystemVolumeBackupCandidates(policy types.SystemVolumeBackupPolicy, o
 		if !option.Available {
 			continue
 		}
-		selected := slices.Contains(policy.VolumeNames, option.Name)
-		matches := policy.SelectionMode == types.SystemVolumeSelectionAll ||
-			(policy.SelectionMode == types.SystemVolumeSelectionAllowlist && selected) ||
-			(policy.SelectionMode == types.SystemVolumeSelectionBlocklist && !selected)
+		matches := policy.SelectionMode.Selects(slices.Contains(policy.VolumeNames, option.Name))
 		if matches && (!policy.IgnoreAnonymous || !option.Anonymous) {
 			result = append(result, option)
 		}

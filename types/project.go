@@ -40,6 +40,201 @@ type (
 		Name      string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
 		ProjectID string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
 		Tags      []string `json:"tags,omitempty" doc:"Project tags"`
+		Start     bool     `json:"start,omitempty" doc:"Deploy the project after the import"`
+	}
+
+	ExportProjectArchive struct {
+		Volumes     []string `json:"volumes,omitempty" doc:"Compose keys of the named and local external volumes whose data the export includes; empty exports only the project files"`
+		StopProject bool     `json:"stopProject,omitempty" doc:"Stop a running project while its volumes are exported and start it again afterwards"`
+	}
+
+	ProjectExportOptions struct {
+		Volumes []ProjectVolume `json:"volumes" doc:"The project's volumes; kind explains why external and driverOpts volumes cannot be included"`
+		Running bool            `json:"running" doc:"True when the project has running or restarting containers"`
+	}
+
+	ProjectVolumeKind string
+
+	ProjectVolume struct {
+		Labels       map[string]string `json:"labels,omitempty" doc:"Compose volume labels"`
+		DockerLabels map[string]string `json:"dockerLabels,omitempty" doc:"Docker labels of an included external volume, which an import recreates it with"`
+		DriverOpts   map[string]string `json:"driverOpts,omitempty" doc:"Compose volume driver options"`
+		Key          string            `json:"key" doc:"Volume key in the compose file"`
+		Name         string            `json:"name" doc:"Docker volume name"`
+		Kind         ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named and local external volumes hold Docker-managed data; driverOpts and other external volumes do not"`
+		Driver       string            `json:"driver,omitempty" doc:"Compose volume driver"`
+		Archive      string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle; volumes naming one Docker volume share it"`
+		Included     bool              `json:"included" doc:"Whether the volume's data is included; by default named and local external volumes that exist are"`
+		Missing      bool              `json:"missing,omitempty" doc:"True when the volume has not been created in Docker yet, so it has no data to export"`
+		InUse        bool              `json:"inUse,omitempty" doc:"True when a running container that is not stopped mounts the volume, so its data may change during an export or backup"`
+		BackupStore  bool              `json:"backupStore,omitempty" doc:"True when the volume holds Arcane's local backups, which are never exported or backed up"`
+	}
+
+	ProjectManifestProject struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		ComposeName string `json:"composeName"`
+	}
+
+	ProjectManifest struct {
+		CreatedAt     time.Time              `json:"createdAt"`
+		Kind          string                 `json:"kind"`
+		ArcaneVersion string                 `json:"arcaneVersion"`
+		Project       ProjectManifestProject `json:"project"`
+		ProjectDirs   []string               `json:"projectDirs,omitempty" doc:"The project directory as configured and fully resolved, which links into it may name"`
+		Volumes       []ProjectVolume        `json:"volumes"`
+		FormatVersion int                    `json:"formatVersion"`
+		Consistent    bool                   `json:"consistent" doc:"True only when no project container ran, and no other running container mounted an included volume, while the volumes were copied"`
+		ExternalEnv   bool                   `json:"externalEnv,omitempty" doc:"True when the .env links outside the project directory and the backup stored its contents"`
+	}
+
+	CreateProjectBackupRequest struct {
+		StopContainers  *bool                   `json:"stopContainers,omitempty" doc:"Stop the project's running containers during the snapshot; other containers keep running; defaults to true"`
+		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3,local_s3" doc:"Where the backup is stored; defaults to local"`
+		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"Saved S3 destination for s3 and local_s3"`
+		Volumes         []string                `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+	}
+
+	ProjectBackupVolume struct {
+		Key      string `json:"key" doc:"Volume key in the compose file"`
+		Name     string `json:"name" doc:"Docker volume name"`
+		Included bool   `json:"included" doc:"Whether the volume's data is in the backup"`
+	}
+
+	ProjectBackup struct {
+		CreatedAt         time.Time               `json:"createdAt"`
+		CompletedAt       *time.Time              `json:"completedAt,omitempty"`
+		ActivityID        *string                 `json:"activityId,omitempty"`
+		ID                string                  `json:"id"`
+		ProjectID         string                  `json:"projectId"`
+		ProjectName       string                  `json:"projectName"`
+		ComposeName       string                  `json:"composeName"`
+		Status            string                  `json:"status" enum:"running,succeeded,failed"`
+		Trigger           string                  `json:"trigger"`
+		Destination       VolumeBackupDestination `json:"destination"`
+		LocalSnapshotID   string                  `json:"localSnapshotId,omitempty"`
+		RemoteSnapshotID  string                  `json:"remoteSnapshotId,omitempty"`
+		S3DestinationID   string                  `json:"s3DestinationId,omitempty"`
+		S3DestinationName string                  `json:"s3DestinationName,omitempty"`
+		PolicyID          string                  `json:"policyId,omitempty" doc:"Backup policy that scheduled the backup"`
+		Error             string                  `json:"error,omitempty"`
+		Volumes           []ProjectBackupVolume   `json:"volumes"`
+		Size              int64                   `json:"size" doc:"Total size of the captured files"`
+		StoppedContainers bool                    `json:"stoppedContainers" doc:"Whether the project's containers were stopped for the snapshot"`
+	}
+
+	ProjectBackupPolicy struct {
+		LastRun           *ProjectBackup `json:"lastRun,omitempty"`
+		ID                string         `json:"id"`
+		ProjectID         string         `json:"projectId"`
+		Schedule          string         `json:"schedule"`
+		S3DestinationID   string         `json:"s3DestinationId,omitempty"`
+		S3DestinationName string         `json:"s3DestinationName,omitempty"`
+		Volumes           []string       `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+		RetentionCount    int            `json:"retentionCount"`
+		Enabled           bool           `json:"enabled"`
+		StopContainers    bool           `json:"stopContainers"`
+		LocalEnabled      bool           `json:"localEnabled"`
+		S3Enabled         bool           `json:"s3Enabled"`
+	}
+
+	ProjectBackupPolicyCollection struct {
+		Policies    []ProjectBackupPolicy `json:"policies"`
+		S3Available bool                  `json:"s3Available"`
+	}
+
+	UpdateProjectBackupPolicy struct {
+		StopContainers *bool    `json:"stopContainers,omitempty" doc:"Stop the project's running containers during the snapshot; defaults to true"`
+		Volumes        []string `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+		UpdateBackupPolicy
+	}
+
+	UpdateProjectBackupPolicies struct {
+		Policies []UpdateProjectBackupPolicy `json:"policies"`
+	}
+
+	// GlobalProjectBackupPolicy backs up all or selected projects on this server; a project's own enabled policy
+	// replaces it for that project.
+	GlobalProjectBackupPolicy struct {
+		LastRun           *ProjectBackup            `json:"lastRun,omitempty"`
+		ID                string                    `json:"id"`
+		Schedule          string                    `json:"schedule"`
+		S3DestinationID   string                    `json:"s3DestinationId,omitempty"`
+		S3DestinationName string                    `json:"s3DestinationName,omitempty"`
+		SelectionMode     SystemVolumeSelectionMode `json:"selectionMode"`
+		ProjectIDs        []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; empty for all"`
+		RetentionCount    int                       `json:"retentionCount" doc:"Backups kept per project; 0 keeps all"`
+		Enabled           bool                      `json:"enabled"`
+		StopContainers    bool                      `json:"stopContainers"`
+		LocalEnabled      bool                      `json:"localEnabled"`
+		S3Enabled         bool                      `json:"s3Enabled"`
+	}
+
+	GlobalProjectBackupPolicyCollection struct {
+		Policies []GlobalProjectBackupPolicy `json:"policies"`
+	}
+
+	UpdateGlobalProjectBackupPolicy struct {
+		StopContainers *bool                     `json:"stopContainers,omitempty" doc:"Stop each project's running containers during its snapshot; defaults to true"`
+		SelectionMode  SystemVolumeSelectionMode `json:"selectionMode" enum:"all,allowlist,blocklist"`
+		ProjectIDs     []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; an empty allowlist backs up nothing"`
+		UpdateBackupPolicy
+	}
+
+	UpdateGlobalProjectBackupPolicies struct {
+		Policies []UpdateGlobalProjectBackupPolicy `json:"policies"`
+	}
+
+	RunGlobalProjectBackupsRequest struct {
+		PolicyID string `json:"policyId"`
+	}
+
+	DiscoverProjectBackupsRequest struct {
+		S3DestinationID string `json:"s3DestinationId" doc:"S3 destination whose project backups of this instance are recorded again"`
+	}
+
+	// GlobalProjectBackupOption is a project a global policy can select; one that no longer exists is unavailable.
+	GlobalProjectBackupOption struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Available bool   `json:"available"`
+	}
+
+	RestoreProjectBackupRequest struct {
+		Files    *bool    `json:"files,omitempty" doc:"Restore the project files; defaults to true"`
+		Redeploy *bool    `json:"redeploy,omitempty" doc:"Deploy the project after the restore, which requires projects:deploy; defaults to true when it runs"`
+		Volumes  []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore; omitted means every volume the backup includes, empty means none"`
+	}
+
+	RestoreProjectBackupAsNewRequest struct {
+		Name    string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
+		Volumes []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every volume the backup includes"`
+		Start   bool     `json:"start,omitempty" doc:"Deploy the new project after the restore, which requires projects:deploy"`
+	}
+
+	// ProjectBackupRestore restores parts of a project backup into a project directory and volumes, which need not be
+	// the ones the backup was taken from.
+	ProjectBackupRestore struct {
+		// Report tells the user what the restore left as it is, such as an outside .env another project shares or a
+		// link in a read-only folder; a restore of the project files must set it.
+		Report    func(ctx context.Context, message string)
+		ProjectID string
+		BackupID  string
+		// ProjectPath receives the project files; empty leaves them out.
+		ProjectPath string
+		Volumes     []ProjectBackupRestoreVolume
+		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
+		LockVolumes bool
+		// OwnEnv gives a new project its own copy of an outside .env and points its links into the original's directory
+		// at its own files, so it neither shares nor changes the original's files.
+		OwnEnv bool
+	}
+
+	// ProjectBackupRestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.
+	ProjectBackupRestoreVolume struct {
+		Key      string `json:"key"`
+		Snapshot string `json:"snapshot"`
+		Name     string `json:"name"`
 	}
 
 	ProjectTransferMode string
@@ -291,6 +486,12 @@ type (
 		HasBuildDirective bool `json:"hasBuildDirective,omitzero" readOnly:"true"`
 		RedeployDisabled  bool `json:"redeployDisabled,omitzero" readOnly:"true"`
 		EnvFileExists     bool `json:"envFileExists,omitzero" readOnly:"true"`
+	}
+
+	ProjectDestroyOptions struct {
+		RemoveFiles    bool
+		RemoveVolumes  bool
+		KeepContainers bool
 	}
 
 	ProjectDestroy struct {
@@ -558,6 +759,15 @@ const (
 	ProjectTransferVolumeDataExternal                             = "volume_data_external"
 	ProjectTransferComposeInvalid                                 = "compose_invalid"
 	ProjectTransferVolumeMissing                                  = "volume_missing"
+
+	ProjectVolumeNamed      ProjectVolumeKind = "named"
+	ProjectVolumeExternal   ProjectVolumeKind = "external"
+	ProjectVolumeDriverOpts ProjectVolumeKind = "driverOpts"
+
+	ProjectManifestFormatVersion = 1
+	ProjectManifestKindExport    = "export"
+	ProjectManifestKindBackup    = "backup"
+	ProjectBundleExtension       = ".arcane.tar.gz"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(

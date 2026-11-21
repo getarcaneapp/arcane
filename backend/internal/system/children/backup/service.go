@@ -124,6 +124,8 @@ type (
 		Ctx                   context.Context
 		Scheduler             types.DynamicScheduler
 		Admission             *runs.Admission
+		// ProjectFolders lists the main projects directory first, then every other one and the followed project links.
+		ProjectFolders func(ctx context.Context) ([]string, error)
 	}
 
 	Service struct {
@@ -164,6 +166,8 @@ type (
 		run         *types.SystemBackupRun
 		recoveryKey string
 		checkpoint  systemBackupRecovery
+		// includeProjects is set for safety backups taken before a restore that changes projects.
+		includeProjects bool
 	}
 )
 
@@ -212,10 +216,8 @@ func NewService(deps Dependencies) *Service {
 			RemoteRepository: func(ctx context.Context, destinationID string) (backup.Repository, error) {
 				return service.remoteRepository(ctx, destinationID)
 			},
-			DatabaseFile: func() (string, error) { return service.databaseFile() },
-			ProjectsDirectory: func(ctx context.Context) string {
-				return projects.ResolveConfiguredContainerDirectory(ctx, service.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
-			},
+			DatabaseFile:        func() (string, error) { return service.databaseFile() },
+			ProjectRoots:        deps.ProjectFolders,
 			RecoveryEnvironment: func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
 			GitWorkDirectory:    kit.FromPtr(deps.Config).GitWorkDir,
 		}),
@@ -565,7 +567,11 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if err != nil {
 		return run, fmt.Errorf("failed to create %s system recovery snapshot: %w", kit.Ternary(checkpoint.LocalEnabled, "local", "S3"), err)
 	}
-	staged, err := s.snapshots.Create(ctx, dockerClient, repository, key, run.ID)
+	staged, err := s.snapshots.Create(ctx, dockerClient, repository, snapshots.CreateOptions{
+		RecoveryKey:     key,
+		BackupID:        run.ID,
+		IncludeProjects: prepared.includeProjects,
+	})
 	if err != nil {
 		return run, fmt.Errorf("failed to create %s system recovery snapshot: %w", kit.Ternary(checkpoint.LocalEnabled, "local", "S3"), err)
 	}
@@ -773,14 +779,25 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request typ
 	if err != nil {
 		return err
 	}
+	// Selective restores always change project files, so their safety backup includes projects for the rollback.
 	safetyBackup := func(ctx context.Context, safetyRequest types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
-		prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, safetyRequest)
-		if prepareErr != nil {
-			return nil, prepareErr
-		}
-		return s.executeBackup(ctx, prepared)
+		return s.safetyBackup(ctx, safetyRequest, true)
 	}
 	return s.snapshots.RestoreFiles(ctx, dockerClient, key, *run, request.BackupRestoreSelection, safetyBackup)
+}
+
+// safetyBackup takes a pre-restore system backup that includes projects only when the restore changes them.
+func (s *Service) safetyBackup(ctx context.Context, request types.CreateSystemBackupRequest, includeProjects bool) (*types.SystemBackupRun, error) {
+	prepared, err := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, request)
+	if err != nil {
+		return nil, err
+	}
+	return s.executeBackup(ctx, &preparedSystemBackup{
+		run:             prepared.run,
+		recoveryKey:     prepared.recoveryKey,
+		checkpoint:      prepared.checkpoint,
+		includeProjects: includeProjects,
+	})
 }
 
 func (s *Service) DeleteBackup(ctx context.Context, id, recoveryKey string) (opErr error) {
@@ -1116,25 +1133,20 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 	if err != nil {
 		return err
 	}
-	dataDirectory := filepath.Dir(databaseFile)
-	projectsDirectory := projects.ResolveConfiguredContainerDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
-	plan, err := s.snapshots.PlanRestore(ctx, dockerClient, key, *run, current.Mounts, dataDirectory, projectsDirectory)
+	target := snapshots.RestoreTarget{Mounts: current.Mounts, DataDirectory: filepath.Dir(databaseFile)}
+	plan, err := s.snapshots.PlanRestore(ctx, dockerClient, key, *run, target)
 	if err != nil {
 		return err
 	}
 	// A local safety snapshot is created before the detached helper is allowed to stop Arcane and replace its data.
-	prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, types.CreateSystemBackupRequest{
+	safetyBackup, err := s.safetyBackup(ctx, types.CreateSystemBackupRequest{
 		Destination: types.SystemBackupDestinationLocal,
 		RecoveryKey: key,
-	})
-	if prepareErr != nil {
-		return fmt.Errorf("failed to create pre-restore system backup: %w", prepareErr)
-	}
-	safetyBackup, err := s.executeBackup(ctx, prepared)
+	}, plan.ProjectsIncluded)
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore system backup: %w", err)
 	}
-	rollbackStages, err := s.snapshots.PlanRollback(ctx, dockerClient, key, safetyBackup.LocalSnapshotID, current.Mounts, dataDirectory, projectsDirectory)
+	rollbackStages, err := s.snapshots.PlanRollback(ctx, dockerClient, key, safetyBackup.LocalSnapshotID, target)
 	if err != nil {
 		return err
 	}
@@ -1162,10 +1174,11 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			Size:            safetyBackup.Size,
 			CreatedAt:       safetyBackup.CreatedAt,
 		},
-		ProjectsSetting:  s.settingsService.GetStringSetting(ctx, "projectsDirectory"),
-		ProjectsIncluded: plan.ProjectsIncluded,
-		Stages:           plan.Stages,
-		RollbackStages:   rollbackStages,
+		ProjectsSetting:            s.settingsService.GetStringSetting(ctx, "projectsDirectory"),
+		ProjectsDirectoriesSetting: s.settingsService.GetStringSetting(ctx, "projectsDirectories"),
+		ProjectsIncluded:           plan.ProjectsIncluded,
+		Stages:                     plan.Stages,
+		RollbackStages:             rollbackStages,
 	})
 	if err != nil {
 		return fmt.Errorf("encode recovery request: %w", err)
@@ -2163,13 +2176,14 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 	instanceID := s.settingsService.GetSettingsConfig().InstanceID.Value
 	decorated := make([]types.SystemVolumeBackupHistoryEntry, 0, len(history))
 	for _, entry := range history {
-		// Volume backups discovered from another instance live under that instance's root.
+		// Volume backups discovered from another instance live under that instance's root; project backups share the
+		// volumes repository.
 		root := func() string {
 			owner := cmp.Or(entry.RemoteInstanceID, instanceID)
 			switch {
-			case entry.ResourceType != "volume" && s.config.AgentEnabled:
+			case entry.ResourceType == "system" && s.config.AgentEnabled:
 				return path.Join(backup.EnvironmentSystemRoot, instanceID)
-			case entry.ResourceType != "volume":
+			case entry.ResourceType == "system":
 				return "arcane-system-recovery"
 			case owner == "":
 				return ""
@@ -2197,6 +2211,8 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 			Type:              entry.Type,
 			ResourceType:      entry.ResourceType,
 			ResourceName:      entry.ResourceName,
+			ResourceID:        entry.ResourceID,
+			ResourceMissing:   entry.ResourceMissing,
 		})
 	}
 	return decorated, pagination.Response{

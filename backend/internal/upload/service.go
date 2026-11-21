@@ -4,15 +4,20 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/docker/go-units"
 
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
@@ -20,6 +25,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
 
@@ -28,6 +34,19 @@ type (
 		locks           concurrency.KeyedMutex
 		settingsService *settings.SettingsService
 		root            string
+	}
+
+	downloadReader struct {
+		io.ReadCloser
+		unlock func()
+		done   func()
+		eof    bool
+	}
+
+	WriteSessionOptions struct {
+		Write    func(io.Writer) error
+		Kind     string
+		Filename string
 	}
 )
 
@@ -59,34 +78,71 @@ func validFilenameForKind(kind, filename string) bool {
 	return false
 }
 
-func (s *UploadService) CreateSession(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (*types.UploadSession, error) {
-	filename := path.Base(strings.ReplaceAll(request.Filename, "\\", "/"))
+func sessionFilename(kind, requested string) (string, error) {
+	filename := path.Base(strings.ReplaceAll(requested, "\\", "/"))
 	if filename == "" || filename == "." || filename == "/" {
-		return nil, fmt.Errorf("%w: a filename is required", common.ErrUploadSessionInvalid)
+		return "", fmt.Errorf("%w: a filename is required", common.ErrUploadSessionInvalid)
 	}
 	if !validFilenameForKind(kind, filename) {
-		return nil, fmt.Errorf("%w: file type not allowed for %s uploads", common.ErrUploadSessionInvalid, kind)
+		return "", fmt.Errorf("%w: file type not allowed for %s uploads", common.ErrUploadSessionInvalid, kind)
 	}
-	if request.Size <= 0 {
-		return nil, fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
+	return filename, nil
+}
+
+func (s *UploadService) createSessionDir(ctx context.Context) (string, error) {
+	if err := (acfs.Host{}).MkdirAll(ctx, s.root, 0o700); err != nil {
+		return "", fmt.Errorf("create upload root: %w", err)
+	}
+	sessionDir, err := acfs.Root{Path: s.root}.MkdirTemp(ctx, "/", "*")
+	if err != nil {
+		return "", fmt.Errorf("create upload session directory: %w", err)
+	}
+	return sessionDir, nil
+}
+
+func (s *UploadService) validateSize(ctx context.Context, kind string, size int64) error {
+	if size <= 0 {
+		return fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
 	}
 	if kind == types.UploadKindImage {
 		maxSizeMB := s.settingsService.GetIntSetting(ctx, "maxImageUploadSize")
-		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; request.Size > maxSizeBytes {
-			return nil, fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
+		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; size > maxSizeBytes {
+			return fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
 		}
+	}
+	if kind != types.UploadKindProjectArchive {
+		return nil
+	}
+	if err := (acfs.Host{}).MkdirAll(ctx, s.root, 0o700); err != nil {
+		return fmt.Errorf("create upload root: %w", err)
+	}
+	budget, reserve, err := projects.FreeSpaceBudget(ctx, s.root)
+	if err != nil {
+		return fmt.Errorf("check free space for the upload: %w", err)
+	}
+	if size > budget {
+		return fmt.Errorf("%w: the upload needs %s, more than can be stored while keeping %s free", common.ErrUploadSessionInvalid,
+			units.BytesSize(float64(size)), units.BytesSize(float64(reserve)))
+	}
+	return nil
+}
+
+func (s *UploadService) CreateSession(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (*types.UploadSession, error) {
+	filename, err := sessionFilename(kind, request.Filename)
+	if err != nil {
+		return nil, err
+	}
+	if sizeErr := s.validateSize(ctx, kind, request.Size); sizeErr != nil {
+		return nil, sizeErr
 	}
 	chunkSize := cmp.Or(request.ChunkSize, types.UploadDefaultChunkSize)
 	if chunkSize < types.UploadMinChunkSize || chunkSize > types.UploadMaxChunkSize {
 		return nil, fmt.Errorf("%w: chunk size must be between %d and %d bytes", common.ErrUploadSessionInvalid, types.UploadMinChunkSize, types.UploadMaxChunkSize)
 	}
 
-	if err := (acfs.Host{}).MkdirAll(ctx, s.root, 0o700); err != nil {
-		return nil, fmt.Errorf("create upload root: %w", err)
-	}
-	sessionDir, err := acfs.Root{Path: s.root}.MkdirTemp(ctx, "/", "*")
+	sessionDir, err := s.createSessionDir(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("create upload session directory: %w", err)
+		return nil, err
 	}
 	session := &types.UploadSession{
 		ID:          path.Base(sessionDir),
@@ -232,45 +288,149 @@ func (s *UploadService) DeleteSession(ctx context.Context, kind, uploadID string
 }
 
 func (s *UploadService) IngestSession(ctx context.Context, kind, filename string, size int64, source io.Reader) (*types.UploadSession, error) {
-	session, err := s.CreateSession(ctx, kind, types.CreateUploadSessionRequest{Filename: filename, Size: size})
+	if err := s.validateSize(ctx, kind, size); err != nil {
+		return nil, err
+	}
+	write := func(w io.Writer) error {
+		if _, err := io.CopyN(w, source, size); err != nil {
+			return fmt.Errorf("write uploaded file: %w", err)
+		}
+		return nil
+	}
+	return s.WriteSession(ctx, WriteSessionOptions{
+		Kind:     kind,
+		Filename: filename,
+		Write:    write,
+	})
+}
+
+func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptions) (session *types.UploadSession, err error) {
+	filename, err := sessionFilename(opts.Kind, opts.Filename)
 	if err != nil {
 		return nil, err
 	}
-	if _, writeFromErr := (acfs.Root{Path: s.root}).WriteFrom(ctx, path.Join("/", session.ID, sessionDataFilename), source, acfs.WriteFromOptions{Size: size, Mode: 0o600}); writeFromErr != nil {
-		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", session.ID))
-		return nil, fmt.Errorf("write uploaded file: %w", writeFromErr)
+	sessionDir, err := s.createSessionDir(ctx)
+	if err != nil {
+		return nil, err
 	}
-	for index := range session.TotalChunks {
-		session.ReceivedChunks = append(session.ReceivedChunks, index)
+	defer func() {
+		if err != nil {
+			if removeErr := (acfs.Root{Path: s.root}).RemoveAll(context.WithoutCancel(ctx), sessionDir); removeErr != nil {
+				err = errors.Join(err, fmt.Errorf("remove the partial upload session: %w", removeErr))
+			}
+		}
+	}()
+	file, err := acfs.Root{Path: s.root}.OpenFile(ctx, path.Join(sessionDir, sessionDataFilename), acfs.OpenOptions{
+		Mode:      0o600,
+		Write:     true,
+		Create:    true,
+		Exclusive: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create upload session data file: %w", err)
+	}
+	if writeErr := opts.Write(file); writeErr != nil {
+		return nil, errors.Join(writeErr, file.Close())
+	}
+	info, err := file.Stat()
+	if closeErr := file.Close(); err == nil && closeErr != nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, fmt.Errorf("write upload session data: %w", err)
+	}
+	totalChunks := int((info.Size() + types.UploadDefaultChunkSize - 1) / types.UploadDefaultChunkSize)
+	received := make([]int, totalChunks)
+	for index := range received {
+		received[index] = index
+	}
+	session = &types.UploadSession{
+		ID:             path.Base(sessionDir),
+		Kind:           opts.Kind,
+		Filename:       filename,
+		Size:           info.Size(),
+		ChunkSize:      types.UploadDefaultChunkSize,
+		TotalChunks:    totalChunks,
+		ReceivedChunks: received,
+		CreatedAt:      time.Now().UTC(),
 	}
 	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
-		_ = acfs.Root{Path: s.root}.RemoveAll(ctx, path.Join("/", session.ID))
 		return nil, writeMetaErr
 	}
 	return session, nil
 }
 
-func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.ReadSeekCloser, *types.UploadSession, func(), error) {
-	defer s.locks.Lock(uploadID)()
+func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID string) (reader io.ReadCloser, session *types.UploadSession, err error) {
+	unlock := sync.OnceFunc(s.locks.RLock(uploadID))
+	defer func() {
+		if err != nil {
+			unlock()
+		}
+	}()
 
+	file, session, err := s.openSessionData(ctx, kind, uploadID)
+	if err != nil {
+		return nil, nil, err
+	}
+	done := func() {
+		if deleteErr := s.DeleteSession(context.WithoutCancel(ctx), kind, uploadID); deleteErr != nil {
+			slog.WarnContext(ctx, "failed to delete downloaded upload session", "uploadId", uploadID, "error", deleteErr)
+		}
+	}
+	return &downloadReader{
+		ReadCloser: file,
+		unlock:     unlock,
+		done:       done,
+	}, session, nil
+}
+
+func (r *downloadReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if errors.Is(err, io.EOF) {
+		r.eof = true
+	}
+	return n, err
+}
+
+func (r *downloadReader) Close() error {
+	err := r.ReadCloser.Close()
+	r.unlock()
+	if r.eof {
+		r.done()
+	}
+	return err
+}
+
+// openSessionData opens the data file of a complete session; the caller holds the session's lock.
+func (s *UploadService) openSessionData(ctx context.Context, kind, uploadID string) (io.ReadSeekCloser, *types.UploadSession, error) {
 	session, err := s.loadMeta(ctx, kind, uploadID)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	if !session.Complete {
-		return nil, nil, nil, fmt.Errorf("%w: %d of %d chunks received", common.ErrUploadSessionIncomplete, len(session.ReceivedChunks), session.TotalChunks)
+		return nil, nil, fmt.Errorf("%w: %d of %d chunks received", common.ErrUploadSessionIncomplete, len(session.ReceivedChunks), session.TotalChunks)
 	}
 	dataPath, err := s.sessionPath(uploadID, sessionDataFilename)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	file, size, err := acfs.Root{Path: s.root}.OpenReadSeek(ctx, dataPath)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("open upload session data: %w", err)
+		return nil, nil, fmt.Errorf("open upload session data: %w", err)
 	}
 	if size != session.Size {
 		_ = file.Close()
-		return nil, nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
+		return nil, nil, fmt.Errorf("%w: assembled size %d does not match declared size %d", common.ErrUploadSessionIncomplete, size, session.Size)
+	}
+	return file, session, nil
+}
+
+func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.ReadSeekCloser, *types.UploadSession, func(), error) {
+	defer s.locks.Lock(uploadID)()
+
+	file, session, err := s.openSessionData(ctx, kind, uploadID)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	if removeErr := (acfs.Root{Path: s.root}).Remove(ctx, path.Join("/", uploadID, sessionMetaFilename)); removeErr != nil {
 		_ = file.Close()

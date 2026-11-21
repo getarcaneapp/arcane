@@ -180,6 +180,8 @@ var (
 				})
 			},
 			provideBackupEngine,
+			provideVolumeRepository,
+			provideBackupContainers,
 			func(
 				httpClient *http.Client,
 				cfg *config.Config,

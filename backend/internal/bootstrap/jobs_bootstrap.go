@@ -17,6 +17,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/job"
+	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/scheduler"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -41,6 +42,7 @@ type (
 		Settings    *settings.SettingsService
 		Volume      *volume.VolumeService
 		System      *system.SystemService
+		Projects    *project.Module
 		Apns        *apns.ApnsService
 
 		AutoUpdate             *flow.Job `name:"auto-update"`
@@ -72,6 +74,7 @@ type (
 		JobSchedule *job.JobService
 		Volume      *volume.VolumeService
 		System      *system.SystemService
+		Projects    *project.Module
 	}
 
 	startJobSchedulerParams struct {
@@ -89,6 +92,7 @@ type (
 		Volume             *volume.VolumeService
 		System             *system.SystemService
 		GitOpsSync         *gitops.GitOpsSyncService
+		Projects           *project.Module
 	}
 
 	settingsSubscriptionsParams struct {
@@ -237,6 +241,9 @@ func reconcileCoordinatorStartup(ctx context.Context, p startJobSchedulerParams)
 	if reconcileInterruptedBackupsOnStartupErr := p.GitOpsSync.ReconcileInterruptedBackupsOnStartup(ctx, backups...); reconcileInterruptedBackupsOnStartupErr != nil {
 		return reconcileInterruptedBackupsOnStartupErr
 	}
+	if reconcileProjectBackupsErr := p.Projects.ReconcileInterruptedBackups(ctx, backups...); reconcileProjectBackupsErr != nil {
+		return reconcileProjectBackupsErr
+	}
 	return p.JobSchedule.ReconcileStartupActivities(ctx, activities...)
 }
 
@@ -274,6 +281,7 @@ func registerJobs(params registerJobsParams) error {
 		JobSchedule: params.JobSchedule,
 		Volume:      params.Volume,
 		System:      params.System,
+		Projects:    params.Projects,
 	})
 
 	if err := setupSettingsSubscriptions(settingsSubscriptionsParams{
@@ -302,6 +310,8 @@ func registerJobs(params registerJobsParams) error {
 
 func registerDynamicJobs(params dynamicJobsParams) {
 	params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
+	params.Projects.RegisterBackupJobsOnStartup(params.AppCtx)
+	params.Projects.DiscoverBackupsAfterRestore(params.AppCtx)
 	if !params.Config.AgentEnabled {
 		params.System.RegisterBackupJobOnStartup(params.AppCtx)
 	}

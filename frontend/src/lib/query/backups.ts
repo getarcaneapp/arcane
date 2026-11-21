@@ -45,6 +45,20 @@ export function systemVolumeBackupConfigQuery() {
 	});
 }
 
+export function projectBackupConfigQuery() {
+	return queryOptions({
+		queryKey: queryKeys.systemBackups.projectConfig(),
+		queryFn: () => systemBackupService.getProjectConfig()
+	});
+}
+
+export function projectBackupOptionsQuery() {
+	return queryOptions({
+		queryKey: queryKeys.systemBackups.projectOptions(),
+		queryFn: () => systemBackupService.listProjectOptions()
+	});
+}
+
 export function s3DestinationListQuery(requestOptions: SearchPaginationSortRequest) {
 	return queryOptions({
 		queryKey: queryKeys.s3Destinations.list(requestOptions),

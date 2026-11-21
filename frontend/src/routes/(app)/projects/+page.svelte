@@ -7,9 +7,10 @@
 	import { toast } from 'svelte-sonner';
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectImportDialog from '#lib/components/dialogs/project-import-dialog.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
-	import { ContainersIcon, ProjectsIcon, PlayIcon, StopIcon } from '#lib/icons/index.js';
+	import { ContainersIcon, ProjectsIcon, PlayIcon, StopIcon, UploadIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
@@ -219,6 +220,16 @@
 	const canCreateProject = $derived(hasShownPermission('projects:create'));
 	const canDeployProject = $derived(hasShownPermission('projects:deploy'));
 
+	let importOpen = $state(false);
+
+	async function refreshImportedProjects(environmentId: string) {
+		await Promise.all(
+			listScopes([environmentId]).map((listScope) =>
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(listScope) })
+			)
+		);
+	}
+
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
 		if (canCreateProject) {
@@ -228,6 +239,14 @@
 				placement: 'primary',
 				label: m.compose_create_project(),
 				onclick: () => goto(resolve('/(app)/projects/new'))
+			});
+			buttons.push({
+				id: 'import',
+				action: 'base',
+				placement: 'secondary',
+				label: m.import(),
+				icon: UploadIcon,
+				onclick: () => (importOpen = true)
 			});
 		}
 		if (canDeployProject) {
@@ -285,6 +304,8 @@
 {#snippet projectsEmptyState()}
 	<EmptyState icon={ProjectsIcon} title={m.projects_empty_title()} description={m.projects_empty_description()} />
 {/snippet}
+
+<ProjectImportDialog bind:open={importOpen} onImported={refreshImportedProjects} />
 
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
