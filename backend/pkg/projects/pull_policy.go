@@ -75,9 +75,16 @@ func ResolveServiceImagePullMode(svc composeTypes.ServiceConfig) ImagePullStep {
 
 func BuildImagePullPlan(project *composeTypes.Project) map[string]ImagePullStep {
 	plan := map[string]ImagePullStep{}
+	if project == nil {
+		return plan
+	}
+	built := projectBuiltImageKeys(project)
 	record := func(img string, step ImagePullStep) {
 		img = strings.TrimSpace(img)
 		if img == "" {
+			return
+		}
+		if _, isBuilt := built[canonicalImageRef(img)]; isBuilt {
 			return
 		}
 		existing, exists := plan[img]
