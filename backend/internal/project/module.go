@@ -44,7 +44,6 @@ type (
 		Admission      *runs.Admission
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
-		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
 	}
@@ -65,10 +64,10 @@ func New(p ModuleParams) *Module {
 		Settings:        p.Service.settingsService,
 		LockVolumes:     p.Backups.LockVolumes,
 		Project:         p.Service.GetProjectDetails,
-		ComposeProject:  p.Service.composeProject,
+		StopProject:     p.Service.stopProject,
+		StartProject:    p.Service.startProject,
 		Volume:          local.Volume,
 		BackupStore:     p.Backups.Repository.StorageVolume,
-		Containers:      p.Backups.Containers,
 		LockProject:     p.Service.LockProject,
 		SoleDirectory:   p.Service.soleDirectory,
 		RunsArcane: func(ctx context.Context, projectID string) (bool, error) {
@@ -78,14 +77,7 @@ func New(p ModuleParams) *Module {
 			}
 			return p.Service.runsArcane(ctx, proj), nil
 		},
-		// A restore holds the project lock, so it brings the project down and deploys it without taking it again.
-		Down: func(ctx context.Context, projectID string, user types.Actor) error {
-			proj, err := p.Service.getMutableProject(ctx, projectID)
-			if err != nil {
-				return err
-			}
-			return p.Service.downProject(ctx, proj, user)
-		},
+		// A restore holds the project lock, so it deploys the project without taking it again.
 		Deploy:             p.Service.deployProject,
 		RewriteComposeName: p.Service.rewriteComposeName,
 		ProjectName: func(ctx context.Context, projectID string) (string, error) {
@@ -103,10 +95,11 @@ func New(p ModuleParams) *Module {
 			}
 			return projectRecords(all), nil
 		},
-		Activities: p.Activity,
-		Ctx:        p.Backups.Ctx,
-		Scheduler:  p.Backups.Scheduler,
-		Admission:  p.Backups.Admission,
+		DeleteVolume: local.DeleteVolume,
+		Activities:   p.Activity,
+		Ctx:          p.Backups.Ctx,
+		Scheduler:    p.Backups.Scheduler,
+		Admission:    p.Backups.Admission,
 	})
 	// A deleted project's policies stop running, and their backups age out as unmanaged ones.
 	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
@@ -121,12 +114,12 @@ func New(p ModuleParams) *Module {
 			Project:             local.Project,
 			Volume:              local.Volume,
 			ComposeProjectInUse: local.ComposeProjectInUse,
-			DeleteUpload:        local.DeleteUpload,
 			ExportProject:       p.Service.ExportProjectArchive,
 			ImportProject:       local.ImportProject,
 			LockProject:         p.Service.LockProject,
 			StopProject:         p.Service.stopProject,
-			StartProject:        p.Service.deployProject,
+			StartProject:        p.Service.startProject,
+			DeployProject:       p.Service.deployProject,
 			RemoveProject:       p.Service.destroyProject,
 			ExportVolume:        p.Transfer.ExportVolume,
 			RestoreVolume:       p.Transfer.RestoreVolume,

@@ -8,10 +8,12 @@ import (
 	"slices"
 	"strings"
 
-	composegotypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/swarm"
 	dockerclient "github.com/moby/moby/client"
+
+	"kit.getarcane.app"
 )
 
 type (
@@ -33,7 +35,7 @@ type (
 		Meta       resourceMeta
 		BaseName   string
 		Hash       string
-		Config     composegotypes.FileObjectConfig
+		Config     composeTypes.FileObjectConfig
 		Labels     map[string]string
 		Data       []byte
 		IsExternal bool
@@ -48,59 +50,34 @@ type (
 	}
 )
 
-func planNetworks(project *composegotypes.Project, ns namespace) map[string]string {
-	result := make(map[string]string, len(project.Networks))
-	for key, config := range project.Networks {
-		result[key] = ns.Resolve(key, config.Name)
+func planResourceNames[T any](resources map[string]T, ns namespace, nameOf func(T) string) map[string]string {
+	result := make(map[string]string, len(resources))
+	for key, config := range resources {
+		result[key] = ns.Resolve(key, nameOf(config))
 	}
 	return result
 }
 
-func planVolumes(project *composegotypes.Project, ns namespace) map[string]string {
-	result := make(map[string]string, len(project.Volumes))
-	for key, config := range project.Volumes {
-		result[key] = ns.Resolve(key, config.Name)
-	}
-	return result
-}
-
-func planConfigs(ctx context.Context, project *composegotypes.Project, ns namespace) (map[string]plannedFileResource, error) {
-	configs := make(map[string]composegotypes.FileObjectConfig, len(project.Configs))
-	for key, config := range project.Configs {
-		configs[key] = composegotypes.FileObjectConfig(config)
-	}
-	return planManagedFileResources(ctx, configs, ns, project.WorkingDir, project.Environment, "config")
-}
-
-func planSecrets(ctx context.Context, project *composegotypes.Project, ns namespace) (map[string]plannedFileResource, error) {
-	secrets := make(map[string]composegotypes.FileObjectConfig, len(project.Secrets))
-	for key, secret := range project.Secrets {
-		secrets[key] = composegotypes.FileObjectConfig(secret)
-	}
-	return planManagedFileResources(ctx, secrets, ns, project.WorkingDir, project.Environment, "secret")
-}
-
-func planManagedFileResources(
+func planManagedFileResources[T composeTypes.ConfigObjConfig | composeTypes.SecretConfig](
 	ctx context.Context,
-	resources map[string]composegotypes.FileObjectConfig,
+	resources map[string]T,
 	ns namespace,
 	workingDir string,
-	environment composegotypes.Mapping,
+	environment composeTypes.Mapping,
 	resourceType string,
 ) (map[string]plannedFileResource, error) {
 	result := make(map[string]plannedFileResource, len(resources))
 	for _, key := range slices.Sorted(maps.Keys(resources)) {
-		resource := resources[key]
+		resource := composeTypes.FileObjectConfig(resources[key])
 		baseName := ns.Resolve(key, resource.Name)
-		plan := plannedFileResource{
-			Meta:       resourceMeta{Name: baseName},
-			BaseName:   baseName,
-			Config:     resource,
-			Labels:     resource.Labels,
-			IsExternal: bool(resource.External),
-		}
 		if resource.External {
-			result[key] = plan
+			result[key] = plannedFileResource{
+				Meta:       resourceMeta{Name: baseName},
+				BaseName:   baseName,
+				Config:     resource,
+				Labels:     resource.Labels,
+				IsExternal: true,
+			}
 			continue
 		}
 		if resourceType == "config" && resource.Driver != "" {
@@ -115,16 +92,21 @@ func planManagedFileResources(
 			}
 			data = resolvedData
 		}
-		plan.Data = data
-		plan.Hash = hashManagedFileResource(resource, data)
-		plan.Meta.Name = managedResourceName(baseName, plan.Hash)
-		result[key] = plan
+		hash := hashManagedFileResource(resource, data)
+		result[key] = plannedFileResource{
+			Meta:     resourceMeta{Name: managedResourceName(baseName, hash)},
+			BaseName: baseName,
+			Hash:     hash,
+			Config:   resource,
+			Labels:   resource.Labels,
+			Data:     data,
+		}
 	}
 	return result, nil
 }
 
-func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, ns namespace, stackLabels map[string]string) (map[string]string, error) {
-	result := planNetworks(project, ns)
+func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client, project *composeTypes.Project, ns namespace, stackLabels map[string]string) (map[string]string, error) {
+	result := planResourceNames(project.Networks, ns, func(c composeTypes.NetworkConfig) string { return c.Name })
 	for _, key := range slices.Sorted(maps.Keys(project.Networks)) {
 		cfg := project.Networks[key]
 		networkName := result[key]
@@ -174,8 +156,8 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 	return result, nil
 }
 
-func ensureSwarmVolumes(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, ns namespace, stackLabels map[string]string) error {
-	volumeNameByKey := planVolumes(project, ns)
+func ensureSwarmVolumes(ctx context.Context, dockerClient *dockerclient.Client, project *composeTypes.Project, ns namespace, stackLabels map[string]string) error {
+	volumeNameByKey := planResourceNames(project.Volumes, ns, func(c composeTypes.VolumeConfig) string { return c.Name })
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
 		cfg := project.Volumes[key]
 		if cfg.External {
@@ -222,11 +204,10 @@ func configFileResourceAdapter(dockerClient *dockerclient.Client) fileResourceAd
 		},
 		Create: func(ctx context.Context, resource managedFileResourceSpec) (resourceMeta, error) {
 			spec := swarm.ConfigSpec{
-				Name: resource.Name, Labels: resource.Labels,
-				Data: resource.Data,
-			}
-			if resource.TemplateDriver != "" {
-				spec.Templating = &swarm.Driver{Name: resource.TemplateDriver}
+				Name:       resource.Name,
+				Labels:     resource.Labels,
+				Data:       resource.Data,
+				Templating: kit.Ternary(resource.TemplateDriver != "", &swarm.Driver{Name: resource.TemplateDriver}, nil),
 			}
 			response, err := dockerClient.ConfigCreate(ctx, dockerclient.ConfigCreateOptions{Spec: spec})
 			if err != nil {
@@ -263,14 +244,11 @@ func secretFileResourceAdapter(dockerClient *dockerclient.Client) fileResourceAd
 		},
 		Create: func(ctx context.Context, resource managedFileResourceSpec) (resourceMeta, error) {
 			spec := swarm.SecretSpec{
-				Name: resource.Name, Labels: resource.Labels,
-				Data: resource.Data,
-			}
-			if resource.Driver != "" {
-				spec.Driver = &swarm.Driver{Name: resource.Driver, Options: resource.DriverOpts}
-			}
-			if resource.TemplateDriver != "" {
-				spec.Templating = &swarm.Driver{Name: resource.TemplateDriver}
+				Name:       resource.Name,
+				Labels:     resource.Labels,
+				Data:       resource.Data,
+				Driver:     kit.Ternary(resource.Driver != "", &swarm.Driver{Name: resource.Driver, Options: resource.DriverOpts}, nil),
+				Templating: kit.Ternary(resource.TemplateDriver != "", &swarm.Driver{Name: resource.TemplateDriver}, nil),
 			}
 			response, err := dockerClient.SecretCreate(ctx, dockerclient.SecretCreateOptions{Spec: spec})
 			if err != nil {

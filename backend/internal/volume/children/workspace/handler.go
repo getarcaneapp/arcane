@@ -92,7 +92,7 @@ func requireVolumeWorkspacePermissions(ctx context.Context, environmentID string
 	if !ok || permissions == nil {
 		return huma.Error403Forbidden("insufficient permissions")
 	}
-	required, _ := authz.VolumeWorkspaceRequiredPermissions(changes)
+	required, _ := authz.WorkspaceRequiredPermissions(authz.VolumeWorkspaceConditions, changes, func(c types.VolumeWorkspaceFileChange) string { return c.Operation })
 	for _, permission := range required {
 		if !permissions.Allows(permission, environmentID) {
 			return huma.Error403Forbidden("insufficient permissions for volume workspace operation")

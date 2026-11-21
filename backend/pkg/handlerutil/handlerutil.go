@@ -1,7 +1,9 @@
 package handlerutil
 
 import (
+	"cmp"
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -20,6 +23,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
@@ -42,6 +46,12 @@ type (
 		*huma.ErrorModel
 
 		Details any `json:"details,omitempty"`
+	}
+
+	AggregateOption func(*aggregateConfig)
+
+	aggregateConfig struct {
+		mergeCounts func(jsontext.Value) error
 	}
 )
 
@@ -89,6 +99,69 @@ func PaginationResponse(p pagination.Response) types.PaginationResponse {
 		GrandTotalItems: p.GrandTotalItems,
 		HasNextPage:     p.HasNextPage,
 	}
+}
+
+func WithCounts[C any](dest *C, merge func(acc, next C) C) AggregateOption {
+	return func(cfg *aggregateConfig) {
+		cfg.mergeCounts = func(raw jsontext.Value) error {
+			if len(raw) == 0 {
+				return nil
+			}
+			var next C
+			if err := json.Unmarshal(raw, &next); err != nil {
+				return err
+			}
+			*dest = merge(*dest, next)
+			return nil
+		}
+	}
+}
+
+func AggregatePaginated[T pagination.Environmental, PT interface {
+	*T
+	SetEnvironment(types.EnvironmentRef)
+}](
+	ctx context.Context,
+	config pagination.Config[T],
+	params pagination.QueryParams,
+	opts ...AggregateOption,
+) (types.Paginated[T], error) {
+	var cfg aggregateConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	collection, err := httpx.CollectEnvironments[types.PaginatedWithCounts[T, jsontext.Value]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[T]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[T], 0, len(collection.Results))
+	failures := collection.Failures
+	for _, result := range collection.Results {
+		if cfg.mergeCounts != nil {
+			if mergeErr := cfg.mergeCounts(result.Value.Counts); mergeErr != nil {
+				failures = append(failures, types.EnvironmentFailure{
+					Environment: result.Environment,
+					Message:     fmt.Errorf("invalid response: %w", mergeErr).Error(),
+				})
+				continue
+			}
+		}
+		pages = append(pages, pagination.EnvironmentPage[T]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages[T, PT](config, pages, params)
+
+	return types.Paginated[T]{
+		Success:            true,
+		Data:               data,
+		Pagination:         PaginationResponse(resp),
+		FailedEnvironments: failures,
+	}, nil
 }
 
 func RequireUser(ctx context.Context) (*types.Actor, error) {

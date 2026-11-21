@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/assert"
@@ -15,13 +15,13 @@ import (
 )
 
 func TestBuildProjectRenamedVolumeConfig(t *testing.T) {
-	source := composetypes.VolumeConfig{
+	source := composeTypes.VolumeConfig{
 		Name:   "nginx_data",
 		Driver: "local",
-		Labels: composetypes.Labels{
+		Labels: composeTypes.Labels{
 			"existing": "kept",
 		},
-		CustomLabels: composetypes.Labels{
+		CustomLabels: composeTypes.Labels{
 			api.ProjectLabel: "nginx",
 			api.VolumeLabel:  "data",
 		},
@@ -39,7 +39,7 @@ func TestBuildProjectRenamedVolumeConfig(t *testing.T) {
 
 func TestRenamedVolumeCreateOptionsInternal_UsesPendingComposeDriverOptions(t *testing.T) {
 	entry := struct {
-		NewConfig composetypes.VolumeConfig
+		NewConfig composeTypes.VolumeConfig
 		OldVolume volume.Volume
 	}{
 		OldVolume: volume.Volume{
@@ -47,11 +47,11 @@ func TestRenamedVolumeCreateOptionsInternal_UsesPendingComposeDriverOptions(t *t
 			Options: map[string]string{"old": "true"},
 			Labels:  map[string]string{"existing": "kept"},
 		},
-		NewConfig: composetypes.VolumeConfig{
+		NewConfig: composeTypes.VolumeConfig{
 			Name:       "web_data",
 			Driver:     "new-driver",
 			DriverOpts: map[string]string{"new": "true"},
-			CustomLabels: composetypes.Labels{
+			CustomLabels: composeTypes.Labels{
 				api.ProjectLabel: "web",
 				api.VolumeLabel:  "data",
 			},
@@ -72,30 +72,30 @@ func TestRenamedVolumeCreateOptionsInternal_UsesPendingComposeDriverOptions(t *t
 func TestRenamedVolumeCreateOptions_ConfigHashMatchesCompose(t *testing.T) {
 	tests := []struct {
 		name   string
-		config composetypes.VolumeConfig
+		config composeTypes.VolumeConfig
 		want   string
 	}{
 		{
 			name:   "default driver",
-			config: composetypes.VolumeConfig{Name: "x"},
+			config: composeTypes.VolumeConfig{Name: "x"},
 			want:   "4a2b2b84ef7d42b2ada07a9b41a782aa389aec6a62317db8ef67fc35d81d025e",
 		},
 		{
 			name: "driver options and labels",
-			config: composetypes.VolumeConfig{
+			config: composeTypes.VolumeConfig{
 				Name:       "proj_data",
 				Driver:     "nfs",
 				DriverOpts: map[string]string{"type": "nfs", "o": "addr=10.0.0.1,rw"},
-				Labels:     composetypes.Labels{"tier": "db"},
+				Labels:     composeTypes.Labels{"tier": "db"},
 			},
 			want: "23ef8380bd7145a59addc7c4d07af41103571d5c7cd39b6caf64e818e80fe93a",
 		},
 		{
 			name: "external with html characters",
-			config: composetypes.VolumeConfig{
+			config: composeTypes.VolumeConfig{
 				Name:     "e",
 				External: true,
-				Labels:   composetypes.Labels{"q": "a<b&c"},
+				Labels:   composeTypes.Labels{"q": "a<b&c"},
 			},
 			want: "7459d64fc51178737aeb36808725efcb1943dce34b2abd14eb24e28b8f17f0f2",
 		},
@@ -185,8 +185,8 @@ func TestProjectRenameJournalTargetsCopied(t *testing.T) {
 func TestClassifyProjectVolumes(t *testing.T) {
 	project := types.Project{
 		Name: "Web",
-		Volumes: composetypes.Volumes{
-			"data":     {Name: "web_data", Driver: "local", Labels: composetypes.Labels{"tier": "db"}},
+		Volumes: composeTypes.Volumes{
+			"data":     {Name: "web_data", Driver: "local", Labels: composeTypes.Labels{"tier": "db"}},
 			"shared":   {Name: "shared-data"},
 			"external": {Name: "outside", External: true},
 			"nfs":      {Name: "nfs-data", External: true, Driver: "local", DriverOpts: map[string]string{"type": "nfs"}},

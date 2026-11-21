@@ -77,17 +77,6 @@ func (s *Service) acquireVolumeRun(ctx context.Context, volumeName string) (*run
 	return lease, nil
 }
 
-func backupDestination(local, remote bool) types.VolumeBackupDestination {
-	switch {
-	case local && remote:
-		return types.VolumeBackupDestinationLocalS3
-	case remote:
-		return types.VolumeBackupDestinationS3
-	default:
-		return types.VolumeBackupDestinationLocal
-	}
-}
-
 func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType, volumeName string, user *types.Actor, metadata database.JSON) {
 	actor := cmp.Or(user, &types.SystemUser)
 	if err := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{

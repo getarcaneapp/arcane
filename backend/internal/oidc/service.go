@@ -79,23 +79,21 @@ type (
 )
 
 func NewOidcService(p OidcServiceParams) *OidcService {
-	if p.HTTPClient == nil {
-		p.HTTPClient = http.DefaultClient
-	}
+	baseClient := cmp.Or(p.HTTPClient, http.DefaultClient)
 
 	return &OidcService{
 		authService:     p.AuthService,
 		settingsService: p.SettingsService,
 		config:          p.Config,
 		httpClient: &http.Client{
-			Transport:     otelhttp.NewTransport(p.HTTPClient.Transport),
-			CheckRedirect: p.HTTPClient.CheckRedirect,
-			Jar:           p.HTTPClient.Jar,
+			Transport:     otelhttp.NewTransport(baseClient.Transport),
+			CheckRedirect: baseClient.CheckRedirect,
+			Jar:           baseClient.Jar,
 		},
 		insecureHttpClient: &http.Client{
-			Transport:     otelhttp.NewTransport(newInsecureTransport(p.HTTPClient.Transport)),
-			CheckRedirect: p.HTTPClient.CheckRedirect,
-			Jar:           p.HTTPClient.Jar,
+			Transport:     otelhttp.NewTransport(newInsecureTransport(baseClient.Transport)),
+			CheckRedirect: baseClient.CheckRedirect,
+			Jar:           baseClient.Jar,
 		},
 		keySetManager: p.KeySetManager,
 		providerCache: &cache.Cache[oidcProviderKey, *oidc.Provider]{
@@ -491,9 +489,7 @@ func (s *OidcService) buildUserInfo(
 		TokenType:    cmp.Or(token.TokenType, "Bearer"),
 		RefreshToken: token.RefreshToken,
 		IDToken:      rawIDToken,
-	}
-	if !token.Expiry.IsZero() {
-		tokenResp.ExpiresIn = max(int(time.Until(token.Expiry).Seconds()), 0)
+		ExpiresIn:    kit.Ternary(token.Expiry.IsZero(), 0, max(int(time.Until(token.Expiry).Seconds()), 0)),
 	}
 
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("arcane.oidc.groups", len(userInfoDto.Groups)), attribute.Int("arcane.oidc.roles", len(userInfoDto.Roles)))

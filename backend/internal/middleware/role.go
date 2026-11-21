@@ -33,21 +33,28 @@ func RegisterEchoRoutes(g *echo.Group, routes []EchoRoute, shared ...echo.Middle
 	}
 }
 
-func RegisterWithPermission[I, O any](api huma.API, op huma.Operation, perm string, handler func(context.Context, *I) (*O, error)) {
+func setOpMetadata(op *huma.Operation, key string, value any) {
 	if op.Metadata == nil {
 		op.Metadata = map[string]any{}
 	}
-	op.Metadata[authz.MetaRequiredPermission] = perm
+	op.Metadata[key] = value
+}
+
+func writeMiddlewareErr(api huma.API, ctx huma.Context, status int, message string) {
+	if err := huma.WriteErr(api, ctx, status, message); err != nil {
+		slog.WarnContext(ctx.Context(), "failed to write error response", "status", status, "error", err)
+	}
+}
+
+func RegisterWithPermission[I, O any](api huma.API, op huma.Operation, perm string, handler func(context.Context, *I) (*O, error)) {
+	setOpMetadata(&op, authz.MetaRequiredPermission, perm)
 	op.Middlewares = append(op.Middlewares, RequirePermission(api, perm)...)
 	huma.Register(api, op, handler)
 }
 
 func RegisterWithActionPermissions[I, O any](api huma.API, op huma.Operation, param string, perms map[string]string, handler func(context.Context, *I) (*O, error)) {
-	if op.Metadata == nil {
-		op.Metadata = map[string]any{}
-	}
-	op.Metadata[authz.MetaActionParam] = param
-	op.Metadata[authz.MetaActionPermissions] = perms
+	setOpMetadata(&op, authz.MetaActionParam, param)
+	setOpMetadata(&op, authz.MetaActionPermissions, perms)
 	op.Middlewares = append(op.Middlewares, RequireActionPermission(api, param, perms)...)
 	huma.Register(api, op, handler)
 }
@@ -75,9 +82,7 @@ func RequirePermission(api huma.API, perm string) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		ps, _ := PermissionsFromContext(ctx.Context())
 		if !permissionAllowed(ctx, ps, perm) {
-			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
-				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
-			}
+			writeMiddlewareErr(api, ctx, http.StatusForbidden, "permission denied: "+perm)
 			return
 		}
 		next(ctx)
@@ -88,16 +93,12 @@ func RequireActionPermission(api huma.API, param string, perms map[string]string
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		perm, ok := perms[ctx.Query(param)]
 		if !ok {
-			if err := huma.WriteErr(api, ctx, http.StatusBadRequest, "invalid "+param+": "+ctx.Query(param)); err != nil {
-				slog.WarnContext(ctx.Context(), "failed to write 400 response", "error", err)
-			}
+			writeMiddlewareErr(api, ctx, http.StatusBadRequest, "invalid "+param+": "+ctx.Query(param))
 			return
 		}
 		ps, _ := PermissionsFromContext(ctx.Context())
 		if !permissionAllowed(ctx, ps, perm) {
-			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
-				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
-			}
+			writeMiddlewareErr(api, ctx, http.StatusForbidden, "permission denied: "+perm)
 			return
 		}
 		next(ctx)
@@ -124,16 +125,11 @@ func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) b
 }
 
 func RequireGlobalAdmin(api huma.API, op huma.Operation) huma.Operation {
-	if op.Metadata == nil {
-		op.Metadata = map[string]any{}
-	}
-	op.Metadata[authz.MetaRequireGlobalAdmin] = true
+	setOpMetadata(&op, authz.MetaRequireGlobalAdmin, true)
 	op.Middlewares = append(op.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
 		ps, _ := PermissionsFromContext(ctx.Context())
 		if !ps.IsGlobalAdmin() {
-			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: global admin required"); err != nil {
-				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
-			}
+			writeMiddlewareErr(api, ctx, http.StatusForbidden, "permission denied: global admin required")
 			return
 		}
 		next(ctx)
@@ -142,16 +138,11 @@ func RequireGlobalAdmin(api huma.API, op huma.Operation) huma.Operation {
 }
 
 func RequireSudo(api huma.API, op huma.Operation) huma.Operation {
-	if op.Metadata == nil {
-		op.Metadata = map[string]any{}
-	}
-	op.Metadata[authz.MetaRequireSudo] = true
+	setOpMetadata(&op, authz.MetaRequireSudo, true)
 	op.Middlewares = append(op.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
 		ps, _ := PermissionsFromContext(ctx.Context())
 		if ps == nil || !ps.Sudo {
-			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: agent authentication required"); err != nil {
-				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
-			}
+			writeMiddlewareErr(api, ctx, http.StatusForbidden, "permission denied: agent authentication required")
 			return
 		}
 		next(ctx)

@@ -1124,6 +1124,18 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 	return expired, err
 }
 
+// Destination names where a backup's snapshots are kept.
+func Destination(local, remote bool) types.VolumeBackupDestination {
+	switch {
+	case local && remote:
+		return types.VolumeBackupDestinationLocalS3
+	case remote:
+		return types.VolumeBackupDestinationS3
+	default:
+		return types.VolumeBackupDestinationLocal
+	}
+}
+
 func NewVolumeRepository(deps VolumeRepositoryDependencies) *VolumeRepository {
 	return &VolumeRepository{deps: deps, legacyPassword: kit.SHA256Hex(legacyVolumePasswordSalt + cmp.Or(deps.EncryptionKey, legacyEncryptionKey))}
 }

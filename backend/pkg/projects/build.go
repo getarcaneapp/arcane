@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/builds/pkg/contextsource"
@@ -20,7 +20,7 @@ import (
 )
 
 // The service config must have a non-nil Build field.
-func ResolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serviceName string) (string, error) {
+func ResolveBuildContext(workingDir string, svc composeTypes.ServiceConfig, serviceName string) (string, error) {
 	contextDir := strings.TrimSpace(svc.Build.Context)
 	if contextDir == "" {
 		contextDir = workingDir
@@ -37,13 +37,6 @@ func ResolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serv
 	return contextDir, nil
 }
 
-// The service config must have a non-nil Build field.
-func ResolveDockerfilePath(svc composetypes.ServiceConfig) string {
-	dockerfilePath := cmp.Or(strings.TrimSpace(svc.Build.Dockerfile), "Dockerfile")
-
-	return dockerfilePath
-}
-
 func BuildArgsFromCompose(args map[string]*string) map[string]string {
 	buildArgs := map[string]string{}
 	for key, value := range args {
@@ -55,7 +48,7 @@ func BuildArgsFromCompose(args map[string]*string) map[string]string {
 	return buildArgs
 }
 
-func LabelsFromCompose(labels composetypes.Labels) map[string]string {
+func LabelsFromCompose(labels composeTypes.Labels) map[string]string {
 	if len(labels) == 0 {
 		return nil
 	}
@@ -66,7 +59,7 @@ func LabelsFromCompose(labels composetypes.Labels) map[string]string {
 	return out
 }
 
-func UlimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[string]string {
+func UlimitsFromCompose(ulimits map[string]*composeTypes.UlimitsConfig) map[string]string {
 	if len(ulimits) == 0 {
 		return nil
 	}
@@ -88,7 +81,7 @@ func UlimitsFromCompose(ulimits map[string]*composetypes.UlimitsConfig) map[stri
 	return kit.Ternary(len(out) == 0, nil, out)
 }
 
-func BuildPlatformsFromCompose(svc composetypes.ServiceConfig) []string {
+func BuildPlatformsFromCompose(svc composeTypes.ServiceConfig) []string {
 	platforms := kit.TrimNonEmpty(svc.Build.Platforms)
 	if len(platforms) == 0 {
 		if servicePlatform := strings.TrimSpace(svc.Platform); servicePlatform != "" {
@@ -142,12 +135,12 @@ func resolveEffectiveBuildProvider(override, defaultProvider string) string {
 
 func PrepareServiceBuildRequest(
 	projectID string,
-	project *composetypes.Project,
+	project *composeTypes.Project,
 	serviceName string,
-	svc composetypes.ServiceConfig,
+	svc composeTypes.ServiceConfig,
 	options types.ProjectBuildOptions,
 	defaultProvider string,
-) (buildtypes.BuildRequest, composetypes.ServiceConfig, bool, error) {
+) (buildtypes.BuildRequest, composeTypes.ServiceConfig, bool, error) {
 	if project == nil || svc.Build == nil {
 		return buildtypes.BuildRequest{}, svc, false, errors.New("compose project and service build configuration are required")
 	}
@@ -175,7 +168,7 @@ func PrepareServiceBuildRequest(
 
 	dockerfilePath := ""
 	if strings.TrimSpace(dockerfileInline) == "" {
-		dockerfilePath = ResolveDockerfilePath(updatedSvc)
+		dockerfilePath = cmp.Or(strings.TrimSpace(updatedSvc.Build.Dockerfile), "Dockerfile")
 	}
 
 	buildReq := buildtypes.BuildRequest{

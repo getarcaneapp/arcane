@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/samber/mo"
-	"gorm.io/gorm"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/builds/pkg/contextsource"
@@ -21,6 +20,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/sqlite"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/arcane/v3/pkg/update"
 	"getarcane.dev/arcane/v3/pkg/validation"
@@ -75,25 +75,32 @@ func (s *GitRepositoryService) GetRepositoriesPaginated(ctx context.Context, par
 }
 
 func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string) (*GitRepository, error) {
-	var repository GitRepository
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&repository).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.Classify(common.ErrNotFound, errors.New("repository not found"))
-		}
-		return nil, fmt.Errorf("failed to get repository: %w", err)
-	}
-	return &repository, nil
+	return sqlite.FirstWhere[GitRepository](ctx, s.db.DB, common.Classify(common.ErrNotFound, errors.New("repository not found")), "id = ?", id)
 }
 
 func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name string) (*GitRepository, error) {
-	var repository GitRepository
-	if err := s.db.WithContext(ctx).Where("name = ?", name).First(&repository).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.Classify(common.ErrNotFound, errors.New("repository not found"))
-		}
-		return nil, fmt.Errorf("failed to get repository: %w", err)
-	}
-	return &repository, nil
+	return sqlite.FirstWhere[GitRepository](ctx, s.db.DB, common.Classify(common.ErrNotFound, errors.New("repository not found")), "name = ?", name)
+}
+
+func (s *GitRepositoryService) logRepositoryEvent(
+	ctx context.Context,
+	repository *GitRepository,
+	actor types.Actor,
+	eventType event.EventType,
+	severity event.EventSeverity,
+	title, description string,
+) {
+	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
+		Type:         eventType,
+		Severity:     severity,
+		Title:        title,
+		Description:  description,
+		ResourceType: new("git_repository"),
+		ResourceID:   new(repository.ID),
+		ResourceName: new(repository.Name),
+		UserID:       new(actor.ID),
+		Username:     new(actor.Username),
+	})
 }
 
 func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, rawURL string) (*GitRepository, error) {
@@ -138,59 +145,52 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.G
 	case req.AuthType == "":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "authType", Err: errors.New("authentication type is required")})
 	}
+	var encryptedToken, encryptedSSHKey, encryptedSigningKey, encryptedPassphrase string
+	if req.Token != "" {
+		encrypted, err := crypto.Encrypt(req.Token)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt token: %w", err)
+		}
+		encryptedToken = encrypted
+	}
+	if req.SSHKey != "" {
+		encrypted, err := crypto.Encrypt(req.SSHKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encrypt SSH key: %w", err)
+		}
+		encryptedSSHKey = encrypted
+	}
+	if req.SigningKey != "" {
+		var err error
+		encryptedSigningKey, encryptedPassphrase, err = encryptSigningKey(req.SigningKey, req.SigningKeyPassphrase)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	repository := GitRepository{
 		Name:                   req.Name,
 		URL:                    req.URL,
 		Provider:               req.Provider,
 		AuthType:               req.AuthType,
 		Username:               req.Username,
+		Token:                  encryptedToken,
+		SSHKey:                 encryptedSSHKey,
 		SSHHostKeyVerification: cmp.Or(req.SSHHostKeyVerification, "accept_new"),
 		CommitAuthorName:       req.CommitAuthorName,
 		CommitAuthorEmail:      req.CommitAuthorEmail,
+		SigningKey:             encryptedSigningKey,
+		SigningKeyPassphrase:   encryptedPassphrase,
 		Description:            req.Description,
 		Enabled:                kit.Ternary(submitted["enabled"], req.Enabled, true),
-	}
-
-	if req.Token != "" {
-		encrypted, err := crypto.Encrypt(req.Token)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt token: %w", err)
-		}
-		repository.Token = encrypted
-	}
-
-	if req.SSHKey != "" {
-		encrypted, err := crypto.Encrypt(req.SSHKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt SSH key: %w", err)
-		}
-		repository.SSHKey = encrypted
-	}
-
-	if req.SigningKey != "" {
-		signingKey, passphrase, err := encryptSigningKey(req.SigningKey, req.SigningKeyPassphrase)
-		if err != nil {
-			return nil, err
-		}
-		repository.SigningKey = signingKey
-		repository.SigningKeyPassphrase = passphrase
 	}
 
 	if err := s.db.WithContext(ctx).Create(&repository).Error; err != nil {
 		return nil, fmt.Errorf("failed to create repository: %w", err)
 	}
 
-	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:         event.EventTypeGitRepositoryCreate,
-		Severity:     event.EventSeveritySuccess,
-		Title:        "Git repository created",
-		Description:  fmt.Sprintf("Created git repository '%s' (%s)", repository.Name, repository.URL),
-		ResourceType: new("git_repository"),
-		ResourceID:   new(repository.ID),
-		ResourceName: new(repository.Name),
-		UserID:       new(actor.ID),
-		Username:     new(actor.Username),
-	})
+	s.logRepositoryEvent(ctx, &repository, actor, event.EventTypeGitRepositoryCreate, event.EventSeveritySuccess,
+		"Git repository created", fmt.Sprintf("Created git repository '%s' (%s)", repository.Name, repository.URL))
 
 	return &repository, nil
 }
@@ -275,17 +275,8 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 			return nil, fmt.Errorf("failed to update repository: %w", updateRepositoryErr)
 		}
 
-		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:         event.EventTypeGitRepositoryUpdate,
-			Severity:     event.EventSeveritySuccess,
-			Title:        "Git repository updated",
-			Description:  fmt.Sprintf("Updated git repository '%s'", repository.Name),
-			ResourceType: new("git_repository"),
-			ResourceID:   new(repository.ID),
-			ResourceName: new(repository.Name),
-			UserID:       new(change.Actor.ID),
-			Username:     new(change.Actor.Username),
-		})
+		s.logRepositoryEvent(ctx, repository, change.Actor, event.EventTypeGitRepositoryUpdate, event.EventSeveritySuccess,
+			"Git repository updated", fmt.Sprintf("Updated git repository '%s'", repository.Name))
 	}
 
 	return s.GetRepositoryByID(ctx, id)
@@ -310,17 +301,8 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 		return fmt.Errorf("failed to delete repository: %w", deleteRepositoryErr)
 	}
 
-	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:         event.EventTypeGitRepositoryDelete,
-		Severity:     event.EventSeverityInfo,
-		Title:        "Git repository deleted",
-		Description:  fmt.Sprintf("Deleted git repository '%s'", repository.Name),
-		ResourceType: new("git_repository"),
-		ResourceID:   new(repository.ID),
-		ResourceName: new(repository.Name),
-		UserID:       new(actor.ID),
-		Username:     new(actor.Username),
-	})
+	s.logRepositoryEvent(ctx, repository, actor, event.EventTypeGitRepositoryDelete, event.EventSeverityInfo,
+		"Git repository deleted", fmt.Sprintf("Deleted git repository '%s'", repository.Name))
 
 	return nil
 }
@@ -342,80 +324,68 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id, branch st
 
 	err = s.Client.TestConnection(ctx, repository.URL, branch, authConfig)
 	if err != nil {
-		_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-			Type:         event.EventTypeGitRepositoryError,
-			Severity:     event.EventSeverityError,
-			Title:        "Git repository connection test failed",
-			Description:  fmt.Sprintf("Failed to connect to repository '%s': %s", repository.Name, err.Error()),
-			ResourceType: new("git_repository"),
-			ResourceID:   new(repository.ID),
-			ResourceName: new(repository.Name),
-			UserID:       new(actor.ID),
-			Username:     new(actor.Username),
-		})
+		s.logRepositoryEvent(ctx, repository, actor, event.EventTypeGitRepositoryError, event.EventSeverityError,
+			"Git repository connection test failed", fmt.Sprintf("Failed to connect to repository '%s': %s", repository.Name, err.Error()))
 		return err
 	}
 
-	_, _ = s.eventService.CreateEvent(ctx, event.CreateEventRequest{
-		Type:         event.EventTypeGitRepositoryTest,
-		Severity:     event.EventSeveritySuccess,
-		Title:        "Git repository connection successful",
-		Description:  fmt.Sprintf("Successfully connected to repository '%s'", repository.Name),
-		ResourceType: new("git_repository"),
-		ResourceID:   new(repository.ID),
-		ResourceName: new(repository.Name),
-		UserID:       new(actor.ID),
-		Username:     new(actor.Username),
-	})
+	s.logRepositoryEvent(ctx, repository, actor, event.EventTypeGitRepositoryTest, event.EventSeveritySuccess,
+		"Git repository connection successful", fmt.Sprintf("Successfully connected to repository '%s'", repository.Name))
 
 	return nil
 }
 
 func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *GitRepository) (git.AuthConfig, error) {
-	authConfig := git.AuthConfig{
+	var token, sshKey string
+	if repository.Token != "" {
+		decrypted, err := crypto.Decrypt(repository.Token)
+		if err != nil {
+			return git.AuthConfig{}, fmt.Errorf("failed to decrypt token: %w", err)
+		}
+		token = decrypted
+	}
+	if repository.SSHKey != "" {
+		decrypted, err := crypto.Decrypt(repository.SSHKey)
+		if err != nil {
+			return git.AuthConfig{}, fmt.Errorf("failed to decrypt SSH key: %w", err)
+		}
+		sshKey = decrypted
+	}
+
+	return git.AuthConfig{
 		AuthType:               repository.AuthType,
 		Username:               repository.Username,
+		Token:                  token,
+		SSHKey:                 sshKey,
 		SSHHostKeyVerification: repository.SSHHostKeyVerification,
-	}
-
-	if repository.Token != "" {
-		token, err := crypto.Decrypt(repository.Token)
-		if err != nil {
-			return authConfig, fmt.Errorf("failed to decrypt token: %w", err)
-		}
-		authConfig.Token = token
-	}
-
-	if repository.SSHKey != "" {
-		sshKey, err := crypto.Decrypt(repository.SSHKey)
-		if err != nil {
-			return authConfig, fmt.Errorf("failed to decrypt SSH key: %w", err)
-		}
-		authConfig.SSHKey = sshKey
-	}
-
-	return authConfig, nil
+	}, nil
 }
 
 func (s *GitRepositoryService) GetCommitIdentity(ctx context.Context, repository *GitRepository) (git.CommitIdentity, error) {
-	identity := git.CommitIdentity{Name: repository.CommitAuthorName, Email: repository.CommitAuthorEmail}
-	identity.Name = cmp.Or(identity.Name, defaultCommitAuthorName)
-	identity.Email = cmp.Or(identity.Email, defaultCommitAuthorEmail)
+	name := cmp.Or(repository.CommitAuthorName, defaultCommitAuthorName)
+	email := cmp.Or(repository.CommitAuthorEmail, defaultCommitAuthorEmail)
 	if repository.SigningKey == "" {
-		return identity, nil
+		return git.CommitIdentity{Name: name, Email: email}, nil
 	}
 	armored, err := crypto.Decrypt(repository.SigningKey)
 	if err != nil {
-		return identity, fmt.Errorf("failed to decrypt signing key: %w", err)
+		return git.CommitIdentity{}, fmt.Errorf("failed to decrypt signing key: %w", err)
 	}
 	passphrase := ""
 	if repository.SigningKeyPassphrase != "" {
 		if passphrase, err = crypto.Decrypt(repository.SigningKeyPassphrase); err != nil {
-			return identity, fmt.Errorf("failed to decrypt signing key passphrase: %w", err)
+			return git.CommitIdentity{}, fmt.Errorf("failed to decrypt signing key passphrase: %w", err)
 		}
 	}
-	identity.SignKey, err = git.ParseSigningKey(armored, passphrase)
-	return identity, err
+	signKey, err := git.ParseSigningKey(armored, passphrase)
+	if err != nil {
+		return git.CommitIdentity{}, err
+	}
+	return git.CommitIdentity{
+		Name:    name,
+		Email:   email,
+		SignKey: signKey,
+	}, nil
 }
 
 func encryptSigningKey(armored, passphrase string) (string, string, error) {

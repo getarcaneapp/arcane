@@ -3,14 +3,12 @@ package ws
 import (
 	"cmp"
 	"context"
-	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"runtime"
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -35,9 +33,6 @@ func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interv
 	h.systemStatsSampler.lifecycleMu.Lock()
 
 	h.systemStatsSampler.clients++
-	if h.systemStatsSampler.intervals == nil {
-		h.systemStatsSampler.intervals = map[time.Duration]int{}
-	}
 	h.systemStatsSampler.intervals[interval]++
 	h.refreshSystemStatsSamplerIntervalLocked()
 	if h.systemStatsSampler.running {
@@ -283,9 +278,6 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 		h.activeConnectionsMu.Unlock()
 		return c.JSON(http.StatusTooManyRequests, map[string]any{"success": false, "error": "Too many concurrent stats connections for this client"})
 	}
-	if h.activeConnections == nil {
-		h.activeConnections = make(map[string]int)
-	}
 	h.activeConnections[clientKey]++
 	h.activeConnectionsMu.Unlock()
 	defer func() {
@@ -338,13 +330,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 
 	send := func() error {
 		stats, _ := h.systemStatsSampler.latest.Load()
-		b, err := json.Marshal(stats)
-		if err != nil {
-			return err
-		}
-		wctx, localCancel := context.WithTimeout(ctx, 10*time.Second)
-		defer localCancel()
-		return conn.Write(wctx, websocket.MessageText, b)
+		return writeWSJSON(ctx, conn, stats)
 	}
 
 	if err := send(); err != nil {

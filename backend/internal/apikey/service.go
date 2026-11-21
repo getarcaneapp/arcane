@@ -72,9 +72,7 @@ var (
 	ErrApiKeyPermissionEscalation = common.Classify(common.ErrForbidden, errors.New("cannot grant a permission you do not have"))
 	ErrApiKeyPersonalNoGrants     = errors.New("personal API keys inherit the owner's permissions and cannot carry grants")
 
-	defaultAdminAPIKeyDescription = func() *string {
-		return new("Environment-managed static API key for the built-in admin account")
-	}()
+	defaultAdminAPIKeyDescription = new("Environment-managed static API key for the built-in admin account")
 )
 
 func NewApiKeyService(db *database.DB, userService *user.UserService, roleService *role.RoleService) *ApiKeyService {
@@ -144,10 +142,7 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 }
 
 func (s *ApiKeyService) backfillPermsForKey(ctx context.Context, tx *gorm.DB, key ApiKey) ([]string, error) {
-	if key.UserID == nil && key.EnvironmentID == nil {
-		return authz.AllPermissions(), nil
-	}
-	if key.UserID == nil && key.EnvironmentID != nil {
+	if key.UserID == nil {
 		return authz.AllPermissions(), nil
 	}
 	var owner user.User
@@ -346,10 +341,7 @@ func (s *ApiKeyService) validateGrantsAgainstOwner(ctx context.Context, ownerID 
 
 func validateGrantsAgainstPermissionSet(callerPerms *authz.PermissionSet, grants []types.ApiKeyPermissionGrant) error {
 	for _, g := range grants {
-		envID := ""
-		if g.EnvironmentID != nil {
-			envID = *g.EnvironmentID
-		}
+		envID := kit.FromPtr(g.EnvironmentID)
 		if !callerPerms.Allows(g.Permission, envID) {
 			return fmt.Errorf("%s (env=%q): %w", g.Permission, envID, ErrApiKeyPermissionEscalation)
 		}
@@ -402,12 +394,7 @@ func (s *ApiKeyService) CreatePersonalApiKey(ctx context.Context, userID string,
 		return nil, err
 	}
 
-	created, err := s.createAPIKeyWithRawKey(ctx, s.db.DB, &userID, rawKey, req, nil, nil, ApiKeyKindPersonal)
-	if err != nil {
-		return nil, err
-	}
-	created.Permissions = []types.ApiKeyPermissionGrant{}
-	return created, nil
+	return s.createAPIKeyWithRawKey(ctx, s.db.DB, &userID, rawKey, req, nil, nil, ApiKeyKindPersonal)
 }
 
 func (s *ApiKeyService) createAPIKeyWithRawKey(
@@ -452,7 +439,8 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 	// A just-minted environment key is about to be linked as the
 	// environment's pairing key, so present it as bootstrap already.
 	return &types.ApiKeyCreatedDto{
-		ApiKey: toAPIKeyDTO(ak, environmentID != nil), Key: rawKey,
+		ApiKey: toAPIKeyDTO(ak, environmentID != nil, nil),
+		Key:    rawKey,
 	}, nil
 }
 
@@ -478,7 +466,7 @@ func (s *ApiKeyService) environmentReferencedApiKeyIDs(ctx context.Context) (map
 	return set, nil
 }
 
-func toAPIKeyDTO(ak *ApiKey, isBootstrap bool) types.ApiKey {
+func toAPIKeyDTO(ak *ApiKey, isBootstrap bool, permissions []types.ApiKeyPermissionGrant) types.ApiKey {
 	return types.ApiKey{
 		ID:          ak.ID,
 		Name:        ak.Name,
@@ -492,19 +480,19 @@ func toAPIKeyDTO(ak *ApiKey, isBootstrap bool) types.ApiKey {
 		LastUsedAt:  ak.LastUsedAt,
 		CreatedAt:   ak.CreatedAt,
 		UpdatedAt:   ak.UpdatedAt,
+		Permissions: permissions,
 	}
 }
 
 func toAPIKeyDTOWithPermissions(ak *ApiKey, isBootstrap bool) types.ApiKey {
-	dto := toAPIKeyDTO(ak, isBootstrap)
-	dto.Permissions = make([]types.ApiKeyPermissionGrant, len(ak.PermissionGrants))
+	permissions := make([]types.ApiKeyPermissionGrant, len(ak.PermissionGrants))
 	for i, grant := range ak.PermissionGrants {
-		dto.Permissions[i] = types.ApiKeyPermissionGrant{
+		permissions[i] = types.ApiKeyPermissionGrant{
 			Permission:    grant.Permission,
 			EnvironmentID: grant.EnvironmentID,
 		}
 	}
-	return dto
+	return toAPIKeyDTO(ak, isBootstrap, permissions)
 }
 
 func (s *ApiKeyService) CreateDefaultAdminAPIKey(ctx context.Context, userID, rawKey string) (*types.ApiKeyCreatedDto, error) {
@@ -725,9 +713,7 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 
 func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*types.ApiKey, error) {
 	var ak ApiKey
-	query := s.db.WithContext(ctx)
-	query = query.Preload("PermissionGrants")
-	if err := query.Where("id = ?", id).First(&ak).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("PermissionGrants").Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrApiKeyNotFound
 		}
@@ -742,8 +728,7 @@ func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*types.ApiKey
 
 func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]types.ApiKey, pagination.Response, error) {
 	var apiKeys []ApiKey
-	query := s.db.WithContext(ctx).Model(&ApiKey{})
-	query = query.Preload("PermissionGrants")
+	query := s.db.WithContext(ctx).Model(&ApiKey{}).Preload("PermissionGrants")
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -777,9 +762,8 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 
 func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([]types.ApiKey, error) {
 	var apiKeys []ApiKey
-	query := s.db.WithContext(ctx)
-	query = query.Preload("PermissionGrants")
-	if err := query.Where("user_id = ?", userID).
+	if err := s.db.WithContext(ctx).Preload("PermissionGrants").
+		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&apiKeys).Error; err != nil {
 		return nil, fmt.Errorf("failed to list user api keys: %w", err)
@@ -893,11 +877,10 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 }
 
 func (s *ApiKeyService) loadKeyGrants(ctx context.Context, apiKeyID string) []types.ApiKeyPermissionGrant {
-	empty := []types.ApiKeyPermissionGrant{}
 	var rows []role.ApiKeyPermission
 	if err := s.db.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Find(&rows).Error; err != nil {
 		slog.WarnContext(ctx, "failed to load api key permission grants", "apiKeyId", apiKeyID, "error", err)
-		return empty
+		return nil
 	}
 	out := make([]types.ApiKeyPermissionGrant, len(rows))
 	for i, r := range rows {

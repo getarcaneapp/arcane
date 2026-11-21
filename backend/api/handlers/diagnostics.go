@@ -52,80 +52,34 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermDiagnosticsRead, h.GetEnvironmentGoroutineDiagnostics)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pprof-index",
-		Method:      http.MethodGet,
-		Path:        "/debug/pprof",
-		Tags:        []string{"Diagnostics"},
-		Hidden:      true,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermDiagnosticsProfile, middleware.EchoHandler(echo.WrapHandler(http.HandlerFunc(pprof.Index))))
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pprof-index-slash",
-		Method:      http.MethodGet,
-		Path:        "/debug/pprof/",
-		Tags:        []string{"Diagnostics"},
-		Hidden:      true,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermDiagnosticsProfile, middleware.EchoHandler(echo.WrapHandler(http.HandlerFunc(pprof.Index))))
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pprof-cmdline",
-		Method:      http.MethodGet,
-		Path:        "/debug/pprof/cmdline",
-		Tags:        []string{"Diagnostics"},
-		Hidden:      true,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermDiagnosticsProfile, middleware.EchoHandler(echo.WrapHandler(http.HandlerFunc(pprof.Cmdline))))
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pprof-profile",
-		Method:      http.MethodGet,
-		Path:        "/debug/pprof/profile",
-		Tags:        []string{"Diagnostics"},
-		Hidden:      true,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermDiagnosticsProfile, middleware.EchoHandler(echo.WrapHandler(http.HandlerFunc(pprof.Profile))))
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pprof-symbol-lookup",
-		Method:      http.MethodPost,
-		Path:        "/debug/pprof/symbol",
-		Tags:        []string{"Diagnostics"},
-		Hidden:      true,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermDiagnosticsProfile, middleware.EchoHandler(echo.WrapHandler(http.HandlerFunc(pprof.Symbol))))
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pprof-symbol",
-		Method:      http.MethodGet,
-		Path:        "/debug/pprof/symbol",
-		Tags:        []string{"Diagnostics"},
-		Hidden:      true,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermDiagnosticsProfile, middleware.EchoHandler(echo.WrapHandler(http.HandlerFunc(pprof.Symbol))))
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pprof-trace",
-		Method:      http.MethodGet,
-		Path:        "/debug/pprof/trace",
-		Tags:        []string{"Diagnostics"},
-		Hidden:      true,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermDiagnosticsProfile, middleware.EchoHandler(echo.WrapHandler(http.HandlerFunc(pprof.Trace))))
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pprof-named-profile",
-		Method:      http.MethodGet,
-		Path:        "/debug/pprof/{name}",
-		Tags:        []string{"Diagnostics"},
-		Hidden:      true,
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermDiagnosticsProfile, middleware.EchoHandler(func(c *echo.Context) error {
-		pprof.Handler(c.Param("name")).ServeHTTP(c.Response(), c.Request())
-		return nil
-	}))
+	pprofRoutes := []struct {
+		handler echo.HandlerFunc
+		id      string
+		method  string
+		path    string
+	}{
+		{id: "pprof-index", method: http.MethodGet, path: "/debug/pprof", handler: echo.WrapHandler(http.HandlerFunc(pprof.Index))},
+		{id: "pprof-index-slash", method: http.MethodGet, path: "/debug/pprof/", handler: echo.WrapHandler(http.HandlerFunc(pprof.Index))},
+		{id: "pprof-cmdline", method: http.MethodGet, path: "/debug/pprof/cmdline", handler: echo.WrapHandler(http.HandlerFunc(pprof.Cmdline))},
+		{id: "pprof-profile", method: http.MethodGet, path: "/debug/pprof/profile", handler: echo.WrapHandler(http.HandlerFunc(pprof.Profile))},
+		{id: "pprof-symbol-lookup", method: http.MethodPost, path: "/debug/pprof/symbol", handler: echo.WrapHandler(http.HandlerFunc(pprof.Symbol))},
+		{id: "pprof-symbol", method: http.MethodGet, path: "/debug/pprof/symbol", handler: echo.WrapHandler(http.HandlerFunc(pprof.Symbol))},
+		{id: "pprof-trace", method: http.MethodGet, path: "/debug/pprof/trace", handler: echo.WrapHandler(http.HandlerFunc(pprof.Trace))},
+		{id: "pprof-named-profile", method: http.MethodGet, path: "/debug/pprof/{name}", handler: func(c *echo.Context) error {
+			pprof.Handler(c.Param("name")).ServeHTTP(c.Response(), c.Request())
+			return nil
+		}},
+	}
+	for _, r := range pprofRoutes {
+		middleware.RegisterWithPermission(api, huma.Operation{
+			OperationID: r.id,
+			Method:      r.method,
+			Path:        r.path,
+			Tags:        []string{"Diagnostics"},
+			Hidden:      true,
+			Security:    handlerutil.DefaultOperationSecurity(),
+		}, authz.PermDiagnosticsProfile, middleware.EchoHandler(r.handler))
+	}
 }
 
 func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context, _ *types.EnvironmentInput) (*GetEnvironmentActorDiagnosticsOutput, error) {

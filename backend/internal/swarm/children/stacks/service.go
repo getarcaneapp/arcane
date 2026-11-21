@@ -24,7 +24,7 @@ import (
 	kitfs "kit.getarcane.app/fs"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -36,7 +36,7 @@ import (
 
 type (
 	Service struct {
-		docker           *dockerInternal.DockerClientService
+		docker           *docker.DockerClientService
 		ensureManager    func(ctx context.Context) error
 		listTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 		paginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
@@ -45,7 +45,7 @@ type (
 	}
 
 	ServiceParams struct {
-		DockerService    *dockerInternal.DockerClientService
+		DockerService    *docker.DockerClientService
 		EnsureManager    func(ctx context.Context) error
 		ListTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 		PaginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)

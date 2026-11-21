@@ -9,15 +9,16 @@ import (
 )
 
 func TestBuildWorkspaceRequiredPermissions(t *testing.T) {
-	permissions, valid := BuildWorkspaceRequiredPermissions([]types.WorkspaceFileChange{
+	op := func(c types.WorkspaceFileChange) string { return c.Operation }
+	permissions, valid := WorkspaceRequiredPermissions(BuildWorkspaceConditions, []types.WorkspaceFileChange{
 		{Operation: types.FileOpCreateFile},
 		{Operation: types.FileOpDelete},
 		{Operation: types.FileOpMove},
-	})
+	}, op)
 	require.True(t, valid)
 	require.Equal(t, []string{PermBuildWorkspacesCreate, PermBuildWorkspacesDelete}, permissions)
 
-	permissions, valid = BuildWorkspaceRequiredPermissions([]types.WorkspaceFileChange{{Operation: "unknown"}})
+	permissions, valid = WorkspaceRequiredPermissions(BuildWorkspaceConditions, []types.WorkspaceFileChange{{Operation: "unknown"}}, op)
 	require.False(t, valid)
 	require.Nil(t, permissions)
 }

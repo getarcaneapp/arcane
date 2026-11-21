@@ -72,7 +72,7 @@ func NewHandler(service *Service, audit func(ctx context.Context, environmentID,
 func (h *Handler) List(ctx context.Context, input *ListPodsInput) (*handlerutil.Page[types.Pod], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.Aggregate(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, podPagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list pods: " + err.Error())
 		}
@@ -87,7 +87,7 @@ func (h *Handler) List(ctx context.Context, input *ListPodsInput) (*handlerutil.
 	return &handlerutil.Page[types.Pod]{
 		Body: types.Paginated[types.Pod]{
 			Success:    true,
-			Data:       kit.Ternary(items != nil, items, []types.Pod{}),
+			Data:       items,
 			Pagination: handlerutil.PaginationResponse(page),
 		},
 	}, nil
@@ -143,7 +143,7 @@ func (h *Handler) Prune(ctx context.Context, input *types.EnvironmentInput) (*ha
 	return &handlerutil.Out[[]types.PodPruneReport]{
 		Body: types.ApiResponse[[]types.PodPruneReport]{
 			Success: true,
-			Data:    kit.Ternary(reports != nil, reports, []types.PodPruneReport{}),
+			Data:    reports,
 		},
 	}, nil
 }
@@ -166,7 +166,7 @@ func (h *Handler) Stats(ctx context.Context, input *PodStatsInput) (*handlerutil
 	return &handlerutil.Out[[]types.PodStats]{
 		Body: types.ApiResponse[[]types.PodStats]{
 			Success: true,
-			Data:    kit.Ternary(stats != nil, stats, []types.PodStats{}),
+			Data:    stats,
 		},
 	}, nil
 }

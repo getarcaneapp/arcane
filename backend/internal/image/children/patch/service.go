@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,7 +41,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -646,19 +644,7 @@ func (s *Service) PatchedRefs(ctx context.Context, envID string) (map[string]str
 }
 
 func (s *Service) AggregatePatchTargets(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.PatchTarget], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.PatchTarget]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.PatchTarget]{}, fmt.Errorf("collect environment patch targets: %w", err)
-	}
-	pages := make([]pagination.EnvironmentPage[types.PatchTarget], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.PatchTarget]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
-	items, resp := pagination.MergeEnvironmentPages(pagination.Config[types.PatchTarget]{
+	result, err := handlerutil.AggregatePaginated(ctx, pagination.Config[types.PatchTarget]{
 		SortBindings: []pagination.SortBinding[types.PatchTarget]{
 			{
 				Key: "scanTime",
@@ -672,13 +658,11 @@ func (s *Service) AggregatePatchTargets(ctx context.Context, params pagination.Q
 			{Key: "imageName", Fn: func(a, b types.PatchTarget) int { return strings.Compare(a.ImageRef, b.ImageRef) }},
 			{Key: "fixableCount", Fn: func(a, b types.PatchTarget) int { return cmp.Compare(a.FixableCount, b.FixableCount) }},
 		},
-	}, pages, params)
-	return types.Paginated[types.PatchTarget]{
-		Success:            true,
-		Data:               items,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
+	}, params)
+	if err != nil {
+		return types.Paginated[types.PatchTarget]{}, fmt.Errorf("collect environment patch targets: %w", err)
+	}
+	return result, nil
 }
 
 // ListPatchTargets returns scanned images with their fixable-vulnerability

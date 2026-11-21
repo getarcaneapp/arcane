@@ -203,47 +203,12 @@ func (s *AuthService) GetOidcConfigurationStatus(_ context.Context) (*types.Oidc
 	}, nil
 }
 
-func (s *AuthService) GetSessionTimeout(ctx context.Context) (int, error) {
-	localSettings, err := s.settingsService.GetSettings(ctx)
-	if err != nil {
-		return 60, err
-	}
-
-	minutes := localSettings.AuthSessionTimeout.AsInt()
-	if minutes <= 0 {
-		minutes = 60
-	}
-
-	if minutes < 15 {
-		minutes = 15
-	} else if minutes > 525600 {
-		minutes = 525600
-	}
-
-	return minutes, nil
-}
-
-func (s *AuthService) IsLocalAuthEnabled(ctx context.Context) (bool, error) {
-	localSettings, err := s.settingsService.GetSettings(ctx)
-	if err != nil {
-		return true, err
-	}
-	return localSettings.AuthLocalEnabled.IsTrue(), nil
-}
-
-func (s *AuthService) IsOidcEnabled(ctx context.Context) (bool, error) {
-	localSettings, err := s.settingsService.GetSettings(ctx)
-	if err != nil {
-		return false, err
-	}
-	return localSettings.OidcEnabled.IsTrue(), nil
+func (s *AuthService) IsOidcEnabled() bool {
+	return s.settingsService.GetSettingsConfig().OidcEnabled.IsTrue()
 }
 
 func (s *AuthService) GetOidcConfig(ctx context.Context) (*settings.OidcConfig, error) {
-	appSettings, err := s.settingsService.GetSettings(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get settings: %w", err)
-	}
+	appSettings := s.settingsService.GetSettingsConfig()
 	if !appSettings.OidcEnabled.IsTrue() || (appSettings.OidcClientId.Value == "" && appSettings.OidcIssuerUrl.Value == "") {
 		return nil, ErrOidcAuthDisabled
 	}
@@ -264,10 +229,7 @@ func (s *AuthService) GetOidcConfig(ctx context.Context) (*settings.OidcConfig, 
 }
 
 func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, password string) (*user.User, error) {
-	localSettings, err := s.settingsService.GetSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
+	localSettings := s.settingsService.GetSettingsConfig()
 	localEnabled := localSettings.AuthLocalEnabled.IsTrue()
 	ldapEnabled := localSettings.LdapEnabled.IsTrue()
 	if !localEnabled && !ldapEnabled {
@@ -341,21 +303,20 @@ func (s *AuthService) CompleteLogin(ctx context.Context, localUser *user.User, m
 	if localUser.Disabled {
 		return nil, ErrUserDisabled
 	}
-	if strings.TrimSpace(source) == "" {
-		source = session.UserSessionSourceLocal
-	}
+	source = cmp.Or(strings.TrimSpace(source), session.UserSessionSourceLocal)
 	mfaMethod = strings.TrimSpace(mfaMethod)
 	if localUser.PasskeyMFAEnabled && source != session.UserSessionSourcePasskey && mfaMethod != session.PasskeyMFAMethod && mfaMethod != session.RecoveryCodeMFAMethod {
 		return nil, ErrMFARequired
 	}
-	meta.Source = source
-	meta.MFAMethod = mfaMethod
-	if meta.MFAMethod != "" && meta.MFAVerifiedAt == nil {
-		now := time.Now()
-		meta.MFAVerifiedAt = &now
+	sessionMeta := types.SessionMeta{
+		UserAgent:     meta.UserAgent,
+		IPAddress:     meta.IPAddress,
+		Source:        source,
+		MFAMethod:     mfaMethod,
+		MFAVerifiedAt: cmp.Or(meta.MFAVerifiedAt, kit.Ternary(mfaMethod != "", new(time.Now()), nil)),
 	}
 
-	localSession, refreshJTI, err := s.sessionService.CreateSession(ctx, localUser.ID, time.Now().Add(s.refreshExpiry), meta)
+	localSession, refreshJTI, err := s.sessionService.CreateSession(ctx, localUser.ID, time.Now().Add(s.refreshExpiry), sessionMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -368,8 +329,8 @@ func (s *AuthService) CompleteLogin(ctx context.Context, localUser *user.User, m
 	if len(eventMetadata) > 0 {
 		maps.Copy(metadata, eventMetadata[0])
 	}
-	if meta.MFAMethod != "" {
-		metadata["mfa"] = meta.MFAMethod
+	if mfaMethod != "" {
+		metadata["mfa"] = mfaMethod
 	}
 	logUserID := localUser.ID
 	logUsername := localUser.Username
@@ -443,34 +404,32 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo types.O
 		return updated, false, updateErr
 	}
 
-	if userInfo.Email != "" {
-		if localSettings, settingsErr := s.settingsService.GetSettings(ctx); settingsErr == nil && localSettings.OidcMergeAccounts.IsTrue() {
-			existingUser, emailErr := s.userService.GetUserByEmail(ctx, userInfo.Email)
-			switch {
-			case emailErr != nil && !errors.Is(emailErr, common.ErrUserNotFound):
-				return nil, false, emailErr
-			case existingUser == nil:
-			case !userInfo.EmailVerified:
-				// Only a provider-verified email may claim an existing account.
-				return nil, false, common.Classify(common.ErrForbidden, errors.New("email not verified by OIDC provider; cannot merge accounts"))
-			default:
-				slog.InfoContext(ctx, "Merging OIDC account with existing user", "email", userInfo.Email, "subject", userInfo.Subject)
-				// Perform the merge atomically to avoid races when multiple OIDC subjects share the same email
-				merged, mergeErr := s.userService.AttachOidcSubjectTransactional(ctx, existingUser.ID, userInfo.Subject, func(u *user.User) {
-					if userInfo.Name != "" && u.DisplayName == nil {
-						u.DisplayName = new(userInfo.Name)
-					}
-					s.persistOidcTokens(u, tokenResp)
-					u.LastLogin = new(time.Now())
-				})
-				if mergeErr != nil {
-					return nil, false, mergeErr
+	if userInfo.Email != "" && s.settingsService.GetSettingsConfig().OidcMergeAccounts.IsTrue() {
+		existingUser, emailErr := s.userService.GetUserByEmail(ctx, userInfo.Email)
+		switch {
+		case emailErr != nil && !errors.Is(emailErr, common.ErrUserNotFound):
+			return nil, false, emailErr
+		case existingUser == nil:
+		case !userInfo.EmailVerified:
+			// Only a provider-verified email may claim an existing account.
+			return nil, false, common.Classify(common.ErrForbidden, errors.New("email not verified by OIDC provider; cannot merge accounts"))
+		default:
+			slog.InfoContext(ctx, "Merging OIDC account with existing user", "email", userInfo.Email, "subject", userInfo.Subject)
+			// Perform the merge atomically to avoid races when multiple OIDC subjects share the same email
+			merged, mergeErr := s.userService.AttachOidcSubjectTransactional(ctx, existingUser.ID, userInfo.Subject, func(u *user.User) {
+				if userInfo.Name != "" && u.DisplayName == nil {
+					u.DisplayName = new(userInfo.Name)
 				}
-				if syncErr := s.syncOidcRoleAssignments(ctx, merged, userInfo, tokenResp); syncErr != nil {
-					return nil, false, fmt.Errorf("failed to sync OIDC role assignments on user merge: %w", syncErr)
-				}
-				return merged, false, nil
+				s.persistOidcTokens(u, tokenResp)
+				u.LastLogin = new(time.Now())
+			})
+			if mergeErr != nil {
+				return nil, false, mergeErr
 			}
+			if syncErr := s.syncOidcRoleAssignments(ctx, merged, userInfo, tokenResp); syncErr != nil {
+				return nil, false, fmt.Errorf("failed to sync OIDC role assignments on user merge: %w", syncErr)
+			}
+			return merged, false, nil
 		}
 	}
 
@@ -536,15 +495,8 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo types.OidcUse
 }
 
 func (s *AuthService) resolveOidcUsername(ctx context.Context, userInfo types.OidcUserInfo) (string, error) {
-	var username string
-	if userInfo.PreferredUsername == "" {
-		username = generateUsernameFromEmail(userInfo.Email, userInfo.Subject)
-	} else {
-		username = userInfo.PreferredUsername
-	}
-
 	// CreateUser trims usernames; check availability using the same value.
-	username = strings.TrimSpace(username)
+	username := strings.TrimSpace(cmp.Or(userInfo.PreferredUsername, generateUsernameFromEmail(userInfo.Email, userInfo.Subject)))
 
 	if _, lookupErr := s.userService.GetUserByUsername(ctx, username); errors.Is(lookupErr, common.ErrUserNotFound) {
 		return username, nil
@@ -608,11 +560,8 @@ func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *us
 	return err
 }
 
-func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) []string {
-	claim := "groups"
-	if localSettings, err := s.settingsService.GetSettings(ctx); err == nil {
-		claim = cmp.Or(strings.TrimSpace(localSettings.OidcGroupsClaim.Value), "groups")
-	}
+func (s *AuthService) extractOidcGroups(_ context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) []string {
+	claim := cmp.Or(strings.TrimSpace(s.settingsService.GetSettingsConfig().OidcGroupsClaim.Value), "groups")
 
 	if v, ok := oidc.GetByPath(userInfo.Extra, claim).Get(); ok {
 		if groups := oidc.GetStringSliceClaim(map[string]any{"groups": v}, "groups"); len(groups) > 0 {
@@ -874,8 +823,48 @@ func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, curren
 	return nil
 }
 
+func signSessionJWT(jwtID, subject, userID, sessionID string, issuedAt, expiresAt time.Time, extra map[string]any, signOption jwt.SignOption) (string, error) {
+	builder := jwt.NewBuilder().
+		JwtID(jwtID).
+		Subject(subject).
+		IssuedAt(issuedAt).
+		Expiration(expiresAt).
+		Claim(claimSessionID, sessionID).
+		Claim(claimUserID, userID)
+	for key, val := range extra {
+		builder.Claim(key, val)
+	}
+	if config.Version != "" {
+		builder.Claim(claimAppVersion, config.Version)
+	}
+	token, err := builder.Build()
+	if err != nil {
+		return "", err
+	}
+	signed, err := jwt.Sign(token, signOption)
+	if err != nil {
+		return "", err
+	}
+	return string(signed), nil
+}
+
+func userIdentityClaims(localUser *user.User) map[string]any {
+	claims := map[string]any{}
+	if localUser.Username != "" {
+		claims[claimUsername] = localUser.Username
+	}
+	if email := kit.FromPtr(localUser.Email); email != "" {
+		claims[claimEmail] = email
+	}
+	if displayName := kit.FromPtr(localUser.DisplayName); displayName != "" {
+		claims[claimDisplayName] = displayName
+	}
+	return claims
+}
+
 func (s *AuthService) buildTokenPair(ctx context.Context, localUser *user.User, localSession *session.UserSession, refreshJTI string) (*TokenPair, error) {
-	sessionTimeout, _ := s.GetSessionTimeout(ctx)
+	minutes := s.settingsService.GetSettingsConfig().AuthSessionTimeout.AsInt()
+	sessionTimeout := kit.Ternary(minutes <= 0, 60, min(max(minutes, 15), 525600))
 	now := time.Now()
 	accessTokenExpiry := now.Add(time.Duration(sessionTimeout) * time.Minute)
 
@@ -883,50 +872,13 @@ func (s *AuthService) buildTokenPair(ctx context.Context, localUser *user.User, 
 	if err != nil {
 		return nil, err
 	}
+	mldsaOpt := jwt.WithKey(jwa.MLDSA87(), signingKey)
 
-	accessBuilder := jwt.NewBuilder().
-		JwtID(localUser.ID).
-		Subject(accessTokenSubject).
-		IssuedAt(now).
-		Expiration(accessTokenExpiry).
-		Claim(claimSessionID, localSession.ID).
-		Claim(claimUserID, localUser.ID)
-	if localUser.Username != "" {
-		accessBuilder.Claim(claimUsername, localUser.Username)
-	}
-	if kit.FromPtr(localUser.Email) != "" {
-		accessBuilder.Claim(claimEmail, *localUser.Email)
-	}
-	if kit.FromPtr(localUser.DisplayName) != "" {
-		accessBuilder.Claim(claimDisplayName, *localUser.DisplayName)
-	}
-	if config.Version != "" {
-		accessBuilder.Claim(claimAppVersion, config.Version)
-	}
-	accessToken, err := accessBuilder.Build()
+	accessToken, err := signSessionJWT(localUser.ID, accessTokenSubject, localUser.ID, localSession.ID, now, accessTokenExpiry, userIdentityClaims(localUser), mldsaOpt)
 	if err != nil {
 		return nil, err
 	}
-	accessTokenBytes, err := jwt.Sign(accessToken, jwt.WithKey(jwa.MLDSA87(), signingKey))
-	if err != nil {
-		return nil, err
-	}
-
-	refreshBuilder := jwt.NewBuilder().
-		JwtID(refreshJTI).
-		Subject(refreshTokenSubject).
-		IssuedAt(now).
-		Expiration(localSession.ExpiresAt).
-		Claim(claimUserID, localUser.ID).
-		Claim(claimSessionID, localSession.ID)
-	if config.Version != "" {
-		refreshBuilder.Claim(claimAppVersion, config.Version)
-	}
-	refreshToken, err := refreshBuilder.Build()
-	if err != nil {
-		return nil, err
-	}
-	refreshTokenBytes, err := jwt.Sign(refreshToken, jwt.WithKey(jwa.MLDSA87(), signingKey))
+	refreshToken, err := signSessionJWT(refreshJTI, refreshTokenSubject, localUser.ID, localSession.ID, now, localSession.ExpiresAt, nil, mldsaOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -935,49 +887,22 @@ func (s *AuthService) buildTokenPair(ctx context.Context, localUser *user.User, 
 	if err != nil {
 		return nil, err
 	}
-	browserBuilder := jwt.NewBuilder().
-		JwtID(uuid.New().String()).
-		Subject(browserTokenSubject).
-		IssuedAt(now).
-		Expiration(accessTokenExpiry).
-		Claim(claimSessionID, localSession.ID).
-		Claim(claimUserID, localUser.ID)
-	if config.Version != "" {
-		browserBuilder.Claim(claimAppVersion, config.Version)
-	}
-	browserToken, err := browserBuilder.Build()
-	if err != nil {
-		return nil, err
-	}
-	browserTokenBytes, err := jwt.Sign(browserToken, jwt.WithKey(jwa.HS512(), browserSigningKey))
-	if err != nil {
-		return nil, err
-	}
+	hs512Opt := jwt.WithKey(jwa.HS512(), browserSigningKey)
 
-	browserRefreshBuilder := jwt.NewBuilder().
-		JwtID(refreshJTI).
-		Subject(browserRefreshSubject).
-		IssuedAt(now).
-		Expiration(localSession.ExpiresAt).
-		Claim(claimUserID, localUser.ID).
-		Claim(claimSessionID, localSession.ID)
-	if config.Version != "" {
-		browserRefreshBuilder.Claim(claimAppVersion, config.Version)
-	}
-	browserRefresh, err := browserRefreshBuilder.Build()
+	browserToken, err := signSessionJWT(uuid.New().String(), browserTokenSubject, localUser.ID, localSession.ID, now, accessTokenExpiry, nil, hs512Opt)
 	if err != nil {
 		return nil, err
 	}
-	browserRefreshBytes, err := jwt.Sign(browserRefresh, jwt.WithKey(jwa.HS512(), browserSigningKey))
+	browserRefresh, err := signSessionJWT(refreshJTI, browserRefreshSubject, localUser.ID, localSession.ID, now, localSession.ExpiresAt, nil, hs512Opt)
 	if err != nil {
 		return nil, err
 	}
 
 	return &TokenPair{
-		AccessToken:      string(accessTokenBytes),
-		BrowserToken:     string(browserTokenBytes),
-		RefreshToken:     string(refreshTokenBytes),
-		BrowserRefresh:   string(browserRefreshBytes),
+		AccessToken:      accessToken,
+		BrowserToken:     browserToken,
+		RefreshToken:     refreshToken,
+		BrowserRefresh:   browserRefresh,
 		ExpiresAt:        accessTokenExpiry,
 		RefreshExpiresAt: localSession.ExpiresAt,
 	}, nil
@@ -1001,38 +926,17 @@ func (s *AuthService) IssueFederatedToken(ctx context.Context, localUser *user.U
 	if err != nil {
 		return nil, err
 	}
-	builder := jwt.NewBuilder().
-		JwtID(localUser.ID).
-		Subject(accessTokenSubject).
-		IssuedAt(now).
-		Expiration(accessTokenExpiry).
-		Claim(claimSessionID, federatedSession.ID).
-		Claim(claimUserID, localUser.ID).
-		Claim(claimTokenType, session.UserSessionSourceFederated).
-		Claim(claimFederatedCredentialID, credentialID)
-	if localUser.Username != "" {
-		builder.Claim(claimUsername, localUser.Username)
-	}
-	if kit.FromPtr(localUser.Email) != "" {
-		builder.Claim(claimEmail, *localUser.Email)
-	}
-	if kit.FromPtr(localUser.DisplayName) != "" {
-		builder.Claim(claimDisplayName, *localUser.DisplayName)
-	}
-	if config.Version != "" {
-		builder.Claim(claimAppVersion, config.Version)
-	}
-	accessToken, err := builder.Build()
-	if err != nil {
-		return nil, err
-	}
-	accessTokenBytes, err := jwt.Sign(accessToken, jwt.WithKey(jwa.MLDSA87(), signingKey))
+	claims := userIdentityClaims(localUser)
+	claims[claimTokenType] = session.UserSessionSourceFederated
+	claims[claimFederatedCredentialID] = credentialID
+
+	accessToken, err := signSessionJWT(localUser.ID, accessTokenSubject, localUser.ID, federatedSession.ID, now, accessTokenExpiry, claims, jwt.WithKey(jwa.MLDSA87(), signingKey))
 	if err != nil {
 		return nil, err
 	}
 
 	return &TokenPair{
-		AccessToken: string(accessTokenBytes),
+		AccessToken: accessToken,
 		ExpiresAt:   accessTokenExpiry,
 	}, nil
 }

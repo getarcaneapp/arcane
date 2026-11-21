@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -40,7 +39,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/swarm/children/services"
 	"getarcane.dev/arcane/v3/internal/swarm/children/stacks"
 	"getarcane.dev/arcane/v3/pkg/agent"
-	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/jsonx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -505,30 +503,6 @@ func (s *SwarmService) listTasksPaginatedWithFilters(ctx context.Context, filter
 	result := taskPagination.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 	return result.Items, paginationResp, nil
-}
-
-func (s *SwarmService) AggregateTasks(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmTaskSummary], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmTaskSummary]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.SwarmTaskSummary]{}, err
-	}
-
-	pages := make([]pagination.EnvironmentPage[types.SwarmTaskSummary], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.SwarmTaskSummary]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
-	data, resp := pagination.MergeEnvironmentPages(taskPagination, pages, params)
-
-	return types.Paginated[types.SwarmTaskSummary]{
-		Success:            true,
-		Data:               data,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
 }
 
 func decodeSwarmSpec(raw jsontext.Value) (swarm.Spec, error) {

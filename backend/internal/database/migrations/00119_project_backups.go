@@ -23,8 +23,7 @@ CREATE TABLE IF NOT EXISTS project_backups (
     error TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    orphaned_at TIMESTAMP
+    completed_at TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_project_backups_project_id ON project_backups(project_id);
 UPDATE roles
@@ -76,8 +75,7 @@ CREATE TABLE IF NOT EXISTS project_backups (
     error text NOT NULL DEFAULT '',
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone,
-    completed_at timestamp with time zone,
-    orphaned_at timestamp with time zone
+    completed_at timestamp with time zone
 );
 CREATE INDEX IF NOT EXISTS idx_project_backups_project_id ON project_backups(project_id);
 UPDATE roles SET permissions = permissions || '["projects:backup"]'::jsonb

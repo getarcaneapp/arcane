@@ -70,6 +70,28 @@ func (j *JSON) Scan(value any) error {
 	return JSONScan(j, value)
 }
 
+func JSONFromMap[M ~map[string]V, V any](input M) JSON {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(JSON, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func (j JSON) ToStringMap() map[string]string {
+	if len(j) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(j))
+	for key, value := range j {
+		out[key] = fmt.Sprint(value)
+	}
+	return out
+}
+
 func (s StringSlice) Value() (driver.Value, error) {
 	return JSONValue(s == nil, s)
 }

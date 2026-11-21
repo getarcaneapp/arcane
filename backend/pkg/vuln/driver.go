@@ -187,36 +187,22 @@ func LogContainerStartupRequest(ctx context.Context, scope string, config *conta
 		return
 	}
 
-	resources := containertypes.Resources{}
-	autoRemove := false
-	var mounts []string
-	networkMode := ""
-	var securityOpts []string
-	privileged := false
-	if hostConfig != nil {
-		resources = hostConfig.Resources
-		autoRemove = hostConfig.AutoRemove
-		mounts = MountSummaries(hostConfig)
-		networkMode = string(hostConfig.NetworkMode)
-		securityOpts = append([]string(nil), hostConfig.SecurityOpt...)
-		privileged = hostConfig.Privileged
-	}
-
+	hc := cmp.Or(hostConfig, &containertypes.HostConfig{})
 	slog.DebugContext(ctx,
 		"preparing trivy container startup",
 		"scope", scope,
 		"image", config.Image,
 		"cmd", config.Cmd,
 		"entrypoint", config.Entrypoint,
-		"networkMode", networkMode,
-		"securityOpts", securityOpts,
-		"privileged", privileged,
-		"autoRemove", autoRemove,
-		"mounts", mounts,
-		"nanoCpUs", resources.NanoCPUs,
-		"cpuset", resources.CpusetCpus,
-		"memory", resources.Memory,
-		"memorySwap", resources.MemorySwap,
+		"networkMode", string(hc.NetworkMode),
+		"securityOpts", slices.Clone(hc.SecurityOpt),
+		"privileged", hc.Privileged,
+		"autoRemove", hc.AutoRemove,
+		"mounts", MountSummaries(hostConfig),
+		"nanoCpUs", hc.NanoCPUs,
+		"cpuset", hc.CpusetCpus,
+		"memory", hc.Memory,
+		"memorySwap", hc.MemorySwap,
 	)
 }
 
@@ -293,7 +279,7 @@ func ParseCPULimit(raw string, fallback float64) float64 {
 		return fallback
 	}
 
-	return kit.Ternary(limit < 0, 0, limit)
+	return max(limit, 0)
 }
 
 func ParseMemoryLimitMB(raw string, fallback int64) int64 {
@@ -307,7 +293,7 @@ func ParseMemoryLimitMB(raw string, fallback int64) int64 {
 		return fallback
 	}
 
-	return kit.Ternary(limit < 0, 0, limit)
+	return max(limit, 0)
 }
 
 func ContainerWaitTimeout(trivyTimeoutArg string) time.Duration {

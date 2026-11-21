@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -39,10 +38,10 @@
 		VolumesIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { s3DestinationAllQuery } from '#lib/query/backups.js';
 	import { projectBackupListQuery, projectBackupOptionsQuery, projectBackupPoliciesQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { S3Destination, SystemBackupDestination } from '#lib/types/backup.js';
 	import type { Paginated } from '#lib/types/base.js';
@@ -102,8 +101,6 @@
 	let stopContainers = $state(true);
 	let destination = $state<SystemBackupDestination>('local');
 	let s3DestinationId = $state('');
-	let s3Destinations = $state<S3Destination[]>([]);
-	let s3DestinationsError = $state<string | null>(null);
 	let creating = $state(false);
 
 	let restoreOpen = $state(false);
@@ -131,10 +128,8 @@
 	const policies = $derived<ProjectBackupPolicy[]>(policiesQuery.data?.policies ?? []);
 	// Saving sends the whole list, so schedules are only edited once the current list has loaded.
 	const policiesLoaded = $derived(policiesQuery.isSuccess);
-
-	const selectable = (volume: ProjectVolume) => volume.included;
 	const selectedVolumes = $derived(
-		(options?.volumes ?? []).filter((volume) => selectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
+		(options?.volumes ?? []).filter((volume) => volume.included && (checkedOverrides[volume.key] ?? true))
 	);
 	const needsS3Destination = $derived(destination !== 'local');
 	const restoreVolumes = $derived((restoreItem?.volumes ?? []).filter((volume) => volume.included));
@@ -195,12 +190,14 @@
 		restoreWasRunning = restoring;
 	});
 
-	onMount(async () => {
-		if (!canBackup || !canListS3Destinations) return;
-		const result = await tryCatch(s3DestinationService.listAll());
-		if (result.error !== null) s3DestinationsError = extractApiErrorMessage(result.error);
-		else s3Destinations = result.data;
-	});
+	const s3DestinationsQuery = createQuery(() => ({
+		...s3DestinationAllQuery(),
+		enabled: canBackup && canListS3Destinations,
+		retry: false,
+		refetchOnWindowFocus: false
+	}));
+	const s3Destinations = $derived<S3Destination[]>(canBackup && canListS3Destinations ? (s3DestinationsQuery.data ?? []) : []);
+	const s3DestinationsError = $derived(s3DestinationsQuery.error ? extractApiErrorMessage(s3DestinationsQuery.error) : null);
 
 	async function openDialog() {
 		dialogOpen = true;
@@ -323,7 +320,6 @@
 					restoreItem.id,
 					{
 						name: restoreName.trim(),
-						files: true,
 						volumes: selectedRestoreVolumes.map((volume) => volume.key),
 						start: startRestored && canStartRestored
 					},
@@ -350,7 +346,7 @@
 	}
 
 	function scheduleChecked(volume: ProjectVolume): boolean {
-		if (!selectable(volume)) return false;
+		if (!volume.included) return false;
 		return scheduleOverrides[volume.key] ?? (scheduleBaseVolumes ? scheduleBaseVolumes.includes(volume.key) : volume.included);
 	}
 
@@ -659,8 +655,8 @@
 								<Checkbox
 									id={`project-backup-volume-${volume.key}`}
 									class="mt-0.5"
-									checked={selectable(volume) && (checkedOverrides[volume.key] ?? volume.included)}
-									disabled={!selectable(volume) || creating}
+									checked={volume.included && (checkedOverrides[volume.key] ?? true)}
+									disabled={!volume.included || creating}
 									onCheckedChange={(checked) => (checkedOverrides = { ...checkedOverrides, [volume.key]: checked === true })}
 								/>
 								<div class="grid min-w-0 gap-1">
@@ -750,7 +746,7 @@
 							id={`project-backup-policy-volume-${volume.key}`}
 							class="mt-0.5"
 							checked={scheduleChecked(volume)}
-							disabled={!selectable(volume)}
+							disabled={!volume.included}
 							onCheckedChange={(checked) => (scheduleOverrides = { ...scheduleOverrides, [volume.key]: checked === true })}
 						/>
 						<div class="grid min-w-0 gap-1">

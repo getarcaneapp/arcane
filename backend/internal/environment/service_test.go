@@ -1868,7 +1868,9 @@ func TestAggregateVersionsReportsEachEnvironment(t *testing.T) {
 		},
 	})
 
-	body, err := (&EnvironmentService{}).AggregateVersions(ctx)
+	body, err := httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[types.VersionInfo]) types.VersionInfo {
+		return types.VersionInfo{}
+	})
 	require.NoError(t, err)
 
 	require.Equal(t, []types.EnvironmentData[types.VersionInfo]{
