@@ -710,16 +710,15 @@ func (s *Service) stopContainers(ctx context.Context, composeName string) ([]con
 	return stopped, nil
 }
 
-// startContainers starts the stopped containers' services with Compose, in dependency order, and the rest directly: a
-// service with a container the backup didn't stop, such as a replica stopped by hand, first, so the services Compose
-// starts find it running; then a one-off, a service the Compose files no longer name, or all of them when the files
-// don't load in time or the start fails.
+// startContainers starts the stopped containers' services with Compose, which follows their dependency order, and the
+// rest directly: a one-off, a service the Compose files no longer name, or all of them when the files don't load in
+// time or the start fails.
 func (s *Service) startContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
-	model, partial, err := s.restartPlan(ctx, projectID, stopped)
-	var (
-		services []string
-		replicas []container.Summary
-	)
+	// The caller's context is never cancelled and holds the project's locks, so the load gives up with the Docker API.
+	loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
+	model, err := s.deps.ComposeProject(loadCtx, projectID)
+	cancel()
+	var services []string
 	direct := stopped
 	if err == nil {
 		direct = nil
@@ -730,14 +729,11 @@ func (s *Service) startContainers(ctx context.Context, projectID string, stopped
 			switch {
 			case (!enabled && !disabled) || c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
 				direct = append(direct, c)
-			case partial[service]:
-				replicas = append(replicas, c)
 			case !slices.Contains(services, service):
 				services = append(services, service)
 			}
 		}
 	}
-	_, replicasErr := s.deps.Containers.StartContainers(ctx, replicas, types.SystemUser)
 	var startErr error
 	if len(services) > 0 {
 		startErr = projects.ComposeStart(ctx, types.ComposeTarget{Project: model, DockerHost: s.deps.Docker.DockerHost(), Services: services})
@@ -747,38 +743,7 @@ func (s *Service) startContainers(ctx context.Context, projectID string, stopped
 		direct = stopped
 	}
 	_, err = s.deps.Containers.StartContainers(ctx, direct, types.SystemUser)
-	return errors.Join(replicasErr, startErr, err)
-}
-
-// restartPlan loads the project's Compose files and names the services with a stopped container the backup didn't
-// stop, within the Docker API timeout, since the caller's context is never cancelled and holds the project's locks.
-func (s *Service) restartPlan(ctx context.Context, projectID string, stopped []container.Summary) (*composetypes.Project, map[string]bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
-	defer cancel()
-	model, err := s.deps.ComposeProject(ctx, projectID)
-	if err != nil {
-		return nil, nil, err
-	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	found, err := projects.ListComposeProjectContainers(ctx, dockerClient, model.Name)
-	if err != nil {
-		return nil, nil, err
-	}
-	partial := map[string]bool{}
-	for _, c := range found {
-		// Compose start leaves one-offs and hooks alone, so a leftover one doesn't make its service partial.
-		if c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "" || c.Labels[api.HookLabel] != "" {
-			continue
-		}
-		backedUp := slices.ContainsFunc(stopped, func(other container.Summary) bool { return other.ID == c.ID })
-		if !backedUp && c.State != container.StateRunning && c.State != container.StateRestarting {
-			partial[docker.ComposeServiceLabel(c.Labels)] = true
-		}
-	}
-	return model, partial, nil
+	return errors.Join(startErr, err)
 }
 
 // checkPlanVolumes fails when the project's volumes changed after the backup was queued, for example by a compose edit
