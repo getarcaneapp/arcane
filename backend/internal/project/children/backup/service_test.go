@@ -721,21 +721,18 @@ func TestRestoreRemovesTheVolumesItCreates(t *testing.T) {
 	failed := &fakeRestore{fail: map[string]error{"create shop_logs": createErr}}
 	err := failed.steps().apply(t.Context(), p)
 	require.ErrorIs(t, err, createErr)
-	// Docker may have created the volume whose create failed, so the rollback is handed every volume the restore was to
-	// create.
-	require.Equal(t, []string{
-		"clear", "safety", "in use", "create shop_cache", "create shop_logs",
-		"rolling back", "restore s1  ", "remove shop_cache,shop_logs",
-	}, failed.calls)
+	// The volume created before the failure is removed; the one that failed is not, since it may be someone else's.
+	require.Equal(t, []string{"clear", "safety", "in use", "create shop_cache", "create shop_logs", "rolling back", "restore s1  ", "remove shop_cache"}, failed.calls)
 
-	// Arcane stops during a create: the last checkpoint is the one saved with the safety backup, and the resumed run
-	// removes the volumes from it.
-	index := slices.IndexFunc(failed.plans, func(recorded restorePlan) bool { return recorded.SafetyID != "" })
+	// Arcane stops between the two creates: the checkpoint saved after the first already names it, so the resumed run
+	// removes it.
+	index := slices.IndexFunc(failed.plans, func(recorded restorePlan) bool { return len(recorded.Created) > 0 })
 	require.GreaterOrEqual(t, index, 0)
+	require.Equal(t, []string{"shop_cache"}, failed.plans[index].Created)
 	resumed := &fakeRestore{}
 	err = resumed.steps().apply(t.Context(), failed.plans[index])
 	require.ErrorContains(t, err, "the restore was interrupted")
-	require.Contains(t, resumed.calls, "remove shop_cache,shop_logs")
+	require.Contains(t, resumed.calls, "remove shop_cache")
 	require.NotContains(t, resumed.calls, "create shop_logs")
 }
 

@@ -138,9 +138,10 @@ type (
 		SafetyID    string                             `json:"safetyId,omitempty"`
 		Failure     string                             `json:"failure,omitempty"`
 		Volumes     []types.ProjectBackupRestoreVolume `json:"volumes"`
-		// Create are the volumes the restore creates; a rollback removes them.
-		Create []client.VolumeCreateOptions `json:"create,omitempty"`
-		Files  bool                         `json:"files"`
+		Create      []client.VolumeCreateOptions       `json:"create,omitempty"`
+		// Created are the volumes this restore created; only these are removed on rollback.
+		Created []string `json:"created,omitempty"`
+		Files   bool     `json:"files"`
 		// MayStop records that the project ran when the restore was requested, so the caller's right to stop it was checked.
 		MayStop bool `json:"mayStop"`
 		// Stopped records that the project had stopped containers, which the restore removes; projects:down was checked.
@@ -1591,6 +1592,11 @@ func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
 		if err = r.create(ctx, options); err != nil {
 			return r.rollback(ctx, p, fmt.Errorf("create the missing volumes: %w", err))
 		}
+		// Saved before the next one is created, so a resumed rollback removes every volume this restore created.
+		p.Created = append(p.Created, options.Name)
+		if err = r.record(ctx, p); err != nil {
+			return r.rollback(ctx, p, err)
+		}
 	}
 	if err = r.restoreBackup(ctx, p); err != nil {
 		return r.rollback(ctx, p, err)
@@ -1644,7 +1650,7 @@ func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) 
 			undoErr = r.restore(ctx, types.ProjectBackupRestore{
 				ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Owner: restoreOwner + p.ID, Report: r.report,
 			})
-			cleanup = append(cleanup, r.remove(ctx, createdNames(p.Create)))
+			cleanup = append(cleanup, r.remove(ctx, p.Created))
 		}
 	}
 	if p.Running && downErr == nil && undoErr == nil {
@@ -1861,7 +1867,7 @@ func removeLeftovers(ctx context.Context, dockerClient *client.Client, owner str
 }
 
 // createVolume creates a missing target volume; one someone else created since the restore was checked is refused, so
-// the restore never takes it over.
+// the restore never takes it over or removes it.
 func (s *Service) createVolume(ctx context.Context, options client.VolumeCreateOptions) error {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
