@@ -1,3 +1,4 @@
+import { m } from '#lib/paraglide/messages.js';
 import type { IconCatalog } from '#lib/types/user.js';
 
 export type LabelEntry = {
@@ -162,28 +163,71 @@ function resolveIconPreviewUrl(raw: string, variant: '' | 'light' | 'dark', cata
 	return `https://cdn.jsdelivr.net/gh/selfhst/icons@main/svg/${slug}${variant ? `-${variant}` : ''}.svg`;
 }
 
-function humanizeKey(raw: string): string {
-	return raw
-		.replace(/^project\./i, '')
-		.replace(/^docker\./i, '')
-		.replace(/^lifecycle\./i, '')
-		.replace(/^loadbalancer\.server\./i, '')
-		.replace(/^loadbalancer\./i, '')
-		.replace(/passhostheader/gi, 'pass host header')
-		.replace(/certresolver/gi, 'cert resolver')
-		.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-		.replace(/[._-]+/g, ' ')
-		.trim()
-		.split(/\s+/)
-		.filter(Boolean)
-		.map((word) => {
-			const lower = word.toLowerCase();
-			if (lower === 'url' || lower === 'tls' || lower === 'sts') {
-				return word.toUpperCase();
-			}
-			return word[0]!.toUpperCase() + word.slice(1);
-		})
-		.join(' ');
+const KNOWN_FIELD_LABELS: Record<string, () => string> = {
+	title: m.title,
+	description: m.common_description,
+	version: m.common_version,
+	revision: m.revision,
+	created: m.common_created,
+	authors: m.authors,
+	vendor: m.vendor,
+	licenses: m.licenses,
+	source: m.source,
+	url: m.url,
+	documentation: m.common_documentation,
+	'ref.name': m.reference_name,
+	'base.name': m.base_image,
+	'base.digest': m.base_digest,
+	icon: m.icon,
+	'icon-light': m.light_icon,
+	'icon-dark': m.dark_icon,
+	updater: m.auto_update_title,
+	'update-check': m.update_checks,
+	'updater.strategy': m.editor_compose_updater_strategy_detail,
+	'updater.constraint': m.editor_compose_updater_constraint_detail,
+	'updater.tag-pattern': m.editor_compose_updater_tag_pattern_detail,
+	'updater.delay': m.update_delay,
+	'updater.configured-image': m.configured_image,
+	'depends-on': m.depends_on,
+	depends_on: m.depends_on,
+	'stop-signal': m.stop_signal,
+	agent: m.agent,
+	hidden: m.hidden,
+	'internal.resource': m.internal,
+	enable: m.common_enabled,
+	enabled: m.common_enabled,
+	'docker.network': m.resource_network_cap,
+	entrypoints: m.entrypoints,
+	service: m.swarm_service,
+	middlewares: m.middlewares,
+	priority: m.priority,
+	tls: m.tls,
+	'tls.certresolver': m.cert_resolver,
+	'loadbalancer.server.scheme': m.scheme,
+	'loadbalancer.server.url': m.url,
+	'loadbalancer.passhostheader': m.pass_host_header,
+	schedule: m.jobs_schedule,
+	command: m.common_command,
+	container: m.container,
+	image: m.common_image,
+	user: m.common_user,
+	'no-overlap': m.no_overlap,
+	'monitor-only': m.monitor_only,
+	'no-pull': m.no_pull,
+	scope: m.common_scope,
+	project: m.project,
+	'project.working_dir': m.common_working_directory,
+	'project.config_files': m.config_files,
+	'project.environment_file': m.environment_file,
+	'container-number': m.container_number,
+	oneoff: m.one_off,
+	'config-hash': m.config_hash
+};
+
+function resolveFieldLabel(suffix: string, rawKey: string): string {
+	const labelFn = KNOWN_FIELD_LABELS[suffix.toLowerCase()];
+	if (labelFn) return labelFn();
+	return suffix || rawKey;
 }
 
 function formatFieldValue(rawKey: string, suffix: string, rawValue: string, iconCatalog: IconCatalog): LabelValue {
@@ -237,7 +281,7 @@ function parseStructuredGroup(rule: StructuredRule, entries: LabelEntry[], iconC
 	const fields: LabelField[] = entries.map((entry) => {
 		const suffix = stripPrefix(entry.key, rule.prefixes);
 		return {
-			label: humanizeKey(suffix) || entry.key,
+			label: resolveFieldLabel(suffix, entry.key),
 			rawKey: entry.key,
 			value: formatFieldValue(entry.key, suffix, entry.value, iconCatalog)
 		};
@@ -286,7 +330,7 @@ function parseTraefikGroup(entries: LabelEntry[], iconCatalog: IconCatalog): Lab
 		if (!match) {
 			const suffix = entry.key.slice('traefik.'.length);
 			fields.push({
-				label: humanizeKey(suffix),
+				label: resolveFieldLabel(suffix, entry.key),
 				rawKey: entry.key,
 				value: formatFieldValue(entry.key, suffix, entry.value, iconCatalog)
 			});
@@ -312,7 +356,9 @@ function parseTraefikGroup(entries: LabelEntry[], iconCatalog: IconCatalog): Lab
 				const resourceFields: LabelField[] = [];
 				let codeBlock: LabelResource['codeBlock'];
 				let tlsEnabled: boolean | undefined;
+				let tlsRawKey: string | undefined;
 				let certResolver: string | undefined;
+				let certResolverRawKey: string | undefined;
 				let hasSecureEntrypoint = false;
 				const mwTypes = new Set<string>();
 
@@ -323,11 +369,16 @@ function parseTraefikGroup(entries: LabelEntry[], iconCatalog: IconCatalog): Lab
 						continue;
 					}
 					if (kind === 'routers' && lowerProp === 'tls') {
-						tlsEnabled = parseBool(entry.value, true) ?? undefined;
-						continue;
+						const parsedTls = parseBool(entry.value, true);
+						if (parsedTls !== null) {
+							tlsEnabled = parsedTls;
+							tlsRawKey = entry.key;
+							continue;
+						}
 					}
 					if (kind === 'routers' && lowerProp === 'tls.certresolver') {
 						certResolver = entry.value;
+						certResolverRawKey = entry.key;
 						if (tlsEnabled === undefined) tlsEnabled = true;
 						continue;
 					}
@@ -336,7 +387,7 @@ function parseTraefikGroup(entries: LabelEntry[], iconCatalog: IconCatalog): Lab
 						hasSecureEntrypoint = eps.some((ep) => /^(?:https|.*secure)$/i.test(ep));
 					}
 					if (kind === 'services' && lowerProp === 'loadbalancer.server.port') {
-						meta.push(`port ${entry.value}`);
+						meta.push(m.port_number({ port: entry.value }));
 						continue;
 					}
 					if (kind === 'middlewares') {
@@ -345,21 +396,34 @@ function parseTraefikGroup(entries: LabelEntry[], iconCatalog: IconCatalog): Lab
 						const nested = dot === -1 ? prop : prop.slice(dot + 1);
 						if (mwType) mwTypes.add(mwType);
 						resourceFields.push({
-							label: humanizeKey(nested || mwType),
+							label: nested || mwType || entry.key,
 							rawKey: entry.key,
 							value: formatFieldValue(entry.key, nested, entry.value, iconCatalog)
 						});
 						continue;
 					}
 					resourceFields.push({
-						label: humanizeKey(prop),
+						label: resolveFieldLabel(prop, entry.key),
 						rawKey: entry.key,
 						value: formatFieldValue(entry.key, prop, entry.value, iconCatalog)
 					});
 				}
 
-				if (tlsEnabled) {
-					meta.push(certResolver ? `TLS (${certResolver})` : 'TLS');
+				if (tlsEnabled === true) {
+					meta.push(certResolver ? `${m.tls()} (${certResolver})` : m.tls());
+				} else if (tlsEnabled === false) {
+					resourceFields.push({
+						label: m.tls(),
+						rawKey: tlsRawKey ?? '',
+						value: { kind: 'boolean', value: false }
+					});
+					if (certResolver && certResolverRawKey) {
+						resourceFields.push({
+							label: m.cert_resolver(),
+							rawKey: certResolverRawKey,
+							value: { kind: 'code', code: certResolver }
+						});
+					}
 				}
 				for (const mwType of mwTypes) {
 					meta.push(mwType);
@@ -396,7 +460,7 @@ function parseOfeliaGroup(entries: LabelEntry[], iconCatalog: IconCatalog): Labe
 		if (!match) {
 			const suffix = entry.key.slice('ofelia.'.length);
 			fields.push({
-				label: humanizeKey(suffix),
+				label: resolveFieldLabel(suffix, entry.key),
 				rawKey: entry.key,
 				value: formatFieldValue(entry.key, suffix, entry.value, iconCatalog)
 			});
@@ -431,7 +495,7 @@ function parseOfeliaGroup(entries: LabelEntry[], iconCatalog: IconCatalog): Labe
 					continue;
 				}
 				jobFields.push({
-					label: humanizeKey(prop),
+					label: resolveFieldLabel(prop, entry.key),
 					rawKey: entry.key,
 					value: formatFieldValue(entry.key, prop, entry.value, iconCatalog)
 				});
