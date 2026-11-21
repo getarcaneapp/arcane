@@ -259,8 +259,6 @@ var (
 		return m
 	}()
 
-	totalPermissionsCount = len(allPermissionsSet)
-
 	orderedPermissions = AllPermissions()
 
 	permissionRequires = func() map[string][]string {
@@ -298,8 +296,6 @@ func IsEnvScoped(perm string) bool {
 	}
 	return !IsOrgLevel(perm)
 }
-
-func TotalPermissionsCount() int { return totalPermissionsCount }
 
 func AllPermissions() []string {
 	var count int
