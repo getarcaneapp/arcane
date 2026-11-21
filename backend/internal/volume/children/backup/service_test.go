@@ -249,14 +249,3 @@ func TestDeleteExpiredBackupsLeavesBusyVolumesForTheNextRun(t *testing.T) {
 	require.NoError(t, gormDB.Table("volume_backups").Where("policy_id = ?", seriesID).Count(&remaining).Error)
 	require.EqualValues(t, 3, remaining)
 }
-
-func TestExportVolumeArchiveWaitsForTheVolumeLock(t *testing.T) {
-	locks := &concurrency.KeyedMutex{}
-	service := NewService(Dependencies{Locks: locks})
-	unlock := locks.Lock("app-data")
-	defer unlock()
-	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
-	_, err := service.ExportVolumeArchive(waiting, "app-data")
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-}

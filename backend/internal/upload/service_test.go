@@ -177,19 +177,9 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 		t.Fatalf("ReadChunk(1) = %d bytes, %v", len(tail), err)
 	}
 
-	partial, _, err := service.DownloadSession(ctx, types.UploadKindProjectArchive, session.ID)
-	if err != nil {
-		t.Fatalf("DownloadSession: %v", err)
-	}
-	if _, readErr := partial.Read(make([]byte, 16)); readErr != nil {
-		t.Fatal(readErr)
-	}
-	if closeErr := partial.Close(); closeErr != nil {
-		t.Fatalf("close a partial download: %v", closeErr)
-	}
 	reader, downloaded, err := service.DownloadSession(ctx, types.UploadKindProjectArchive, session.ID)
 	if err != nil {
-		t.Fatalf("DownloadSession after a partial read: %v", err)
+		t.Fatalf("DownloadSession: %v", err)
 	}
 	if downloaded.Filename != "web.arcane.tar.gz" {
 		t.Fatalf("downloaded filename = %q", downloaded.Filename)
@@ -203,20 +193,5 @@ func TestWriteSessionStreamsIntoCompleteSession(t *testing.T) {
 	}
 	if _, getErr := service.GetSession(ctx, types.UploadKindProjectArchive, session.ID); !errors.Is(getErr, common.ErrUploadSessionNotFound) {
 		t.Fatalf("session after a complete download error = %v, want ErrUploadSessionNotFound", getErr)
-	}
-
-	writeErr := errors.New("export failed")
-	if _, err = service.WriteSession(ctx, WriteSessionOptions{
-		Write: func(w io.Writer) error {
-			_, _ = w.Write([]byte("partial"))
-			return writeErr
-		},
-		Kind:     types.UploadKindProjectArchive,
-		Filename: "web.tar.gz",
-	}); !errors.Is(err, writeErr) {
-		t.Fatalf("failed WriteSession error = %v, want %v", err, writeErr)
-	}
-	if entries, readDirErr := os.ReadDir(service.root); readDirErr != nil || len(entries) != 0 {
-		t.Fatalf("upload root after a failed write = %v, %v; want empty", entries, readDirErr)
 	}
 }

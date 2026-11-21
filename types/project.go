@@ -84,7 +84,7 @@ type (
 		ProjectDirs   []string               `json:"projectDirs,omitempty" doc:"The project directory as configured and fully resolved, which links into it may name"`
 		Volumes       []ProjectVolume        `json:"volumes"`
 		FormatVersion int                    `json:"formatVersion"`
-		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were copied"`
+		Consistent    bool                   `json:"consistent" doc:"True only when no project container ran, and no other running container mounted an included volume, while the volumes were copied"`
 		ExternalEnv   bool                   `json:"externalEnv,omitempty" doc:"True when the .env links outside the project directory and the backup stored its contents"`
 	}
 

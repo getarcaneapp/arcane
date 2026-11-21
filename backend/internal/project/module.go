@@ -39,7 +39,6 @@ type (
 	BackupDependencies struct {
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
-		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
 	}
@@ -59,10 +58,10 @@ func New(p ModuleParams) *Module {
 		Settings:       p.Service.settingsService,
 		LockVolumes:    p.Backups.LockVolumes,
 		Project:        p.Service.GetProjectDetails,
-		ComposeProject: p.Service.composeProject,
+		StopProject:    p.Service.stopProject,
+		StartProject:   p.Service.startProject,
 		Volume:         local.Volume,
 		BackupStore:    p.Backups.Repository.StorageVolume,
-		Containers:     p.Backups.Containers,
 		LockProject:    p.Service.LockProject,
 		SoleDirectory:  p.Service.soleDirectory,
 		RunsArcane: func(ctx context.Context, projectID string) (bool, error) {
@@ -103,12 +102,12 @@ func New(p ModuleParams) *Module {
 			Project:             local.Project,
 			Volume:              local.Volume,
 			ComposeProjectInUse: local.ComposeProjectInUse,
-			DeleteUpload:        local.DeleteUpload,
 			ExportProject:       p.Service.ExportProjectArchive,
 			ImportProject:       local.ImportProject,
 			LockProject:         p.Service.LockProject,
 			StopProject:         p.Service.stopProject,
-			StartProject:        p.Service.deployProject,
+			StartProject:        p.Service.startProject,
+			DeployProject:       p.Service.deployProject,
 			RemoveProject:       p.Service.destroyProject,
 			ExportVolume:        p.Transfer.ExportVolume,
 			RestoreVolume:       p.Transfer.RestoreVolume,

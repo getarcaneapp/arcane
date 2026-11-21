@@ -60,8 +60,7 @@ func ComposeRestart(ctx context.Context, target types.ComposeTarget) error {
 	})
 }
 
-// ComposeStart starts the services' existing containers in dependency order, leaving the services they depend on as
-// they are.
+// ComposeStart starts the services' existing containers, leaving their dependencies as they are.
 func ComposeStart(ctx context.Context, target types.ComposeTarget) error {
 	selected, err := SelectServices(target.Project, target.Services, composetypes.IgnoreDependencies)
 	if err != nil {
@@ -73,7 +72,7 @@ func ComposeStart(ctx context.Context, target types.ComposeTarget) error {
 	}
 	defer done()
 
-	return c.svc.Start(composeCtx, selected.Name, api.StartOptions{Project: selected, Services: target.Services})
+	return c.svc.Start(composeCtx, selected.Name, api.StartOptions{Project: selected})
 }
 
 func ComposeStop(ctx context.Context, target types.ComposeTarget) error {
@@ -254,18 +253,6 @@ func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APICli
 	}
 
 	return listResult.Items, nil
-}
-
-// ListComposeProjectContainers lists every container of one Compose project, stopped ones included.
-func ListComposeProjectContainers(ctx context.Context, dockerClient client.APIClient, composeName string) ([]container.Summary, error) {
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
-	}
-	return found.Items, nil
 }
 
 func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName, serviceName string) (string, error) {

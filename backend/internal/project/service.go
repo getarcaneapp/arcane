@@ -600,7 +600,7 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 	return proj, nil
 }
 
-func (s *ProjectService) stopProject(ctx context.Context, projectID string, user types.Actor) error {
+func (s *ProjectService) stopProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
@@ -609,11 +609,16 @@ func (s *ProjectService) stopProject(ctx context.Context, projectID string, user
 	if err != nil {
 		return fmt.Errorf("failed to load compose project: %w", err)
 	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
 	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
-	if stopErr := composeStopProjectServices(ctx, types.ComposeTarget{
+	// A stop cancelled partway would leave a slow container to exit after the restart skipped it.
+	if stopErr := composeStopProjectServices(context.WithoutCancel(ctx), types.ComposeTarget{
 		Project:    model,
 		DockerHost: s.dockerService.DockerHost(),
-		Services:   model.ServiceNames(),
+		Services:   services,
 	}); stopErr != nil {
 		return stopErr
 	}
@@ -621,8 +626,42 @@ func (s *ProjectService) stopProject(ctx context.Context, projectID string, user
 		"action":      "stop",
 		"projectID":   projectID,
 		"projectName": proj.Name,
+		"services":    services,
 	}, "could not log project stop action")
 	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
+}
+
+func (s *ProjectService) startProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	// Callers restart uncancelled while holding the project's locks, so the load gives up with the Docker API.
+	loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
+	model, err := s.loadComposeProjectForProject(loadCtx, proj, nil)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); startErr != nil {
+		return startErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStart, projectID, proj.Name, user, database.JSON{
+		"action":      "start",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"services":    services,
+	}, "could not log project start action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning))
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -901,14 +940,6 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 		}
 		return composeFile, nil
 	})
-}
-
-func (s *ProjectService) composeProject(ctx context.Context, projectID string) (*composetypes.Project, error) {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	return s.loadComposeProjectForProject(ctx, proj, nil)
 }
 
 // loadComposeProjectForProject runs prepare before host path translation; read paths pass nil.

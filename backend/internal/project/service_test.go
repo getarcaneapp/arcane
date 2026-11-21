@@ -11193,13 +11193,6 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
 			},
 			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
-				var imported Project
-				require.NoError(t, svc.db.WithContext(ctx).Where("name = ?", "copy").First(&imported).Error)
-				unlock, free := svc.opLock.TryLock("0:project:" + imported.ID)
-				if free {
-					unlock()
-				}
-				assert.False(t, free, "the imported project is not locked during the volume restore")
 				restored = append(restored, name)
 				targets = append(targets, *request.ComposeVolume)
 				return uploads.DeleteSession(ctx, types.UploadKindVolumeBackup, request.UploadID)

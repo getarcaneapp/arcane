@@ -12,7 +12,6 @@ type (
 		database.BaseModel
 
 		CompletedAt       *time.Time                    `gorm:"column:completed_at"`
-		OrphanedAt        *time.Time                    `gorm:"column:orphaned_at"`
 		ProjectID         string                        `gorm:"column:project_id;index"`
 		ProjectName       string                        `gorm:"column:project_name"`
 		ComposeName       string                        `gorm:"column:compose_name"`
