@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/moby/moby/api/types/container"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -17,7 +16,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/types/v3"
 )
 
 type (
@@ -40,11 +38,9 @@ type (
 	BackupDependencies struct {
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
+		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
-		// Ctx and TryLockVolumes run the recovery of projects a backup left stopped.
-		Ctx            context.Context
-		TryLockVolumes func(names []string) (func(), error)
 	}
 )
 
@@ -86,26 +82,18 @@ func New(p ModuleParams) *Module {
 			Backups:          p.Transfer.Backups,
 		}),
 		backups: projectbackup.NewService(projectbackup.Dependencies{
-			DB:              p.Service.db,
-			Docker:          p.Service.dockerService,
-			Engine:          p.Backups.Engine,
-			Repository:      p.Backups.Repository,
-			S3Destinations:  p.Backups.S3Destinations,
-			Settings:        p.Service.settingsService,
-			LockVolumes:     p.Backups.LockVolumes,
-			Project:         p.Service.GetProjectDetails,
-			Volume:          local.Volume,
-			BackupStore:     p.Backups.Repository.StorageVolume,
-			StartContainers: p.Service.startStoppedContainers,
-			LockProject:     p.Service.LockProject,
-			NoteStopped: func(ctx context.Context, projectID string, stopped []container.Summary) error {
-				return p.Service.noteStopped(ctx, projectID, types.SystemUser, stopped)
-			},
-			ForgetStopped: p.Service.forgetStopped,
-			NotedStopped:  p.Service.notedStopped,
-			RecoverStopped: func() {
-				p.Service.RecoverStoppedProjects(p.Backups.Ctx, p.Backups.TryLockVolumes)
-			},
+			DB:             p.Service.db,
+			Docker:         p.Service.dockerService,
+			Engine:         p.Backups.Engine,
+			Repository:     p.Backups.Repository,
+			S3Destinations: p.Backups.S3Destinations,
+			Settings:       p.Service.settingsService,
+			LockVolumes:    p.Backups.LockVolumes,
+			Project:        p.Service.GetProjectDetails,
+			Volume:         local.Volume,
+			BackupStore:    p.Backups.Repository.StorageVolume,
+			Containers:     p.Backups.Containers,
+			LockProject:    p.Service.LockProject,
 		}),
 	}
 }

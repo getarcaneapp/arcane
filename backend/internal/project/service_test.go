@@ -19,7 +19,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,7 +32,6 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/api/types/mount"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -5308,16 +5306,11 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	})
 	user := types.Actor{ID: "user-1", Username: "tester"}
 
-	// An export or a backup left the project stopped; archiving keeps it down, so recovery must not start it.
-	require.NoError(t, svc.noteStopped(ctx, "project-stopped", user, nil))
 	require.NoError(t, svc.ArchiveProject(ctx, "project-stopped", user))
 	var stored Project
 	require.NoError(t, db.First(&stored, "id = ?", "project-stopped").Error)
 	assert.True(t, stored.IsArchived)
 	assert.NotNil(t, stored.ArchivedAt)
-	_, noted, err := svc.kv.Get(ctx, stoppedKeyPrefix+"project-stopped")
-	require.NoError(t, err)
-	assert.False(t, noted)
 
 	require.NoError(t, svc.UnarchiveProject(ctx, "project-stopped", user))
 	var unarchived Project
@@ -5382,88 +5375,6 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 	var archived Project
 	require.NoError(t, db.First(&archived, "id = ?", "project-no-compose").Error)
 	assert.True(t, archived.IsArchived)
-}
-
-func TestProjectService_RecoversABackupStopByStartingOnlyItsContainers(t *testing.T) {
-	db := setupProjectTestDB(t)
-	ctx := t.Context()
-
-	projectsRoot := t.TempDir()
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsRoot))
-	require.NoError(t, db.Create(&Project{
-		ID:      "project-backed-up",
-		Name:    "backed-up",
-		DirName: new("backed-up"),
-		Path:    createComposeProjectDir(t, projectsRoot, "backed-up"),
-		Status:  ProjectStatusStopped,
-	}).Error)
-
-	labelsFor := func(service string) map[string]string {
-		return map[string]string{api.ProjectLabel: "backed-up", api.ServiceLabel: service}
-	}
-	// The backup stopped web-1, a service since dropped from compose.yaml; someone stopped app-1 on purpose.
-	containers := []container.Summary{
-		{
-			ID: "web-1", Names: []string{"/backed-up-web-1"}, Labels: labelsFor("web"), State: container.StateExited,
-			Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "backed-up_web-data"}},
-		},
-		{ID: "app-1", Names: []string{"/backed-up-app-1"}, Labels: labelsFor("app"), State: container.StateExited},
-	}
-	var (
-		mu      sync.Mutex
-		started []string
-	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, containers)
-		case strings.HasSuffix(r.URL.Path, "/start"):
-			mu.Lock()
-			started = append(started, filepath.Base(filepath.Dir(r.URL.Path)))
-			mu.Unlock()
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, server.URL))
-	svc := NewProjectService(ProjectServiceParams{
-		DB:              db,
-		SettingsService: settingsService,
-		EventService:    event.NewEventService(db, &config.Config{}, nil),
-		ImageService: image.NewImageService(image.ImageServiceParams{
-			DB: db,
-		}),
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		ContainerRegistryService:    newProjectTestRegistryService(db, newSettingsDockerService(t, newTestDockerClient(t, server)), settingsService),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	var locked []string
-	unlocked := func(names []string) (func(), error) {
-		locked = slices.Clone(names)
-		return func() {}, nil
-	}
-
-	// Compose files that no longer load still get the stopped containers started.
-	require.NoError(t, svc.startStoppedContainers(ctx, "project-missing", containers[:1]))
-	assert.Equal(t, []string{"web-1"}, started)
-
-	// Recovery starts what the backup stopped instead of deploying the project, then drops the note.
-	require.NoError(t, svc.noteStopped(ctx, "project-backed-up", types.SystemUser, containers[:1]))
-	require.NoError(t, svc.startStoppedProjects(ctx, unlocked))
-	assert.Equal(t, []string{"web-1", "web-1"}, started)
-	// web-1 still mounts a volume compose.yaml no longer names, and a restore of it must finish before web-1 starts.
-	assert.Contains(t, locked, "backed-up_web-data")
-	_, noted, err := svc.kv.Get(ctx, stoppedKeyPrefix+"project-backed-up")
-	require.NoError(t, err)
-	assert.False(t, noted)
 }
 
 func TestProjectService_ListProjects_PersistsInferredServiceCount(t *testing.T) {
