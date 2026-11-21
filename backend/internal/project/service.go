@@ -611,7 +611,8 @@ func (s *ProjectService) stopProject(ctx context.Context, projectID string, serv
 		return nil
 	}
 	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
-	if stopErr := composeStopProjectServices(ctx, types.ComposeTarget{
+	// A stop cancelled partway would leave a slow container to exit after the restart skipped it.
+	if stopErr := composeStopProjectServices(context.WithoutCancel(ctx), types.ComposeTarget{
 		Project:    model,
 		DockerHost: s.dockerService.DockerHost(),
 		Services:   services,
@@ -632,7 +633,10 @@ func (s *ProjectService) startProject(ctx context.Context, projectID string, ser
 	if err != nil {
 		return err
 	}
-	model, err := s.loadComposeProjectForProject(ctx, proj, nil)
+	// Callers restart uncancelled while holding the project's locks, so the load gives up with the Docker API.
+	loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
+	model, err := s.loadComposeProjectForProject(loadCtx, proj, nil)
+	cancel()
 	if err != nil {
 		return fmt.Errorf("failed to load compose project: %w", err)
 	}
