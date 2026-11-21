@@ -179,6 +179,7 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 		Ctx:                   p.Ctx,
 		Scheduler:             p.Scheduler,
 		Admission:             p.Admission,
+		ProjectFolders:        p.ProjectService.ProjectFolders,
 	})
 	return s
 }

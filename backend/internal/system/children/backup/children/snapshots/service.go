@@ -1246,7 +1246,12 @@ func stagedRestoreStages(
 		Repository: repository,
 	}}
 	for _, relative := range outermost {
-		mountTarget, targetErr := restoreTarget(target.Mounts, path.Join(data, relative), recoveryDataRestoreTarget, "")
+		destination := path.Join(data, relative)
+		// A read-only or tmpfs mount is not Arcane's to write, so it stays preserved and the restore leaves it as it is.
+		if source := docker.MountForDestination(target.Mounts, destination, ""); source == nil || source.ReadOnly {
+			continue
+		}
+		mountTarget, targetErr := restoreTarget(target.Mounts, destination, recoveryDataRestoreTarget, "")
 		if targetErr != nil {
 			return nil, targetErr
 		}

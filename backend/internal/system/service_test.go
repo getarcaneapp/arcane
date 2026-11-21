@@ -25,6 +25,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -294,7 +295,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
-		Env:    settings.Env{},
+		Env:    settings.Env{"projectsDirectory": t.TempDir()},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
@@ -314,6 +315,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 			Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
 		SettingsService: settingsService,
+		ProjectService:  project.NewProjectService(project.ProjectServiceParams{SettingsService: settingsService}),
 		BackupEngine: backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
 			return nil
 		}),

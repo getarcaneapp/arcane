@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/libtnb/sqlite"
@@ -109,66 +107,6 @@ func TestRecoveryEnvironmentIncludesRuntimeSecrets(t *testing.T) {
 	require.Equal(t, "encryption-secret", recovered["ARCANE_ENCRYPTION_KEY"])
 	require.Equal(t, "admin-key", recovered["ARCANE_ADMIN_STATIC_API_KEY"])
 	require.Equal(t, "0640", recovered["ARCANE_FILE_PERM"])
-}
-
-func TestProjectRootsIncludeFollowedLinkTargets(t *testing.T) {
-	data := t.TempDir()
-	projectsDirectory := filepath.Join(data, "projects")
-	compose := []byte("services: {}\n")
-	for _, folder := range []string{"projects/plain", "projects/group", "stacks/shop", "stacks/app", "shared-env"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(data, folder), 0o755))
-	}
-	for _, file := range []string{"compose.yaml", "projects/plain/compose.yaml", "stacks/shop/compose.yaml", "stacks/app/compose.yaml"} {
-		require.NoError(t, os.WriteFile(filepath.Join(data, file), compose, 0o644))
-	}
-	require.NoError(t, os.WriteFile(filepath.Join(data, "shared-env", "global.env"), []byte("A=1\n"), 0o644))
-	links := map[string]string{
-		"projects/shop":      "../stacks/shop",
-		"projects/group/app": "../../stacks/app",
-		"projects/shared":    "../shared-env",
-		"projects/arcane":    "..",
-	}
-	for link, target := range links {
-		require.NoError(t, os.Symlink(target, filepath.Join(data, link)))
-	}
-	resolve := func(folder string) string {
-		resolved, err := filepath.EvalSymlinks(filepath.Join(data, folder))
-		require.NoError(t, err)
-		return resolved
-	}
-	tests := []struct {
-		name     string
-		follow   string
-		maxDepth string
-		expected []string
-	}{
-		{name: "links ignored", follow: "false", maxDepth: "3", expected: []string{projectsDirectory}},
-		{name: "linked projects at every scanned depth", follow: "true", maxDepth: "3", expected: []string{projectsDirectory, resolve("stacks/app"), resolve("stacks/shop")}},
-		{name: "scan depth honoured", follow: "true", maxDepth: "1", expected: []string{projectsDirectory, resolve("stacks/shop")}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			db, openErr := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-			require.NoError(t, openErr)
-			require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-			settingsService, settingsErr := settings.NewSettingsService(settings.SettingsServiceParams{
-				Ctx:    t.Context(),
-				DB:     &database.DB{DB: db},
-				Config: &config.Config{},
-				Env: settings.Env{
-					"projectsDirectory":     projectsDirectory,
-					"followProjectSymlinks": test.follow,
-					"projectScanMaxDepth":   test.maxDepth,
-				},
-			})
-			require.NoError(t, settingsErr)
-			t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-			service := NewService(Dependencies{Config: &config.Config{DatabaseURL: "file:" + filepath.Join(data, "arcane.db")}, Settings: settingsService})
-			roots, rootsErr := service.projectRoots(t.Context())
-			require.NoError(t, rootsErr)
-			require.Equal(t, test.expected, roots)
-		})
-	}
 }
 
 func TestRecoveryEnvironmentIncludesEnvSourcedSettings(t *testing.T) {

@@ -124,6 +124,7 @@ type (
 		Ctx                   context.Context
 		Scheduler             types.DynamicScheduler
 		Admission             *runs.Admission
+		ProjectFolders        func(ctx context.Context) (roots, linked []string, err error)
 	}
 
 	Service struct {
@@ -138,6 +139,7 @@ type (
 		settingsEnv           settings.Env
 		recoveryKeys          *backup.RecoveryKeyStore
 		resolveRuntimeOptions RuntimeOptionsResolver
+		projectFolders        func(ctx context.Context) (roots, linked []string, err error)
 		jobs                  *entityjobs.Registry
 		snapshots             *snapshots.Service
 		volumes               *volumes.Service
@@ -202,6 +204,7 @@ func NewService(deps Dependencies) *Service {
 		settingsEnv:           deps.SettingsEnv,
 		recoveryKeys:          deps.RecoveryKeys,
 		resolveRuntimeOptions: deps.ResolveRuntimeOptions,
+		projectFolders:        deps.ProjectFolders,
 		jobs:                  jobs,
 		operations:            operations,
 		snapshots: snapshots.NewService(snapshots.ServiceParams{
@@ -234,18 +237,14 @@ func NewService(deps Dependencies) *Service {
 	return service
 }
 
-// projectRoots resolves the main projects directory and every additional one, enabled or not, to container paths,
-// followed by the resolved folders of the projects that project sync reaches through links.
+// projectRoots returns the projects directories, then the linked project folders except those that are or hold
+// Arcane's data folder.
 func (s *Service) projectRoots(ctx context.Context) ([]string, error) {
-	extras, err := s.settingsService.ProjectsDirectories()
+	roots, linked, err := s.projectFolders(ctx)
 	if err != nil {
 		return nil, err
 	}
-	roots := []string{projects.ResolveConfiguredContainerDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")}
-	for _, extra := range extras {
-		roots = append(roots, projects.ResolveConfiguredContainerDirectory(ctx, extra.Path, ""))
-	}
-	if !s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks") {
+	if len(linked) == 0 {
 		return roots, nil
 	}
 	databaseFile, err := s.databaseFile()
@@ -256,30 +255,12 @@ func (s *Service) projectRoots(ctx context.Context) ([]string, error) {
 	if resolved, resolveErr := filepath.EvalSymlinks(data); resolveErr == nil {
 		data = resolved
 	}
-	for _, root := range slices.Clone(roots) {
-		discovered, discoverErr := projects.DiscoverProjectDirectories(ctx, projects.DiscoverOptions{
-			Root:               root,
-			GlobalEnvDirectory: roots[0],
-			SkipDirectories:    s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
-			MaxDepth:           s.settingsService.GetIntSetting(ctx, "projectScanMaxDepth"),
-			FollowSymlinks:     true,
-		})
-		if discoverErr != nil {
-			if !errors.Is(discoverErr, os.ErrNotExist) {
-				slog.WarnContext(ctx, "Unable to find linked projects to leave out of system backups", "path", root, "error", discoverErr)
-			}
+	for _, folder := range linked {
+		if kit.FilePathMatches(data, folder) {
+			slog.WarnContext(ctx, "Linked project is Arcane's data folder or holds it; system backups keep it", "target", folder)
 			continue
 		}
-		for _, project := range discovered {
-			resolved, resolveErr := filepath.EvalSymlinks(project.Path)
-			switch {
-			case resolveErr != nil || resolved == filepath.Clean(project.Path):
-			case kit.FilePathMatches(data, resolved):
-				slog.WarnContext(ctx, "Linked project is Arcane's data folder or holds it; system backups keep it", "path", project.Path, "target", resolved)
-			default:
-				roots = append(roots, resolved)
-			}
-		}
+		roots = append(roots, folder)
 	}
 	return roots, nil
 }
