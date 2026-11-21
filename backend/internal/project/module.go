@@ -99,7 +99,6 @@ func New(p ModuleParams) *Module {
 		},
 		DeleteVolume: local.DeleteVolume,
 		Activities:   p.Activity,
-		Activity:     p.Activity.GetActivityDetail,
 		Config:       p.Service.config,
 		Ctx:          p.Backups.Ctx,
 		Scheduler:    p.Backups.Scheduler,
@@ -186,7 +185,7 @@ func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
 // DiscoverBackupsAfterRestore records, in the background, the project backups whose rows a system restore left out.
 func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) {
 	go func() {
-		if err := m.backups.DiscoverAfterRestore(ctx, m.backups.DiscoverBackups); err != nil {
+		if err := m.backups.DiscoverAfterRestore(ctx); err != nil {
 			slog.WarnContext(ctx, "Project backup discovery after a system restore failed; it runs again on the next start", "error", err)
 		}
 	}()

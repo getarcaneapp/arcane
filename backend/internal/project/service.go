@@ -550,19 +550,21 @@ func (s *ProjectService) projectsRoots(ctx context.Context) ([]types.ProjectsDir
 	return roots, nil
 }
 
-// ProjectFolders returns every projects directory, enabled or not, and, when project symlinks are followed, the
-// resolved folder of each discovered project reached through a link.
-func (s *ProjectService) ProjectFolders(ctx context.Context) (roots, linked []string, err error) {
+// ProjectFolders returns every projects directory, enabled or not, the main one first, then, when project symlinks are
+// followed, the resolved folder of each discovered project reached through a link.
+func (s *ProjectService) ProjectFolders(ctx context.Context) ([]string, error) {
 	statuses, err := s.projectsRoots(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	roots := make([]string, 0, len(statuses))
 	for _, root := range statuses {
 		roots = append(roots, root.ContainerPath)
 	}
 	if !s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks") {
-		return roots, nil, nil
+		return roots, nil
 	}
+	folders := slices.Clone(roots)
 	for _, root := range roots {
 		discovered, discoverErr := projects.DiscoverProjectDirectories(ctx, s.discoverOptions(ctx, root, roots[0]))
 		if discoverErr != nil {
@@ -573,11 +575,11 @@ func (s *ProjectService) ProjectFolders(ctx context.Context) (roots, linked []st
 		}
 		for _, project := range discovered {
 			if resolved, resolveErr := filepath.EvalSymlinks(project.Path); resolveErr == nil && resolved != filepath.Clean(project.Path) {
-				linked = append(linked, resolved)
+				folders = append(folders, resolved)
 			}
 		}
 	}
-	return roots, linked, nil
+	return folders, nil
 }
 
 func (s *ProjectService) EnabledProjectsRoots(ctx context.Context) ([]string, error) {

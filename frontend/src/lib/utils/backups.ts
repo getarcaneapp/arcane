@@ -154,25 +154,20 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 }
 
 export async function runAutomaticBackupDiscovery(destinations: { id: string }[]): Promise<boolean> {
-	const results = await Promise.allSettled([
-		...destinations.map((item) => systemBackupService.discover(item.id, '')),
-		...destinations.map((item) => systemBackupService.discoverProjectBackups(item.id)),
-		...destinations.map((item) => volumeBackupService.discoverBackups(item.id, LOCAL_DOCKER_ENVIRONMENT_ID))
-	]);
-	const failedMessages = [
-		m.system_backups_discover_failed,
-		m.failed_to_discover_project_backups,
-		m.volume_backups_discover_failed
-	];
-	let discovered = 0;
-	for (const [index, result] of results.entries()) {
-		if (result.status === 'rejected') {
-			toast.error((failedMessages[Math.floor(index / destinations.length)] ?? m.volume_backups_discover_failed)(), {
-				description: extractApiErrorMessage(result.reason)
-			});
-			continue;
-		}
-		discovered += typeof result.value === 'number' ? result.value : result.value.count;
-	}
-	return discovered > 0;
+	const discover = (found: Promise<number>, failed: () => string) =>
+		found.catch((error: unknown) => {
+			toast.error(failed(), { description: extractApiErrorMessage(error) });
+			return 0;
+		});
+	const counts = await Promise.all(
+		destinations.flatMap((item) => [
+			discover(systemBackupService.discover(item.id, ''), m.system_backups_discover_failed),
+			discover(systemBackupService.discoverProjectBackups(item.id), m.failed_to_discover_project_backups),
+			discover(
+				volumeBackupService.discoverBackups(item.id, LOCAL_DOCKER_ENVIRONMENT_ID).then((result) => result.count),
+				m.volume_backups_discover_failed
+			)
+		])
+	);
+	return counts.some((count) => count > 0);
 }

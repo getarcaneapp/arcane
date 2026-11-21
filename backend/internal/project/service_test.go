@@ -11155,39 +11155,24 @@ func TestProjectService_ProjectFoldersIncludeFollowedLinkTargets(t *testing.T) {
 		require.NoError(t, err)
 		return resolved
 	}
-	tests := []struct {
-		name     string
-		follow   string
-		maxDepth string
-		linked   []string
-	}{
-		{name: "links ignored", follow: "false", maxDepth: "3", linked: nil},
-		{name: "linked projects at every scanned depth", follow: "true", maxDepth: "3", linked: []string{resolve(""), resolve("stacks/app"), resolve("stacks/shop")}},
-		{name: "scan depth honoured", follow: "true", maxDepth: "1", linked: []string{resolve(""), resolve("stacks/shop")}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			db, openErr := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-			require.NoError(t, openErr)
-			require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-			settingsService, settingsErr := settings.NewSettingsService(settings.SettingsServiceParams{
-				Ctx:    t.Context(),
-				DB:     &database.DB{DB: db},
-				Config: &config.Config{},
-				Env: settings.Env{
-					"projectsDirectory":     projectsDirectory,
-					"followProjectSymlinks": test.follow,
-					"projectScanMaxDepth":   test.maxDepth,
-				},
-			})
-			require.NoError(t, settingsErr)
-			t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-			roots, linked, foldersErr := (&ProjectService{settingsService: settingsService}).ProjectFolders(t.Context())
-			require.NoError(t, foldersErr)
-			require.Equal(t, []string{projectsDirectory}, roots)
-			require.Equal(t, test.linked, linked)
-		})
-	}
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     &database.DB{DB: db},
+		Config: &config.Config{},
+		Env: settings.Env{
+			"projectsDirectory":     projectsDirectory,
+			"followProjectSymlinks": "true",
+			"projectScanMaxDepth":   "3",
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	folders, err := (&ProjectService{settingsService: settingsService}).ProjectFolders(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{projectsDirectory, resolve(""), resolve("stacks/app"), resolve("stacks/shop")}, folders)
 }
 
 func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {

@@ -19,7 +19,6 @@ type (
 		// ExcludedProjectRoots are the project folders, relative to DataPath, a backup without projects left out.
 		ExcludedProjectRoots []string `json:"excludedProjectRoots,omitempty"`
 		FormatVersion        int      `json:"formatVersion"`
-		ProjectsExcluded     bool     `json:"projectsExcluded,omitempty"`
 	}
 
 	RecoveryRestoreTarget struct {

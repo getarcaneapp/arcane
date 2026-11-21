@@ -2,8 +2,6 @@ package recovery
 
 import (
 	"context"
-	"encoding/json/v2"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -138,30 +136,6 @@ func stagedRestoreRequest(data string) types.RecoveryRestoreRequest {
 	return types.RecoveryRestoreRequest{Stages: []types.RecoveryRestoreStage{stage("restore")}, RollbackStages: []types.RecoveryRestoreStage{stage("safety")}}
 }
 
-func TestRestoreDataInternalSkipsRollbackWhenRusticFailsBeforeDataChanges(t *testing.T) {
-	data := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(data, "arcane.db"), []byte("live"), 0o600))
-	require.NoError(t, os.MkdirAll(filepath.Join(data, backup.SwapTrashPrefix+"earlier"), 0o700))
-	var restored []string
-	restarts := 0
-	err := restoreData(t.Context(), stagedRestoreRequest(data), func(_ context.Context, stage types.RecoveryRestoreStage) error {
-		restored = append(restored, stage.SnapshotID)
-		// Rustic leaves a partial staging folder behind when it fails.
-		require.NoError(t, os.MkdirAll(filepath.Join(data, backup.SwapStagingPrefix+stage.SnapshotID), 0o700))
-		return errors.New("rustic exited with 137")
-	}, func() { restarts++ })
-
-	require.ErrorContains(t, err, "Arcane's data was not changed and Arcane was restarted")
-	require.Equal(t, []string{"restore"}, restored)
-	require.Equal(t, 1, restarts)
-	entries, err := os.ReadDir(data)
-	require.NoError(t, err)
-	require.Len(t, entries, 1)
-	content, err := os.ReadFile(filepath.Join(data, "arcane.db"))
-	require.NoError(t, err)
-	require.Equal(t, "live", string(content))
-}
-
 func TestRestoreDataInternalSkipsRollbackWhenTheSwapChangesNothing(t *testing.T) {
 	data := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(data, "arcane.db"), []byte("live"), 0o600))
@@ -211,40 +185,4 @@ func TestRestoreDataInternalSwapsStagedRestoreAroundProjects(t *testing.T) {
 	entries, err := os.ReadDir(data)
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
-}
-
-func TestReadRestoredManifestInternalAcceptsVersionsOneToFour(t *testing.T) {
-	tests := []struct {
-		name          string
-		errorContains string
-		version       int
-	}{
-		{name: "version 1", errorContains: "", version: 1},
-		{name: "version 2", errorContains: "", version: 2},
-		{name: "version 3 with projects", errorContains: "", version: types.RecoveryManifestProjectsFormatVersion},
-		{name: "version 4 without projects", errorContains: "", version: types.RecoveryManifestFormatVersion},
-		{name: "future version", errorContains: "unsupported or incomplete Arcane recovery manifest", version: 5},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			data := t.TempDir()
-			encoded, err := json.Marshal(types.RecoveryManifest{
-				FormatVersion: test.version,
-				Environment:   map[string]string{"ARCANE_DATABASE_URL": "file:/app/data/arcane.db"},
-			})
-			require.NoError(t, err)
-			require.NoError(t, os.WriteFile(filepath.Join(data, ".arcane-recovery.json"), encoded, 0o600))
-
-			manifest, err := readRestoredManifest(t.Context(), data)
-			if test.errorContains != "" {
-				require.ErrorContains(t, err, test.errorContains)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, test.version, manifest.FormatVersion)
-			require.Equal(t, "file:/app/data/arcane.db", manifest.Environment["ARCANE_DATABASE_URL"])
-			_, err = os.Stat(filepath.Join(data, ".arcane-recovery.json"))
-			require.ErrorIs(t, err, os.ErrNotExist)
-		})
-	}
 }

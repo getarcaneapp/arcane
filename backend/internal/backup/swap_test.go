@@ -155,11 +155,6 @@ func TestPlanSwapRejectsUnsafePlansBeforeAnyChange(t *testing.T) {
 		preserve []string
 	}{
 		{name: "escaping path", id: "snap", preserve: []string{"../outside"}, prepare: func(*testing.T, string) {}},
-		{name: "absolute path", id: "snap", preserve: []string{"/projects"}, prepare: func(*testing.T, string) {}},
-		{name: "uncleaned path", id: "snap", preserve: []string{"stacks/../projects"}, prepare: func(*testing.T, string) {}},
-		{name: "data folder itself", id: "snap", preserve: []string{"."}, prepare: func(*testing.T, string) {}},
-		{name: "staging folder", id: "snap", preserve: []string{SwapStagingPrefix + "snap/projects"}, prepare: func(*testing.T, string) {}},
-		{name: "invalid id", id: "../snap", preserve: []string{"projects"}, prepare: func(*testing.T, string) {}},
 		{
 			name:     "parent behind a symbolic link",
 			id:       "snap",

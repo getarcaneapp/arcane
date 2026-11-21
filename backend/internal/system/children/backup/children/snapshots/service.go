@@ -61,8 +61,7 @@ type (
 		LocalRepository  func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
 		RemoteRepository func(ctx context.Context, destinationID string) (backup.Repository, error)
 		DatabaseFile     func() (string, error)
-		// ProjectRoots lists the main projects directory first, then every additional one, enabled or not, then the
-		// folders that followed project links resolve to.
+		// ProjectRoots lists the main projects directory first, then the other ones and the followed project links.
 		ProjectRoots        func(ctx context.Context) ([]string, error)
 		RecoveryEnvironment func(ctx context.Context) map[string]string
 		GitWorkDirectory    string
@@ -757,10 +756,13 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 }
 
 // withoutProjects leaves every project root inside the data directory, and the mounts at or below it, out of a data
-// layout.
+// layout. It refuses a layout a system restore would refuse, so a backup never succeeds where restoring it cannot.
 func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, roots []string) (backupSourceLayout, error) {
 	excluded, err := projectRootsInData(mounts, layout.dataDirectory, roots)
 	if err != nil {
+		return backupSourceLayout{}, err
+	}
+	if _, err = dataMountsOutsideProjects(mounts, layout.dataDirectory, excluded); err != nil {
 		return backupSourceLayout{}, err
 	}
 	excludes := slices.Clone(layout.excludes)
@@ -781,9 +783,8 @@ func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, r
 	}, nil
 }
 
-// dataMountsOutsideProjects returns, relative to the data directory, every mount inside it that is not within a project
-// root. It refuses a mount that contains a project root, because a system restore cannot replace that mount without
-// also replacing projects.
+// dataMountsOutsideProjects returns, relative to the data directory, every mount inside it and outside the project
+// roots, and refuses one that contains a project root, which a restore could not replace without touching projects.
 func dataMountsOutsideProjects(mounts []container.MountPoint, dataDirectory string, projectRoots []string) ([]string, error) {
 	data := path.Clean(filepath.ToSlash(dataDirectory))
 	var nested []string
@@ -802,30 +803,6 @@ func dataMountsOutsideProjects(mounts []container.MountPoint, dataDirectory stri
 		nested = append(nested, relative)
 	}
 	return nested, nil
-}
-
-// CheckProjectRoots refuses system backups for a project layout that a system restore would refuse, so a backup
-// never succeeds where restoring it in place cannot.
-func (s *Service) CheckProjectRoots(ctx context.Context, dockerClient *client.Client) error {
-	databaseFile, err := s.databaseFile()
-	if err != nil {
-		return err
-	}
-	roots, err := s.projectRoots(ctx)
-	if err != nil {
-		return err
-	}
-	mounts, _, err := backup.CurrentMounts(ctx, dockerClient)
-	if err != nil {
-		return err
-	}
-	dataDirectory := filepath.Dir(databaseFile)
-	relatives, err := projectRootsInData(mounts, dataDirectory, roots)
-	if err != nil {
-		return err
-	}
-	_, err = dataMountsOutsideProjects(mounts, dataDirectory, relatives)
-	return err
 }
 
 func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.Client, opts CreateOptions) (backupSourceLayout, error) {
@@ -999,7 +976,7 @@ func snapshotLayoutFromManifest(manifest types.RecoveryManifest, manifestRoot st
 		if err != nil {
 			return snapshotLayout{}, fmt.Errorf("invalid database path: %w", err)
 		}
-		if manifest.ProjectsExcluded {
+		if manifest.FormatVersion == types.RecoveryManifestFormatVersion {
 			for _, root := range manifest.ExcludedProjectRoots {
 				if normalized, rootErr := kit.NormalizeRelativePath(root); rootErr != nil || normalized != root {
 					return snapshotLayout{}, fmt.Errorf("invalid excluded projects folder %q", root)
@@ -1268,7 +1245,7 @@ func stagedRestoreStages(
 }
 
 // withoutMissingMountStages drops each nested mount stage whose path the snapshot lacks, as Rustic would fail on it
-// after the swap; the mount stays preserved, so the restore leaves it as it is. A file mount restores as before.
+// after the swap; the preserved mount is left as it is.
 func withoutMissingMountStages(
 	stages []types.RecoveryRestoreStage,
 	dataPath string,
@@ -1345,10 +1322,12 @@ func (s *Service) Create(
 		return backup.Snapshot{}, err
 	}
 	databases := map[string]*sql.DB{layout.databaseName: sqlDB, francis.StorePath(layout.databaseName): actorSQLDB}
-	manifest := layout.manifest(types.RecoveryManifest{
+	manifest := types.RecoveryManifest{
+		FormatVersion: kit.Ternary(layout.projectsPath == "", types.RecoveryManifestFormatVersion, types.RecoveryManifestProjectsFormatVersion),
 		ArcaneVersion: config.Version, BackupID: backupID, ActivityID: activity.IDFromContext(ctx), CreatedAt: time.Now().UTC(),
-		Environment: s.recoveryEnvironment(ctx),
-	})
+		DataPath: snapshotDataPath, ProjectsPath: layout.projectsPath, DatabasePath: layout.databaseName,
+		ExcludedProjectRoots: layout.excludedRoots, Environment: s.recoveryEnvironment(ctx),
+	}
 	manifestData, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
 		return backup.Snapshot{}, fmt.Errorf("failed to encode recovery manifest: %w", err)
@@ -1438,24 +1417,6 @@ func (s *Service) Create(
 		cleanupErr = fmt.Errorf("remove unconfirmed system snapshot %s: %w", snapshot.ID, cleanupErr)
 	}
 	return backup.Snapshot{}, errors.Join(err, cleanupErr)
-}
-
-// manifest completes a recovery manifest with the layout: version 4 when the backup leaves projects out, else 3.
-func (layout backupSourceLayout) manifest(base types.RecoveryManifest) types.RecoveryManifest {
-	excluded := layout.projectsPath == ""
-	return types.RecoveryManifest{ //exhaustruct:enforce
-		CreatedAt:            base.CreatedAt,
-		Environment:          base.Environment,
-		ArcaneVersion:        base.ArcaneVersion,
-		BackupID:             base.BackupID,
-		ActivityID:           base.ActivityID,
-		DataPath:             snapshotDataPath,
-		ProjectsPath:         layout.projectsPath,
-		DatabasePath:         layout.databaseName,
-		ExcludedProjectRoots: layout.excludedRoots,
-		FormatVersion:        kit.Ternary(excluded, types.RecoveryManifestFormatVersion, types.RecoveryManifestProjectsFormatVersion),
-		ProjectsExcluded:     excluded,
-	}
 }
 
 func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[string]acfstypes.Entry, error) {

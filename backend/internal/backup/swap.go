@@ -101,7 +101,7 @@ func PlanSwap(ctx context.Context, swap types.RecoveryRestoreSwap) (SwapPlan, er
 	}
 	// A preserved path is never entered, so folders inside it are not parents to protect.
 	maps.DeleteFunc(parents, func(parent string, _ struct{}) bool {
-		return slices.ContainsFunc(slices.Collect(maps.Keys(preserved)), func(candidate string) bool { return kit.FilePathMatches(parent, candidate) })
+		return slices.ContainsFunc(swap.Preserve, func(candidate string) bool { return kit.FilePathMatches(parent, candidate) })
 	})
 	// A protected parent must be a real folder on both sides, so the swap never follows a link out of the data folder.
 	for _, parent := range slices.Sorted(maps.Keys(parents)) {
@@ -134,13 +134,7 @@ func (p *SwapPlan) visit(ctx context.Context, relative string, preserved, parent
 	if err != nil {
 		return err
 	}
-	names := make([]string, 0, len(live)+len(staged))
-	for name := range live {
-		names = append(names, name)
-	}
-	for name := range staged {
-		names = append(names, name)
-	}
+	names := slices.Concat(slices.Collect(maps.Keys(live)), slices.Collect(maps.Keys(staged)))
 	slices.Sort(names)
 	for _, name := range slices.Compact(names) {
 		entryPath := path.Join(relative, name)
@@ -188,9 +182,8 @@ func (p *SwapPlan) children(ctx context.Context, relative string) (map[string]ac
 	return children, nil
 }
 
-// Apply removes live entries missing from the backup first, so stale SQLite sidecars are gone before a database moves
-// in, then moves each staged entry into place; replaced entries wait in the trash until the swap finishes. A failed
-// swap undoes its finished steps in reverse and reports ErrSwapNotApplied once the live data is as it was.
+// Apply moves removed and replaced live entries to the trash, removals first so stale SQLite sidecars go before a
+// database moves in, then moves each staged entry into place. A failed swap undoes its steps and reports ErrSwapNotApplied.
 func (p SwapPlan) Apply(ctx context.Context) (err error) {
 	if err = p.root.Mkdir(ctx, "/"+p.trash, 0o700); err != nil {
 		return fmt.Errorf("create the restore trash folder: %w; %w", err, ErrSwapNotApplied)

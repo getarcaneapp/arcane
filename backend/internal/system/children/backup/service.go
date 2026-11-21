@@ -124,7 +124,8 @@ type (
 		Ctx                   context.Context
 		Scheduler             types.DynamicScheduler
 		Admission             *runs.Admission
-		ProjectFolders        func(ctx context.Context) (roots, linked []string, err error)
+		// ProjectFolders lists the main projects directory first, then every other one and the followed project links.
+		ProjectFolders func(ctx context.Context) ([]string, error)
 	}
 
 	Service struct {
@@ -139,7 +140,6 @@ type (
 		settingsEnv           settings.Env
 		recoveryKeys          *backup.RecoveryKeyStore
 		resolveRuntimeOptions RuntimeOptionsResolver
-		projectFolders        func(ctx context.Context) (roots, linked []string, err error)
 		jobs                  *entityjobs.Registry
 		snapshots             *snapshots.Service
 		volumes               *volumes.Service
@@ -204,7 +204,6 @@ func NewService(deps Dependencies) *Service {
 		settingsEnv:           deps.SettingsEnv,
 		recoveryKeys:          deps.RecoveryKeys,
 		resolveRuntimeOptions: deps.ResolveRuntimeOptions,
-		projectFolders:        deps.ProjectFolders,
 		jobs:                  jobs,
 		operations:            operations,
 		snapshots: snapshots.NewService(snapshots.ServiceParams{
@@ -218,7 +217,7 @@ func NewService(deps Dependencies) *Service {
 				return service.remoteRepository(ctx, destinationID)
 			},
 			DatabaseFile:        func() (string, error) { return service.databaseFile() },
-			ProjectRoots:        func(ctx context.Context) ([]string, error) { return service.projectRoots(ctx) },
+			ProjectRoots:        deps.ProjectFolders,
 			RecoveryEnvironment: func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
 			GitWorkDirectory:    kit.FromPtr(deps.Config).GitWorkDir,
 		}),
@@ -235,34 +234,6 @@ func NewService(deps Dependencies) *Service {
 		}),
 	}
 	return service
-}
-
-// projectRoots returns the projects directories, then the linked project folders except those that are or hold
-// Arcane's data folder.
-func (s *Service) projectRoots(ctx context.Context) ([]string, error) {
-	roots, linked, err := s.projectFolders(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(linked) == 0 {
-		return roots, nil
-	}
-	databaseFile, err := s.databaseFile()
-	if err != nil {
-		return nil, err
-	}
-	data := filepath.Dir(databaseFile)
-	if resolved, resolveErr := filepath.EvalSymlinks(data); resolveErr == nil {
-		data = resolved
-	}
-	for _, folder := range linked {
-		if kit.FilePathMatches(data, folder) {
-			slog.WarnContext(ctx, "Linked project is Arcane's data folder or holds it; system backups keep it", "target", folder)
-			continue
-		}
-		roots = append(roots, folder)
-	}
-	return roots, nil
 }
 
 func (s *Service) recoveryEnvironment(ctx context.Context) map[string]string {
@@ -1524,17 +1495,6 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 	if remoteDisabled && !policy.LocalEnabled {
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
-	// A projects layout a system restore would refuse is refused before a run is recorded, like a disabled remote.
-	dockerClient, refusal := s.dockerService.GetClient(ctx)
-	if refusal == nil {
-		refusal = s.snapshots.CheckProjectRoots(ctx, dockerClient)
-	}
-	if errors.Is(refusal, common.ErrValidation) {
-		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: refusal.Error()}, nil
-	}
-	if refusal != nil {
-		return types.SchedulerOutcome{}, refusal
-	}
 	run, runErr := func() (*types.SystemBackupRun, error) {
 		prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerScheduled, types.CreateSystemBackupRequest{PolicyID: policy.ID})
 		if prepareErr != nil {
@@ -1760,13 +1720,6 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 		if _, adoptErr := s.SetRecoveryKey(ctx, request.RecoveryKey); adoptErr != nil {
 			return nil, adoptErr
 		}
-	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if refusal := s.snapshots.CheckProjectRoots(ctx, dockerClient); refusal != nil {
-		return nil, refusal
 	}
 	lease, err := s.acquireRun(ctx)
 	if err != nil {
