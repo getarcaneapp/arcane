@@ -26,6 +26,7 @@ import (
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
 
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
@@ -245,6 +246,22 @@ func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTar
 		Driver: target.Driver,
 		Labels: target.Labels,
 	}, target.Key, name, target.Project), nil)
+}
+
+// CreateNewVolume creates a restore target, refusing one that already exists so a restore never takes over, or later
+// removes, a volume it did not create.
+func CreateNewVolume(ctx context.Context, dockerClient *client.Client, options client.VolumeCreateOptions) error {
+	_, err := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
+	if err == nil {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", options.Name))
+	}
+	if !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("inspect volume %s: %w", options.Name, err)
+	}
+	if _, err = dockerClient.VolumeCreate(ctx, options); err != nil {
+		return fmt.Errorf("create volume %s: %w", options.Name, err)
+	}
+	return nil
 }
 
 func ComposeVolumeConfig(volumeConfig composeTypes.VolumeConfig, key, newName, newComposeName string) composeTypes.VolumeConfig {

@@ -98,13 +98,6 @@ func ToAPIError(err error) *APIError {
 	if dockerAPIErr, ok := errors.AsType[*DockerAPIError](err); ok {
 		return NewAPIErrorWithDetails(dockerAPIErr.Message, APIErrorCodeDockerAPIError, dockerAPIErr.HTTPStatus(), dockerAPIErr.Details)
 	}
-	// A shared permission check's denial carries its own status, also when a service returns it.
-	if statusErr, ok := errors.AsType[interface {
-		error
-		GetStatus() int
-	}](err); ok && statusErr.GetStatus() == http.StatusForbidden {
-		return NewAPIError(err.Error(), APIErrorCodeForbidden, http.StatusForbidden)
-	}
 
 	switch {
 	case errors.Is(err, ErrValidation):

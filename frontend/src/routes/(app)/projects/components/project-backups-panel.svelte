@@ -290,7 +290,6 @@
 					restoreItem.id,
 					{
 						name: restoreName.trim(),
-						files: true,
 						volumes: selectedRestoreVolumes.map((volume) => volume.key),
 						start: startRestored && canStartRestored
 					},

@@ -129,7 +129,6 @@ type (
 	}
 
 	RestoreProjectBackupAsNewRequest struct {
-		Files   *bool    `json:"files,omitempty" doc:"Restore the project files; a new project needs them, so it must be true when set"`
 		Name    string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
 		Volumes []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every volume the backup includes"`
 		Start   bool     `json:"start,omitempty" doc:"Deploy the new project after the restore, which requires projects:deploy"`
@@ -145,15 +144,11 @@ type (
 		BackupID  string
 		// ProjectPath receives the project files; empty leaves them out.
 		ProjectPath string
-		// Owner labels the restore's Rustic containers; one left over from an earlier run with the same owner is removed
-		// before anything is written.
-		Owner   string
-		Volumes []ProjectBackupRestoreVolume
+		Volumes     []ProjectBackupRestoreVolume
 		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
 		LockVolumes bool
-		// OwnEnv writes the .env contents a backup stored for a link outside the project directory as the project's own
-		// file in place of the link, and points links into the original's directory at the copy's files, so a new
-		// project neither shares nor changes the original's files; a link in a read-only folder is reported instead.
+		// OwnEnv gives a new project its own copy of an outside .env and points its links into the original's directory
+		// at its own files, so it neither shares nor changes the original's files.
 		OwnEnv bool
 	}
 

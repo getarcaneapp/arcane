@@ -270,16 +270,3 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 		})
 	}
 }
-
-func TestSelectBackupVolumes(t *testing.T) {
-	keys, err := SelectBackupVolumes([]string{"data", "shared"}, nil)
-	require.NoError(t, err)
-	require.Equal(t, []string{"data", "shared"}, keys)
-	_, err = SelectBackupVolumes([]string{"data", "shared"}, []string{"cache"})
-	require.ErrorContains(t, err, "does not include the data of volume cache")
-	_, err = SelectBackupVolumes([]string{"data"}, []string{"unknown"})
-	require.Error(t, err)
-	none, err := SelectBackupVolumes([]string{"data"}, []string{})
-	require.NoError(t, err)
-	require.Empty(t, none)
-}

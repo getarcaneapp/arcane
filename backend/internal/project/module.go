@@ -82,7 +82,8 @@ func New(p ModuleParams) *Module {
 			}
 			return projectRecords(all), nil
 		},
-		Activities: p.Activity,
+		DeleteVolume: local.DeleteVolume,
+		Activities:   p.Activity,
 	})
 	return &Module{
 		service:  p.Service,

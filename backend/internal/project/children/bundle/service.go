@@ -512,9 +512,6 @@ func (s *Service) checkComposeNameFree(ctx context.Context, name string) error {
 // volumes, by the rules of a bundle import: a failure removes the new project and the volumes it created.
 func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (string, error) {
 	request := opts.Request
-	if !*cmp.Or(request.Files, new(true)) {
-		return "", common.Classify(common.ErrValidation, errors.New("a new project needs the project files from the backup"))
-	}
 	manifest, err := s.deps.Backups.Manifest(ctx, opts.ProjectID, opts.BackupID)
 	if err != nil {
 		return "", err
@@ -624,11 +621,10 @@ func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOpt
 		if err != nil {
 			return created, err
 		}
-		// importTarget checked that none of the volumes exists yet.
-		if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
-			return dockerClient.VolumeCreate(ctx, options)
+		if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+			return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
 		}); err != nil {
-			return created, fmt.Errorf("create volume %s: %w", volume.Name, err)
+			return created, err
 		}
 		created = append(created, volume.Name)
 		restores = append(restores, types.ProjectBackupRestoreVolume{Key: volume.Key, Snapshot: included[index].Name, Name: volume.Name})
