@@ -903,6 +903,14 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 	})
 }
 
+func (s *ProjectService) composeProject(ctx context.Context, projectID string) (*composetypes.Project, error) {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.loadComposeProjectForProject(ctx, proj, nil)
+}
+
 // loadComposeProjectForProject runs prepare before host path translation; read paths pass nil.
 func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj *Project, prepare projects.PrepareProjectFunc, services ...string) (*composetypes.Project, error) {
 	composeFileFullPath, err := s.ResolveProjectComposeFile(ctx, proj)

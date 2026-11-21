@@ -59,6 +59,7 @@ func New(p ModuleParams) *Module {
 		Settings:       p.Service.settingsService,
 		LockVolumes:    p.Backups.LockVolumes,
 		Project:        p.Service.GetProjectDetails,
+		ComposeProject: p.Service.composeProject,
 		Volume:         local.Volume,
 		BackupStore:    p.Backups.Repository.StorageVolume,
 		Containers:     p.Backups.Containers,
