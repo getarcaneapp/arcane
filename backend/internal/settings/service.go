@@ -28,13 +28,16 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
+	"kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/search"
+	"getarcane.dev/arcane/v3/pkg/containerlabel"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/validation"
@@ -45,6 +48,21 @@ type (
 	Source string
 
 	LockReason string
+
+	// ContainerListChange adds a container name to, or removes it from, a container list setting.
+	ContainerListChange struct {
+		Key           string
+		ContainerName string
+		Listed        bool
+	}
+
+	// ContainerOptInPolicy decides which containers an automation acts on.
+	ContainerOptInPolicy struct {
+		Excluded map[string]bool
+		Included map[string]bool
+		Label    string
+		OptIn    bool
+	}
 
 	snapshot struct {
 		values  *Settings
@@ -823,25 +841,57 @@ func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value i
 	return s.UpdateSetting(ctx, key, strconv.Itoa(value))
 }
 
-func (s *SettingsService) SetContainerAutoUpdateExclusion(ctx context.Context, containerName string, excluded bool) error {
+// SetContainerListed adds or removes a container name in a comma-separated container list setting.
+func (s *SettingsService) SetContainerListed(ctx context.Context, change ContainerListChange) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	ordered := kit.Unique(kit.TrimNonEmpty(strings.Split(s.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ",")))
-	if excluded {
-		ordered = kit.Unique(append(ordered, containerName))
+	ordered := kit.Unique(kit.TrimNonEmpty(strings.Split(s.GetStringSetting(ctx, change.Key), ",")))
+	if change.Listed {
+		ordered = kit.Unique(append(ordered, change.ContainerName))
 	} else {
-		ordered = slices.DeleteFunc(ordered, func(name string) bool { return name == containerName })
+		ordered = slices.DeleteFunc(ordered, func(name string) bool { return name == change.ContainerName })
 	}
 
-	values, err := s.prepareUpdateValues([]types.SettingUpdate{{Key: "autoUpdateExcludedContainers", Value: strings.Join(ordered, ",")}})
+	values, err := s.prepareUpdateValues([]types.SettingUpdate{{Key: change.Key, Value: strings.Join(ordered, ",")}})
 	if err != nil {
 		return err
 	}
 	return s.persistSettings(ctx, values)
+}
+
+// AutoUpdatePolicy returns which containers auto-update may install updates for. The
+// updater=false label is checked separately because it also applies outside opt-in mode.
+func (s *SettingsService) AutoUpdatePolicy(ctx context.Context) ContainerOptInPolicy {
+	return ContainerOptInPolicy{
+		Excluded: docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoUpdateExcludedContainers")),
+		Included: docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoUpdateIncludedContainers")),
+		Label:    labels.LabelUpdater,
+		OptIn:    s.GetBoolSetting(ctx, "autoUpdateOptIn"),
+	}
+}
+
+// AutoHealPolicy returns which containers auto-heal may restart.
+func (s *SettingsService) AutoHealPolicy(ctx context.Context) ContainerOptInPolicy {
+	return ContainerOptInPolicy{
+		Excluded: docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoHealExcludedContainers")),
+		Included: docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoHealIncludedContainers")),
+		Label:    containerlabel.AutoHealLabel,
+		OptIn:    s.GetBoolSetting(ctx, "autoHealOptIn"),
+	}
+}
+
+// Allows reports whether the policy covers a container. In opt-in mode the container must carry
+// Label=true or be listed in Included. Otherwise every container not listed in Excluded qualifies.
+func (p ContainerOptInPolicy) Allows(containerLabels map[string]string, names []string) bool {
+	// The kit helpers are generic name-set lookups despite their exclusion-oriented names.
+	if p.OptIn {
+		return containerlabel.IsEnabled(containerLabels, p.Label) || docker.ContainerNameExcluded(names, p.Included)
+	}
+	return !docker.ContainerNameExcluded(names, p.Excluded)
 }
 
 func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {

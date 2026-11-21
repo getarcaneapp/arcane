@@ -832,7 +832,7 @@ func TestSettingsServiceActorSerializesContainerExclusionUpdates(t *testing.T) {
 	for _, name := range []string{"api", "worker"} {
 		go func() {
 			<-start
-			results <- svc.SetContainerAutoUpdateExclusion(ctx, name, true)
+			results <- svc.SetContainerListed(ctx, ContainerListChange{Key: "autoUpdateExcludedContainers", ContainerName: name, Listed: true})
 		}()
 	}
 	close(start)
@@ -840,6 +840,52 @@ func TestSettingsServiceActorSerializesContainerExclusionUpdates(t *testing.T) {
 	require.NoError(t, <-results)
 	require.NoError(t, <-results)
 	require.ElementsMatch(t, []string{"api", "worker"}, strings.Split(svc.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ","))
+
+	require.NoError(t, svc.SetContainerListed(ctx, ContainerListChange{Key: "autoUpdateExcludedContainers", ContainerName: "api", Listed: false}))
+	require.Equal(t, "worker", svc.GetStringSetting(ctx, "autoUpdateExcludedContainers"))
+}
+
+func TestSettingsServiceContainerOptInPolicies(t *testing.T) {
+	ctx := t.Context()
+	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{
+		"autoUpdateExcludedContainers": "excluded",
+		"autoUpdateIncludedContainers": "included",
+		"autoHealExcludedContainers":   "excluded",
+		"autoHealIncludedContainers":   "included",
+	}))
+	updaterLabel := map[string]string{"com.getarcaneapp.arcane.updater": "true"}
+	healLabel := map[string]string{"com.getarcaneapp.arcane.auto-heal": "true"}
+
+	for name, policy := range map[string]func() ContainerOptInPolicy{
+		"auto-update": func() ContainerOptInPolicy { return svc.AutoUpdatePolicy(ctx) },
+		"auto-heal":   func() ContainerOptInPolicy { return svc.AutoHealPolicy(ctx) },
+	} {
+		off := policy()
+		require.False(t, off.OptIn, name)
+		require.True(t, off.Allows(nil, []string{"/plain"}), "%s: without opt-in every container qualifies", name)
+		require.True(t, off.Allows(nil, []string{"/included"}), name)
+		require.False(t, off.Allows(updaterLabel, []string{"/excluded"}), "%s: the exclusion list wins outside opt-in mode", name)
+	}
+
+	require.NoError(t, svc.SetBoolSetting(ctx, "autoUpdateOptIn", true))
+	require.NoError(t, svc.SetBoolSetting(ctx, "autoHealOptIn", true))
+	for name, tc := range map[string]struct {
+		label  map[string]string
+		other  map[string]string
+		policy ContainerOptInPolicy
+	}{
+		"auto-update": {policy: svc.AutoUpdatePolicy(ctx), label: updaterLabel, other: healLabel},
+		"auto-heal":   {policy: svc.AutoHealPolicy(ctx), label: healLabel, other: updaterLabel},
+	} {
+		require.True(t, tc.policy.OptIn, name)
+		require.False(t, tc.policy.Allows(nil, []string{"/plain"}), "%s: opt-in mode skips unlisted containers", name)
+		require.True(t, tc.policy.Allows(nil, []string{"/included"}), "%s: the include list opts a container in", name)
+		require.True(t, tc.policy.Allows(tc.label, []string{"/plain"}), "%s: the label opts a container in", name)
+		require.True(t, tc.policy.Allows(tc.label, []string{"/excluded"}), "%s: the exclusion list is ignored in opt-in mode", name)
+		require.False(t, tc.policy.Allows(tc.other, []string{"/plain"}), "%s: the other automation's label does not opt in", name)
+	}
 }
 
 func BenchmarkSettingsService_GetSettingsConfig(b *testing.B) {

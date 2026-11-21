@@ -20,15 +20,17 @@
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { ContainerSummary } from '#lib/types/container.js';
 	import type { JobScheduleConfig } from '#lib/types/jobschedule.js';
+	import type { FormInput } from '#lib/types/ui/form.js';
 	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
+		AUTO_UPDATE_LABEL,
 		UPDATE_CHECK_LABEL,
 		UPDATE_DELAY_LABEL,
-		isAutoUpdateLabelDisabled,
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
+	import { AUTO_HEAL_LABEL, isContainerLabelDisabled, isContainerLabelEnabled } from '#lib/utils/container-labels.js';
 	import { listScopes, settleAcrossEnvironments } from '#lib/utils/environments.js';
 
 	import type { AutomationsTabProps } from './tab-props';
@@ -37,6 +39,17 @@
 		JobScheduleConfig,
 		'pollingInterval' | 'autoUpdateInterval' | 'scheduledPruneInterval' | 'vulnerabilityScanInterval' | 'autoHealInterval'
 	>;
+
+	type ContainerListKey =
+		| 'autoUpdateExcludedContainers'
+		| 'autoUpdateIncludedContainers'
+		| 'autoHealExcludedContainers'
+		| 'autoHealIncludedContainers';
+
+	type LabelState = {
+		hint: string;
+		selected: boolean;
+	};
 
 	type ContainerItem = {
 		value: string;
@@ -81,21 +94,74 @@
 	const containers = $derived([
 		...new Map((containersQuery.data?.data ?? []).map((container) => [containerName(container), container])).values()
 	]);
+	// Rows merge same-named containers from several environments, so a label only decides a row when all of them carry it.
+	const containersByName = $derived(Map.groupBy(containersQuery.data?.data ?? [], containerName));
 
 	let updateSearchTerm = $state('');
 	let autoHealSearchTerm = $state('');
 	let scheduleTarget = $state<{ key: ScheduleKey; name: string; value?: string } | null>(null);
 	let scheduleOpen = $state(false);
 
-	const autoUpdateExcluded = $derived(parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers.value));
-	const autoHealExcluded = $derived(parseExcludedContainerSet(formInputs.autoHealExcludedContainers.value));
+	// Agents that predate the opt-in settings do not report them, so their inputs can be missing.
+	const autoUpdateOptIn = $derived<FormInput<boolean> | undefined>(formInputs.autoUpdateOptIn);
+	const autoHealOptIn = $derived<FormInput<boolean> | undefined>(formInputs.autoHealOptIn);
+	const autoUpdateIncludeMode = $derived(!!autoUpdateOptIn?.value && 'autoUpdateIncludedContainers' in formInputs);
+	const autoHealIncludeMode = $derived(!!autoHealOptIn?.value && 'autoHealIncludedContainers' in formInputs);
+	// Opt-in mode turns the exclusion list into an include list.
+	const autoUpdateListKey = $derived<ContainerListKey>(
+		autoUpdateIncludeMode ? 'autoUpdateIncludedContainers' : 'autoUpdateExcludedContainers'
+	);
+	const autoHealListKey = $derived<ContainerListKey>(
+		autoHealIncludeMode ? 'autoHealIncludedContainers' : 'autoHealExcludedContainers'
+	);
+	// Standalone containers that are not included are not restarted when a container they depend on is updated.
+	const autoUpdateListHelp = $derived(
+		[
+			m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` }),
+			autoUpdateIncludeMode ? m.auto_update_include_dependents_hint() : ''
+		]
+			.filter(Boolean)
+			.join(' ')
+	);
+	const autoUpdateListed = $derived(parseExcludedContainerSet(formInputs[autoUpdateListKey].value));
+	const autoHealListed = $derived(parseExcludedContainerSet(formInputs[autoHealListKey].value));
 
 	function containerName(container: ContainerSummary): string {
 		return container.names[0] || container.id.substring(0, 12);
 	}
 
-	function toggleExcluded(current: ReadonlySet<string>, name: string): string {
-		return (current.has(name) ? [...current].filter((entry) => entry !== name) : [...current, name]).join(',');
+	function allNamed(container: ContainerSummary, test: (labels?: Record<string, string>) => boolean): boolean {
+		return (containersByName.get(containerName(container)) ?? [container]).every((entry) => test(entry.labels));
+	}
+
+	function autoUpdateLabelState(container: ContainerSummary): LabelState | undefined {
+		if (allNamed(container, (labels) => isContainerLabelDisabled(labels, AUTO_UPDATE_LABEL)))
+			return { hint: m.jobs_container_label_excluded(), selected: false };
+		if (autoUpdateIncludeMode && allNamed(container, (labels) => isContainerLabelEnabled(labels, AUTO_UPDATE_LABEL)))
+			return { hint: m.included_by_label(), selected: true };
+		return undefined;
+	}
+
+	function autoHealLabelState(container: ContainerSummary): LabelState | undefined {
+		if (autoHealIncludeMode && allNamed(container, (labels) => isContainerLabelEnabled(labels, AUTO_HEAL_LABEL)))
+			return { hint: m.included_by_label(), selected: true };
+		return undefined;
+	}
+
+	// A label that decides the outcome locks the entry, unless the container is still listed and needs removing.
+	function containerItem(container: ContainerSummary, listed: ReadonlySet<string>, labelState?: LabelState): ContainerItem {
+		const name = containerName(container);
+		return {
+			value: name,
+			label: name,
+			disabled: !!labelState && !listed.has(name),
+			hint: labelState?.hint,
+			selected: listed.has(name) || !!labelState?.selected
+		};
+	}
+
+	function toggleListed(key: ContainerListKey, current: ReadonlySet<string>, name: string) {
+		formInputs[key].value = (current.has(name) ? [...current].filter((entry) => entry !== name) : [...current, name]).join(',');
 	}
 
 	function scheduleValues(key: ScheduleKey): string[] {
@@ -241,6 +307,26 @@
 {/snippet}
 
 {#snippet autoUpdateOptions()}
+	{#if autoUpdateOptIn}
+		<SettingsRow
+			for="auto-update-opt-in"
+			label={m.auto_update_opt_in_label()}
+			description={m.auto_update_opt_in_description({ label: `${AUTO_UPDATE_LABEL}=true` })}
+			layout="switch"
+			class="p-0"
+			lock={lock('autoUpdateOptIn')}
+			mixed={mixed('autoUpdateOptIn')}
+		>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="auto-update-opt-in"
+					bind:checked={autoUpdateOptIn.value}
+					data-mixed={!!mixed('autoUpdateOptIn') || undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
+		</SettingsRow>
+	{/if}
 	<SettingsRow
 		for="auto-update-delay"
 		label={m.auto_update_delay_label()}
@@ -266,13 +352,13 @@
 	</SettingsRow>
 	<SettingsRow
 		for="auto-update-container-search"
-		label={m.excluded_containers()}
-		description={m.auto_update_exclude_description()}
-		helpText={m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` })}
+		label={autoUpdateIncludeMode ? m.included_containers() : m.excluded_containers()}
+		description={autoUpdateIncludeMode ? m.auto_update_include_description() : m.auto_update_exclude_description()}
+		helpText={autoUpdateListHelp}
 		layout="wide"
 		class="p-0"
-		lock={lock('autoUpdateExcludedContainers')}
-		mixed={mixed('autoUpdateExcludedContainers')}
+		lock={lock(autoUpdateListKey)}
+		mixed={mixed(autoUpdateListKey)}
 	>
 		{#snippet children({ describedBy })}
 			<div class="space-y-2">
@@ -286,14 +372,8 @@
 				{@render containerExclusionList({
 					term: updateSearchTerm,
 					idPrefix: 'container-',
-					item: (container) => ({
-						value: containerName(container),
-						label: containerName(container),
-						disabled: isAutoUpdateLabelDisabled(container.labels),
-						hint: isAutoUpdateLabelDisabled(container.labels) ? m.jobs_container_label_excluded() : undefined,
-						selected: autoUpdateExcluded.has(containerName(container))
-					}),
-					onToggle: (name) => (formInputs.autoUpdateExcludedContainers.value = toggleExcluded(autoUpdateExcluded, name))
+					item: (container) => containerItem(container, autoUpdateListed, autoUpdateLabelState(container)),
+					onToggle: (name) => toggleListed(autoUpdateListKey, autoUpdateListed, name)
 				})}
 			</div>
 		{/snippet}
@@ -301,6 +381,26 @@
 {/snippet}
 
 {#snippet autoHealOptions()}
+	{#if autoHealOptIn}
+		<SettingsRow
+			for="auto-heal-opt-in"
+			label={m.auto_heal_opt_in_label()}
+			description={m.auto_heal_opt_in_description({ label: `${AUTO_HEAL_LABEL}=true` })}
+			layout="switch"
+			class="p-0"
+			lock={lock('autoHealOptIn')}
+			mixed={mixed('autoHealOptIn')}
+		>
+			{#snippet children({ describedBy })}
+				<Switch
+					id="auto-heal-opt-in"
+					bind:checked={autoHealOptIn.value}
+					data-mixed={!!mixed('autoHealOptIn') || undefined}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
+		</SettingsRow>
+	{/if}
 	<SettingsRow
 		for="auto-heal-max-restarts"
 		label={m.auto_heal_max_restarts_label()}
@@ -347,12 +447,12 @@
 	</SettingsRow>
 	<SettingsRow
 		for="auto-heal-container-search"
-		label={m.excluded_containers()}
-		description={m.auto_heal_exclude_description()}
+		label={autoHealIncludeMode ? m.included_containers() : m.excluded_containers()}
+		description={autoHealIncludeMode ? m.auto_heal_include_description() : m.auto_heal_exclude_description()}
 		layout="wide"
 		class="p-0"
-		lock={lock('autoHealExcludedContainers')}
-		mixed={mixed('autoHealExcludedContainers')}
+		lock={lock(autoHealListKey)}
+		mixed={mixed(autoHealListKey)}
 	>
 		{#snippet children({ describedBy })}
 			<div class="space-y-2">
@@ -366,12 +466,8 @@
 				{@render containerExclusionList({
 					term: autoHealSearchTerm,
 					idPrefix: 'auto-heal-container-',
-					item: (container) => ({
-						value: containerName(container),
-						label: containerName(container),
-						selected: autoHealExcluded.has(containerName(container))
-					}),
-					onToggle: (name) => (formInputs.autoHealExcludedContainers.value = toggleExcluded(autoHealExcluded, name))
+					item: (container) => containerItem(container, autoHealListed, autoHealLabelState(container)),
+					onToggle: (name) => toggleListed(autoHealListKey, autoHealListed, name)
 				})}
 			</div>
 		{/snippet}

@@ -22,7 +22,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/middleware"
-	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -35,7 +34,6 @@ type (
 	ContainerHandler struct {
 		containerService *ContainerService
 		dockerService    *docker.DockerClientService
-		settingsService  *settings.SettingsService
 		activityService  *activity.ActivityService
 		appCtx           context.Context
 	}
@@ -592,6 +590,7 @@ func (h *ContainerHandler) recreatedContainerOutput(ctx context.Context, contain
 				IconDarkURL:       details.IconDarkURL,
 				RedeployDisabled:  details.RedeployDisabled,
 				AutoUpdateEnabled: details.AutoUpdateEnabled,
+				AutoUpdateOptIn:   details.AutoUpdateOptIn,
 				UpdateInfo:        details.UpdateInfo,
 				Hardened:          details.Hardened,
 				ActivityID:        trimmedActivityID,
@@ -698,13 +697,9 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[types.MessageResponse], error) {
-	containerName, err := h.containerService.GetContainerNameByReference(ctx, input.ContainerID)
-	if err != nil {
-		return nil, huma.Error404NotFound("container not found")
-	}
-
-	if setContainerAutoUpdateExclusionErr := h.settingsService.SetContainerAutoUpdateExclusion(ctx, containerName, !input.Body.Enabled); setContainerAutoUpdateExclusionErr != nil {
-		return nil, huma.Error500InternalServerError("failed to update auto-update setting")
+	if err := h.containerService.SetAutoUpdate(ctx, SetAutoUpdateOptions{Reference: input.ContainerID, Enabled: input.Body.Enabled}); err != nil {
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update auto-update setting: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput(kit.Ternary(input.Body.Enabled, "Auto-update enabled", "Auto-update disabled"), ""), nil

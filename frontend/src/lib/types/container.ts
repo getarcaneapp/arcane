@@ -240,6 +240,8 @@ export interface ContainerSummary {
 	redeployDisabled?: boolean;
 	/** Eligibility under the updater label and exclusion setting; absent on older agents. */
 	autoUpdateEnabled?: boolean;
+	/** The environment only auto-updates included or labelled containers; absent on older agents. */
+	autoUpdateOptIn?: boolean;
 	hidden?: boolean;
 	resourceSample?: ContainerResourceSample;
 }
@@ -275,6 +277,8 @@ export interface ContainerDetails {
 	redeployDisabled?: boolean;
 	/** Eligibility under the updater label and exclusion setting; absent on older agents. */
 	autoUpdateEnabled?: boolean;
+	/** The environment only auto-updates included or labelled containers; absent on older agents. */
+	autoUpdateOptIn?: boolean;
 	/** Stored update check for the container's current policy; absent on older agents. */
 	updateInfo?: ImageUpdateInfo;
 	/** Docker Hardened Image metadata from the image labels; absent on older agents. */

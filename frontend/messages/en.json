@@ -3715,7 +3715,7 @@
   "editor_compose_updater_detail": "Image update policy",
   "editor_compose_updater_info": "Project defaults apply to all services. Service updater fields override project defaults. Explicit updater labels take precedence for each field.",
   "editor_compose_updater_enabled_detail": "Enable image updates",
-  "editor_compose_updater_enabled_info": "Boolean. Set to false to disable automatic update installation for the affected services. This does not stop update checks; use update-check: false for that.",
+  "editor_compose_updater_enabled_info": "Boolean. Set it to false to stop automatic updates for these services, or to true to include them when auto-update opt-in is enabled. Update checks keep running either way. Use update-check: false to stop them too.",
   "editor_compose_updater_strategy_detail": "Update strategy",
   "editor_compose_updater_strategy_info": "Defaults to digest: the configured tag is kept and only its image digest is followed. Set auto to let complete stable semantic version tags follow newer eligible tags, or tag to require version-based selection. A constraint or tag-pattern without a strategy also enables version-based selection.",
   "editor_compose_updater_constraint_detail": "Version constraint",
@@ -4755,5 +4755,15 @@
   "config_files": "Config Files",
   "container_number": "Container Number",
   "one_off": "One-Off",
-  "config_hash": "Config Hash"
+  "config_hash": "Config Hash",
+  "auto_update_opt_in_label": "Only Update Selected Containers",
+  "auto_update_opt_in_description": "Arcane only updates the containers you include below or that have the label {label}. All other containers are still checked for updates, and you still get notified about them.",
+  "auto_heal_opt_in_label": "Only Heal Selected Containers",
+  "auto_heal_opt_in_description": "Arcane only restarts unhealthy containers that you include below or that have the label {label}.",
+  "included_containers": "Included Containers",
+  "auto_update_include_description": "Choose the containers Arcane should update automatically.",
+  "auto_heal_include_description": "Choose the containers Arcane should restart automatically when they become unhealthy.",
+  "included_by_label": "Included by label",
+  "auto_update_enabled_by_label": "Turned on by the label {label}. Change the label to turn it off.",
+  "auto_update_include_dependents_hint": "Containers started with network_mode: container:... are only restarted after the container they depend on is updated when they are included too. Compose services that use network_mode: service:... are recreated with the updated service either way."
 }

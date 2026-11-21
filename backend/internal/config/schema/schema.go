@@ -100,6 +100,12 @@ var overrideDocRules = map[string]overrideDocRule{
 	"autoUpdateDelay": {
 		requires: "ARCANE_AUTO_UPDATE=true to have effect at runtime.",
 	},
+	"autoUpdateOptIn": {
+		requires: "ARCANE_AUTO_UPDATE=true to have effect at runtime.",
+	},
+	"autoUpdateIncludedContainers": {
+		requires: "ARCANE_AUTO_UPDATE=true and ARCANE_AUTO_UPDATE_OPT_IN=true to have effect at runtime.",
+	},
 	"scheduledPruneInterval": {
 		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
@@ -162,6 +168,12 @@ var overrideDocRules = map[string]overrideDocRule{
 	},
 	"autoHealExcludedContainers": {
 		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
+	},
+	"autoHealOptIn": {
+		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
+	},
+	"autoHealIncludedContainers": {
+		requires: "ARCANE_AUTO_HEAL_ENABLED=true and ARCANE_AUTO_HEAL_OPT_IN=true to have effect at runtime.",
 	},
 	"autoHealMaxRestarts": {
 		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",

@@ -144,13 +144,12 @@ func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 		return types.SchedulerOutcome{}, err
 	}
 
-	excludedContainers := j.parseExcludedContainers(ctx)
 	maxRestarts := j.settingsService.GetIntSetting(ctx, "autoHealMaxRestarts")
 	restartWindowMinutes := j.settingsService.GetIntSetting(ctx, "autoHealRestartWindow")
 	restartWindow := time.Duration(restartWindowMinutes) * time.Minute
 
 	selfID := j.selfContainerID(ctx)
-	candidates := j.filterCandidates(containers, excludedContainers, selfID)
+	candidates := j.filterCandidates(containers, j.settingsService.AutoHealPolicy(ctx), selfID)
 	frozen, err := json.Marshal(autoHealPlan{Containers: candidates, MaxRestarts: maxRestarts, WindowMinutes: restartWindowMinutes})
 	if err != nil {
 		return types.SchedulerOutcome{}, err
@@ -203,7 +202,8 @@ func (j *AutoHealJob) selfContainerID(ctx context.Context) string {
 	return j.selfID
 }
 
-func (j *AutoHealJob) filterCandidates(containers []container.Summary, excludedContainers map[string]struct{}, selfID string) []container.Summary {
+// filterCandidates keeps the containers auto-heal may restart under policy.
+func (j *AutoHealJob) filterCandidates(containers []container.Summary, policy settings.ContainerOptInPolicy, selfID string) []container.Summary {
 	candidates := make([]container.Summary, 0, len(containers))
 	for _, c := range containers {
 		if selfID != "" && strings.HasPrefix(strings.ToLower(c.ID), selfID) {
@@ -218,7 +218,7 @@ func (j *AutoHealJob) filterCandidates(containers []container.Summary, excludedC
 			continue
 		}
 
-		if _, excluded := excludedContainers[docker.ContainerNameFromNames(c.Names)]; excluded {
+		if !policy.Allows(c.Labels, c.Names) {
 			continue
 		}
 
@@ -379,21 +379,6 @@ func (j *AutoHealJob) releaseRestartSlot(containerID string, reserved time.Time)
 	if len(record.timestamps) == 0 {
 		delete(j.restarts, containerID)
 	}
-}
-
-func (j *AutoHealJob) parseExcludedContainers(ctx context.Context) map[string]struct{} {
-	raw := j.settingsService.GetStringSetting(ctx, "autoHealExcludedContainers")
-	excluded := make(map[string]struct{})
-	if raw == "" {
-		return excluded
-	}
-	for name := range strings.SplitSeq(raw, ",") {
-		trimmed := strings.TrimSpace(name)
-		if trimmed != "" {
-			excluded[trimmed] = struct{}{}
-		}
-	}
-	return excluded
 }
 
 func inspectAutoHealContainer(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {

@@ -894,8 +894,17 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&AutoUpdateRecord{}, &activity.Activity{}, &activity.ActivityMessage{}))
 	activityService := activity.NewActivityService(db, nil)
+	settingsService, settingsErr := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, settingsErr)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 		DB:              db,
+		SettingsService: settingsService,
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activityService,
 	})
@@ -906,6 +915,7 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 		wantLevel   types.ActivityMessageLevel
 		wantMessage string
 		result      updater.ResourceResult
+		optIn       bool
 	}{
 		{
 			name: "failed with reason",
@@ -954,8 +964,22 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 			wantLevel:   types.ActivityMessageLevelInfo,
 			wantMessage: "arcane-id: skipped (container excluded by settings)",
 		},
+		{
+			name:  "skipped in opt-in mode names the missing opt-in",
+			optIn: true,
+			result: updater.ResourceResult{
+				ResourceID:   "plain-id",
+				ResourceName: "plain",
+				ResourceType: updater.ResourceTypeContainer,
+				Status:       updater.StatusSkipped,
+				Error:        "container excluded by settings",
+			},
+			wantLevel:   types.ActivityMessageLevelInfo,
+			wantMessage: "plain: skipped (not opted in to automatic updates)",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			require.NoError(t, settingsService.SetBoolSetting(ctx, "autoUpdateOptIn", tt.optIn))
 			started, err := activityService.StartActivity(ctx, activitylib.StartRequest{EnvironmentID: "0", Type: types.ActivityTypeAutoUpdate})
 			require.NoError(t, err)
 
@@ -1497,6 +1521,75 @@ func TestUpdateLabelPolicyMarksQuadletContainersUnmanaged(t *testing.T) {
 			assert.Equal(t, tt.unmanaged, updateLabelPolicy.UnmanagedReason(tt.labels) != "")
 		})
 	}
+}
+
+func TestUpdaterService_CollectUsedImagesHonorsAutoUpdateOptIn(t *testing.T) {
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/containers/json") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			{ID: "plain", Names: []string{"/plain"}, Image: "registry.example.com/plain:1"},
+			{ID: "opted-in", Names: []string{"/opted-in"}, Image: "registry.example.com/opted-in:1", Labels: map[string]string{labels.LabelUpdater: "true"}},
+			{ID: "opted-out", Names: []string{"/opted-out"}, Image: "registry.example.com/opted-out:1", Labels: map[string]string{labels.LabelUpdater: "false"}},
+			{ID: "excluded", Names: []string{"/excluded"}, Image: "registry.example.com/excluded:1", Labels: map[string]string{labels.LabelUpdater: "true"}},
+			{ID: "included", Names: []string{"/included"}, Image: "registry.example.com/included:1"},
+		}))
+	}))
+	t.Cleanup(server.Close)
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
+	require.NoError(t, settingsService.UpdateSettings(ctx, types.SettingsUpdate{
+		"autoUpdateExcludedContainers": "excluded",
+		"autoUpdateIncludedContainers": "included,opted-out",
+	}))
+	harness := flowtest.New(t, activity.NewActivityService(db, settingsService))
+	admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
+	require.NoError(t, admission.Register(harness.Runtime))
+	svc, err := NewUpdaterService(UpdaterServiceParams{
+		DB:              db,
+		SettingsService: settingsService,
+		DockerService:   newSettingsDockerService(t, newTestDockerClient(t, server)),
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, settingsService),
+		Admission:       admission,
+	})
+	require.NoError(t, err)
+	collect := func(ctx context.Context) []string {
+		out := map[string]struct{}{}
+		require.NoError(t, svc.collectUsedImagesFromContainers(ctx, out))
+		return slices.Sorted(maps.Keys(out))
+	}
+	ref := func(name string) string { return refs.NormalizeImageUpdateRef("registry.example.com/" + name + ":1") }
+
+	excluded := func() []string {
+		ids, excludedErr := svc.ExcludedContainers(ctx)
+		require.NoError(t, excludedErr)
+		return slices.Sorted(slices.Values(ids))
+	}
+
+	assert.Equal(t, []string{ref("included"), ref("opted-in"), ref("plain")}, collect(ctx), "without opt-in only opt-outs and exclusions are skipped")
+	assert.Equal(t, []string{"excluded"}, excluded(), "without opt-in the engine gets the exclusion list")
+	assert.Equal(t, engineExcludedReason, svc.skipReason(ctx, engineExcludedReason))
+
+	require.NoError(t, settingsService.SetBoolSetting(ctx, "autoUpdateOptIn", true))
+	assert.Equal(t, []string{ref("excluded"), ref("included"), ref("opted-in")}, collect(ctx), "opt-in keeps labelled and included containers and ignores the exclusion list")
+	assert.Equal(t, []string{"plain"}, excluded(), "the engine skips containers that are not opted in and checks updater=false on its own")
+	assert.Equal(t, "not opted in to automatic updates", svc.skipReason(ctx, engineExcludedReason))
+	assert.Equal(t, "updates disabled by label", svc.skipReason(ctx, "updates disabled by label"))
+
+	manual := context.WithValue(ctx, ignoreSettingsExclusionsKey{}, true)
+	assert.Equal(t, []string{ref("excluded"), ref("included"), ref("opted-in"), ref("opted-out"), ref("plain")}, collect(manual), "manual runs ignore opt-in like other exclusions")
 }
 
 func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, token string) {

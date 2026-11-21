@@ -1082,6 +1082,93 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 	}
 }
 
+func TestSetAutoUpdateEditsTheActiveList(t *testing.T) {
+	containerLabels := map[string]map[string]string{
+		"plain":     {},
+		"opted-in":  {"com.getarcaneapp.arcane.updater": "true"},
+		"opted-out": {"com.getarcaneapp.arcane.updater": "false"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimSuffix(strings.TrimPrefix(dockerTestPath(r.URL.Path), "/containers/"), "/json")
+		labels, ok := containerLabels[name]
+		if r.Method != http.MethodGet || !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.MarshalWrite(w, map[string]any{"Id": name + "-id", "Name": "/" + name, "Config": map[string]any{"Labels": labels}})
+	}))
+	t.Cleanup(server.Close)
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     setupProjectTestDB(t),
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	service := NewContainerService(ContainerServiceParams{
+		SettingsService: settingsService,
+		DockerService:   newSettingsDockerService(t, newTestDockerClient(t, server)),
+	})
+	list := func(key string) string { return settingsService.GetStringSetting(t.Context(), key) }
+
+	require.NoError(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "plain", Enabled: false}))
+	require.NoError(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "opted-in", Enabled: false}))
+	require.Equal(t, "plain,opted-in", list("autoUpdateExcludedContainers"), "outside opt-in mode the toggle edits the exclusion list")
+	require.ErrorIs(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "opted-out", Enabled: true}), common.ErrConflict, "updater=false decides on its own")
+
+	require.NoError(t, settingsService.SetBoolSetting(t.Context(), "autoUpdateOptIn", true))
+	require.NoError(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "plain", Enabled: true}))
+	require.Equal(t, "plain", list("autoUpdateIncludedContainers"), "in opt-in mode the toggle edits the include list")
+	require.Equal(t, "plain,opted-in", list("autoUpdateExcludedContainers"), "the exclusion list stays untouched in opt-in mode")
+	require.ErrorIs(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "opted-in", Enabled: false}), common.ErrConflict, "updater=true decides in opt-in mode")
+	require.ErrorIs(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "opted-out", Enabled: true}), common.ErrConflict)
+	require.NoError(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "plain", Enabled: false}))
+	require.Empty(t, list("autoUpdateIncludedContainers"))
+	require.Error(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "missing", Enabled: true}))
+}
+
+func TestBuildSummariesHonorsAutoUpdateOptIn(t *testing.T) {
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     setupProjectTestDB(t),
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	require.NoError(t, settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{
+		"autoUpdateExcludedContainers": "excluded",
+		"autoUpdateIncludedContainers": "included,opted-out",
+	}))
+	service := NewContainerService(ContainerServiceParams{
+		SettingsService: settingsService,
+	})
+	containers := []container.Summary{
+		{ID: "plain", Names: []string{"/plain"}, Image: "app:1"},
+		{ID: "opted-in", Names: []string{"/opted-in"}, Image: "app:1", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "true"}},
+		{ID: "opted-out", Names: []string{"/opted-out"}, Image: "app:1", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "false"}},
+		{ID: "excluded", Names: []string{"/excluded"}, Image: "app:1", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "true"}},
+		{ID: "included", Names: []string{"/included"}, Image: "app:1"},
+	}
+	enabled := func() map[string]bool {
+		result := map[string]bool{}
+		for _, item := range service.BuildSummaries(t.Context(), containers, nil, "", nil) {
+			result[item.ID] = item.AutoUpdateEnabled
+			require.Equal(t, settingsService.GetBoolSetting(t.Context(), "autoUpdateOptIn"), item.AutoUpdateOptIn)
+		}
+		return result
+	}
+
+	require.Equal(t, map[string]bool{"plain": true, "opted-in": true, "opted-out": false, "excluded": false, "included": true}, enabled(), "outside opt-in mode the exclusion list applies")
+
+	require.NoError(t, settingsService.SetBoolSetting(t.Context(), "autoUpdateOptIn", true))
+	require.Equal(
+		t,
+		map[string]bool{"plain": false, "opted-in": true, "opted-out": false, "excluded": true, "included": true},
+		enabled(),
+		"opt-in mode keeps labelled and included containers, ignores the exclusion list, and updater=false still wins",
+	)
+}
+
 func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    t.Context(),

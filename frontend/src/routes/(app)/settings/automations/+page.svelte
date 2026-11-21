@@ -13,12 +13,16 @@
 		'imageEventWatcherEnabled',
 		'autoUpdate',
 		'autoUpdateDelay',
+		'autoUpdateOptIn',
 		'autoUpdateExcludedContainers',
+		'autoUpdateIncludedContainers',
 		'githubToken',
 		'scheduledPruneEnabled',
 		'vulnerabilityScanEnabled',
 		'autoHealEnabled',
+		'autoHealOptIn',
 		'autoHealExcludedContainers',
+		'autoHealIncludedContainers',
 		'autoHealMaxRestarts',
 		'autoHealRestartWindow'
 	]}
