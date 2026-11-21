@@ -36,7 +36,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/settings"
-	"getarcane.dev/arcane/v3/internal/vulnerability"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -47,7 +46,6 @@ type (
 	testProjectRow struct {
 		database.BaseModel
 		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
-		ImageRefsJSON      string  `gorm:"column:image_refs_json"`
 		Name               string
 		Path               string
 	}
@@ -69,7 +67,6 @@ func setupImageProjectTestDB(t *testing.T) *database.DB {
 		&imageupdate.ImageUpdateRecord{},
 		&event.Event{},
 		&kv.KVEntry{},
-		&vulnerability.VulnerabilityScanRecord{},
 	))
 	return &database.DB{DB: db}
 }
@@ -152,20 +149,9 @@ func TestMapDockerImagesToDTOs_PopulatesPinnedReferences(t *testing.T) {
 		},
 		{
 			ID:          "sha256:regular-image",
-			RepoTags:    []string{regularDigest, "nginx:alpine", "nginx:latest"},
+			RepoTags:    []string{regularDigest, "nginx:alpine"},
 			RepoDigests: []string{regularDigest},
 			Size:        67890,
-		},
-		{
-			ID:       "sha256:unused-image",
-			RepoTags: []string{"nginx:Alpine"},
-		},
-		{
-			ID:       "sha256:retagged-image",
-			RepoTags: []string{"nginx:alpine"},
-		},
-		{
-			ID: "sha256:local-build",
 		},
 	}
 	containers := []container.Summary{
@@ -174,29 +160,19 @@ func TestMapDockerImagesToDTOs_PopulatesPinnedReferences(t *testing.T) {
 			ImageID: "sha256:pinned-image",
 			Image:   pinnedRef,
 			Names:   []string{"/syncthing"},
-			State:   "exited",
-			Labels:  map[string]string{"com.docker.compose.project": "syncthing"},
 		},
 		{
 			ID:      "c-regular",
 			ImageID: "sha256:regular-image",
 			Image:   "nginx:alpine",
 			Names:   []string{"/nginx"},
-			State:   "running",
-		},
-		{
-			ID:      "c-built",
-			ImageID: "sha256:local-build",
-			Image:   "demo-worker",
-			State:   "exited",
-			Labels:  map[string]string{"com.docker.compose.project": "demo"},
 		},
 	}
 
-	usageMap := BuildVolumeUsageMap(containers, map[string]string{"syncthing": "proj-syncthing"})
+	usageMap := BuildVolumeUsageMap(containers, nil)
 	items := MapDockerImagesToDTOs(dockerImages, containers, usageMap, nil, nil)
 
-	require.Len(t, items, 5)
+	require.Len(t, items, 2)
 
 	assert.Equal(t, "sha256:pinned-image", items[0].ID)
 	assert.Equal(t, "ghcr.io/syncthing/syncthing", items[0].Repo)
@@ -205,26 +181,14 @@ func TestMapDockerImagesToDTOs_PopulatesPinnedReferences(t *testing.T) {
 	assert.Equal(t, []string{pinnedDigest}, items[0].RepoDigests)
 	assert.Equal(t, []string{pinnedRef}, items[0].PinnedReferences)
 	assert.True(t, items[0].InUse)
-	assert.Equal(t, []types.ImageUsedBy{{Type: "project", Name: "syncthing", ID: "proj-syncthing"}}, items[0].UsedBy)
 
 	assert.Equal(t, "sha256:regular-image", items[1].ID)
 	assert.Equal(t, "nginx", items[1].Repo)
 	assert.Equal(t, "alpine", items[1].Tag)
-	assert.Equal(t, []string{"nginx:alpine", "nginx:latest"}, items[1].RepoTags)
+	assert.Equal(t, []string{"nginx:alpine"}, items[1].RepoTags)
 	assert.Equal(t, []string{regularDigest}, items[1].RepoDigests)
 	assert.Nil(t, items[1].PinnedReferences)
 	assert.True(t, items[1].InUse)
-	assert.Equal(t, []types.ImageUsedBy{{Type: "container", Name: "nginx", ID: "c-regular"}}, items[1].UsedBy)
-	assert.False(t, items[2].InUse)
-	assert.Empty(t, items[2].UsedBy)
-	assert.False(t, items[3].InUse)
-	assert.Empty(t, items[3].UsedBy)
-	assert.True(t, items[4].InUse)
-	assert.Equal(t, []types.ImageUsedBy{{Type: "project", Name: "demo"}}, items[4].UsedBy)
-
-	counts := docker.CountImageUsage(dockerImages, containers, time.Now())
-	assert.Equal(t, 3, counts.Inuse)
-	assert.Equal(t, 2, counts.Unused)
 }
 
 func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
@@ -332,7 +296,6 @@ func TestImageService_GetImageDetail_IncludesUpdateInfo(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, detail.UpdateInfo)
 	assert.True(t, detail.UpdateInfo.HasUpdate)
-	assert.Equal(t, new(false), detail.InUse, "successful empty inventory confirms unused")
 }
 
 func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *testing.T) {
@@ -370,7 +333,6 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 	require.NotNil(t, detail)
 	assert.Equal(t, testID, detail.ID)
 	assert.Nil(t, detail.PinnedReferences)
-	assert.Nil(t, detail.InUse, "failed container inventory must not claim unused")
 }
 
 func TestImagePaginationConfig_SearchesPinnedReferences(t *testing.T) {
@@ -1165,148 +1127,4 @@ func TestImagePaginationConfig_FiltersByLabel(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func TestImageService_ListImagesPaginated_IgnoresRefOnlyProjectUsage(t *testing.T) {
-	db := setupImageProjectTestDB(t)
-	require.NoError(t, db.WithContext(t.Context()).Create(&testProjectRow{
-		Name:          "grafana",
-		Path:          t.TempDir(),
-		ImageRefsJSON: `["grafana/grafana:12.1"]`,
-	}).Error)
-
-	imageSvc := newProjectUsageTestService(t, db, []image.Summary{
-		{ID: "sha256:refonly-grafana", RepoTags: []string{"grafana/grafana:12.1"}},
-	}, nil)
-
-	items, _, err := imageSvc.ListImagesPaginated(t.Context(), pagination.QueryParams{Start: 0, Limit: 20})
-	require.NoError(t, err)
-	require.Len(t, items, 1)
-
-	assert.Empty(t, items[0].UsedBy)
-	assert.False(t, items[0].InUse)
-}
-
-// newProjectUsageTestService builds an ImageService against a fake Docker API
-// serving the given image and container lists, for project-usage tests.
-func newProjectUsageTestService(t *testing.T, db *database.DB, images []image.Summary, containers []container.Summary) *ImageService {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			_ = json.MarshalWrite(w, images)
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			_ = json.MarshalWrite(w, containers)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	cfg := &config.Config{}
-	settingsSvc, settingsErr := settings.NewSettingsService(settings.SettingsServiceParams{
-		Ctx:    t.Context(),
-		DB:     db,
-		Config: cfg,
-		Env:    settings.Env{},
-	})
-	require.NoError(t, settingsErr)
-	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
-
-	return NewImageService(ImageServiceParams{
-		DB:              db,
-		DockerService:   newImageTestDockerService(t, server),
-		EventService:    event.NewEventService(db, cfg, nil),
-		SettingsService: settingsSvc,
-		VulnerabilityService: vulnerability.NewVulnerabilityService(vulnerability.VulnerabilityServiceParams{
-			DB:              db,
-			Config:          cfg,
-			DockerService:   newImageTestDockerService(t, server),
-			EventService:    event.NewEventService(db, cfg, nil),
-			SettingsService: settingsSvc,
-			KVService:       kv.NewKVService(db),
-			HTTPClient:      http.DefaultClient,
-		}),
-	})
-}
-
-func TestImageService_ListImagesPaginated_IgnoresBuildOnlyRefUsage(t *testing.T) {
-	db := setupImageProjectTestDB(t)
-	// Build-only project: no image_refs_json, only generated build image names.
-	buildRefsJSON := `["myapp:dev"]`
-	require.NoError(t, db.WithContext(t.Context()).Create(&testProjectRow{
-		Name:               "myapp",
-		Path:               t.TempDir(),
-		BuildImageRefsJSON: &buildRefsJSON,
-	}).Error)
-
-	svc := newProjectUsageTestService(t, db, []image.Summary{
-		{ID: "sha256:buildonly-myapp", RepoTags: []string{"myapp:dev"}},
-	}, nil)
-
-	items, _, err := svc.ListImagesPaginated(t.Context(), pagination.QueryParams{Start: 0, Limit: 20})
-	require.NoError(t, err)
-	require.Len(t, items, 1)
-
-	assert.Empty(t, items[0].UsedBy)
-	assert.False(t, items[0].InUse)
-}
-
-func TestImageService_GetImageDetail_IncludesUsedBy(t *testing.T) {
-	db := setupImageProjectTestDB(t)
-	const detailID = "sha256:usedby-detail"
-	require.NoError(t, db.WithContext(t.Context()).Create(&testProjectRow{
-		Name:          "grafana",
-		Path:          t.TempDir(),
-		ImageRefsJSON: `["grafana/grafana:12.1"]`,
-	}).Error)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			_ = json.MarshalWrite(w, []image.Summary{{ID: detailID}})
-		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
-			_ = json.MarshalWrite(w, image.InspectResponse{
-				ID:       detailID,
-				RepoTags: []string{"grafana/grafana:12.1"},
-			})
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			_ = json.MarshalWrite(w, []container.Summary{
-				{
-					ID:      "grafana-container",
-					ImageID: detailID,
-					Image:   "grafana/grafana:12.1",
-					State:   "exited",
-					Labels:  map[string]string{"com.docker.compose.project": "grafana"},
-				},
-				{
-					ID:      "grafana-running-container",
-					ImageID: detailID,
-					Image:   "grafana/grafana:12.1",
-					State:   "running",
-					Labels:  map[string]string{"com.docker.compose.project": "grafana"},
-				},
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	imageSvc := NewImageService(ImageServiceParams{
-		DB:            db,
-		DockerService: newImageTestDockerService(t, server),
-		EventService:  event.NewEventService(db, &config.Config{}, nil),
-	})
-
-	detail, err := imageSvc.GetImageDetail(t.Context(), detailID)
-	require.NoError(t, err)
-	require.NotNil(t, detail)
-	require.Len(t, detail.UsedBy, 1)
-	assert.Equal(t, "project", detail.UsedBy[0].Type)
-	assert.Equal(t, "grafana", detail.UsedBy[0].Name)
-	assert.NotEmpty(t, detail.UsedBy[0].ID)
-	assert.Equal(t, new(true), detail.InUse)
 }

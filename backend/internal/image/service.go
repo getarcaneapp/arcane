@@ -254,10 +254,9 @@ func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.ImageDetailSummary, error) {
 	var (
-		inspect        image.InspectResponse
-		listSize       int64
-		containers     []container.Summary
-		usageAvailable bool
+		inspect    image.InspectResponse
+		listSize   int64
+		containers []container.Summary
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -316,11 +315,10 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 
 		containerList, listContainersErr := s.dockerService.ListContainers(gctx, false)
 		if listContainersErr != nil {
-			slog.DebugContext(gctx, "failed to list containers for image detail usage", "id", id, "error", listContainersErr)
+			slog.DebugContext(gctx, "failed to list containers for image detail pinned references", "id", id, "error", listContainersErr)
 			return nil
 		}
 		containers = containerList
-		usageAvailable = true
 		return nil
 	})
 
@@ -343,11 +341,6 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	}
 	if len(containers) > 0 {
 		out.PinnedReferences = collectPinnedReferencesByImageID(containers)[inspect.ID] // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
-	}
-	if usageAvailable {
-		usageMap := BuildVolumeUsageMap(containers, s.BuildProjectIDMap(ctx, containers))
-		out.UsedBy = usageMap[inspect.ID]
-		out.InUse = new(len(out.UsedBy) > 0)
 	}
 	if inspect.Config != nil {
 		out.Hardened = dhi.Info(inspect.Config.Labels, time.Now()) // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary

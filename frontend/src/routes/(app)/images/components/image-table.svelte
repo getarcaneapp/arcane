@@ -452,7 +452,7 @@
 {/snippet}
 
 {#snippet UsageBadgeList(usages: NonNullable<ImageSummary['usedBy']>, environmentId: string)}
-	{#each usages as usage (`${usage.type}-${usage.id || usage.name}`)}
+	{#each usages as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
 		{#if usage.type === 'project'}
 			{#if usage.id}
 				<Badge
