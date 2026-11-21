@@ -312,11 +312,7 @@ func (h *PasskeyHandler) GetCapabilities(ctx context.Context, _ *struct{}) (*han
 	if err != nil {
 		return nil, err
 	}
-	oidcEnabled, err := h.authService.IsOidcEnabled(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to check OIDC status")
-	}
-	capabilities, err := h.passkeyService.GetCapabilities(ctx, userModel.ID, oidcEnabled)
+	capabilities, err := h.passkeyService.GetCapabilities(ctx, userModel.ID, h.authService.IsOidcEnabled())
 	if err != nil {
 		return nil, passkeyHTTPError(err)
 	}
@@ -380,16 +376,12 @@ func (h *PasskeyHandler) DeletePasskey(ctx context.Context, input *DeletePasskey
 	if err != nil {
 		return nil, err
 	}
-	oidcEnabled, err := h.authService.IsOidcEnabled(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to check OIDC status")
-	}
 	if deletePasskeyErr := h.passkeyService.DeletePasskey(ctx, DeletePasskeyRequest{
 		UserID:              userModel.ID,
 		PasskeyID:           input.ID,
 		SessionID:           sessionID,
 		StepUpToken:         input.StepUpToken,
-		OidcFallbackAllowed: oidcEnabled,
+		OidcFallbackAllowed: h.authService.IsOidcEnabled(),
 	}); deletePasskeyErr != nil {
 		return nil, passkeyHTTPError(deletePasskeyErr)
 	}

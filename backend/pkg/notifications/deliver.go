@@ -195,9 +195,7 @@ func deliverNtfy(ctx context.Context, config database.JSON, c Content) error {
 	if c.RequireNtfyTopic && ntfyConfig.Topic == "" {
 		return errors.New("ntfy topic is required")
 	}
-	if ntfyConfig.Title == "" {
-		ntfyConfig.Title = c.NtfyTitle
-	}
+	ntfyConfig.Title = cmp.Or(ntfyConfig.Title, c.NtfyTitle)
 	if sendNtfyErr := SendNtfy(ctx, ntfyConfig, c.Text[MessageFormatNtfyMarkdown]); sendNtfyErr != nil {
 		return fmt.Errorf("failed to send Ntfy notification: %w", sendNtfyErr)
 	}
@@ -205,7 +203,7 @@ func deliverNtfy(ctx context.Context, config database.JSON, c Content) error {
 }
 
 func deliverPushover(ctx context.Context, config database.JSON, c Content) error {
-	pushoverConfig, err := PreparePushoverConfig(config, "Pushover")
+	pushoverConfig, err := PrepareConfig[PushoverConfig](config, "Pushover", func(cfg *PushoverConfig) *string { return &cfg.Token })
 	if err != nil {
 		return err
 	}
@@ -217,9 +215,7 @@ func deliverPushover(ctx context.Context, config database.JSON, c Content) error
 			return errors.New("pushover user key not configured")
 		}
 	}
-	if pushoverConfig.Title == "" && c.DefaultTitle != "" {
-		pushoverConfig.Title = c.DefaultTitle
-	}
+	pushoverConfig.Title = cmp.Or(pushoverConfig.Title, c.DefaultTitle)
 	if sendPushoverErr := SendPushover(ctx, pushoverConfig, c.Text[MessageFormatPlain]); sendPushoverErr != nil {
 		return fmt.Errorf("failed to send Pushover notification: %w", sendPushoverErr)
 	}
@@ -227,13 +223,11 @@ func deliverPushover(ctx context.Context, config database.JSON, c Content) error
 }
 
 func deliverGotify(ctx context.Context, config database.JSON, c Content) error {
-	gotifyConfig, err := PrepareGotifyConfig(config, "Gotify")
+	gotifyConfig, err := PrepareConfig[GotifyConfig](config, "Gotify", func(cfg *GotifyConfig) *string { return &cfg.Token })
 	if err != nil {
 		return err
 	}
-	if gotifyConfig.Title == "" && c.DefaultTitle != "" {
-		gotifyConfig.Title = c.DefaultTitle
-	}
+	gotifyConfig.Title = cmp.Or(gotifyConfig.Title, c.DefaultTitle)
 	if sendGotifyErr := SendGotify(ctx, gotifyConfig, c.Text[MessageFormatPlain]); sendGotifyErr != nil {
 		return fmt.Errorf("failed to send Gotify notification: %w", sendGotifyErr)
 	}
@@ -241,7 +235,7 @@ func deliverGotify(ctx context.Context, config database.JSON, c Content) error {
 }
 
 func deliverMatrix(ctx context.Context, config database.JSON, c Content) error {
-	matrixConfig, err := PrepareMatrixConfig(config)
+	matrixConfig, err := PrepareConfig[MatrixConfig](config, "Matrix", func(cfg *MatrixConfig) *string { return &cfg.Password })
 	if err != nil {
 		return err
 	}

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -651,7 +651,7 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 	if !errdefs.IsNotFound(inspectErr) {
 		return fmt.Errorf("failed to inspect volume for restore: %w", inspectErr)
 	}
-	createOptions, err := projects.ComposeVolumeCreateOptions(projects.ComposeVolumeConfig(composetypes.VolumeConfig{
+	createOptions, err := projects.ComposeVolumeCreateOptions(projects.ComposeVolumeConfig(composeTypes.VolumeConfig{
 		Driver: target.Driver,
 		Labels: target.Labels,
 	}, target.Key, volumeName, target.Project), nil)

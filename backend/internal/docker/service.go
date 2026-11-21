@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -39,8 +40,6 @@ type (
 	DockerClientService struct {
 		clientLastProbe time.Time
 
-		// Coalesce concurrent full-inventory lists into one Docker response; per-instance
-		// because a WithClient copy talks to a different daemon.
 		imageListFlight     singleflight.Group
 		containerListFlight singleflight.Group
 		diskUsageFlight     singleflight.Group
@@ -50,6 +49,7 @@ type (
 		settingsService *settings.SettingsService
 		engineClient    *client.Client
 		eventBus        *bus.DockerEventBus
+		VolumeUsage     *docker.VolumeUsageCache
 		streamConnected *concurrency.Signal[struct{}]
 		inventory       atomic.Pointer[dockerInventory]
 
@@ -76,6 +76,7 @@ func NewDockerClientService(ctx context.Context, db *database.DB, settingsServic
 		db:              db,
 		settingsService: settingsService,
 		eventBus:        bus.NewDockerEventBus(eventBusConfig),
+		VolumeUsage:     docker.NewVolumeUsageCache(docker.VolumeUsageCacheConfig{}),
 		streamConnected: concurrency.NewSignal[struct{}](),
 	}
 	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"dockerHost"}, func([]types.SettingUpdate) {
@@ -91,6 +92,7 @@ func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerCli
 		Client:          dockerClient,
 		boundHost:       dockerClient.DaemonHost(),
 		eventBus:        s.eventBus,
+		VolumeUsage:     cmp.Or(s.VolumeUsage, docker.NewVolumeUsageCache(docker.VolumeUsageCacheConfig{})),
 		streamConnected: s.streamConnected,
 	}
 }

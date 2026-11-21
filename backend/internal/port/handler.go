@@ -29,7 +29,7 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ha
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.portService.AggregatePorts(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, h.portService.buildPortPaginationConfig(), params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list ports: " + err.Error())
 		}

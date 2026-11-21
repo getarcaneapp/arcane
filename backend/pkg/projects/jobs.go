@@ -5,7 +5,7 @@ import (
 	"maps"
 	"slices"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/compose"
 
 	"kit.getarcane.app"
@@ -18,7 +18,7 @@ const (
 	JobRunLabel = "com.docker.job.id"
 )
 
-func ProjectJobs(project *composetypes.Project) []types.ProjectJob {
+func ProjectJobs(project *composeTypes.Project) []types.ProjectJob {
 	if project == nil {
 		return nil
 	}
@@ -47,7 +47,7 @@ func ProjectJobs(project *composetypes.Project) []types.ProjectJob {
 	return jobs
 }
 
-func MaterializeJob(project *composetypes.Project, name string) (*composetypes.Project, error) {
+func MaterializeJob(project *composeTypes.Project, name string) (*composeTypes.Project, error) {
 	all := project.AllJobs()
 	job, ok := all[name]
 	if !ok {

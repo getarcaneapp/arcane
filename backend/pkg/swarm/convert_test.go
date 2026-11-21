@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	composegotypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/require"
@@ -18,14 +18,14 @@ import (
 
 func TestConvertServiceMountsResolvesComposeResourceNames(t *testing.T) {
 	mounts, err := convertServiceMounts(
-		[]composegotypes.ServiceVolumeConfig{
+		[]composeTypes.ServiceVolumeConfig{
 			{Type: "volume", Source: "plain", Target: "/plain"},
 			{Type: "volume", Source: "driver", Target: "/driver"},
 			{Type: "volume", Source: "named", Target: "/named"},
 			{Type: "volume", Source: "external", Target: "/external"},
 		},
 		namespace{name: "stack"},
-		composegotypes.Volumes{
+		composeTypes.Volumes{
 			"plain":    {Name: "stack_plain"},
 			"driver":   {Name: "stack_driver", Driver: "local"},
 			"named":    {Name: "custom"},
@@ -49,13 +49,13 @@ func TestConvertServiceMountsResolvesComposeResourceNames(t *testing.T) {
 
 func TestApplyDeployConfigConvertsCPUFractionToNanoCPUs(t *testing.T) {
 	spec := &swarm.ServiceSpec{}
-	deploy := &composegotypes.DeployConfig{
-		Resources: composegotypes.Resources{
-			Limits: &composegotypes.Resource{
+	deploy := &composeTypes.DeployConfig{
+		Resources: composeTypes.Resources{
+			Limits: &composeTypes.Resource{
 				NanoCPUs:    0.5,
 				MemoryBytes: 536870912,
 			},
-			Reservations: &composegotypes.Resource{
+			Reservations: &composeTypes.Resource{
 				NanoCPUs:    0.25,
 				MemoryBytes: 268435456,
 			},
@@ -88,7 +88,7 @@ configs:
 	})
 	require.NoError(t, err)
 
-	plans, err := planConfigs(t.Context(), project, namespace{name: "stack"})
+	plans, err := planManagedFileResources(t.Context(), project.Configs, namespace{name: "stack"}, project.WorkingDir, project.Environment, "config")
 	require.NoError(t, err)
 	require.Empty(t, plans["app_config"].Data)
 	require.Equal(t, managedResourceName("stack_app_config", kit.SHA256Hex[[]byte](nil)), plans["app_config"].Meta.Name)
@@ -96,7 +96,7 @@ configs:
 
 func TestBuildServiceSpecConformance(t *testing.T) {
 	type testCase struct {
-		configure func(*composegotypes.ServiceConfig)
+		configure func(*composeTypes.ServiceConfig)
 		check     func(*testing.T, swarm.ServiceSpec, error)
 		name      string
 	}
@@ -104,8 +104,8 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 	tests := []testCase{
 		{
 			name: "extra hosts use swarm notation",
-			configure: func(service *composegotypes.ServiceConfig) {
-				service.ExtraHosts = composegotypes.HostsList{"api.local": {"127.0.0.1"}}
+			configure: func(service *composeTypes.ServiceConfig) {
+				service.ExtraHosts = composeTypes.HostsList{"api.local": {"127.0.0.1"}}
 			},
 			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
 				require.NoError(t, err)
@@ -114,8 +114,8 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 		},
 		{
 			name: "network has service alias",
-			configure: func(service *composegotypes.ServiceConfig) {
-				service.Networks = map[string]*composegotypes.ServiceNetworkConfig{"default": nil}
+			configure: func(service *composeTypes.ServiceConfig) {
+				service.Networks = map[string]*composeTypes.ServiceNetworkConfig{"default": nil}
 			},
 			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
 				require.NoError(t, err)
@@ -124,8 +124,8 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 		},
 		{
 			name: "update parallelism defaults to one",
-			configure: func(service *composegotypes.ServiceConfig) {
-				service.Deploy = &composegotypes.DeployConfig{UpdateConfig: &composegotypes.UpdateConfig{}}
+			configure: func(service *composeTypes.ServiceConfig) {
+				service.Deploy = &composeTypes.DeployConfig{UpdateConfig: &composeTypes.UpdateConfig{}}
 			},
 			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
 				require.NoError(t, err)
@@ -134,7 +134,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 		},
 		{
 			name: "legacy restart policy is converted",
-			configure: func(service *composegotypes.ServiceConfig) {
+			configure: func(service *composeTypes.ServiceConfig) {
 				service.Restart = "on-failure:3"
 			},
 			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
@@ -145,8 +145,8 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 		},
 		{
 			name: "disabled healthcheck uses none",
-			configure: func(service *composegotypes.ServiceConfig) {
-				service.HealthCheck = &composegotypes.HealthCheckConfig{Disable: true}
+			configure: func(service *composeTypes.ServiceConfig) {
+				service.HealthCheck = &composeTypes.HealthCheckConfig{Disable: true}
 			},
 			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
 				require.NoError(t, err)
@@ -155,9 +155,9 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 		},
 		{
 			name: "disabled healthcheck rejects other fields",
-			configure: func(service *composegotypes.ServiceConfig) {
+			configure: func(service *composeTypes.ServiceConfig) {
 				retries := uint64(1)
-				service.HealthCheck = &composegotypes.HealthCheckConfig{Disable: true, Retries: &retries}
+				service.HealthCheck = &composeTypes.HealthCheckConfig{Disable: true, Retries: &retries}
 			},
 			check: func(t *testing.T, _ swarm.ServiceSpec, err error) {
 				require.ErrorContains(t, err, "cannot be combined")
@@ -165,9 +165,9 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 		},
 		{
 			name: "global mode rejects replicas",
-			configure: func(service *composegotypes.ServiceConfig) {
+			configure: func(service *composeTypes.ServiceConfig) {
 				replicas := 2
-				service.Deploy = &composegotypes.DeployConfig{Mode: "global", Replicas: &replicas}
+				service.Deploy = &composeTypes.DeployConfig{Mode: "global", Replicas: &replicas}
 			},
 			check: func(t *testing.T, _ swarm.ServiceSpec, err error) {
 				require.ErrorContains(t, err, "replicas can only be used")
@@ -175,8 +175,8 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 		},
 		{
 			name: "invalid published port fails",
-			configure: func(service *composegotypes.ServiceConfig) {
-				service.Ports = []composegotypes.ServicePortConfig{{Target: 80, Published: "invalid"}}
+			configure: func(service *composeTypes.ServiceConfig) {
+				service.Ports = []composeTypes.ServicePortConfig{{Target: 80, Published: "invalid"}}
 			},
 			check: func(t *testing.T, _ swarm.ServiceSpec, err error) {
 				require.ErrorContains(t, err, "invalid published port")
@@ -186,7 +186,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			service := composegotypes.ServiceConfig{Name: "web", Image: "nginx:alpine"}
+			service := composeTypes.ServiceConfig{Name: "web", Image: "nginx:alpine"}
 			test.configure(&service)
 			spec, err := buildServiceSpec(
 				service,
@@ -245,11 +245,11 @@ secrets:
 	require.NoError(t, err)
 
 	ns := namespace{name: "stack"}
-	networkNames := planNetworks(project, ns)
-	volumeNames := planVolumes(project, ns)
-	configPlans, err := planConfigs(t.Context(), project, ns)
+	networkNames := planResourceNames(project.Networks, ns, func(c composeTypes.NetworkConfig) string { return c.Name })
+	volumeNames := planResourceNames(project.Volumes, ns, func(c composeTypes.VolumeConfig) string { return c.Name })
+	configPlans, err := planManagedFileResources(t.Context(), project.Configs, ns, project.WorkingDir, project.Environment, "config")
 	require.NoError(t, err)
-	secretPlans, err := planSecrets(t.Context(), project, ns)
+	secretPlans, err := planManagedFileResources(t.Context(), project.Secrets, ns, project.WorkingDir, project.Environment, "secret")
 	require.NoError(t, err)
 	configMeta := make(map[string]resourceMeta, len(configPlans))
 	for key, plan := range configPlans {

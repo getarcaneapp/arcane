@@ -5,15 +5,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBuildImageRefsFromComposeProject(t *testing.T) {
-	project := &composetypes.Project{
+	project := &composeTypes.Project{
 		Name: "demo",
-		Services: composetypes.Services{
+		Services: composeTypes.Services{
 			"regular": {
 				Name:  "regular",
 				Image: "postgres:17",
@@ -21,15 +21,15 @@ func TestBuildImageRefsFromComposeProject(t *testing.T) {
 			"explicit": {
 				Name:  "explicit",
 				Image: "test2:latest",
-				Build: &composetypes.BuildConfig{Context: "."},
+				Build: &composeTypes.BuildConfig{Context: "."},
 			},
 			"duplicate": {
 				Name:  "duplicate",
 				Image: "test2:latest",
-				Build: &composetypes.BuildConfig{Context: "./duplicate"},
+				Build: &composeTypes.BuildConfig{Context: "./duplicate"},
 			},
 			"default": {
-				Build: &composetypes.BuildConfig{Context: "./default"},
+				Build: &composeTypes.BuildConfig{Context: "./default"},
 			},
 		},
 	}

@@ -21,6 +21,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -113,7 +114,7 @@ func TestAggregateMergesEnvironments(t *testing.T) {
 		},
 	})
 
-	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	body, err := handlerutil.AggregatePaginated(ctx, secretPagination, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 	require.NoError(t, err)
 
 	require.Len(t, body.Data, 2)

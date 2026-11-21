@@ -24,6 +24,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -297,7 +298,10 @@ func TestAggregatePortsMergesEnvironments(t *testing.T) {
 
 	t.Run("sorts by host port across environments and pages", func(t *testing.T) {
 		ctx, queries := portScopeContext(t, "/api/agents/a,b,c/ports?start=0&limit=2&sort=hostPort&order=asc", bodies)
-		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "hostPort", Order: pagination.SortAsc}, Params: pagination.Params{Limit: 2}})
+		body, err := handlerutil.AggregatePaginated(ctx, svc.buildPortPaginationConfig(), pagination.QueryParams{
+			SortParams: pagination.SortParams{Sort: "hostPort", Order: pagination.SortAsc},
+			Params:     pagination.Params{Limit: 2},
+		})
 		require.NoError(t, err)
 
 		assert.True(t, body.Success)
@@ -319,14 +323,17 @@ func TestAggregatePortsMergesEnvironments(t *testing.T) {
 
 	t.Run("sorts by environment", func(t *testing.T) {
 		ctx, _ := portScopeContext(t, "/api/agents/a,b,c/ports?sort=environment&order=asc", bodies)
-		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc}, Params: pagination.Params{Limit: -1}})
+		body, err := handlerutil.AggregatePaginated(ctx, svc.buildPortPaginationConfig(), pagination.QueryParams{
+			SortParams: pagination.SortParams{Sort: "environment", Order: pagination.SortAsc},
+			Params:     pagination.Params{Limit: -1},
+		})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"a/db", "a/web", "b/api"}, rowLabels(body.Data))
 	})
 
 	t.Run("all environments failing returns empty data", func(t *testing.T) {
 		ctx, _ := portScopeContext(t, "/api/agents/a,b,c/ports", map[string]any{})
-		body, err := svc.AggregatePorts(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+		body, err := handlerutil.AggregatePaginated(ctx, svc.buildPortPaginationConfig(), pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 		require.NoError(t, err)
 		assert.Empty(t, body.Data)
 		assert.Len(t, body.FailedEnvironments, 3)

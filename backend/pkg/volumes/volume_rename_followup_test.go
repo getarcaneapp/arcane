@@ -68,10 +68,10 @@ func TestRollbackVolume_ExplainsPreservedTargetWhenSourceMissing(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	err := RollbackVolume(t.Context(), newTestDockerClient(t, server), types.VolumeJournalVolume{
+	err := reconcileRollbackTargetVolume(t.Context(), newTestDockerClient(t, server), types.VolumeJournalVolume{
 		OldName: "nginx_data",
 		NewName: "web_data",
-	})
+	}, true)
 
 	require.Error(t, err)
 	var preserved *types.TargetPreservedDuringRollbackError

@@ -6,9 +6,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"maps"
-	"net/url"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/containerd/errdefs"
@@ -20,8 +18,6 @@ import (
 	"kit.getarcane.app/docker"
 
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
-	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/jsonx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -99,30 +95,6 @@ func (s *Service) PaginateSummaries(
 
 	result := servicePagination.SearchOrderAndPaginate(summaries, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
-}
-
-func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmServiceSummary], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmServiceSummary]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.SwarmServiceSummary]{}, err
-	}
-
-	pages := make([]pagination.EnvironmentPage[types.SwarmServiceSummary], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.SwarmServiceSummary]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
-	data, resp := pagination.MergeEnvironmentPages(servicePagination, pages, params)
-
-	return types.Paginated[types.SwarmServiceSummary]{
-		Success:            true,
-		Data:               data,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
 }
 
 func (s *Service) GetService(ctx context.Context, serviceID string) (*types.SwarmServiceInspect, error) {
@@ -526,15 +498,7 @@ func (s *Service) summarizeServices(ctx context.Context, services []swarm.Servic
 
 	summaries := make([]types.SwarmServiceSummary, 0, len(services))
 	for _, service := range services {
-		var nodeNames []string
-		if nodeSet, ok := serviceNodes[service.ID]; ok {
-			nodeNames = make([]string, 0, len(nodeSet))
-			for nodeName := range nodeSet {
-				nodeNames = append(nodeNames, nodeName)
-			}
-			sort.Strings(nodeNames)
-		}
-		summaries = append(summaries, types.NewSwarmServiceSummary(service, nodeNames, networkNameByID))
+		summaries = append(summaries, types.NewSwarmServiceSummary(service, slices.Sorted(maps.Keys(serviceNodes[service.ID])), networkNameByID))
 	}
 
 	return summaries, nil

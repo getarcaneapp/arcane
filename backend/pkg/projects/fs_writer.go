@@ -64,11 +64,6 @@ var (
 	ComposeOverrideFileCandidates = slices.Clone(cli.DefaultOverrideFileNames)
 )
 
-func detectExistingComposeFile(ctx context.Context, projectsRoot, dir string) string {
-	composePath, err := DetectComposeFile(ctx, projectsRoot, dir)
-	return kit.Ternary(err == nil, composePath, "")
-}
-
 func WriteComposeFile(ctx context.Context, write ComposeFileWrite) error {
 	dirPath := write.DirPath
 	if _, err := (acfs.Root{Path: write.ProjectsRoot}).LogicalPath(dirPath); err != nil {
@@ -80,7 +75,7 @@ func WriteComposeFile(ctx context.Context, write ComposeFileWrite) error {
 	}
 
 	composeFileName := DefaultComposeFileName
-	if existingFile := detectExistingComposeFile(ctx, cmp.Or(write.GlobalEnvDirectory, write.ProjectsRoot), dirPath); existingFile != "" {
+	if existingFile, err := DetectComposeFile(ctx, cmp.Or(write.GlobalEnvDirectory, write.ProjectsRoot), dirPath); err == nil && existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
 	}
 	if write.FileName != "" {

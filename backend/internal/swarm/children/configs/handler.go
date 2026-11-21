@@ -6,8 +6,6 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 
-	"kit.getarcane.app"
-
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -62,7 +60,7 @@ func NewHandler(
 func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*handlerutil.Page[types.SwarmConfig], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.Aggregate(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, configPagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list swarm configs: " + err.Error())
 		}
@@ -76,7 +74,7 @@ func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput)
 	return &handlerutil.Page[types.SwarmConfig]{
 		Body: types.Paginated[types.SwarmConfig]{
 			Success:    true,
-			Data:       kit.Ternary(items != nil, items, []types.SwarmConfig{}),
+			Data:       items,
 			Pagination: handlerutil.PaginationResponse(page),
 		},
 	}, nil

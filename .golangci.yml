@@ -140,6 +140,8 @@ linters:
           alias: dockerInternal
         - pkg: charm.land/log/v2
           alias: charmLog
+        - pkg: github.com/compose-spec/compose-go/v2/types
+          alias: composeTypes
 
     lll:
       line-length: 200

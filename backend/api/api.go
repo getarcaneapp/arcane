@@ -248,7 +248,14 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	p.Deps.GitOpsSync.RegisterRoutes(api)
 	p.Deps.Webhook.RegisterRoutes(api, p.AppContext)
 	p.Deps.Vulnerability.RegisterRoutes(api, p.AppContext)
-	handlers.RegisterStream(api, p.Deps.Activity.Handler(), p.Deps.Environment.Handler(), p.Deps.Event.Service(), p.Deps.Version, p.Deps.System.Service())
+	handlers.RegisterStream(handlers.StreamParams{
+		API:                api,
+		ActivityHandler:    p.Deps.Activity.Handler(),
+		EnvironmentHandler: p.Deps.Environment.Handler(),
+		EventService:       p.Deps.Event.Service(),
+		VersionService:     p.Deps.Version,
+		SystemService:      p.Deps.System.Service(),
+	})
 
 	if !p.Config.AgentEnabled {
 		telemetry.RegisterRoutes(api, telemetry.NewService())

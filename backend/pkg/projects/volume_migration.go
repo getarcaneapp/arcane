@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/client"
@@ -26,20 +26,29 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
-	if composeProject == nil || len(composeProject.Volumes) == 0 {
+type VolumeMigrationPlanConfig struct {
+	DockerClient   *client.Client
+	UsageCache     *docker.VolumeUsageCache
+	ComposeProject *composeTypes.Project
+	OldComposeName string
+	NewComposeName string
+	ToolsImage     string
+}
+
+func PlanVolumeMigration(ctx context.Context, cfg VolumeMigrationPlanConfig) (types.VolumeMigration, error) {
+	if cfg.ComposeProject == nil || len(cfg.ComposeProject.Volumes) == 0 {
 		return nil, nil
 	}
-	if strings.TrimSpace(oldComposeName) == "" || strings.TrimSpace(newComposeName) == "" || oldComposeName == newComposeName {
+	if strings.TrimSpace(cfg.OldComposeName) == "" || strings.TrimSpace(cfg.NewComposeName) == "" || cfg.OldComposeName == cfg.NewComposeName {
 		return nil, nil
 	}
 
-	explicitVolumeNames, err := composeVolumeKeysWithExplicitName(ctx, composeProject.ComposeFiles)
+	explicitVolumeNames, err := composeVolumeKeysWithExplicitName(ctx, cfg.ComposeProject.ComposeFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse compose volume names: %w", err)
 	}
 
-	entries, err := collectProjectRenameVolumeEntries(ctx, dockerClient, composeProject.Volumes, explicitVolumeNames, oldComposeName, newComposeName)
+	entries, err := collectProjectRenameVolumeEntries(ctx, cfg.DockerClient, cfg.ComposeProject.Volumes, explicitVolumeNames, cfg.OldComposeName, cfg.NewComposeName)
 	if err != nil {
 		return nil, err
 	}
@@ -49,17 +58,18 @@ func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, compo
 	}
 
 	return volumes.NewMigration(volumes.MigrationConfig{
-		DockerClient: dockerClient,
+		DockerClient: cfg.DockerClient,
+		UsageCache:   cfg.UsageCache,
 		Entries:      entries,
-		OldProject:   oldComposeName,
-		NewProject:   newComposeName,
-		ToolsImage:   toolsImage,
+		OldProject:   cfg.OldComposeName,
+		NewProject:   cfg.NewComposeName,
+		ToolsImage:   cfg.ToolsImage,
 	}), nil
 }
 
 func collectProjectRenameVolumeEntries(ctx context.Context,
 	dockerClient *client.Client,
-	localVolumes map[string]composetypes.VolumeConfig,
+	localVolumes map[string]composeTypes.VolumeConfig,
 	explicitVolumeNames map[string]struct{},
 	oldComposeName,
 	newComposeName string) ([]types.VolumeRenameEntry,
@@ -81,7 +91,7 @@ func collectProjectRenameVolumeEntries(ctx context.Context,
 func inspectProjectRenameVolumeEntry(ctx context.Context,
 	dockerClient *client.Client,
 	key string,
-	volumeConfig composetypes.VolumeConfig,
+	volumeConfig composeTypes.VolumeConfig,
 	explicitVolumeNames map[string]struct{},
 	oldComposeName,
 	newComposeName string) (types.VolumeRenameEntry,
@@ -127,10 +137,10 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 	}, true, nil
 }
 
-func ComposeVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, newComposeName string) composetypes.VolumeConfig {
+func ComposeVolumeConfig(volumeConfig composeTypes.VolumeConfig, key, newName, newComposeName string) composeTypes.VolumeConfig {
 	newConfig := volumeConfig
 	newConfig.Name = newName
-	newConfig.CustomLabels = composetypes.Labels{
+	newConfig.CustomLabels = composeTypes.Labels{
 		api.VolumeLabel:  key,
 		api.ProjectLabel: newComposeName,
 		api.VersionLabel: api.ComposeVersion,
@@ -138,12 +148,12 @@ func ComposeVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, n
 	return newConfig
 }
 
-func ComposeVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
+func ComposeVolumeCreateOptions(config composeTypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
 	labels := map[string]string{}
 	maps.Copy(labels, oldLabels)
 	maps.Copy(labels, config.Labels)
 	maps.Copy(labels, config.CustomLabels)
-	raw, err := json.Marshal(composetypes.VolumeConfig{
+	raw, err := json.Marshal(composeTypes.VolumeConfig{
 		Name:       config.Name,
 		Driver:     cmp.Or(config.Driver, "local"),
 		DriverOpts: config.DriverOpts,
@@ -330,7 +340,13 @@ func cleanupRenameJournalSources(ctx context.Context, operations types.ProjectRe
 		}
 	}
 
-	return volumes.RemoveSourceVolumes(ctx, dockerClient, journal.Volumes)
+	if removeErr := volumes.RemoveSourceVolumes(ctx, dockerClient, journal.Volumes); removeErr != nil {
+		return removeErr
+	}
+	if operations.InvalidateVolumeUsage != nil {
+		operations.InvalidateVolumeUsage(dockerClient)
+	}
+	return nil
 }
 
 func rollbackRenameJournal(ctx context.Context, operations types.ProjectRenameRecoveryOperations, journal *types.ProjectRenameJournal) error {
@@ -384,7 +400,11 @@ func rollbackRenameJournalVolumes(ctx context.Context, operations types.ProjectR
 		return err
 	}
 
-	return volumes.RollbackVolumes(ctx, dockerClient, journal.Volumes)
+	rollbackErr := volumes.RollbackVolumes(ctx, dockerClient, journal.Volumes)
+	if len(journal.Volumes) > 0 && operations.InvalidateVolumeUsage != nil {
+		operations.InvalidateVolumeUsage(dockerClient)
+	}
+	return rollbackErr
 }
 
 func RecoverRenameJournal(ctx context.Context, journal *types.ProjectRenameJournal, projectCommitted bool, operations types.ProjectRenameRecoveryOperations) error {
@@ -429,6 +449,8 @@ func CleanupRenameRollbackTargets(ctx context.Context, cleanup *types.ProjectRen
 		return cleanupRollbackTargetVolumesErr
 	}
 
-	docker.InvalidateVolumeUsageCache(dockerClient)
+	if operations.InvalidateVolumeUsage != nil {
+		operations.InvalidateVolumeUsage(dockerClient)
+	}
 	return operations.ClearRollbackCleanup(ctx, cleanup.ProjectID)
 }

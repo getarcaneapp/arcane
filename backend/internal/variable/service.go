@@ -434,31 +434,30 @@ func (s *VariableService) SyncStatuses() []types.EnvironmentSyncStatus {
 
 func (s *VariableService) recordSyncPending(envID string) {
 	s.statusMu.Lock()
-	status := types.EnvironmentSyncStatus{EnvironmentID: envID, Status: "pending"}
-	if previous, ok := s.syncStatus[envID]; ok {
-		status.LastSyncedAt = previous.LastSyncedAt
+	s.syncStatus[envID] = types.EnvironmentSyncStatus{
+		EnvironmentID: envID,
+		Status:        "pending",
+		LastSyncedAt:  s.syncStatus[envID].LastSyncedAt,
 	}
-	s.syncStatus[envID] = status
 	s.statusMu.Unlock()
 }
 
 func (s *VariableService) recordSyncStatus(envID string, err error) {
-	status := types.EnvironmentSyncStatus{EnvironmentID: envID, Status: "synced"}
-	if err != nil {
-		status.Status = "error"
-		status.Error = err.Error()
-	} else {
-		now := time.Now()
-		status.LastSyncedAt = &now
-	}
-
 	s.statusMu.Lock()
 	if err != nil {
-		if previous, ok := s.syncStatus[envID]; ok {
-			status.LastSyncedAt = previous.LastSyncedAt
+		s.syncStatus[envID] = types.EnvironmentSyncStatus{
+			EnvironmentID: envID,
+			Status:        "error",
+			Error:         err.Error(),
+			LastSyncedAt:  s.syncStatus[envID].LastSyncedAt,
+		}
+	} else {
+		s.syncStatus[envID] = types.EnvironmentSyncStatus{
+			EnvironmentID: envID,
+			Status:        "synced",
+			LastSyncedAt:  new(time.Now()),
 		}
 	}
-	s.syncStatus[envID] = status
 	s.statusMu.Unlock()
 }
 
@@ -481,13 +480,13 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVari
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
-			return []types.EnvVariable{}, nil
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to open global variables file: %w", err)
 	}
 
 	noInject := projects.ParseNoInjectDirectives(string(content))
-	vars := []types.EnvVariable{}
+	var vars []types.EnvVariable
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	lineNum := 0
 

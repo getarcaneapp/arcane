@@ -81,10 +81,6 @@ func (c *composeNameCache) projectID(normalizedName string) mo.Option[string] {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if c.byName == nil {
-		return mo.None[string]()
-	}
-
 	projectID, ok := c.byName[normalizedName]
 	return mo.TupleToOption(projectID, ok)
 }
@@ -97,9 +93,6 @@ func (c *composeNameCache) put(normalizedName, projectID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.byName == nil {
-		c.byName = make(map[string]string)
-	}
 	c.byName[normalizedName] = projectID
 }
 

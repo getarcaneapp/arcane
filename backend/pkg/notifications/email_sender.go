@@ -25,19 +25,17 @@ const (
 )
 
 func smtpBuildOptionsFromContext(ctx context.Context) smtpBuildOptions {
-	options := smtpBuildOptions{}
 	if ctx == nil {
-		return options
+		return smtpBuildOptions{}
 	}
 
 	if deadline, ok := ctx.Deadline(); ok {
-		timeout := time.Until(deadline)
-		if timeout > 0 && timeout < defaultSMTPTimeout {
-			options.timeout = timeout
+		if timeout := time.Until(deadline); timeout > 0 && timeout < defaultSMTPTimeout {
+			return smtpBuildOptions{timeout: timeout}
 		}
 	}
 
-	return options
+	return smtpBuildOptions{}
 }
 
 func smtpAuthTypeFromMode(mode EmailAuthMode) mail.SMTPAuthType {

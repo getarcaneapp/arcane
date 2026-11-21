@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	composeloader "github.com/compose-spec/compose-go/v2/loader"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/samber/mo"
 
 	"kit.getarcane.app/acfs"
@@ -317,13 +317,13 @@ NGINX_HOST_PORT=8080
 
 func ParseComposeServices(ctx context.Context, composeContent string) []string {
 	if composeContent == "" {
-		return []string{}
+		return nil
 	}
 
 	tmpDir, err := acfs.Host{}.MkdirTemp(ctx, os.TempDir(), "arcane-compose-parse-*")
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to create temp dir for compose parsing", "error", err)
-		return []string{}
+		return nil
 	}
 	defer func() { _ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), tmpDir) }()
 
@@ -333,20 +333,20 @@ func ParseComposeServices(ctx context.Context, composeContent string) []string {
 		slog.WarnContext(ctx, "Failed to create dummy env file", "error", writeFileWithPermErr)
 	}
 
-	configDetails := composetypes.ConfigDetails{
-		ConfigFiles: []composetypes.ConfigFile{
+	configDetails := composeTypes.ConfigDetails{
+		ConfigFiles: []composeTypes.ConfigFile{
 			{
 				Content: []byte(composeContent),
 			},
 		},
 		WorkingDir:  tmpDir,
-		Environment: composetypes.Mapping{},
+		Environment: composeTypes.Mapping{},
 	}
 
 	project, err := composeloader.LoadWithContext(ctx, configDetails, composeloader.WithSkipValidation)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to parse compose services", "error", err)
-		return []string{}
+		return nil
 	}
 
 	serviceNames := make([]string, 0, len(project.Services))
@@ -374,7 +374,7 @@ func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent stri
 		slog.WarnContext(ctx, "failed to create temp env file for template icon parsing", "error", writeFileWithPermErr)
 	}
 
-	envMap := make(composetypes.Mapping)
+	envMap := make(composeTypes.Mapping)
 	for _, variable := range ParseEnvContent(envContent) {
 		if key := strings.TrimSpace(variable.Key); key != "" {
 			envMap[key] = variable.Value
@@ -382,8 +382,8 @@ func ResolveTemplateIconURL(ctx context.Context, composeContent, envContent stri
 	}
 	envMap["PWD"] = tmpDir
 
-	configDetails := composetypes.ConfigDetails{
-		ConfigFiles: []composetypes.ConfigFile{
+	configDetails := composeTypes.ConfigDetails{
+		ConfigFiles: []composeTypes.ConfigFile{
 			{
 				Content: []byte(composeContent),
 			},

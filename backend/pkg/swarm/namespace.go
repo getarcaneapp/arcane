@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	composegotypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 
 	"kit.getarcane.app"
 )
@@ -74,7 +74,7 @@ func invalidStackError(err error) error {
 	return fmt.Errorf("%w: %w", ErrInvalidStack, err)
 }
 
-func hashManagedFileResource(config composegotypes.FileObjectConfig, data []byte) string {
+func hashManagedFileResource(config composeTypes.FileObjectConfig, data []byte) string {
 	if config.Driver == "" && config.TemplateDriver == "" && len(config.DriverOpts) == 0 {
 		return kit.SHA256Hex(data)
 	}

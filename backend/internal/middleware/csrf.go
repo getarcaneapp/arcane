@@ -50,7 +50,9 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req := c.Request()
-			if hasHeaderCredential(req) {
+			if strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") ||
+				req.Header.Get(HeaderApiKey) != "" ||
+				req.Header.Get(HeaderAgentToken) != "" {
 				return next(c)
 			}
 			if err := cop.Check(req); err != nil {
@@ -68,10 +70,4 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
-}
-
-func hasHeaderCredential(req *http.Request) bool {
-	return strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") ||
-		req.Header.Get(HeaderApiKey) != "" ||
-		req.Header.Get(HeaderAgentToken) != ""
 }

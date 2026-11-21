@@ -28,6 +28,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -58,10 +59,10 @@ func initWebhookTokenCryptoForTests() {
 }
 
 func newTestWebhookService(db *database.DB) *WebhookService {
-	return &WebhookService{
-		db:           db,
-		eventService: event.NewEventService(db, &config.Config{}, nil),
-	}
+	return NewWebhookService(WebhookServiceParams{
+		DB:           db,
+		EventService: event.NewEventService(db, &config.Config{}, nil),
+	})
 }
 
 func fetchWebhook(t *testing.T, db *database.DB, id string) Webhook {
@@ -810,7 +811,7 @@ func TestAggregateWebhookSummariesMergesEnvironments(t *testing.T) {
 		},
 	})
 
-	body, err := (&WebhookService{}).AggregateWebhookSummaries(ctx, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "createdAt", Order: pagination.SortDesc}})
+	body, err := handlerutil.AggregatePaginated(ctx, webhookPagination, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "createdAt", Order: pagination.SortDesc}})
 	require.NoError(t, err)
 
 	require.Len(t, body.Data, 2)
