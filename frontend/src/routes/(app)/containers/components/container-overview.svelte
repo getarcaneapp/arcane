@@ -11,6 +11,7 @@
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainerDetails } from '#lib/types/container.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { AUTO_UPDATE_LABEL, type AutoUpdateLabelControl } from '#lib/utils/container-auto-update.js';
 	import { formatDateTimeShort, formatElapsedTime, formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
 	import { hardenedSupportSummary } from '#lib/utils/hardened-images.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -20,7 +21,8 @@
 		environmentId: string;
 		primaryIpAddress: string;
 		autoUpdateEnabled?: boolean;
-		autoUpdateLabelControlled?: boolean;
+		/** Set when the updater label decides auto-update instead of the toggle. */
+		autoUpdateLabelControlled?: AutoUpdateLabelControl;
 		autoUpdateStatusAvailable?: boolean;
 		onAutoUpdateChange?: (enabled: boolean) => void | Promise<void>;
 		onViewPortMappings?: () => void;
@@ -33,7 +35,7 @@
 		environmentId,
 		primaryIpAddress,
 		autoUpdateEnabled = true,
-		autoUpdateLabelControlled = false,
+		autoUpdateLabelControlled,
 		autoUpdateStatusAvailable = true,
 		onAutoUpdateChange,
 		onViewPortMappings,
@@ -172,7 +174,7 @@
 				<div class="flex items-center gap-3">
 					<Switch
 						checked={autoUpdateEnabled}
-						disabled={autoUpdateToggling || autoUpdateLabelControlled || !autoUpdateStatusAvailable}
+						disabled={autoUpdateToggling || !!autoUpdateLabelControlled || !autoUpdateStatusAvailable}
 						onCheckedChange={handleAutoUpdateToggle}
 					/>
 					<span class="text-sm font-medium text-foreground">
@@ -188,7 +190,11 @@
 				{#if !autoUpdateStatusAvailable}
 					<span class="text-xs text-muted-foreground">{m.auto_update_status_unavailable()}</span>
 				{:else}
-					{#if autoUpdateLabelControlled}
+					{#if autoUpdateLabelControlled === 'enabled'}
+						<span class="text-xs text-muted-foreground"
+							>{m.auto_update_enabled_by_label({ label: `${AUTO_UPDATE_LABEL}=true` })}</span
+						>
+					{:else if autoUpdateLabelControlled}
 						<span class="text-xs text-muted-foreground">{m.auto_update_controlled_by_label()}</span>
 					{/if}
 					{#if !autoUpdateEnabled}

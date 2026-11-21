@@ -295,7 +295,10 @@ type (
 		RedeployDisabled bool  `json:"redeployDisabled,omitempty"`
 
 		AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
-		Hidden            bool `json:"hidden,omitempty"`
+		// AutoUpdateOptIn reports that the environment only auto-updates containers
+		// on its include list or labelled updater=true.
+		AutoUpdateOptIn bool `json:"autoUpdateOptIn,omitempty"`
+		Hidden          bool `json:"hidden,omitempty"`
 	}
 
 	ContainerComposeInfo struct {
@@ -333,6 +336,9 @@ type (
 		RedeployDisabled bool                  `json:"redeployDisabled,omitempty"`
 
 		AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
+		// AutoUpdateOptIn reports that the environment only auto-updates containers
+		// on its include list or labelled updater=true.
+		AutoUpdateOptIn bool `json:"autoUpdateOptIn,omitempty"`
 	}
 
 	ContainerCreated struct {

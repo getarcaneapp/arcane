@@ -24,6 +24,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { refetchEnvironmentSettings } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -37,7 +38,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
-	import { isAutoUpdateLabelDisabled, UPDATE_CHECK_LABEL } from '#lib/utils/container-auto-update.js';
+	import { AUTO_UPDATE_LABEL, UPDATE_CHECK_LABEL, autoUpdateLabelControl } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { hasShownPermission, listScopes, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { blockedUpdateTitle, formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
@@ -60,7 +61,10 @@
 		checkedAt: string;
 		/** Automatic installation is off; checks and notifications still run. */
 		autoUpdateDisabled: boolean;
-		labelControlled: boolean;
+		/** Set when a Docker label, not the container lists, decides auto-update. */
+		labelTitle?: string;
+		/** Why the auto-update toggle is unavailable, or undefined while it can be used. */
+		lockReason?: string;
 		quadletHref?: string;
 		/** False when the agent omitted `autoUpdateEnabled`; toggling is then unavailable. */
 		statusAvailable: boolean;
@@ -114,17 +118,23 @@
 
 	function mapContainerRow(container: ContainerRow): ContainerUpdateRow {
 		const name = getContainerDisplayName(container);
-		const labelControlled = isAutoUpdateLabelDisabled(container.labels);
+		let labelTitle: string | undefined;
+		const labelControl = autoUpdateLabelControl(container);
+		if (labelControl === 'disabled') {
+			labelTitle = m.auto_update_controlled_by_label_checks_continue({ label: `${UPDATE_CHECK_LABEL}=false` });
+		} else if (labelControl === 'enabled') {
+			labelTitle = m.auto_update_enabled_by_label({ label: `${AUTO_UPDATE_LABEL}=true` });
+		}
 		const quadletHref = quadletUnitHref(container.labels, container.environmentId);
 		const statusAvailable = typeof container.autoUpdateEnabled === 'boolean';
 		const autoUpdateDisabled = container.autoUpdateEnabled === false;
-		let autoUpdateTitle = m.updates_disable_auto_update_description();
+		let autoUpdateTitle: string = m.updates_disable_auto_update_description();
 		if (!statusAvailable) {
 			autoUpdateTitle = m.auto_update_status_unavailable();
 		} else if (quadletHref) {
 			autoUpdateTitle = m.podman_quadlet_update_disabled();
-		} else if (labelControlled) {
-			autoUpdateTitle = m.auto_update_controlled_by_label_checks_continue({ label: `${UPDATE_CHECK_LABEL}=false` });
+		} else if (labelTitle) {
+			autoUpdateTitle = labelTitle;
 		} else if (autoUpdateDisabled) {
 			autoUpdateTitle = m.auto_update_disabled_checks_continue();
 		}
@@ -140,7 +150,8 @@
 			latestValue: formatImageUpdateValue(container.updateInfo, 'latest'),
 			checkedAt: container.updateInfo?.checkTime ?? '',
 			autoUpdateDisabled,
-			labelControlled,
+			labelTitle,
+			lockReason: statusAvailable ? labelTitle : m.auto_update_status_unavailable(),
 			quadletHref,
 			statusAvailable,
 			autoUpdateTitle,
@@ -191,7 +202,9 @@
 		});
 	}
 
-	async function reloadAfterAutoUpdate() {
+	async function reloadAfterAutoUpdate(environmentId: string) {
+		// The toggle edits the environment's container lists, so its cached settings must reload too.
+		await refetchEnvironmentSettings(queryClient, environmentId);
 		await onAutoUpdateChanged?.();
 		await refreshRows();
 	}
@@ -208,7 +221,7 @@
 			}
 			toast.success(enable ? m.auto_update_enabled_toast() : m.auto_update_disabled_toast());
 			// The setting is saved at this point; a failed reload must not read as a failed toggle.
-			const refreshResult = await tryCatch(reloadAfterAutoUpdate());
+			const refreshResult = await tryCatch(reloadAfterAutoUpdate(item.environmentId));
 			if (refreshResult.error !== null) {
 				toast.error(m.common_refresh_failed({ resource: m.updates() }), {
 					description: extractApiErrorMessage(refreshResult.error)
@@ -289,12 +302,7 @@
 			</Badge>
 		{/if}
 		{#if item.autoUpdateDisabled}
-			<Badge
-				variant="gray"
-				title={item.labelControlled
-					? m.auto_update_controlled_by_label_checks_continue({ label: `${UPDATE_CHECK_LABEL}=false` })
-					: m.auto_update_disabled_checks_continue()}
-			>
+			<Badge variant="gray" title={item.labelTitle ?? m.auto_update_disabled_checks_continue()}>
 				{m.updates_auto_update_disabled()}
 			</Badge>
 		{/if}
@@ -345,7 +353,7 @@
 			<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
 				<DropdownMenu.Item
 					onclick={() => handleToggleAutoUpdate(item)}
-					disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[rowKey(item)]}
+					disabled={!!item.lockReason || !!togglingAutoUpdateIds[rowKey(item)]}
 					title={item.autoUpdateTitle}
 				>
 					{#if togglingAutoUpdateIds[rowKey(item)]}
@@ -355,7 +363,13 @@
 					{:else}
 						<EyeOffIcon class="size-4" />
 					{/if}
-					{item.autoUpdateDisabled ? m.updates_enable_auto_update() : m.updates_disable_auto_update()}
+					<!-- Disabled menu items ignore the pointer, so the lock reason is shown inline instead of as a tooltip. -->
+					<span class="flex flex-col">
+						<span>{item.autoUpdateDisabled ? m.updates_enable_auto_update() : m.updates_disable_auto_update()}</span>
+						{#if item.lockReason}
+							<span class="max-w-64 text-xs text-muted-foreground">{item.lockReason}</span>
+						{/if}
+					</span>
 				</DropdownMenu.Item>
 			</IfPermitted>
 		</RowActionsMenu>
