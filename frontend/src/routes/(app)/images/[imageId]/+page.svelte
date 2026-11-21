@@ -437,22 +437,26 @@
 										{#if usage.type === 'project'}
 											<Badge
 												variant="outline"
+												maxWidth="resource-name"
+												title={usage.name}
 												href={usage.id ? environmentHref(`/projects/${encodeURIComponent(usage.id)}`, currentEnvId) : undefined}
 											>
-												<ProjectsIcon class="size-3" />
+												<ProjectsIcon class="size-3 shrink-0" />
 												<span class="min-w-0 truncate">{usage.name}</span>
 											</Badge>
 										{:else if usage.id}
 											<Badge
 												variant="outline"
+												maxWidth="resource-name"
+												title={usage.name}
 												href={environmentHref(`/containers/${encodeURIComponent(usage.id)}`, currentEnvId)}
 											>
-												<ContainersIcon class="size-3" />
+												<ContainersIcon class="size-3 shrink-0" />
 												<span class="min-w-0 truncate">{usage.name}</span>
 											</Badge>
 										{:else}
-											<Badge variant="outline" title={usage.name}>
-												<ContainersIcon class="size-3" />
+											<Badge variant="outline" maxWidth="resource-name" title={usage.name}>
+												<ContainersIcon class="size-3 shrink-0" />
 												<span class="min-w-0 truncate">{usage.name}</span>
 											</Badge>
 										{/if}
