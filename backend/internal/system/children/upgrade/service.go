@@ -26,7 +26,6 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
-	"golang.org/x/mod/semver"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
@@ -34,6 +33,7 @@ import (
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/mapping"
+	"kit.getarcane.app/semver"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/labels"
@@ -704,7 +704,7 @@ func resolveSelfUpgradeTargetImage(currentImageRef string, info *types.VersionIn
 	if !semver.IsValid(newestTag) {
 		return "", fmt.Errorf("resolved newest version %q is not a valid semver release", newestVersion)
 	}
-	if semver.Compare(newestTag, kit.EnsurePrefix(tagged.Tag(), "v")) < 0 {
+	if semver.Compare(newestTag, tagged.Tag()) < 0 {
 		return "", fmt.Errorf("newest release %q is older than the running %q; refusing to downgrade", newestVersion, tagged.Tag())
 	}
 

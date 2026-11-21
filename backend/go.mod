@@ -81,7 +81,6 @@ require (
 	go.uber.org/fx v1.24.0
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/crypto v0.59.0
-	golang.org/x/mod v0.43.0
 	golang.org/x/net v0.63.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sync v0.25.0
@@ -94,14 +93,14 @@ require (
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 	gorm.io/plugin/opentelemetry v0.1.16
-	kit.getarcane.app v0.7.5
+	kit.getarcane.app v0.8.0
 	kit.getarcane.app/acfs v0.10.4
-	kit.getarcane.app/builds v0.5.6
+	kit.getarcane.app/builds v0.6.0
 	kit.getarcane.app/docker v0.3.5
 	kit.getarcane.app/docker/convert v0.4.5
 	kit.getarcane.app/sys/cgroup v0.3.5
 	kit.getarcane.app/tripwire v0.2.2
-	kit.getarcane.app/updater v0.12.6
+	kit.getarcane.app/updater v0.13.0
 	modernc.org/sqlite v1.62.0
 )
 
@@ -297,6 +296,7 @@ require (
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/exp v0.0.0-20261113113407-e3970619a1a4 // indirect
+	golang.org/x/mod v0.43.0 // indirect
 	golang.org/x/tools v0.52.1-0.20261106145633-d407941a339a // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261118221215-c8830f628b3f // indirect

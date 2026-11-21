@@ -7,7 +7,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/moby/moby/api v1.57.0
 	github.com/moby/moby/client v0.6.3
-	kit.getarcane.app/builds v0.5.6
+	kit.getarcane.app/builds v0.6.0
 )
 
 require (

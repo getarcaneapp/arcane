@@ -28,9 +28,9 @@ require (
 	github.com/theupdateframework/go-tuf/v2 v2.4.2
 	go.yaml.in/yaml/v4 v4.0.0
 	google.golang.org/protobuf v1.36.12
-	kit.getarcane.app v0.7.5
+	kit.getarcane.app v0.8.0
 	kit.getarcane.app/acfs v0.10.4
-	kit.getarcane.app/builds v0.5.6
+	kit.getarcane.app/builds v0.6.0
 	kit.getarcane.app/docker v0.3.5
 )
 
