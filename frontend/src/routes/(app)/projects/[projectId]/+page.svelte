@@ -340,6 +340,9 @@
 	let envExists = $derived(!!project?.envFileExists);
 	let envActive = $derived(envExists || envEditorRequested);
 	let canRemoveEnv = $derived(canEditEnv && !gitOwnsFiles);
+	const creatableManagedRootNames = $derived(
+		new Set([...(canEditEnv && !envActive ? ['.env'] : []), ...(canEditOverride && !overrideActive ? [overrideFileName] : [])])
+	);
 
 	const overrideWorkspaceRows = $derived.by(() => {
 		if (overrideActive) {
@@ -1376,6 +1379,14 @@
 	}
 
 	async function createProjectWorkspaceFile(parentPath: string, name: string, content = '', stagedFile?: File) {
+		if (!parentPath && name === '.env' && canEditEnv && !envActive) {
+			handleAddEnv();
+			return;
+		}
+		if (!parentPath && name === overrideFileName && canEditOverride && !overrideActive) {
+			handleAddOverride();
+			return;
+		}
 		if (!(await projectWorkspaceFolders.load(parentPath))) return;
 		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
@@ -1796,7 +1807,13 @@
 										onCreateFolder={createProjectWorkspaceFolder}
 										onUpload={uploadProjectWorkspaceFiles}
 										onDownload={downloadProjectWorkspaceFile}
-										validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath, composeFileName)}
+										validateName={(name, parentPath, mode) =>
+											validateProjectWorkspaceFileName(
+												name,
+												parentPath,
+												composeFileName,
+												mode === 'create_file' ? creatableManagedRootNames : undefined
+											)}
 										onRename={renameProjectWorkspaceFile}
 										onMove={moveProjectWorkspaceFile}
 										onDelete={deleteProjectWorkspaceFile}
