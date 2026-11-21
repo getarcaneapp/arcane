@@ -175,11 +175,6 @@ type (
 		ImageService    *image.ImageService
 	}
 
-	DestroyOptions struct {
-		RemoveFiles   bool
-		RemoveVolumes bool
-	}
-
 	ServiceUpdateOptions struct {
 		PinnedImages map[string]string
 		User         types.Actor
@@ -600,6 +595,70 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 		return nil, common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	return proj, nil
+}
+
+func (s *ProjectService) stopProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	model, err := s.loadComposeProjectForProject(ctx, proj, nil)
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	// A stop cancelled partway would leave a slow container to exit after the restart skipped it.
+	if stopErr := composeStopProjectServices(context.WithoutCancel(ctx), types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); stopErr != nil {
+		return stopErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStop, projectID, proj.Name, user, database.JSON{
+		"action":      "stop",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"services":    services,
+	}, "could not log project stop action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
+}
+
+func (s *ProjectService) startProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	// Callers restart uncancelled while holding the project's locks, so the load gives up with the Docker API.
+	loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
+	model, err := s.loadComposeProjectForProject(loadCtx, proj, nil)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); startErr != nil {
+		return startErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStart, projectID, proj.Name, user, database.JSON{
+		"action":      "start",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"services":    services,
+	}, "could not log project start action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning))
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -1736,35 +1795,16 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 	if err != nil {
 		return nil, err
 	}
-	projectsDirectory, err := s.GetProjectsDirectory(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get projects directory: %w", err)
+	pack := func(w io.Writer) error {
+		return projects.PackProjectDirectory(ctx, proj.Path, w)
 	}
-	archive, archiveLogical, err := acfs.Root{Path: projectsDirectory}.CreateTemp(ctx, "/", ".project-export-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create project archive: %w", err)
-	}
-	defer func() {
-		if closeErr := archive.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
-			slog.WarnContext(ctx, "failed to close temporary project archive", "projectId", projectID, "path", archiveLogical, "error", closeErr)
-		}
-		if removeErr := (acfs.Root{Path: projectsDirectory}).Remove(context.WithoutCancel(ctx), archiveLogical); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			slog.WarnContext(ctx, "failed to remove temporary project archive", "projectId", projectID, "path", archiveLogical, "error", removeErr)
-		}
-	}()
-	if packErr := projects.PackProjectDirectory(ctx, proj.Path, archive); packErr != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, packErr)
-	}
-	info, err := archive.Stat()
+	session, err := s.uploads.WriteSession(ctx, upload.WriteSessionOptions{
+		Write:    pack,
+		Kind:     types.UploadKindProjectArchive,
+		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
-	}
-	if _, seekErr := archive.Seek(0, io.SeekStart); seekErr != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, seekErr)
-	}
-	session, err := s.uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", info.Size(), archive)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store project archive: %w", err)
 	}
 	return session, nil
 }
@@ -1788,7 +1828,7 @@ func (s *ProjectService) createRootDirectory(ctx context.Context, directory stri
 	})
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectId", projectID,
 		"removeFiles", opts.RemoveFiles,
@@ -1801,7 +1841,10 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		return err
 	}
 	defer unlock()
+	return s.destroyProject(ctx, projectID, opts, user)
+}
 
+func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1815,8 +1858,10 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
-	if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
-		return fmt.Errorf("failed to bring down project: %w", downErr)
+	if !opts.KeepContainers {
+		if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
+			return fmt.Errorf("failed to bring down project: %w", downErr)
+		}
 	}
 
 	if opts.RemoveVolumes {

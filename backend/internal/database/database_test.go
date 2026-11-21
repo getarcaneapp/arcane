@@ -356,7 +356,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	require.NoError(t, err)
 	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
 	for i, permission := range authz.AllPermissions() {
-		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun {
+		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun || permission == authz.PermProjectsExport || permission == authz.PermProjectsBackup {
 			continue
 		}
 		id := fmt.Sprintf("c%d", i)
@@ -441,7 +441,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -465,7 +465,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	renamedCatalogPermissions := []string{
 		"settings:read", "settings:update", "variables:read", "system-backups:read", "swarm:read",
 		"podman:read", "image-updates:read", "image-updates:check", "vulnerabilities:read", "activities:read",
-		"gitops:backup", "projects:deploy",
+		"gitops:backup", "projects:deploy", "projects:create",
 	}
 	for id, permissions := range rolePermissionsWhere(`id LIKE 'c%'`) {
 		permission := catalogRoles[id]
@@ -941,6 +941,107 @@ func TestMigration117_GrantsProjectsJobsRun(t *testing.T) {
 	assert.JSONEq(t, `["projects:list","projects:read","projects:deploy"]`, deployer)
 	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)
 	assert.Empty(t, scopes)
+}
+
+func TestMigration118_GrantsProjectsExport(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-projects-export.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('x1', 'Creator', '["projects:list","projects:read","projects:create"]'),
+		('x2', 'Reader', '["projects:list","projects:read"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO environments (id, name, api_url, status, enabled) VALUES ('xe1', 'Remote', 'edge://remote', 'online', TRUE)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('xk1', 'Create key', 'hash-xk1', 'xk1')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('xp1', 'xk1', 'projects:create', NULL),
+		('xp2', 'xk1', 'projects:create', 'xe1')`)
+	require.NoError(t, err)
+	granted := func() (string, string, string) {
+		var creator, reader, scopes string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'x1'`).Scan(&creator))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'x2'`).Scan(&reader))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COALESCE(group_concat(scope, ','), '') FROM (
+			SELECT COALESCE(environment_id, 'global') AS scope FROM api_key_permissions
+			WHERE api_key_id = 'xk1' AND permission = 'projects:export' ORDER BY scope)`).Scan(&scopes))
+		return creator, reader, scopes
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 118))
+	creator, reader, scopes := granted()
+	assert.JSONEq(t, `["projects:list","projects:read","projects:create","projects:export"]`, creator)
+	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)
+	assert.Equal(t, "global,xe1", scopes)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 117))
+	creator, reader, scopes = granted()
+	assert.JSONEq(t, `["projects:list","projects:read","projects:create"]`, creator)
+	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)
+	assert.Empty(t, scopes)
+}
+
+func TestMigration119_CreatesProjectBackupsAndGrantsProjectsBackup(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-project-backups.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 118))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('b1', 'Backups', '["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]'),
+		('b2', 'Volumes only', '["volumes:list","volumes:read","volumes:backup"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES
+		('bk1', 'Backup key', 'hash-bk1', 'bk1'),
+		('bk2', 'Mixed key', 'hash-bk2', 'bk2'),
+		('bk3', 'Other env key', 'hash-bk3', 'bk3')`)
+	require.NoError(t, err)
+	// bk2 can read projects everywhere and back up volumes in environment 0, so it may back up projects there;
+	// bk3's grants are in different environments, so it gets nothing.
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('bp1', 'bk1', 'volumes:backup', NULL),
+		('bp2', 'bk1', 'projects:read', NULL),
+		('bp3', 'bk2', 'volumes:backup', '0'),
+		('bp4', 'bk2', 'projects:read', NULL),
+		('bp5', 'bk3', 'volumes:backup', '0'),
+		('bp6', 'bk3', 'projects:read', 'other')`)
+	require.NoError(t, err)
+	state := func() (int, string, string, int) {
+		var objects, keyGrants int
+		var backups, volumesOnly string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_backups') +
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_project_backups_project_id')`).Scan(&objects))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'b1'`).Scan(&backups))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'b2'`).Scan(&volumesOnly))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'bk1' AND permission = 'projects:backup'`).Scan(&keyGrants))
+		return objects, backups, volumesOnly, keyGrants
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
+	objects, backups, volumesOnly, keyGrants := state()
+	assert.Equal(t, 2, objects)
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:backup"]`, backups)
+	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, volumesOnly)
+	assert.Equal(t, 1, keyGrants)
+	var mixedScope string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT environment_id FROM api_key_permissions WHERE api_key_id = 'bk2' AND permission = 'projects:backup'`).Scan(&mixedScope))
+	assert.Equal(t, "0", mixedScope)
+	var otherGrants int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'bk3' AND permission = 'projects:backup'`).Scan(&otherGrants))
+	assert.Zero(t, otherGrants)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO project_backups (id, project_id, project_name, created_at) VALUES ('pb1', 'p1', 'web', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+	var status, volumes string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT status, volumes FROM project_backups WHERE id = 'pb1'`).Scan(&status, &volumes))
+	assert.Equal(t, "running", status)
+	assert.Equal(t, "[]", volumes)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 118))
+	objects, backups, volumesOnly, keyGrants = state()
+	assert.Zero(t, objects)
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]`, backups)
+	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, volumesOnly)
+	assert.Zero(t, keyGrants)
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {

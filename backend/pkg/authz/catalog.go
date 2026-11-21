@@ -815,6 +815,20 @@ var permissionCatalog = []PermissionCatalogResource{
 				Description: "Archive and unarchive projects",
 				Requires:    []string{PermProjectsRead},
 			},
+			{
+				Key:         "export",
+				Permission:  PermProjectsExport,
+				Label:       "Export",
+				Description: "Export projects and download the archive",
+				Requires:    []string{PermProjectsRead, PermActivitiesRead},
+			},
+			{
+				Key:         "backup",
+				Permission:  PermProjectsBackup,
+				Label:       "Backup",
+				Description: "Create and delete project backups",
+				Requires:    []string{PermProjectsRead, PermActivitiesRead},
+			},
 		},
 	},
 	{

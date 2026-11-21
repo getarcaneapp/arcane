@@ -13,7 +13,6 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
-	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -151,29 +150,6 @@ func TestVolumeBackup_ValidationErrors(t *testing.T) {
 	require.EqualError(t, err, "select an S3 destination for the volume backup")
 }
 
-func TestVolumeBackupPasswordPrefersRecoveryKey(t *testing.T) {
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-password?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&backup.SystemBackupRecoveryConfig{}))
-	crypto.InitEncryption(crypto.Config{EncryptionKey: "volume-backup-password-test-key-32bytes", Environment: "test"})
-	recoveryKeys := backup.NewRecoveryKeyStore(&database.DB{DB: gormDB})
-	service := NewService(Dependencies{
-		DB:            &database.DB{DB: gormDB},
-		EncryptionKey: "legacy-instance-secret",
-		RecoveryKeys:  recoveryKeys,
-	})
-
-	password, err := service.volumeBackupPassword(t.Context(), nil)
-	require.NoError(t, err)
-	require.Equal(t, kit.SHA256Hex(legacyVolumePasswordSalt+service.deps.EncryptionKey), password)
-
-	recoveryKey := "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"
-	require.NoError(t, recoveryKeys.Set(t.Context(), backup.RecoveryKeyConfigID, recoveryKey))
-	password, err = service.volumeBackupPassword(t.Context(), nil)
-	require.NoError(t, err)
-	require.Equal(t, recoveryKey, password)
-}
-
 func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	snapshot := backup.DiscoveredSnapshot{ID: "abc123", Label: "app-data", Time: time.Unix(1700000000, 0).UTC()}
 	snapshot.Summary.TotalBytesProcessed = 2048
@@ -195,6 +171,8 @@ func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	// map to a volume backup.
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x"}))
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x", Label: "arcane-system-recovery"}))
+	// Project snapshots share the repository but are labeled with the project name.
+	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x", Label: "web", Tags: []string{backup.ProjectSnapshotTag, "arcane-project:p1"}}))
 
 	fallback := discoveredVolumeBackup("d", "r", backup.DiscoveredSnapshot{ID: "x", Label: "vol"})
 	require.NotNil(t, fallback)

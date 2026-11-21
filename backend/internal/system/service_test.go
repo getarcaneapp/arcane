@@ -252,6 +252,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		&settings.SettingVariable{},
 		&volume.VolumeBackup{},
 	))
+	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (id TEXT PRIMARY KEY, status TEXT)").Error)
 	crypto.InitEncryption(crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
@@ -277,6 +278,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 			Config:        &config.Config{},
 			DB:            db,
 			DockerService: dockerService,
+			Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
 		SettingsService: settingsService,
 		BackupEngine: backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {

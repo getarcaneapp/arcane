@@ -33,6 +33,7 @@ const (
 	UploadKindVolumeBackup   = "volume-backup"
 	UploadKindBuildWorkspace = "build-workspace"
 	UploadKindProjectArchive = "project-archive"
+
 	// Chunk size bounds keep every chunk request safely under common reverse-proxy
 	// and WAF body limits (~100 MB).
 

@@ -1,7 +1,9 @@
 package project
 
 import (
+	"archive/tar"
 	"cmp"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"encoding/json/v2"
@@ -46,6 +48,7 @@ import (
 	updatertypes "kit.getarcane.app/updater/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -54,6 +57,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/listing"
@@ -63,6 +67,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/workspace"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -466,7 +471,7 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{
 		RemoveFiles: true,
 	}, types.Actor{}))
 
@@ -493,7 +498,7 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{}, types.Actor{}))
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{}, types.Actor{}))
 
 	assert.NoDirExists(t, projectPath)
 	assert.NoFileExists(t, projectDataPath)
@@ -554,7 +559,7 @@ func TestProjectService_DestroyProject_KeepsRowWhenDownFails(t *testing.T) {
 		Status:  ProjectStatusRunning,
 	}).Error)
 
-	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", DestroyOptions{
+	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", types.ProjectDestroyOptions{
 		RemoveFiles:   true,
 		RemoveVolumes: true,
 	}, types.Actor{}))
@@ -11090,4 +11095,125 @@ func TestProjectService_ListProjectsDirectories(t *testing.T) {
 	enabled, err := svc.EnabledProjectsRoots(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{primary, extra, missing}, enabled)
+}
+
+func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+	sourceLabels := map[string]string{"backup.schedule": "nightly", "owner": "ops"}
+	var exported atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.MarshalWrite(w, []container.Summary{})
+		case strings.HasSuffix(r.URL.Path, "/volumes/shared-data") && !exported.Load():
+			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-data", Driver: "local", Labels: sourceLabels})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	uploads := upload.NewUploadService(settingsService)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Uploads:                     uploads,
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	projectPath := createComposeProjectDir(t, projectsDir, "demo")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
+		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - first:/first\n      - second:/second\n"+
+			"volumes:\n  first:\n    external: true\n    name: shared-data\n  second:\n    external: true\n    name: shared-data\n",
+	), 0o644))
+	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
+	var data strings.Builder
+	gzipWriter := gzip.NewWriter(&data)
+	tarWriter := tar.NewWriter(gzipWriter)
+	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}))
+	require.NoError(t, tarWriter.Close())
+	require.NoError(t, gzipWriter.Close())
+
+	var (
+		exports  []string
+		restored []string
+		targets  []types.ComposeVolumeTarget
+	)
+	module := New(ModuleParams{
+		Service: svc,
+		Backups: BackupDependencies{Repository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: svc.dockerService, BackupVolumeName: "arcane-backups"})},
+		Transfer: TransferDependencies{
+			ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
+				exports = append(exports, name)
+				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
+			},
+			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
+				restored = append(restored, name)
+				targets = append(targets, *request.ComposeVolume)
+				return uploads.DeleteSession(ctx, types.UploadKindVolumeBackup, request.UploadID)
+			},
+		},
+	})
+
+	options, err := module.bundles.Options(ctx, "proj-demo")
+	require.NoError(t, err)
+	require.Len(t, options.Volumes, 2)
+	assert.True(t, options.Volumes[0].Included)
+	assert.False(t, options.Running)
+
+	session, err := module.bundles.Export(ctx, bundle.ExportOptions{
+		ProjectID: "proj-demo",
+		Request:   types.ExportProjectArchive{Volumes: []string{"first", "second"}},
+	})
+	require.NoError(t, err)
+	file, _, cleanup, err := uploads.Consume(ctx, types.UploadKindProjectArchive, session.ID)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+	content, err := io.ReadAll(file)
+	require.NoError(t, err)
+	var visited []string
+	manifest, _, err := projects.ReadProjectBundle(strings.NewReader(string(content)), func(_ types.ProjectManifest, name string, _ int64, _ io.Reader) error {
+		visited = append(visited, name)
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"shared-data"}, exports)
+	assert.Equal(t, []string{projects.ProjectBundleProject, "volumes/first.tar.gz"}, visited)
+	require.Len(t, manifest.Volumes, 2)
+	for _, volume := range manifest.Volumes {
+		assert.Equal(t, "volumes/first.tar.gz", volume.Archive, volume.Key)
+		assert.Equal(t, sourceLabels, volume.DockerLabels, volume.Key)
+	}
+
+	exported.Store(true)
+	uploaded, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.arcane.tar.gz", int64(len(content)), strings.NewReader(string(content)))
+	require.NoError(t, err)
+	_, err = module.bundles.Import(ctx, bundle.ImportOptions{
+		Request: types.ImportProjectArchive{UploadID: uploaded.ID, Name: "copy"},
+	})
+	require.ErrorIs(t, err, common.ErrForbidden)
+
+	uploaded, err = uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.arcane.tar.gz", int64(len(content)), strings.NewReader(string(content)))
+	require.NoError(t, err)
+	projectID, err := module.bundles.Import(ctx, bundle.ImportOptions{
+		Request:        types.ImportProjectArchive{UploadID: uploaded.ID, Name: "copy"},
+		RestoreVolumes: true,
+	})
+	require.NoError(t, err)
+	imported, err := svc.GetProjectFromDatabaseByID(ctx, projectID)
+	require.NoError(t, err)
+	assert.Equal(t, "copy", imported.Name)
+	assert.Equal(t, []string{"shared-data"}, restored)
+	assert.Equal(t, []types.ComposeVolumeTarget{{Labels: sourceLabels, Project: "copy", Key: "first", External: true}}, targets)
 }

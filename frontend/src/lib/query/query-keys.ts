@@ -241,11 +241,15 @@ export const queryKeys = {
 		directories: (environmentId: string, view: 'projects' | 'settings') =>
 			['projects', environmentId, 'directories', view] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const,
+		exportOptions: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'export-options'] as const,
 		workspace: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'workspace'] as const,
 		workspaceFolder: (environmentId: string, projectId: string, path: string) =>
 			['project', environmentId, projectId, 'workspace', path] as const,
 		workspaceFile: (environmentId: string, projectId: string, relativePath: string) =>
-			['project', environmentId, projectId, 'workspace-file', relativePath] as const
+			['project', environmentId, projectId, 'workspace-file', relativePath] as const,
+		backupListPrefix: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'backups'] as const,
+		backupList: (environmentId: string, projectId: string, options: SearchPaginationSortRequest) =>
+			['project', environmentId, projectId, 'backups', stableSerialize(options)] as const
 	},
 	networks: {
 		all: ['networks'] as const,
