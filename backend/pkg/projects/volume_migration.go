@@ -222,6 +222,17 @@ func ProjectContainerUse(composeName string, containers []container.Summary) ([]
 	return active, inUse
 }
 
+// ComposeVolumeTargetCreateOptions creates a restore target as Compose would, or as its own volume when it is external.
+func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (client.VolumeCreateOptions, error) {
+	if target.External {
+		return client.VolumeCreateOptions{Name: name, Driver: target.Driver, Labels: target.Labels}, nil
+	}
+	return ComposeVolumeCreateOptions(ComposeVolumeConfig(composeTypes.VolumeConfig{
+		Driver: target.Driver,
+		Labels: target.Labels,
+	}, target.Key, name, target.Project), nil)
+}
+
 func ComposeVolumeConfig(volumeConfig composeTypes.VolumeConfig, key, newName, newComposeName string) composeTypes.VolumeConfig {
 	newConfig := volumeConfig
 	newConfig.Name = newName
