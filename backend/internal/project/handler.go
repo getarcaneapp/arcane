@@ -215,7 +215,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	return &handlerutil.Page[types.Project]{
 		Body: types.Paginated[types.Project]{
 			Success:    true,
-			Data:       kit.Ternary(projects == nil, []types.Project{}, projects),
+			Data:       projects,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
 		},
 	}, nil
@@ -268,7 +268,7 @@ func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *types.Environme
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list project tags: " + err.Error())
 	}
-	return &handlerutil.Out[[]types.ProjectTagOption]{Body: types.ApiResponse[[]types.ProjectTagOption]{Success: true, Data: kit.Ternary(options == nil, []types.ProjectTagOption{}, options)}}, nil
+	return &handlerutil.Out[[]types.ProjectTagOption]{Body: types.ApiResponse[[]types.ProjectTagOption]{Success: true, Data: options}}, nil
 }
 
 func (h *ProjectHandler) ListProjectReferences(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectReference], error) {
@@ -1060,13 +1060,17 @@ func (h *ProjectHandler) RunProjectJob(ctx context.Context, input *RunProjectJob
 	}), nil
 }
 
+func projectWorkspaceHTTPError(err error) error {
+	if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
+		return huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return huma.Error500InternalServerError("internal error")
+}
+
 func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProjectWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
 	result, err := h.projectService.GetProjectWorkspace(ctx, input.ProjectID, input.Path)
 	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("internal error")
+		return nil, projectWorkspaceHTTPError(err)
 	}
 	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: *result}}, nil
 }
@@ -1074,10 +1078,7 @@ func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProj
 func (h *ProjectHandler) GetProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*handlerutil.Out[types.WorkspaceFileContent], error) {
 	result, err := h.projectService.GetProjectWorkspaceFile(ctx, input.ProjectID, input.RelativePath)
 	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("internal error")
+		return nil, projectWorkspaceHTTPError(err)
 	}
 	return &handlerutil.Out[types.WorkspaceFileContent]{Body: types.ApiResponse[types.WorkspaceFileContent]{Success: true, Data: *result}}, nil
 }
@@ -1085,10 +1086,7 @@ func (h *ProjectHandler) GetProjectWorkspaceFile(ctx context.Context, input *Get
 func (h *ProjectHandler) DownloadProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*huma.StreamResponse, error) {
 	reader, size, name, err := h.projectService.DownloadProjectWorkspaceFile(ctx, input.ProjectID, input.RelativePath)
 	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("internal error")
+		return nil, projectWorkspaceHTTPError(err)
 	}
 	return handlerutil.DownloadResponse(reader, size, name), nil
 }
@@ -1118,10 +1116,7 @@ func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *Upda
 		return h.projectService.UpdateProjectWorkspace(runtimeCtx, input.ProjectID, manifest, uploads, *user)
 	})
 	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("internal error")
+		return nil, projectWorkspaceHTTPError(err)
 	}
 	return handlerutil.MessageOutput("Project workspace updated successfully", activityID), nil
 }

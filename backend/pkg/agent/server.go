@@ -309,16 +309,18 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, registerMsg *T
 func (s *TunnelServer) serveConnectedTunnel(ctx context.Context, tunnel *AgentTunnel) error {
 	callbackCtx := context.WithoutCancel(ctx)
 	envID := tunnel.EnvironmentID
+	reject := func(reason string) {
+		_ = tunnel.Conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: reason})
+		_ = tunnel.CloseWithReason(reason)
+	}
 	if !slices.Contains(tunnel.Capabilities, tunnelCapabilityMux) {
 		slog.WarnContext(ctx, "Rejected agent without multiplexed data plane support", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance)
-		_ = tunnel.Conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: errAgentMuxRequired.Error()})
-		_ = tunnel.CloseWithReason(errAgentMuxRequired.Error())
+		reject(errAgentMuxRequired.Error())
 		return errAgentMuxRequired
 	}
 	if !slices.Contains(tunnel.Capabilities, TunnelCapabilityForwardedPermissions) {
 		slog.WarnContext(ctx, "Rejected agent older than Arcane v3", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance)
-		_ = tunnel.Conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: errAgentV3Required.Error()})
-		_ = tunnel.CloseWithReason(errAgentV3Required.Error())
+		reject(errAgentV3Required.Error())
 		return errAgentV3Required
 	}
 
@@ -330,8 +332,7 @@ func (s *TunnelServer) serveConnectedTunnel(ctx context.Context, tunnel *AgentTu
 	}
 	if !registration.Accepted {
 		slog.WarnContext(ctx, "Rejected duplicate agent session", "environmentId", envID, "agentInstanceId", tunnel.AgentInstance, "reason", registration.Reason)
-		_ = tunnel.Conn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, EnvironmentID: envID, Error: registration.Reason})
-		_ = tunnel.CloseWithReason(registration.Reason)
+		reject(registration.Reason)
 		return errors.New(registration.Reason)
 	}
 

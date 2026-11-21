@@ -2,9 +2,11 @@ package ws
 
 import (
 	"context"
+	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -60,26 +62,39 @@ type (
 		containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, opts types.LogStreamOptions) error
 		systemStatsCollector func(ctx context.Context) types.SystemStats
 		cpuUsageReader       func(interval time.Duration) (float64, bool)
-		systemStatsSampler   struct {
-			latest            concurrency.Snapshot[types.SystemStats]
-			intervals         map[time.Duration]int
-			cancel            context.CancelFunc
-			ready             chan struct{}
-			wake              chan struct{}
-			clients           int
-			effectiveInterval atomic.Int64
-			lifecycleMu       sync.Mutex
-			running           bool
-		}
-		conns              sync.Map
-		containerStatsHubs sync.Map
-		systemStaticInfo   struct {
+		systemStatsSampler   systemStatsSampler
+		conns                sync.Map
+		containerStatsHubs   sync.Map
+		systemStaticInfo     struct {
 			hostname string
 			cpuCount int
 			once     sync.Once
 		}
 		activeConnectionsMu sync.Mutex
 		logStreamsMu        sync.Mutex
+	}
+	systemStatsSampler struct {
+		latest            concurrency.Snapshot[types.SystemStats]
+		intervals         map[time.Duration]int
+		cancel            context.CancelFunc
+		ready             chan struct{}
+		wake              chan struct{}
+		clients           int
+		effectiveInterval atomic.Int64
+		lifecycleMu       sync.Mutex
+		running           bool
+	}
+	HandlerParams struct {
+		AppCtx             context.Context
+		Group              *echo.Group
+		ProjectService     *project.ProjectService
+		ContainerService   *container.ContainerService
+		SwarmService       *swarm.SwarmService
+		SystemService      *system.SystemService
+		DiagnosticsService *diagnostics.DiagnosticsService
+		AuthMiddleware     *auth.AuthMiddleware
+		SettingsService    *settings.SettingsService
+		Config             *config.Config
 	}
 )
 
@@ -88,28 +103,19 @@ var (
 	observeWebSocketMetricsOnce sync.Once
 )
 
-func NewWebSocketHandler(
-	appCtx context.Context,
-	group *echo.Group,
-	projectService *project.ProjectService,
-	containerService *container.ContainerService,
-	swarmService *swarm.SwarmService,
-	systemService *system.SystemService,
-	diagnosticsService *diagnostics.DiagnosticsService,
-	authMiddleware *auth.AuthMiddleware,
-	settingsService *settings.SettingsService,
-	cfg *config.Config,
-) {
-	ctx, cancel := context.WithCancel(context.WithoutCancel(appCtx))
+func NewWebSocketHandler(p HandlerParams) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(p.AppCtx))
 	handler := &WebSocketHandler{
 		ctx:                ctx,
-		projectService:     projectService,
-		containerService:   containerService,
-		swarmService:       swarmService,
-		systemService:      systemService,
-		settingsService:    settingsService,
-		diagnosticsService: diagnosticsService,
+		projectService:     p.ProjectService,
+		containerService:   p.ContainerService,
+		swarmService:       p.SwarmService,
+		systemService:      p.SystemService,
+		settingsService:    p.SettingsService,
+		diagnosticsService: p.DiagnosticsService,
+		activeConnections:  make(map[string]int),
 		logStreams:         make(map[string]*wsLogStream),
+		systemStatsSampler: systemStatsSampler{intervals: make(map[time.Duration]int)},
 		containersStatsHub: &agg.Hub[containersStatsResult]{},
 		cgroupCache:        cgroup.NewCache(cgroup.CacheConfig{TTL: cgroupCacheTTL}),
 		diskUsagePathCache: &cache.Cache[struct{}, string]{
@@ -117,17 +123,17 @@ func NewWebSocketHandler(
 			TTL:      5 * time.Minute,
 		},
 		cpuUsageReader: readHostCPUUsage,
-		checkWSOrigin:  httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
+		checkWSOrigin:  httpx.ValidateWebSocketOrigin(p.Config.GetAppURL()),
 	}
 	newGPUMonitor := func() *systemlib.GPUMonitor {
-		return systemlib.NewGPUMonitor(settingsService.GetBoolSetting(ctx, "gpuMonitoringEnabled"), settingsService.GetStringSetting(ctx, "gpuType"))
+		return systemlib.NewGPUMonitor(p.SettingsService.GetBoolSetting(ctx, "gpuMonitoringEnabled"), p.SettingsService.GetStringSetting(ctx, "gpuType"))
 	}
 	handler.gpuMonitor.Store(newGPUMonitor())
-	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"gpuMonitoringEnabled", "gpuType"}, func([]types.SettingUpdate) {
+	context.AfterFunc(ctx, p.SettingsService.SubscribeSettingsChanges([]string{"gpuMonitoringEnabled", "gpuType"}, func([]types.SettingUpdate) {
 		handler.gpuMonitor.Store(newGPUMonitor())
 	}))
 	// Send the close frames before cancelling hubs, whose teardown closes connections without a handshake.
-	context.AfterFunc(appCtx, func() {
+	context.AfterFunc(p.AppCtx, func() {
 		var wg sync.WaitGroup
 		handler.conns.Range(func(key, _ any) bool {
 			wg.Go(func() {
@@ -143,7 +149,7 @@ func NewWebSocketHandler(
 			otel.Handle(err)
 		}
 	})
-	middleware.RegisterEchoRoutes(group, slices.Concat(handler.proxiedRoutes(), handler.diagnosticsRoutes()), authMiddleware.WithAdminNotRequired().Add())
+	middleware.RegisterEchoRoutes(p.Group, slices.Concat(handler.proxiedRoutes(), handler.diagnosticsRoutes()), p.AuthMiddleware.WithAdminNotRequired().Add())
 }
 
 // The returned unregister func must be called exactly once when the connection ends.
@@ -184,4 +190,22 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 		defaultWebSocketMetrics.UnregisterConnection(connID)
 		span.End()
 	}, true
+}
+
+func requireWSParam(c *echo.Context, param, label string) (string, bool, error) {
+	value := c.Param(param)
+	if strings.TrimSpace(value) == "" {
+		return "", false, c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": label + " is required"})
+	}
+	return value, true, nil
+}
+
+func writeWSJSON(ctx context.Context, conn *websocket.Conn, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return conn.Write(wctx, websocket.MessageText, b)
 }

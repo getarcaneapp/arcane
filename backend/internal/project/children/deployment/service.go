@@ -11,7 +11,7 @@ import (
 	"maps"
 	"slices"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 
 	"kit.getarcane.app/acfs"
@@ -46,7 +46,7 @@ func New(imageService *image.ImageService, dockerService *docker.DockerClientSer
 	}
 }
 
-func (s *Service) NamespaceDependents(ctx context.Context, compProj *composetypes.Project, services []string) (running, stopped []string) {
+func (s *Service) NamespaceDependents(ctx context.Context, compProj *composeTypes.Project, services []string) (running, stopped []string) {
 	if len(services) == 0 {
 		return nil, nil
 	}
@@ -102,10 +102,10 @@ func (s *Service) ImageOperations(user *types.Actor, credentials []types.Contain
 
 // PrepareProjectBindDirectories creates missing bind sources as Arcane's user, not root (#4132).
 func PrepareProjectBindDirectories(projectPath string) projects.PrepareProjectFunc {
-	return func(ctx context.Context, project *composetypes.Project) error {
+	return func(ctx context.Context, project *composeTypes.Project) error {
 		for _, serviceName := range slices.Sorted(maps.Keys(project.Services)) {
 			for _, volume := range project.Services[serviceName].Volumes {
-				if volume.Type != composetypes.VolumeTypeBind || volume.Source == "" {
+				if volume.Type != composeTypes.VolumeTypeBind || volume.Source == "" {
 					continue
 				}
 				if volume.Bind != nil && !bool(volume.Bind.CreateHostPath) {

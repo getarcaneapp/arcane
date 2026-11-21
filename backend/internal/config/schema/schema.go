@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -230,8 +229,8 @@ func collectEnvConfig(ctx context.Context, sourceRoot string) ([]ConfigEntry, er
 	}
 
 	configEntries = append(configEntries, buildablesEntries...)
-	sort.Slice(configEntries, func(i, j int) bool {
-		return configEntries[i].Env < configEntries[j].Env
+	slices.SortFunc(configEntries, func(a, b ConfigEntry) int {
+		return strings.Compare(a.Env, b.Env)
 	})
 
 	return configEntries, nil
@@ -332,11 +331,8 @@ func collectSettings() []SettingEntry {
 		})
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].Category == entries[j].Category {
-			return entries[i].Env < entries[j].Env
-		}
-		return entries[i].Category < entries[j].Category
+	slices.SortFunc(entries, func(a, b SettingEntry) int {
+		return cmp.Or(strings.Compare(a.Category, b.Category), strings.Compare(a.Env, b.Env))
 	})
 
 	return entries

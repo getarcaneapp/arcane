@@ -1,5 +1,7 @@
 package pagination
 
+import "kit.getarcane.app"
+
 type (
 	Params struct {
 		Start     int
@@ -11,6 +13,13 @@ type (
 const (
 	UnknownTotal int64 = -1
 )
+
+func (p Params) FetchWindow() int {
+	if p.Limit == -1 {
+		return -1
+	}
+	return p.Start + p.Limit + kit.Ternary(p.SkipCount, 1, 0)
+}
 
 func paginateItemsFunction[T any](items []T, params Params) []T {
 	if params.Limit <= 0 {

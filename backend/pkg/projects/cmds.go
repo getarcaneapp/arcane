@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -62,7 +62,7 @@ func ComposeRestart(ctx context.Context, target types.ComposeTarget) error {
 
 // ComposeStart starts the services' existing containers, leaving their dependencies as they are.
 func ComposeStart(ctx context.Context, target types.ComposeTarget) error {
-	selected, err := SelectServices(target.Project, target.Services, composetypes.IgnoreDependencies)
+	selected, err := SelectServices(target.Project, target.Services, composeTypes.IgnoreDependencies)
 	if err != nil {
 		return err
 	}
@@ -257,7 +257,7 @@ func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APICli
 
 func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName, serviceName string) (string, error) {
 	containers, err := ComposePs(ctx, types.ComposePsOptions{
-		Project:    &composetypes.Project{Name: projectName},
+		Project:    &composeTypes.Project{Name: projectName},
 		DockerHost: dockerHost,
 		Services:   []string{serviceName},
 		All:        true,

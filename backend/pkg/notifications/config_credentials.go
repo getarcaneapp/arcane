@@ -83,35 +83,15 @@ func PrepareNtfyConfig(config database.JSON, providerName string) (NtfyConfig, e
 	return ntfyConfig, nil
 }
 
-func PreparePushoverConfig(config database.JSON, providerName string) (PushoverConfig, error) {
-	pushoverConfig, err := DecodeConfig[PushoverConfig](config, providerName)
+func PrepareConfig[T any](config database.JSON, providerName string, credential func(*T) *string) (T, error) {
+	cfg, err := DecodeConfig[T](config, providerName)
 	if err != nil {
-		return PushoverConfig{}, err
+		var zero T
+		return zero, err
 	}
-	if decryptStringCredentialErr := DecryptStringCredential(&pushoverConfig.Token); decryptStringCredentialErr != nil {
-		return PushoverConfig{}, decryptStringCredentialErr
+	if decryptErr := DecryptStringCredential(credential(&cfg)); decryptErr != nil {
+		var zero T
+		return zero, decryptErr
 	}
-	return pushoverConfig, nil
-}
-
-func PrepareGotifyConfig(config database.JSON, providerName string) (GotifyConfig, error) {
-	gotifyConfig, err := DecodeConfig[GotifyConfig](config, providerName)
-	if err != nil {
-		return GotifyConfig{}, err
-	}
-	if decryptStringCredentialErr := DecryptStringCredential(&gotifyConfig.Token); decryptStringCredentialErr != nil {
-		return GotifyConfig{}, decryptStringCredentialErr
-	}
-	return gotifyConfig, nil
-}
-
-func PrepareMatrixConfig(config database.JSON) (MatrixConfig, error) {
-	matrixConfig, err := DecodeConfig[MatrixConfig](config, "Matrix")
-	if err != nil {
-		return MatrixConfig{}, err
-	}
-	if decryptStringCredentialErr := DecryptStringCredential(&matrixConfig.Password); decryptStringCredentialErr != nil {
-		return MatrixConfig{}, decryptStringCredentialErr
-	}
-	return matrixConfig, nil
+	return cfg, nil
 }

@@ -53,15 +53,18 @@ const (
 )
 
 func (c Configuration) Normalized() Configuration {
-	c.ID = strings.TrimSpace(c.ID)
-	c.Name = strings.TrimSpace(c.Name)
-	c.Endpoint = strings.TrimSpace(c.Endpoint)
-	c.Bucket = strings.TrimSpace(c.Bucket)
-	c.Region = strings.TrimSpace(c.Region)
-	c.AccessKeyID = strings.TrimSpace(c.AccessKeyID)
-	c.SecretAccessKey = strings.TrimSpace(c.SecretAccessKey)
-	c.Prefix = strings.Trim(strings.TrimSpace(c.Prefix), "/")
-	return c
+	return Configuration{
+		ID:              strings.TrimSpace(c.ID),
+		Name:            strings.TrimSpace(c.Name),
+		Endpoint:        strings.TrimSpace(c.Endpoint),
+		Bucket:          strings.TrimSpace(c.Bucket),
+		Region:          strings.TrimSpace(c.Region),
+		AccessKeyID:     strings.TrimSpace(c.AccessKeyID),
+		SecretAccessKey: strings.TrimSpace(c.SecretAccessKey),
+		Prefix:          strings.Trim(strings.TrimSpace(c.Prefix), "/"),
+		UseSSL:          c.UseSSL,
+		ForcePathStyle:  c.ForcePathStyle,
+	}
 }
 
 func ValidateEndpoint(endpoint string) error {
@@ -219,22 +222,20 @@ func CheckRepository(ctx context.Context, configuration Configuration, root, sna
 		}
 		return types.BackupRepositoryObservation{}, checkBackupObjectErr
 	}
-	result := types.BackupRepositoryObservation{Available: true}
 	if snapshotID == "" {
-		return result, nil
+		return types.BackupRepositoryObservation{Available: true}, nil
 	}
 	snapshotKey := path.Join(configuration.Prefix, root, "snapshots", snapshotID)
 	if checkBackupObjectErr2 := checkBackupObject(ctx, client, configuration.Bucket, snapshotKey); checkBackupObjectErr2 != nil {
 		if isMissingResource(checkBackupObjectErr2, "NoSuchKey") {
-			return result, nil
+			return types.BackupRepositoryObservation{Available: true}, nil
 		}
 		if isMissingResource(checkBackupObjectErr2, "NoSuchBucket") {
 			return types.BackupRepositoryObservation{Reason: RepositoryReasonMissingBucket}, nil
 		}
 		return types.BackupRepositoryObservation{}, checkBackupObjectErr2
 	}
-	result.SnapshotAvailable = true
-	return result, nil
+	return types.BackupRepositoryObservation{Available: true, SnapshotAvailable: true}, nil
 }
 
 // A one-byte GET preserves the named S3 errors that generic HEAD responses omit.
@@ -268,11 +269,7 @@ func ListRepositoryRoots(ctx context.Context, configuration Configuration, root 
 			return nil, fmt.Errorf("failed to list S3 repository roots: %w", nextPageErr)
 		}
 		for _, commonPrefix := range page.CommonPrefixes {
-			if commonPrefix.Prefix == nil {
-				continue
-			}
-			name := strings.Trim(strings.TrimPrefix(*commonPrefix.Prefix, prefix), "/")
-			if name != "" {
+			if name := strings.Trim(strings.TrimPrefix(kit.FromPtr(commonPrefix.Prefix), prefix), "/"); name != "" {
 				roots = append(roots, name)
 			}
 		}

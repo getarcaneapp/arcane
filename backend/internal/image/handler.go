@@ -44,6 +44,17 @@ type (
 		appCtx             context.Context
 	}
 
+	imageStreamOperationConfig struct {
+		Metadata       database.JSON
+		Action         func(ctx context.Context, writer io.Writer) error
+		ActivityType   types.ActivityType
+		ResourceName   string
+		Step           string
+		StartMessage   string
+		FailureMessage string
+		SuccessMessage string
+	}
+
 	ListImagesOutput struct {
 		Body types.ImageListResponse
 	}
@@ -305,6 +316,49 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 	return handlerutil.MessageOutput("Image removed successfully", ""), nil
 }
 
+func (h *ImageHandler) streamImageOperation(environmentID string, user *types.Actor, cfg imageStreamOperationConfig) *huma.StreamResponse {
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
+			httpx.SetJSONStreamHeaders(humaCtx)
+
+			runtimeCtx := activitylib.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
+			rawWriter := humaCtx.BodyWriter()
+			activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+				EnvironmentID: environmentID,
+				Type:          cfg.ActivityType,
+				ResourceType:  "image",
+				ResourceName:  cfg.ResourceName,
+				User:          user,
+				Step:          cfg.Step,
+				Message:       cfg.StartMessage,
+				Metadata:      cfg.Metadata,
+				Queue:         true,
+			})
+			activitylib.WriteStartedLine(rawWriter, activityID)
+			if f, ok := rawWriter.(http.Flusher); ok {
+				f.Flush()
+			}
+			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, environmentID)
+
+			writer := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+				Service:     h.activityService,
+				ActivityID:  activityID,
+				Output:      rawWriter,
+				DefaultStep: cfg.Step,
+			})
+			if actionErr := cfg.Action(runtimeCtx, writer); actionErr != nil {
+				activitylib.FlushWriter(writer)
+				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.FailureMessage, actionErr)
+				activitylib.WriteErrorLine(rawWriter, actionErr)
+				return
+			}
+			activitylib.FlushWriter(writer)
+			activitylib.WriteDoneLine(rawWriter)
+			activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.SuccessMessage, nil)
+		},
+	}
+}
+
 func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*huma.StreamResponse, error) {
 	if input.Body.ImageName == "" {
 		return nil, huma.Error400BadRequest("image name is required")
@@ -318,51 +372,23 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 	fullImageName := input.Body.GetFullImageName()
 	credentials := input.Body.GetCredentials()
 
-	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
-			httpx.SetJSONStreamHeaders(humaCtx)
-
-			runtimeCtx := activitylib.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
-			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-				EnvironmentID: input.EnvironmentID,
-				Type:          types.ActivityTypeImagePull,
-				ResourceType:  "image",
-				ResourceName:  fullImageName,
-				User:          user,
-				Step:          "Pulling image",
-				Message:       "Image pull started",
-				Metadata:      database.JSON{"imageName": fullImageName},
-				Queue:         true,
-			})
-			activitylib.WriteStartedLine(rawWriter, activityID)
-			if f, ok := rawWriter.(http.Flusher); ok {
-				f.Flush()
-			}
-			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
-
-			writer := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
-				Service:     h.activityService,
-				ActivityID:  activityID,
-				Output:      rawWriter,
-				DefaultStep: "Pulling image",
-			})
-			if pullImageErr := h.imageService.Pull(runtimeCtx, PullRequest{
+	return h.streamImageOperation(input.EnvironmentID, user, imageStreamOperationConfig{
+		ActivityType:   types.ActivityTypeImagePull,
+		ResourceName:   fullImageName,
+		Step:           "Pulling image",
+		StartMessage:   "Image pull started",
+		FailureMessage: "Image pull failed",
+		SuccessMessage: "Image pull completed",
+		Metadata:       database.JSON{"imageName": fullImageName},
+		Action: func(runtimeCtx context.Context, writer io.Writer) error {
+			return h.imageService.Pull(runtimeCtx, PullRequest{
 				Ref:         fullImageName,
 				Progress:    writer,
 				User:        *user,
 				Credentials: credentials,
-			}); pullImageErr != nil {
-				activitylib.FlushWriter(writer)
-				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image pull failed", pullImageErr)
-				activitylib.WriteErrorLine(rawWriter, pullImageErr)
-				return
-			}
-			activitylib.FlushWriter(writer)
-			activitylib.WriteDoneLine(rawWriter)
-			activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image pull completed", nil)
+			})
 		},
-	}, nil
+	}), nil
 }
 
 func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (*huma.StreamResponse, error) {
@@ -375,46 +401,19 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 		return nil, err
 	}
 
-	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
-			httpx.SetJSONStreamHeaders(humaCtx)
-
-			runtimeCtx := activitylib.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
-			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
-				EnvironmentID: input.EnvironmentID,
-				Type:          types.ActivityTypeImageBuild,
-				ResourceType:  "image",
-				ResourceName:  kit.Ternary(strings.TrimSpace(strings.Join(input.Body.Tags, ", ")) == "", input.Body.ContextDir, strings.Join(input.Body.Tags, ", ")),
-				User:          user,
-				Step:          "Building image",
-				Message:       "Image build started",
-				Metadata:      database.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
-				Queue:         true,
-			})
-			activitylib.WriteStartedLine(rawWriter, activityID)
-			if f, ok := rawWriter.(http.Flusher); ok {
-				f.Flush()
-			}
-			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
-
-			writer := activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
-				Service:     h.activityService,
-				ActivityID:  activityID,
-				Output:      rawWriter,
-				DefaultStep: "Building image",
-			})
-			if _, buildImageErr := h.buildService.BuildImage(runtimeCtx, input.EnvironmentID, input.Body, writer, "", user); buildImageErr != nil {
-				activitylib.FlushWriter(writer)
-				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image build failed", buildImageErr)
-				activitylib.WriteErrorLine(rawWriter, buildImageErr)
-				return
-			}
-			activitylib.FlushWriter(writer)
-			activitylib.WriteDoneLine(rawWriter)
-			activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image build completed", nil)
+	return h.streamImageOperation(input.EnvironmentID, user, imageStreamOperationConfig{
+		ActivityType:   types.ActivityTypeImageBuild,
+		ResourceName:   cmp.Or(strings.TrimSpace(strings.Join(input.Body.Tags, ", ")), input.Body.ContextDir),
+		Step:           "Building image",
+		StartMessage:   "Image build started",
+		FailureMessage: "Image build failed",
+		SuccessMessage: "Image build completed",
+		Metadata:       database.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
+		Action: func(runtimeCtx context.Context, writer io.Writer) error {
+			_, buildImageErr := h.buildService.BuildImage(runtimeCtx, input.EnvironmentID, input.Body, writer, "", user)
+			return buildImageErr
 		},
-	}, nil
+	}), nil
 }
 
 func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*handlerutil.Page[types.ImageBuildRecord], error) {

@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
@@ -93,7 +93,7 @@ func testProject() types.Project {
 		Name:        "Web",
 		ComposeName: "web",
 		Path:        "/app/data/projects/web",
-		Volumes: composetypes.Volumes{
+		Volumes: composeTypes.Volumes{
 			"data":   {Name: "web_data"},
 			"cache":  {Name: "web_cache"},
 			"shared": {Name: "shared", External: true},
@@ -174,7 +174,7 @@ func TestCheckPlanVolumesRejectsChangedVolumes(t *testing.T) {
 
 	// A compose edit and deploy while the backup waited moved the data volume to a new name.
 	changed := testProject()
-	changed.Volumes["data"] = composetypes.VolumeConfig{Name: "web_data_v2"}
+	changed.Volumes["data"] = composeTypes.VolumeConfig{Name: "web_data_v2"}
 	err = checkPlanVolumes(changed, p)
 	require.ErrorIs(t, err, common.ErrConflict)
 	require.ErrorContains(t, err, "changed after the backup was queued")

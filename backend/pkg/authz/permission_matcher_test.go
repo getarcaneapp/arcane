@@ -85,7 +85,7 @@ func TestPermissionMatcherNormalizesEchoParamsAndIgnoresQuery(t *testing.T) {
 
 func TestPermissionMatcherPublicRoute(t *testing.T) {
 	m := NewPermissionMatcher()
-	m.AddPublic("GET", "/settings/public")
+	m.Add("GET", "/settings/public", "")
 
 	perm, ok := m.Lookup("GET", "/settings/public", nil).Get()
 

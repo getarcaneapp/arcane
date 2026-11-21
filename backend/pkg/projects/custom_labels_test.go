@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/require"
 
 	updaterlabels "kit.getarcane.app/updater/labels"
@@ -276,7 +276,7 @@ services:
 	require.NoError(t, err)
 	memory, err := LoadComposeProjectFromContent(t.Context(), types.ComposeContentOptions{ComposeContent: content, WorkingDir: dir, ProjectName: "metadata"})
 	require.NoError(t, err)
-	for _, project := range []*composetypes.Project{disk, memory} {
+	for _, project := range []*composeTypes.Project{disk, memory} {
 		inherited := project.Services["inherited"].Labels
 		require.Equal(t, "tag", inherited[updaterlabels.LabelUpdateStrategy])
 		require.Equal(t, "3.x", inherited[updaterlabels.LabelUpdateConstraint])
@@ -352,7 +352,7 @@ services:
 		},
 	)
 	require.NoError(t, err)
-	for _, project := range []*composetypes.Project{disk, memory} {
+	for _, project := range []*composeTypes.Project{disk, memory} {
 		require.Equal(t, "false", project.Services["inherited"].Labels[imageref.UpdateCheckLabel])
 		require.Equal(t, "true", project.Services["overridden"].Labels[imageref.UpdateCheckLabel])
 		require.Equal(t, "true", project.Services["explicit"].Labels[imageref.UpdateCheckLabel])

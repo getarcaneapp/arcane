@@ -20,15 +20,9 @@ func BuildGotifyURL(config GotifyConfig) (string, error) {
 		return "", errors.New("gotify token is required")
 	}
 
-	u := &url.URL{
-		Scheme: "gotify",
-	}
-
 	host := config.Host
 	if config.Port > 0 {
-		u.Host = fmt.Sprintf("%s:%d", host, config.Port)
-	} else {
-		u.Host = host
+		host = fmt.Sprintf("%s:%d", host, config.Port)
 	}
 
 	path := config.Path
@@ -36,9 +30,8 @@ func BuildGotifyURL(config GotifyConfig) (string, error) {
 		path = "/" + path
 	}
 	path = strings.TrimSuffix(path, "/")
-	u.Path = path + "/" + config.Token
 
-	q := u.Query()
+	q := url.Values{}
 	// Always set priority if it's within valid range, 0 is a valid priority
 	q.Set("priority", strconv.Itoa(config.Priority))
 
@@ -55,8 +48,12 @@ func BuildGotifyURL(config GotifyConfig) (string, error) {
 		q.Set("useheader", "yes")
 	}
 
-	u.RawQuery = q.Encode()
-	return u.String(), nil
+	return (&url.URL{
+		Scheme:   "gotify",
+		Host:     host,
+		Path:     path + "/" + config.Token,
+		RawQuery: q.Encode(),
+	}).String(), nil
 }
 
 func SendGotify(ctx context.Context, config GotifyConfig, message string) error {

@@ -27,7 +27,7 @@ func WithEnvironment[T Environmental](c Config[T]) Config[T] {
 		return cmp.Or(cmp.Compare(left.Name, right.Name), cmp.Compare(left.ID, right.ID))
 	}
 	if len(c.SortBindings) == 0 {
-		c.SortBindings = []SortBinding[T]{{Key: "environment", Fn: byEnvironment, DescFn: reverSortFn(byEnvironment)}}
+		c.SortBindings = []SortBinding[T]{{Key: "environment", Fn: byEnvironment, DescFn: reverseSortFn(byEnvironment)}}
 		return c
 	}
 
@@ -39,7 +39,7 @@ func WithEnvironment[T Environmental](c Config[T]) Config[T] {
 	}}, c.SortBindings[1:]...), SortBinding[T]{
 		Key:    "environment",
 		Fn:     chainSortFn(byEnvironment, first.Fn),
-		DescFn: chainSortFn(reverSortFn(byEnvironment), first.Fn),
+		DescFn: chainSortFn(reverseSortFn(byEnvironment), first.Fn),
 	})
 	return c
 }
@@ -48,7 +48,7 @@ func MergeEnvironmentPages[T Environmental, PT interface {
 	*T
 	SetEnvironment(types.EnvironmentRef)
 }](config Config[T], pages []EnvironmentPage[T], params QueryParams) ([]T, Response) {
-	all := make([]T, 0)
+	var all []T
 	var total, totalAvailable int64
 	for _, page := range pages {
 		for _, item := range page.Items {

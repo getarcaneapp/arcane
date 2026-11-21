@@ -88,7 +88,7 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksIn
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.webhookService.AggregateWebhookSummaries(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, webhookPagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list webhooks")
 		}

@@ -479,9 +479,7 @@ func (h *ActivityHandler) listRemoteActivities(
 	fetch func(string) (*types.Paginated[types.Activity], error),
 ) (*handlerutil.Page[types.Activity], error) {
 	params := normalizeRemoteActivityParams(activityListParams(input))
-	// The agent only ships the newest window the merged page can use, not its
-	// whole history; the stream poller repeats this every few seconds.
-	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit+kit.Ternary(params.SkipCount, 1, 0))
+	window := params.FetchWindow()
 	remoteActivities, remoteTotal, remoteErr := collectActivityWindow(window, func(start, limit int) ([]types.Activity, int64, error) {
 		query := url.Values{
 			"start": {strconv.Itoa(start)},

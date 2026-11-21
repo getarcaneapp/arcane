@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -204,14 +204,14 @@ func TestLoadComposeProject_ArcaneProcessEnvInterpolation(t *testing.T) {
 	t.Setenv("TZ", "America/Chicago")
 
 	testCases := []struct {
-		check   func(t *testing.T, app composetypes.ServiceConfig)
+		check   func(t *testing.T, app composeTypes.ServiceConfig)
 		name    string
 		compose string
 	}{
 		{
 			name:    "blocked var falls back to compose default",
 			compose: "services:\n  app:\n    image: nginx:alpine\n    ports:\n      - \"${PORT:-8191}:8191\"\n",
-			check: func(t *testing.T, app composetypes.ServiceConfig) {
+			check: func(t *testing.T, app composeTypes.ServiceConfig) {
 				t.Helper()
 				require.Len(t, app.Ports, 1)
 				assert.Equal(t, "8191", app.Ports[0].Published)
@@ -220,7 +220,7 @@ func TestLoadComposeProject_ArcaneProcessEnvInterpolation(t *testing.T) {
 		{
 			name:    "allowlisted var flows through",
 			compose: "services:\n  app:\n    image: nginx:alpine\n    environment:\n      TZ: ${TZ:-UTC}\n",
-			check: func(t *testing.T, app composetypes.ServiceConfig) {
+			check: func(t *testing.T, app composeTypes.ServiceConfig) {
 				t.Helper()
 				require.NotNil(t, app.Environment["TZ"])
 				assert.Equal(t, "America/Chicago", *app.Environment["TZ"])
@@ -606,7 +606,7 @@ func TestLoadComposeProject_PrepareRunsBeforeHostPathTranslation(t *testing.T) {
 	require.True(t, pathMapper.isNonMatching)
 
 	var seen []string
-	prepare := func(_ context.Context, project *composetypes.Project) error {
+	prepare := func(_ context.Context, project *composeTypes.Project) error {
 		for _, service := range project.Services {
 			for _, volume := range service.Volumes {
 				seen = append(seen, volume.Source)
@@ -634,7 +634,7 @@ func TestLoadComposeProject_PrepareRunsBeforeHostPathTranslation(t *testing.T) {
 		ProjectName:       "caddy",
 		ProjectsDirectory: projectsRoot,
 		PathMapper:        pathMapper,
-		Prepare: func(context.Context, *composetypes.Project) error {
+		Prepare: func(context.Context, *composeTypes.Project) error {
 			return prepareErr
 		},
 	})

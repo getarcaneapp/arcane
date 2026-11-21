@@ -465,11 +465,6 @@ func (s *ContainerService) lockContainer(ctx context.Context, op, containerID st
 	return unlock, nil
 }
 
-func containerNameFromContext(ctx context.Context) string {
-	name, _ := ctx.Value(containerNameContextKey{}).(string)
-	return name
-}
-
 func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, containerID string, user types.Actor, cfg containerLifecycleAction) error {
 	unlock, err := s.lockContainer(ctx, cfg.action+" container", containerID)
 	if err != nil {
@@ -483,11 +478,12 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 	}
 	maps.Copy(metadata, cfg.metadata)
 
+	containerName, _ := ctx.Value(containerNameContextKey{}).(string)
 	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
 		Type:          cfg.eventType,
 		ResourceType:  "container",
 		ResourceID:    containerID,
-		ResourceName:  cmp.Or(containerNameFromContext(ctx), containerID),
+		ResourceName:  cmp.Or(containerName, containerID),
 		UserID:        user.ID,
 		Username:      user.Username,
 		EnvironmentID: "0",
@@ -1609,8 +1605,8 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 		return types.ContainerProcesses{}, common.ClassifyDockerError(fmt.Errorf("failed to list container processes: %w", err))
 	}
 	return types.ContainerProcesses{
-		Titles:    kit.Ternary(result.Titles == nil, []string{}, result.Titles),
-		Processes: kit.Ternary(result.Processes == nil, [][]string{}, result.Processes),
+		Titles:    result.Titles,
+		Processes: result.Processes,
 	}, nil
 }
 

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/go-units"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
@@ -280,7 +280,7 @@ type (
 	ProjectRuntimeService struct {
 		ContainerLabels  map[string]string           `json:"-"`
 		Health           *string                     `json:"health,omitempty"`
-		ServiceConfig    *composetypes.ServiceConfig `json:"serviceConfig,omitempty"`
+		ServiceConfig    *composeTypes.ServiceConfig `json:"serviceConfig,omitempty"`
 		ImageID          string                      `json:"-"`
 		Name             string                      `json:"name"`
 		Image            string                      `json:"image"`
@@ -398,11 +398,11 @@ type (
 
 		ComposeFiles    []string                     `json:"composeFiles,omitempty" readOnly:"true"`
 		RuntimeServices []ProjectRuntimeService      `json:"runtimeServices,omitempty" readOnly:"true"`
-		Services        []composetypes.ServiceConfig `json:"services,omitempty" readOnly:"true"`
+		Services        []composeTypes.ServiceConfig `json:"services,omitempty" readOnly:"true"`
 		Jobs            []ProjectJob                 `json:"jobs,omitempty" readOnly:"true"`
 		ComposeName     string                       `json:"composeName,omitempty" readOnly:"true"`
-		Volumes         composetypes.Volumes         `json:"volumes,omitempty" readOnly:"true"`
-		Networks        composetypes.Networks        `json:"networks,omitempty" readOnly:"true"`
+		Volumes         composeTypes.Volumes         `json:"volumes,omitempty" readOnly:"true"`
+		Networks        composeTypes.Networks        `json:"networks,omitempty" readOnly:"true"`
 		URLs            []ProjectURL                 `json:"urls,omitempty" readOnly:"true"`
 		IncludeFiles    []ProjectIncludeFile         `json:"includeFiles,omitempty" readOnly:"true"`
 		RunningCount    int                          `json:"runningCount" readOnly:"true"`
@@ -446,7 +446,7 @@ type (
 	}
 
 	VolumeSourcePathMapper interface {
-		TranslateVolumeSources(project *composetypes.Project, translateFileResources bool) error
+		TranslateVolumeSources(project *composeTypes.Project, translateFileResources bool) error
 		ContainerToHost(containerPath string) (hostPath string, mapped bool, err error)
 	}
 
@@ -479,7 +479,7 @@ type (
 		Options           *ProjectDeployOptions
 		AuthConfigs       map[string]registry.AuthConfig
 		PreDeploy         func(context.Context) error
-		Load              func(context.Context) (*composetypes.Project, error)
+		Load              func(context.Context) (*composeTypes.Project, error)
 		ResolveImages     func(context.Context) (ComposeImageOperations, error)
 		Recover           func(context.Context)
 		ProjectID         string
@@ -492,7 +492,7 @@ type (
 
 	ComposeServiceUpdate struct {
 		Progress              io.Writer
-		Project               *composetypes.Project
+		Project               *composeTypes.Project
 		AuthConfigs           map[string]registry.AuthConfig
 		RestoreBeforeMutation func(context.Context)
 		Recover               func(context.Context)
@@ -506,7 +506,7 @@ type (
 	}
 
 	ComposeTarget struct {
-		Project    *composetypes.Project
+		Project    *composeTypes.Project
 		DockerHost string
 		Services   []string
 	}
@@ -537,7 +537,7 @@ type (
 
 	ComposeRunJobOptions struct {
 		AuthConfigs map[string]registry.AuthConfig
-		Project     *composetypes.Project
+		Project     *composeTypes.Project
 		DockerHost  string
 		Job         string
 		Timeout     time.Duration
@@ -550,11 +550,11 @@ type (
 	}
 
 	ComposeCoordinator interface {
-		Deploy(ctx context.Context, request ComposeDeployment) (*composetypes.Project, error)
+		Deploy(ctx context.Context, request ComposeDeployment) (*composeTypes.Project, error)
 		UpdateServices(ctx context.Context, request ComposeServiceUpdate) error
-		PullServices(ctx context.Context, model *composetypes.Project, services []string, operations ComposeImageOperations, progress io.Writer) error
-		EnsureImagesPresent(ctx context.Context, model *composetypes.Project, progress io.Writer, operations ComposeImageOperations) error
-		BuildServices(ctx context.Context, projectID string, model *composetypes.Project, options ProjectBuildOptions, progress io.Writer, operations ComposeImageOperations) error
+		PullServices(ctx context.Context, model *composeTypes.Project, services []string, operations ComposeImageOperations, progress io.Writer) error
+		EnsureImagesPresent(ctx context.Context, model *composeTypes.Project, progress io.Writer, operations ComposeImageOperations) error
+		BuildServices(ctx context.Context, projectID string, model *composeTypes.Project, options ProjectBuildOptions, progress io.Writer, operations ComposeImageOperations) error
 	}
 
 	runtimeServiceAlias ProjectRuntimeService
@@ -617,12 +617,13 @@ type (
 	}
 
 	ProjectRenameRecoveryOperations struct {
-		Docker               func(context.Context, bool) (*client.Client, error)
-		WriteJournal         func(context.Context, *ProjectRenameJournal, string) error
-		ClearJournal         func(context.Context, string) error
-		ClearRollbackCleanup func(context.Context, string) error
-		RestoreState         func(context.Context, *ProjectRenameJournal) error
-		WriteRollbackCleanup func(context.Context, *ProjectRenameJournal) error
+		Docker                func(context.Context, bool) (*client.Client, error)
+		InvalidateVolumeUsage func(*client.Client)
+		WriteJournal          func(context.Context, *ProjectRenameJournal, string) error
+		ClearJournal          func(context.Context, string) error
+		ClearRollbackCleanup  func(context.Context, string) error
+		RestoreState          func(context.Context, *ProjectRenameJournal) error
+		WriteRollbackCleanup  func(context.Context, *ProjectRenameJournal) error
 	}
 
 	ProjectWorkspaceUpdateManifest struct {
@@ -697,7 +698,7 @@ const (
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(
-	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composetypes.UnitBytes) error {
+	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composeTypes.UnitBytes) error {
 		token, err := decoder.ReadToken()
 		if err != nil {
 			return err
@@ -711,7 +712,7 @@ var composeUnmarshalers = json.JoinUnmarshalers(
 			if parseMemoryErr != nil {
 				return parseMemoryErr
 			}
-			*value = composetypes.UnitBytes(parsed)
+			*value = composeTypes.UnitBytes(parsed)
 			return nil
 		case jsontext.KindNumber:
 			raw := token.String()
@@ -726,7 +727,7 @@ var composeUnmarshalers = json.JoinUnmarshalers(
 					return fmt.Errorf("invalid UnitBytes value %q", raw)
 				}
 			}
-			*value = composetypes.UnitBytes(parsed)
+			*value = composeTypes.UnitBytes(parsed)
 			return nil
 		case jsontext.KindInvalid, jsontext.KindFalse, jsontext.KindTrue,
 			jsontext.KindBeginObject, jsontext.KindEndObject,
@@ -736,7 +737,7 @@ var composeUnmarshalers = json.JoinUnmarshalers(
 
 		return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
 	}),
-	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composetypes.UlimitsConfig) error {
+	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composeTypes.UlimitsConfig) error {
 		if decoder.PeekKind() != jsontext.KindNumber {
 			return errors.ErrUnsupported
 		}
