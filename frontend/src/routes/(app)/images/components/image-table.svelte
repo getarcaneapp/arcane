@@ -337,7 +337,7 @@
 		},
 		{ accessorKey: 'created', title: m.common_created(), hidden: true, sortable: true, cellComponent: UnixCreatedCell },
 		{
-			id: 'usedBy',
+			accessorKey: 'usedBy',
 			title: m.images_used_by(),
 			hidden: true,
 			cell: UsedByCell
@@ -452,7 +452,7 @@
 {/snippet}
 
 {#snippet UsageBadgeList(usages: NonNullable<ImageSummary['usedBy']>, environmentId: string)}
-	{#each usages as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
+	{#each usages as usage (`${usage.type}-${usage.id || usage.name}`)}
 		{#if usage.type === 'project'}
 			{#if usage.id}
 				<Badge

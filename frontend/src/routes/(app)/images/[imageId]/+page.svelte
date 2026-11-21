@@ -25,6 +25,8 @@
 		CpuIcon,
 		ImagesIcon,
 		LayersIcon,
+		ProjectsIcon,
+		ContainersIcon,
 		ShieldCheckIcon,
 		InspectIcon,
 		FileTextIcon
@@ -45,6 +47,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isVulnerabilityScanInProgress } from '#lib/utils/docker.js';
 	import { parseImageRef } from '#lib/utils/docker.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { bytes, formatDateTimeShort, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability.js';
@@ -191,9 +194,11 @@
 	const osName = $derived.by(() => image?.os || m.common_na());
 	const repoTags = $derived.by(() => image?.repoTags ?? []);
 	const pinnedRefs = $derived.by(() => image?.pinnedReferences ?? []);
+	const usedByUsages = $derived.by(() => image?.usedBy ?? []);
 	const envVars = $derived.by(() => image?.config?.env ?? []);
 	const hasTags = $derived.by(() => repoTags.length > 0 && repoTags[0] !== '<none>:<none>');
 	const hasPinnedRefs = $derived.by(() => pinnedRefs.length > 0);
+	const hasUsedBy = $derived.by(() => usedByUsages.length > 0);
 	const hasEnv = $derived.by(() => envVars.length > 0);
 	const detailTitle = $derived.by((): string => {
 		if (hasTags && repoTags[0]) return repoTags[0];
@@ -413,6 +418,44 @@
 											</span>
 											<CopyButton text={pin} size="icon" class="size-7 shrink-0" />
 										</div>
+									{/each}
+								</div>
+							</div>
+						{/if}
+
+						{#if hasUsedBy || image?.inUse === undefined}
+							<div class="space-y-2">
+								<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+									<ImagesIcon class="size-4" />
+									{m.images_used_by()}
+								</span>
+								<div class="flex flex-wrap gap-1.5">
+									{#if image?.inUse === undefined}
+										<span class="text-sm text-muted-foreground">{m.common_unavailable()}</span>
+									{/if}
+									{#each usedByUsages as usage (`${usage.type}-${usage.id || usage.name}`)}
+										{#if usage.type === 'project'}
+											<Badge
+												variant="outline"
+												href={usage.id ? environmentHref(`/projects/${encodeURIComponent(usage.id)}`, currentEnvId) : undefined}
+											>
+												<ProjectsIcon class="size-3" />
+												<span class="min-w-0 truncate">{usage.name}</span>
+											</Badge>
+										{:else if usage.id}
+											<Badge
+												variant="outline"
+												href={environmentHref(`/containers/${encodeURIComponent(usage.id)}`, currentEnvId)}
+											>
+												<ContainersIcon class="size-3" />
+												<span class="min-w-0 truncate">{usage.name}</span>
+											</Badge>
+										{:else}
+											<Badge variant="outline" title={usage.name}>
+												<ContainersIcon class="size-3" />
+												<span class="min-w-0 truncate">{usage.name}</span>
+											</Badge>
+										{/if}
 									{/each}
 								</div>
 							</div>

@@ -154,6 +154,8 @@ export interface ImageDetailSummary {
 	repoTags: string[];
 	repoDigests: string[];
 	pinnedReferences?: string[];
+	usedBy?: ImageUsedBy[];
+	inUse?: boolean;
 	hardened?: HardenedImageInfo;
 	updateInfo?: ImageUpdateInfo;
 	comment: string;

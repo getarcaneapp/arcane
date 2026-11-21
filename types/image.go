@@ -176,6 +176,9 @@ type (
 	}
 
 	ImageDetailSummary struct {
+		Hardened    *HardenedImageInfo `json:"hardened,omitempty"`
+		UpdateInfo  *ImageUpdateInfo   `json:"updateInfo,omitempty"`
+		InUse       *bool              `json:"inUse,omitempty" doc:"Whether an existing container references this image; omitted when container inventory is unavailable"`
 		GraphDriver struct {
 			Data any    `json:"data"`
 			Name string `json:"name"`
@@ -198,11 +201,10 @@ type (
 			Type   string   `json:"type"`
 			Layers []string `json:"layers"`
 		} `json:"rootFs"`
-		RepoTags         []string           `json:"repoTags"`
-		RepoDigests      []string           `json:"repoDigests"`
-		PinnedReferences []string           `json:"pinnedReferences,omitempty"`
-		Hardened         *HardenedImageInfo `json:"hardened,omitempty"`
-		UpdateInfo       *ImageUpdateInfo   `json:"updateInfo,omitempty"`
+		RepoDigests      []string      `json:"repoDigests"`
+		PinnedReferences []string      `json:"pinnedReferences,omitempty"`
+		UsedBy           []ImageUsedBy `json:"usedBy,omitempty"`
+		RepoTags         []string      `json:"repoTags"`
 		Config           struct {
 			ExposedPorts map[string]struct{} `json:"exposedPorts,omitempty"`
 			Volumes      map[string]struct{} `json:"volumes,omitempty"`
