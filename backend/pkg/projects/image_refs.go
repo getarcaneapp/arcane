@@ -102,70 +102,31 @@ func canonicalImageRef(imageRef string) string {
 	return reference.TagNameOnly(named).String()
 }
 
-func projectBuiltImageKeys(project *composeTypes.Project) map[string]struct{} {
-	if project == nil {
-		return nil
-	}
-	built := map[string]struct{}{}
-	add := func(img string) {
-		if key := canonicalImageRef(img); key != "" {
-			built[key] = struct{}{}
-		}
-	}
-	for _, svc := range project.Services {
-		if svc.Build == nil {
-			continue
-		}
-		add(svc.Image)
-		for _, tag := range svc.Build.Tags {
-			add(tag)
-		}
-	}
-	for _, job := range project.Jobs {
-		if job.Build == nil {
-			continue
-		}
-		add(job.Image)
-		for _, tag := range job.Build.Tags {
-			add(tag)
-		}
-	}
-	return built
-}
-
 func PullableImageRefs(project *composeTypes.Project) []string {
 	if project == nil {
 		return nil
 	}
-	built := projectBuiltImageKeys(project)
 	return uniqueImageRefs(len(project.Services), func(yield func(string)) {
-		yieldIfPullable := func(img string) {
-			if _, isBuilt := built[canonicalImageRef(img)]; !isBuilt {
-				yield(img)
-			}
-		}
-		for _, name := range slices.Sorted(maps.Keys(project.Services)) {
-			service := project.Services[name]
+		for _, service := range project.Services {
 			if service.Build == nil {
-				yieldIfPullable(service.Image)
+				yield(service.Image)
 			}
-			for _, img := range composeapi.GetDependentImages(service, project.Name) {
-				yieldIfPullable(img)
+			for _, image := range composeapi.GetDependentImages(service, project.Name) {
+				yield(image)
 			}
 			for _, volume := range service.Volumes {
 				if volume.Type == composeTypes.VolumeTypeImage {
-					yieldIfPullable(volume.Source)
+					yield(volume.Source)
 				}
 			}
 		}
-		for _, name := range slices.Sorted(maps.Keys(project.Jobs)) {
-			job := project.Jobs[name]
+		for _, job := range project.Jobs {
 			if job.Build == nil {
-				yieldIfPullable(job.Image)
+				yield(job.Image)
 			}
 			for _, volume := range job.Volumes {
 				if volume.Type == composeTypes.VolumeTypeImage {
-					yieldIfPullable(volume.Source)
+					yield(volume.Source)
 				}
 			}
 		}

@@ -309,7 +309,11 @@ func (c *composeCoordinator) PrepareImagesForDeploy(
 			return err
 		}
 	}
-	return c.prepareDeployJobImages(ctx, projectID, project, plan, pullPolicyOverride, progressWriter, operations)
+	if err := c.prepareDeployJobImages(ctx, projectID, project, plan, pullPolicyOverride, progressWriter, operations); err != nil {
+		return err
+	}
+	markBuiltServiceImagesLocal(project, plan.builtImages)
+	return nil
 }
 
 func buildDeployImagePlan(projectID string, project *composeTypes.Project) *deployImagePlan {
@@ -560,6 +564,30 @@ func recordBuiltImages(builtImages map[string]struct{}, tags []string) {
 	}
 }
 
+func markBuiltServiceImagesLocal(project *composeTypes.Project, builtImages map[string]struct{}) {
+	if len(builtImages) == 0 {
+		return
+	}
+	for name, svc := range project.Services {
+		switch NormalizePullPolicy(svc.PullPolicy) {
+		case "", composeTypes.PullPolicyMissing, composeTypes.PullPolicyNever, composeTypes.PullPolicyBuild:
+			continue
+		}
+		_, usesBuiltImage := builtImages[canonicalImageRef(svc.Image)]
+		if !usesBuiltImage {
+			usesBuiltImage = slices.ContainsFunc(api.GetDependentImages(svc, project.Name), func(img string) bool {
+				_, ok := builtImages[canonicalImageRef(img)]
+				return ok
+			})
+		}
+		if !usesBuiltImage {
+			continue
+		}
+		svc.PullPolicy = composeTypes.PullPolicyMissing
+		project.Services[name] = svc
+	}
+}
+
 func (c *composeCoordinator) buildServiceImageForDeploy(
 	ctx context.Context,
 	projectID string,
@@ -699,11 +727,9 @@ func SelectedImageRefs(compProj *composeTypes.Project, servicesToUpdate []string
 	}
 
 	selected := NormalizeBuildSelections(servicesToUpdate)
-	built := projectBuiltImageKeys(compProj)
 	refs := make([]string, 0, len(compProj.Services))
-	for _, name := range slices.Sorted(maps.Keys(compProj.Services)) {
-		svc := compProj.Services[name]
-		if _, isBuilt := built[canonicalImageRef(svc.Image)]; ServiceSelected(selected, name) && svc.Build == nil && !isBuilt {
+	for name, svc := range compProj.Services {
+		if ServiceSelected(selected, name) && svc.Build == nil {
 			refs = append(refs, svc.Image)
 		}
 	}
