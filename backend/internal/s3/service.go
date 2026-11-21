@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 
 	"gorm.io/gorm"
@@ -275,36 +274,24 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 		}
 	}
 	// Global project and volume backup schedules are stored in settings, not tables.
-	var rows []struct {
-		Key   string
-		Value string
-	}
-	if err := db.Table("settings").Select("key, value").Where("key IN ?", []string{"projectBackupConfig", "systemVolumeBackupConfig"}).Find(&rows).Error; err != nil {
+	var values []string
+	if err := db.Table("settings").Where("key IN ?", []string{"projectBackupConfig", "systemVolumeBackupConfig"}).Pluck("value", &values).Error; err != nil {
 		return false, fmt.Errorf("failed to check S3 destination references: %w", err)
 	}
-	for _, row := range rows {
-		raw := []byte(cmp.Or(strings.TrimSpace(row.Value), "{}"))
-		used := false
-		switch row.Key {
-		case "projectBackupConfig":
-			var collection types.GlobalProjectBackupPolicyCollection
-			if err := json.Unmarshal(raw, &collection); err != nil {
-				return false, fmt.Errorf("failed to decode global project backup policies: %w", err)
-			}
-			used = slices.ContainsFunc(collection.Policies, func(policy types.GlobalProjectBackupPolicy) bool {
-				return policy.S3Enabled && policy.S3DestinationID == id
-			})
-		case "systemVolumeBackupConfig":
-			var collection types.SystemVolumeBackupPolicyCollection
-			if err := json.Unmarshal(raw, &collection); err != nil {
-				return false, fmt.Errorf("failed to decode global volume backup policies: %w", err)
-			}
-			used = slices.ContainsFunc(collection.Policies, func(policy types.SystemVolumeBackupPolicy) bool {
-				return policy.S3Enabled && policy.S3DestinationID == id
-			})
+	for _, value := range values {
+		var collection struct {
+			Policies []struct {
+				S3DestinationID string `json:"s3DestinationId"`
+				S3Enabled       bool   `json:"s3Enabled"`
+			} `json:"policies"`
 		}
-		if used {
-			return true, nil
+		if err := json.Unmarshal([]byte(cmp.Or(strings.TrimSpace(value), "{}")), &collection); err != nil {
+			return false, fmt.Errorf("failed to decode global backup policies: %w", err)
+		}
+		for _, policy := range collection.Policies {
+			if policy.S3Enabled && policy.S3DestinationID == id {
+				return true, nil
+			}
 		}
 	}
 	return false, nil

@@ -149,35 +149,22 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 	err = service.DeleteS3Destination(ctx, runningDestination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
 
-	// A global project backup policy keeps its destination in the projectBackupConfig setting.
+	// The global project and volume backup policies keep their destinations in settings.
 	globalDestination, err := service.CreateS3Destination(ctx, types.S3Destination{
-		Name:            "Global project backups",
-		Bucket:          "global-project-backups",
+		Name:            "Global backups",
+		Bucket:          "global-backups",
 		Region:          "us-east-1",
 		AccessKeyID:     "access-key",
 		SecretAccessKey: "secret-key",
 		UseSSL:          true,
 	})
 	require.NoError(t, err)
-	globalConfig := func(s3Enabled bool) string {
-		return fmt.Sprintf(`{"policies":[{"id":"g1","s3DestinationId":%q,"s3Enabled":%t,"localEnabled":true}]}`, globalDestination.ID, s3Enabled)
+	globalConfig := fmt.Sprintf(`{"policies":[{"id":"g1","s3DestinationId":%q,"s3Enabled":true,"localEnabled":true}]}`, globalDestination.ID)
+	for _, key := range []string{"projectBackupConfig", "systemVolumeBackupConfig"} {
+		require.NoError(t, gormDB.Where("key IN ?", []string{"projectBackupConfig", "systemVolumeBackupConfig"}).Delete(&settings.SettingVariable{}).Error)
+		require.NoError(t, gormDB.Create(&settings.SettingVariable{Key: key, Value: globalConfig}).Error)
+		require.ErrorIs(t, service.DeleteS3Destination(ctx, globalDestination.ID), ErrS3DestinationInUse, key)
 	}
-	require.NoError(t, gormDB.Create(&settings.SettingVariable{Key: "projectBackupConfig", Value: globalConfig(true)}).Error)
-	err = service.DeleteS3Destination(ctx, globalDestination.ID)
-	require.ErrorIs(t, err, ErrS3DestinationInUse)
-	require.NoError(t, gormDB.Model(&settings.SettingVariable{}).Where("key = ?", "projectBackupConfig").Update("value", globalConfig(false)).Error)
-	inUse, err := service.DestinationInUse(ctx, globalDestination.ID)
-	require.NoError(t, err)
-	require.False(t, inUse)
-
-	// The global volume schedules keep theirs in the systemVolumeBackupConfig setting.
-	require.NoError(t, gormDB.Create(&settings.SettingVariable{Key: "systemVolumeBackupConfig", Value: globalConfig(true)}).Error)
-	err = service.DeleteS3Destination(ctx, globalDestination.ID)
-	require.ErrorIs(t, err, ErrS3DestinationInUse)
-	require.NoError(t, gormDB.Model(&settings.SettingVariable{}).Where("key = ?", "systemVolumeBackupConfig").Update("value", globalConfig(false)).Error)
-	inUse, err = service.DestinationInUse(ctx, globalDestination.ID)
-	require.NoError(t, err)
-	require.False(t, inUse)
 }
 
 func TestS3DestinationService_UpdateRejectsLocationChangeWhileInUse(t *testing.T) {

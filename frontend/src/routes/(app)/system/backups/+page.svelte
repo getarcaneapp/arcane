@@ -537,7 +537,6 @@
 	}
 
 	async function runPolicy(type: ScheduleType, policyId: string) {
-		if (runningPolicyId) return;
 		runningPolicyId = policyId;
 		try {
 			const started = await tryCatch(startPolicyRun(type, policyId));
@@ -1173,10 +1172,7 @@
 						policyCollection = { ...policyCollection, policies };
 						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
 					}}
-					onProjectSaved={(policies) => {
-						queryClient.setQueryData(projectBackupConfigQuery().queryKey, { policies });
-						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.projectConfig() });
-					}}
+					onProjectSaved={(policies) => queryClient.setQueryData(projectBackupConfigQuery().queryKey, { policies })}
 					onVolumeSaved={(policies) => {
 						systemVolumePolicyCollection = { policies };
 						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.systemVolumeConfig() });
