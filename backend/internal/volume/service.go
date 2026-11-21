@@ -162,24 +162,6 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 	return service
 }
 
-func (s *VolumeService) TryLockVolumes(names []string) (func(), error) {
-	var unlocks []func()
-	release := func() {
-		for _, unlock := range slices.Backward(unlocks) {
-			unlock()
-		}
-	}
-	for _, name := range slices.Compact(slices.Sorted(slices.Values(names))) {
-		unlock, locked := s.workspaceLocks.TryLock(name)
-		if !locked {
-			release()
-			return nil, common.Classify(common.ErrConflict, fmt.Errorf("volume %s is busy with a backup or restore", name))
-		}
-		unlocks = append(unlocks, unlock)
-	}
-	return release, nil
-}
-
 func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 	s.backup.RegisterJobsOnStartup(ctx)
 }

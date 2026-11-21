@@ -100,7 +100,6 @@ type (
 		updates                     *update.Service
 		containerRegistryService    *registry.ContainerRegistryService
 		uploads                     *upload.UploadService
-		kv                          *kv.KVService
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 		FilesChanged                *concurrency.Signal[string]
@@ -125,7 +124,6 @@ type (
 		Archive        io.Reader
 		ID             string
 		Tags           []string
-		ComposeFiles   []string
 		ExactName      bool
 	}
 
@@ -136,7 +134,6 @@ type (
 		ProjectPath        string
 		DirName            string
 		Name               string
-		ComposeFiles       []string
 	}
 
 	GitOpsProjectRequest struct {
@@ -194,7 +191,6 @@ type (
 )
 
 const (
-	exportStoppedKeyPrefix    = "project-export-stopped:"
 	maxConcurrentComposeReads = 8
 	// inferredServiceCountBatchSize stays under SQLite's bound variable limit (three placeholders per id).
 	inferredServiceCountBatchSize = 200
@@ -410,7 +406,6 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		eventService:       p.EventService,
 		imageService:       p.ImageService,
 		dockerService:      p.DockerService,
-		kv:                 p.KVService,
 		lifecycleService:   p.LifecycleService,
 		workspace:          workspace.New(p.SettingsService),
 		details:            projectdetails.New(p.DB, p.DockerService, p.ImageService, p.SettingsService),
@@ -602,83 +597,29 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 	return proj, nil
 }
 
-func (s *ProjectService) stopForExport(ctx context.Context, projectID string, user types.Actor) error {
+func (s *ProjectService) stopProject(ctx context.Context, projectID string, user types.Actor) error {
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
-	if noteErr := s.kv.Set(ctx, exportStoppedKeyPrefix+projectID, user.ID); noteErr != nil {
-		return fmt.Errorf("note that the export stops project %s: %w", proj.Name, noteErr)
-	}
-	return s.downProject(ctx, proj, user)
-}
-
-func (s *ProjectService) RecoverExportStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) {
-	for wait := time.Minute; ; wait = min(2*wait, 30*time.Minute) {
-		err := s.startExportStoppedProjects(ctx, lockVolumes)
-		if err == nil {
-			return
-		}
-		slog.WarnContext(ctx, "Failed to start projects an interrupted export stopped; retrying", "error", err, "retryIn", wait)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(wait):
-		}
-	}
-}
-
-func (s *ProjectService) startExportStoppedProjects(ctx context.Context, lockVolumes func(names []string) (func(), error)) error {
-	entries, err := s.kv.ListByPrefix(ctx, exportStoppedKeyPrefix)
+	model, err := s.loadComposeProjectForProject(ctx, proj, nil)
 	if err != nil {
-		return fmt.Errorf("list projects stopped for an export: %w", err)
+		return fmt.Errorf("failed to load compose project: %w", err)
 	}
-	var errs []error
-	for _, entry := range entries {
-		projectID := strings.TrimPrefix(entry.Key, exportStoppedKeyPrefix)
-		_, found, findErr := s.FindProjectByID(ctx, projectID)
-		switch {
-		case findErr != nil:
-			errs = append(errs, findErr)
-			continue
-		case !found:
-			errs = append(errs, s.kv.Delete(ctx, entry.Key))
-			continue
-		}
-		unlock, lockErr := s.LockProject(ctx, "start project after an interrupted export", projectID)
-		if lockErr != nil {
-			errs = append(errs, lockErr)
-			continue
-		}
-		_, noted, getErr := s.kv.Get(ctx, entry.Key)
-		switch {
-		case getErr != nil:
-			errs = append(errs, getErr)
-		case noted:
-			errs = append(errs, s.startUnderVolumeLocks(ctx, lockVolumes, projectID))
-		}
-		unlock()
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	if stopErr := composeStopProjectServices(ctx, types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   model.ServiceNames(),
+	}); stopErr != nil {
+		return stopErr
 	}
-	return errors.Join(errs...)
-}
-
-func (s *ProjectService) startUnderVolumeLocks(ctx context.Context, lockVolumes func(names []string) (func(), error), projectID string) error {
-	project, err := s.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
-	if err != nil {
-		return err
-	}
-	var names []string
-	for _, volume := range projects.ClassifyProjectVolumes(project) {
-		if volume.Name != "" {
-			names = append(names, volume.Name)
-		}
-	}
-	unlock, err := lockVolumes(names)
-	if err != nil {
-		return fmt.Errorf("the project starts on a later attempt: %w", err)
-	}
-	defer unlock()
-	return s.deployProject(ctx, projectID, types.SystemUser, nil)
+	s.logProjectEvent(ctx, event.EventTypeProjectStop, projectID, proj.Name, user, database.JSON{
+		"action":      "stop",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+	}, "could not log project stop action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -1511,9 +1452,6 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 	if statusErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning)); statusErr != nil {
 		slog.ErrorContext(ctx, "failed to update project status and counts after deploy", "projectId", projectID, "error", statusErr)
 	}
-	if noteErr := s.kv.Delete(context.WithoutCancel(ctx), exportStoppedKeyPrefix+projectID); noteErr != nil {
-		slog.WarnContext(ctx, "failed to drop the export stop note after deploy", "projectId", projectID, "error", noteErr)
-	}
 	return nil
 }
 
@@ -1528,13 +1466,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	if err != nil {
 		return err
 	}
-	if downErr := s.downProject(ctx, projectFromDb, user); downErr != nil {
-		return downErr
-	}
-	if noteErr := s.kv.Delete(context.WithoutCancel(ctx), exportStoppedKeyPrefix+projectID); noteErr != nil {
-		slog.WarnContext(ctx, "failed to drop the export stop note after stopping the project", "projectId", projectID, "error", noteErr)
-	}
-	return nil
+	return s.downProject(ctx, projectFromDb, user)
 }
 
 func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project, user types.Actor) error {
@@ -1671,7 +1603,6 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 			ProjectPath:        projectPath,
 			DirName:            folderName,
 			Name:               name,
-			ComposeFiles:       opts.ComposeFiles,
 		})
 		if unpackErr != nil {
 			return nil, rollback(unpackErr)
@@ -1763,16 +1694,6 @@ func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projec
 	if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr))
 	}
-	if len(unpack.ComposeFiles) > 0 {
-		if selectErr := projects.SelectComposeFiles(ctx, projects.ComposeFileSelection{
-			ProjectsRoot:       unpack.ProjectsDirectory,
-			GlobalEnvDirectory: unpack.GlobalEnvDirectory,
-			ProjectPath:        unpack.ProjectPath,
-			Files:              unpack.ComposeFiles,
-		}); selectErr != nil {
-			return "", common.Classify(common.ErrValidation, fmt.Errorf("select the exported compose files: %w", selectErr))
-		}
-	}
 	detected, detectErr := projects.DetectComposeFile(ctx, unpack.ProjectsDirectory, unpack.ProjectPath)
 	if detected == "" {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("project archive has no compose file: %w", cmp.Or(detectErr, common.ErrComposeFileNotFound)))
@@ -1820,38 +1741,17 @@ func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types
 	}
 	defer cleanupSession()
 	proj, err := s.CreateProject(ctx, CreateProjectOptions{
-		Archive:      archive,
-		Actor:        user,
-		Name:         request.Name,
-		ID:           request.ProjectID,
-		Tags:         request.Tags,
-		ComposeFiles: request.ComposeFiles,
-		ExactName:    true,
+		Archive:   archive,
+		Actor:     user,
+		Name:      request.Name,
+		ID:        request.ProjectID,
+		Tags:      request.Tags,
+		ExactName: true,
 	})
 	if errors.Is(err, projects.ErrProjectDirExists) {
 		return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", request.Name))
 	}
 	return proj, err
-}
-
-func (s *ProjectService) LoadedComposeFiles(ctx context.Context, projectID string) ([]string, error) {
-	projectsDirectory, err := s.GetProjectsDirectory(ctx)
-	if err != nil {
-		return nil, err
-	}
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
-	if err != nil {
-		return nil, fmt.Errorf("resolve the compose file of project %s: %w", proj.Name, err)
-	}
-	return projects.LoadedComposeFiles(ctx, projects.LoadedComposeFilesOptions{
-		GlobalEnvDirectory: projectsDirectory,
-		ProjectPath:        proj.Path,
-		ComposeFile:        composeFile,
-	}), nil
 }
 
 func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID string) (*types.UploadSession, error) {

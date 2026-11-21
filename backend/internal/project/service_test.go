@@ -11189,7 +11189,7 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	content, err := io.ReadAll(file)
 	require.NoError(t, err)
 	var visited []string
-	manifest, _, err := projects.ReadProjectBundle(strings.NewReader(string(content)), func(name string, _ int64, _ io.Reader) error {
+	manifest, _, err := projects.ReadProjectBundle(strings.NewReader(string(content)), func(_ types.ProjectManifest, name string, _ int64, _ io.Reader) error {
 		visited = append(visited, name)
 		return nil
 	})
@@ -11221,7 +11221,5 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "copy", imported.Name)
 	assert.Equal(t, []string{"shared-data"}, restored)
-	require.Len(t, targets, 1)
-	assert.NotEmpty(t, targets[0].Claim, "the restore claims the volume it creates for this import")
-	assert.Equal(t, types.ComposeVolumeTarget{Labels: sourceLabels, Project: "copy", Key: "first", Claim: targets[0].Claim, External: true}, targets[0])
+	assert.Equal(t, []types.ComposeVolumeTarget{{Labels: sourceLabels, Project: "copy", Key: "first", External: true}}, targets)
 }

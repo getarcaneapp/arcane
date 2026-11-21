@@ -459,12 +459,7 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 		case types.ProjectVolumeDriverOpts:
 			hostVolumes = append(hostVolumes, volume.Name)
 		case types.ProjectVolumeNamed:
-			targetName := projects.ComposeVolumeTargetName(projects.ComposeVolumeTargetNameOptions{
-				SourceProject: project.Name,
-				Key:           volume.Key,
-				SourceName:    volume.Name,
-				TargetProject: request.Name,
-			})
+			targetName := targetVolumeName(project.Name, volume.Key, volume.Name, request.Name)
 			if request.IncludeVolumes {
 				targetVolumes = append(targetVolumes, targetName)
 				_, exists, existsErr := source.Volume(ctx, volume.Name)
@@ -625,6 +620,13 @@ func availabilityCheck(plan *types.ProjectTransferPreflight, availability Availa
 		return false
 	}
 	return true
+}
+
+func targetVolumeName(sourceProject, key, sourceName, name string) string {
+	if sourceName == projects.NormalizeProjectName(sourceProject)+"_"+key {
+		return projects.NormalizeProjectName(name) + "_" + key
+	}
+	return sourceName
 }
 
 func (s *Service) execute(ctx context.Context, t flow.Task) (any, error) {

@@ -205,7 +205,4 @@ func TestClassifyProjectVolumes(t *testing.T) {
 		{Key: "plugin", Name: "plugin-data", Kind: types.ProjectVolumeExternal, Driver: "rexray"},
 		{Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeNamed, Included: true},
 	}, got)
-
-	assert.Equal(t, "copy_data", ComposeVolumeTargetName(ComposeVolumeTargetNameOptions{SourceProject: project.Name, Key: "data", SourceName: "web_data", TargetProject: "Copy"}))
-	assert.Equal(t, "shared-data", ComposeVolumeTargetName(ComposeVolumeTargetNameOptions{SourceProject: project.Name, Key: "shared", SourceName: "shared-data", TargetProject: "Copy"}))
 }
