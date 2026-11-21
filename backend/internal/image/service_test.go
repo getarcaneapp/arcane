@@ -1321,3 +1321,17 @@ func TestBuildCombinedUsageMap_MatchesEveryTagOfAnImage(t *testing.T) {
 	require.Len(t, usage["sha256:app"], 1)
 	assert.Equal(t, "app", usage["sha256:app"][0].Name)
 }
+
+func TestBuildCombinedUsageMap_MatchesDigestPinnedProjectRef(t *testing.T) {
+	const digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	refUsage := map[string][]types.ImageUsedBy{
+		"nginx@sha256:" + digest: {{Type: "project", Name: "web", ID: "proj-web"}},
+	}
+	dockerImages := []image.Summary{
+		{ID: "sha256:nginx", RepoTags: []string{"nginx:1.27"}, RepoDigests: []string{"nginx@sha256:" + digest}},
+	}
+
+	usage := BuildCombinedUsageMap(dockerImages, nil, nil, refUsage)
+	require.Len(t, usage["sha256:nginx"], 1)
+	assert.Equal(t, "web", usage["sha256:nginx"][0].Name)
+}

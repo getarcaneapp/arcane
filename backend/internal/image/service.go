@@ -1258,9 +1258,10 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 	return projectIDs
 }
 
-// projectImageRefUsage maps normalized image references (repo:tag) to the Arcane
-// projects whose Compose definitions reference them, regardless of whether any
-// container of the project currently exists.
+// projectImageRefUsage maps normalized image references (repo:tag, or
+// repo@digest for digest-pinned refs) to the Arcane projects whose Compose
+// definitions reference them, regardless of whether any container of the
+// project currently exists.
 func (s *ImageService) projectImageRefUsage(ctx context.Context) map[string][]types.ImageUsedBy {
 	usage := make(map[string][]types.ImageUsedBy)
 	var rows []struct {
@@ -1281,6 +1282,15 @@ func (s *ImageService) projectImageRefUsage(ctx context.Context) map[string][]ty
 	for _, row := range rows {
 		for _, ref := range projects.ParseImageRefsJSON(row.ImageRefsJSON) {
 			normalized := strings.ToLower(refs.NormalizeImageUpdateRef(ref))
+			if normalized == "" {
+				// Digest-pinned refs normalize to empty; key them by the raw
+				// repo@digest form so they match image RepoDigests.
+				trimmed := strings.TrimSpace(ref)
+				if _, digest, found := strings.Cut(trimmed, "@"); !found || digest == "" {
+					continue
+				}
+				normalized = strings.ToLower(trimmed)
+			}
 			if normalized == "" {
 				continue
 			}
@@ -1333,9 +1343,14 @@ func BuildCombinedUsageMap(
 	refsByImageID := make(map[string][]string)
 	for _, di := range dockerImages {
 		for _, repoTag := range di.RepoTags {
-			normalized := strings.ToLower(refs.NormalizeImageUpdateRef(repoTag))
-			if normalized != "" {
+			if normalized := strings.ToLower(refs.NormalizeImageUpdateRef(repoTag)); normalized != "" {
 				refsByImageID[di.ID] = append(refsByImageID[di.ID], normalized)
+			}
+		}
+		// Digest-pinned project refs match against the image's repo digests.
+		for _, repoDigest := range di.RepoDigests {
+			if repoDigest != "" && repoDigest != "<none>@<none>" {
+				refsByImageID[di.ID] = append(refsByImageID[di.ID], strings.ToLower(repoDigest))
 			}
 		}
 	}
