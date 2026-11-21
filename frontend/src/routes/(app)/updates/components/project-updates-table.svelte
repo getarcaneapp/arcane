@@ -30,7 +30,7 @@
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { blockedUpdateTitle, formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
-	import { applyScopedUpdate, summarizeUpdateResult, throwOnUpdateFailure } from '#lib/utils/update-actions.js';
+	import { applyScopedUpdate, summarizeUpdateResults, throwOnUpdateFailure } from '#lib/utils/update-actions.js';
 
 	type ProjectRow = EnvironmentRow<Project>;
 	type ProjectUpdateRow = {
@@ -150,7 +150,7 @@
 			run: () => applyScopedUpdate('project', item.projectId, item.environmentId),
 			failureMessage: m.updates_apply_all_failed(),
 			onSuccess: async (result) => {
-				summarizeUpdateResult(result);
+				summarizeUpdateResults([result]);
 				await refreshRows();
 			}
 		});

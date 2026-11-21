@@ -387,7 +387,6 @@ func initializeStartupState(p initializeStartupStateParams) error {
 		}
 		cancelTask()
 	}
-	p.Project.RecoverStoppedProjects(p.AppCtx, p.Volume.TryLockVolumes)
 
 	if !p.Config.AgentEnabled {
 		if err := p.Environment.ReconcileAgentStatusesOnStartup(p.AppCtx); err != nil {
