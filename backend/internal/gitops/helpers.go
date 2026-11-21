@@ -5,6 +5,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"kit.getarcane.app"
@@ -43,8 +44,9 @@ func validateDeploySource(sync project.GitOpsSync) error {
 	return nil
 }
 
-func normalizeSyncLimitSetting(value, defaultValue int) int {
-	return kit.Ternary(value < 0, defaultValue, value)
+func parseSyncLimit(raw string, defaultValue int) int {
+	v := kit.ParseOrDefault(raw, defaultValue, strconv.Atoi)
+	return kit.Ternary(v < 0, defaultValue, v)
 }
 
 func nullableTrimmedString(p *string) *string {

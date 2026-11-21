@@ -22,7 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -411,7 +411,7 @@ func newDownStackTestService(t *testing.T, removed *[]string) *Service {
 	t.Cleanup(func() { _ = cli.Close() })
 
 	return NewService(ServiceParams{
-		DockerService:   dockerInternal.NewDockerClientService(ctx, db, settingsSvc, bus.Config{}).WithClient(cli),
+		DockerService:   docker.NewDockerClientService(ctx, db, settingsSvc, bus.Config{}).WithClient(cli),
 		EnsureManager:   func(context.Context) error { return nil },
 		SettingsService: settingsSvc,
 	})

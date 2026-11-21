@@ -63,9 +63,15 @@ func (s *DiagnosticsService) Collect() (types.RuntimeInfo, types.MemoryInfo, typ
 	leakScannedAt := s.leakReport.ScannedAt
 	s.leakMu.Unlock()
 
+	// Read last-known leak count without triggering a leak-detection GC.
+	leakedGoroutines := 0
+	if p := pprof.Lookup(goroutineLeakProfileName); p != nil {
+		leakedGoroutines = p.Count()
+	}
+
 	rt := types.RuntimeInfo{
 		Goroutines:       runtime.NumGoroutine(),
-		LeakedGoroutines: leakedGoroutineCount(),
+		LeakedGoroutines: leakedGoroutines,
 		LeakScannedAt:    leakScannedAt,
 		GOMAXPROCS:       runtime.GOMAXPROCS(0),
 		NumCPU:           runtime.NumCPU(),
@@ -148,10 +154,10 @@ func (s *DiagnosticsService) Goroutines() (types.GoroutineProfile, error) {
 		return types.GoroutineProfile{}, fmt.Errorf("write goroutine profile: %w", err)
 	}
 
-	profile := types.GoroutineProfile{Groups: []types.GoroutineGroup{}, CapturedAt: time.Now().UTC()}
+	profile := types.GoroutineProfile{CapturedAt: time.Now().UTC()}
 	index := map[string]int{}
 	for record := range strings.SplitSeq(buf.String(), "\n\n") {
-		group := types.GoroutineGroup{Frames: []types.GoroutineFrame{}}
+		var group types.GoroutineGroup
 		for line := range strings.Lines(record) {
 			fields := strings.FieldsFunc(line, func(r rune) bool { return r == '\t' || r == '\n' })
 			if len(fields) == 0 {
@@ -223,16 +229,6 @@ func (s *DiagnosticsService) Profile(ctx context.Context, name string, seconds, 
 		}
 	}
 	return buf.Bytes(), ctx.Err()
-}
-
-// leakedGoroutineCount returns the last-known leak count without
-// triggering a leak-detection GC.
-func leakedGoroutineCount() int {
-	p := pprof.Lookup(goroutineLeakProfileName)
-	if p == nil {
-		return 0
-	}
-	return p.Count()
 }
 
 func (s *DiagnosticsService) CollectActors(ctx context.Context) (types.ActorDiagnostics, error) {

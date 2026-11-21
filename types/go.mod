@@ -7,7 +7,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/moby/moby/api v1.57.0
 	github.com/moby/moby/client v0.6.3
-	kit.getarcane.app/builds v0.5.4
+	kit.getarcane.app/builds v0.5.5
 )
 
 require (
@@ -21,7 +21,7 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
-	github.com/mattn/go-shellwords v1.0.16 // indirect
+	github.com/mattn/go-shellwords v1.0.17 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect

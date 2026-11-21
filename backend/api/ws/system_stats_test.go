@@ -53,8 +53,9 @@ func TestSystemStatsSamplerEffectiveInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &WebSocketHandler{}
-			h.systemStatsSampler.intervals = tt.intervals
+			h := &WebSocketHandler{
+				systemStatsSampler: systemStatsSampler{intervals: tt.intervals},
+			}
 			h.refreshSystemStatsSamplerIntervalLocked()
 			require.Equal(t, tt.want, h.systemStatsSamplerInterval())
 		})
@@ -64,8 +65,9 @@ func TestSystemStatsSamplerEffectiveInterval(t *testing.T) {
 func TestSystemStatsSamplerRearmsOnFasterSubscriber(t *testing.T) {
 	collections := make(chan struct{}, 16)
 	h := &WebSocketHandler{
-		ctx:            t.Context(),
-		cpuUsageReader: func(time.Duration) (float64, bool) { return 0, true },
+		ctx:                t.Context(),
+		systemStatsSampler: systemStatsSampler{intervals: map[time.Duration]int{}},
+		cpuUsageReader:     func(time.Duration) (float64, bool) { return 0, true },
 		systemStatsCollector: func(context.Context) types.SystemStats {
 			select {
 			case collections <- struct{}{}:

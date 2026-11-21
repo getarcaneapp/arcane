@@ -292,7 +292,6 @@ export interface RestoreProjectBackupRequest {
 
 export interface RestoreProjectBackupAsNewRequest {
 	name: string;
-	files?: boolean;
 	volumes?: string[];
 	start?: boolean;
 }

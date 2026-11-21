@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.yaml.in/yaml/v4"
@@ -314,7 +314,8 @@ func (s *Service) Operations() types.ProjectRenameRecoveryOperations {
 			}
 			return dockerClient, nil
 		},
-		WriteJournal: s.WriteJournal,
+		InvalidateVolumeUsage: s.dockerService.VolumeUsage.Invalidate,
+		WriteJournal:          s.WriteJournal,
 		ClearJournal: func(ctx context.Context, projectID string) error {
 			if strings.TrimSpace(projectID) == "" {
 				return nil
@@ -399,7 +400,7 @@ func validateImageUpdateSource(node *yaml.Node) error {
 	return nil
 }
 
-func PrepareProjectServiceImages(source []byte, effective *composetypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]byte, []string, error) {
+func PrepareProjectServiceImages(source []byte, effective *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]byte, []string, error) {
 	var document yaml.Node
 	decoder := yaml.NewDecoder(bytes.NewReader(source))
 	if err := decoder.Decode(&document); err != nil {
@@ -475,7 +476,7 @@ func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPat
 	)
 }
 
-func (s *Service) ImageChanges(ctx context.Context, effective *composetypes.Project, servicesToUpdate []string, gitOpsManaged bool) (map[string]updatertypes.ServiceImageChange, error) {
+func (s *Service) ImageChanges(ctx context.Context, effective *composeTypes.Project, servicesToUpdate []string, gitOpsManaged bool) (map[string]updatertypes.ServiceImageChange, error) {
 	policy := updater.DefaultLabelPolicy()
 	selected := projects.NormalizeBuildSelections(servicesToUpdate)
 	changes := make(map[string]updatertypes.ServiceImageChange)
@@ -532,7 +533,7 @@ func (s *Service) ImageChanges(ctx context.Context, effective *composetypes.Proj
 	return changes, nil
 }
 
-func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, effective *composetypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
+func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, effective *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
 	if len(effective.ComposeFiles) != 1 {
 		return nil, errors.New("tag updates require one authoritative Compose file; multi-file selections and overrides must be updated manually")
 	}

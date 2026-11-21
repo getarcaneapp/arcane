@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
@@ -46,7 +46,7 @@ func NewComposeCache[T any](capacity int, clone func(T) T) types.ComposeCache[T]
 	}
 }
 
-func CloneComposeProject(project *composetypes.Project) *composetypes.Project {
+func CloneComposeProject(project *composeTypes.Project) *composeTypes.Project {
 	if project == nil {
 		return nil
 	}
@@ -145,14 +145,14 @@ func validComposeCacheEntry(ctx context.Context, stamps map[string]composeCacheS
 }
 
 func LoadCachedComposeProject(ctx context.Context,
-	projectCache types.ComposeCache[*composetypes.Project],
+	projectCache types.ComposeCache[*composeTypes.Project],
 	projectID,
 	projectPath,
 	composePath,
 	projectName,
 	projectsDirectory string,
 	autoInject bool,
-	pathMapper *PathMapper) (*composetypes.Project,
+	pathMapper *PathMapper) (*composeTypes.Project,
 	error,
 ) {
 	fingerprint := fmt.Sprintf("%q|%q|%q|%t|%#v", composePath, projectName, projectsDirectory, autoInject, pathMapper)
@@ -190,7 +190,7 @@ func LoadCachedComposeProject(ctx context.Context,
 
 func ComposeCacheDependencies(
 	ctx context.Context,
-	model *composetypes.Project,
+	model *composeTypes.Project,
 	dependencies types.ComposeDependencies,
 	composePath, projectsDirectory string,
 	autoInject bool,

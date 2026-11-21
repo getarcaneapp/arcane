@@ -201,7 +201,7 @@ func BuildPermissionExport(humaAPI *OperationRecorder, routes []PermissionRoute)
 func exportEndpoint(method, path string, op *huma.Operation) PermissionExportEndpoint {
 	actionParam, _ := op.Metadata[MetaActionParam].(string)
 	actionPerms, _ := op.Metadata[MetaActionPermissions].(map[string]string)
-	perm := requiredPermission(op).OrEmpty()
+	perm, _ := op.Metadata[MetaRequiredPermission].(string)
 	globalAdmin, _ := op.Metadata[MetaRequireGlobalAdmin].(bool)
 	sudo, _ := op.Metadata[MetaRequireSudo].(bool)
 	conditions, _ := op.Metadata[MetaPermissionConditions].(PermissionConditions)

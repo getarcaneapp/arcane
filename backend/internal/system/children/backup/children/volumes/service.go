@@ -249,7 +249,7 @@ func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input t
 		S3Enabled:       update.S3Enabled,
 		S3DestinationID: update.S3DestinationID,
 		SelectionMode:   input.SelectionMode,
-		VolumeNames:     kit.Ternary(input.SelectionMode == types.SystemVolumeSelectionAll || names == nil, []string{}, names),
+		VolumeNames:     kit.Ternary(input.SelectionMode == types.SystemVolumeSelectionAll, nil, names),
 		IgnoreAnonymous: input.IgnoreAnonymous,
 	}, nil
 }
@@ -537,7 +537,6 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 		return backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, backup.ScheduledRemoteRequest{
 			DestinationID: policy.S3DestinationID,
 			Root:          path.Join(backup.VolumeRoot, s.settings.GetSettingsConfig().InstanceID.Value),
-			InstanceID:    s.settings.GetSettingsConfig().InstanceID.Value,
 			Tables:        backup.VolumeRepositoryTables,
 		})
 	}()

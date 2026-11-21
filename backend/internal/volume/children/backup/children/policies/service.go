@@ -126,9 +126,11 @@ func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*ty
 	if err != nil {
 		return nil, err
 	}
-	result := &types.VolumeBackupPolicyCollection{Policies: make([]types.VolumeBackupPolicy, 0, len(policies))}
 	destinations := s.deps.S3Destinations.DestinationsByID(ctx)
-	result.S3Available = len(destinations) > 0
+	result := &types.VolumeBackupPolicyCollection{
+		Policies:    make([]types.VolumeBackupPolicy, 0, len(policies)),
+		S3Available: len(destinations) > 0,
+	}
 	for i := range policies {
 		lastRun, runErr := s.deps.LatestRun(ctx, policies[i].ID)
 		if runErr != nil {
@@ -231,7 +233,6 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 			remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
 				DestinationID: current.S3DestinationID,
 				Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
-				InstanceID:    s.deps.Settings.GetSettingsConfig().InstanceID.Value,
 				Tables:        backup.VolumeRepositoryTables,
 			})
 		}

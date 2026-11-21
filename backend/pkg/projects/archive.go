@@ -58,11 +58,15 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 		mode := os.FileMode(entry.UnixMode)
 		switch {
 		case entry.IsSymlink:
-			linkTarget, inside, err := LinkTargetInside(ctx, root, entry.Path, resolvedRoot)
-			if err != nil {
-				return err
-			}
-			if inside {
+			resolvedPath, resolveErr := filepath.EvalSymlinks(filepath.Join(projectPath, relativePath))
+			if resolveErr == nil && IsSafeSubdirectory(resolvedRoot, resolvedPath) {
+				linkTarget, err := root.Readlink(ctx, entry.Path)
+				if err == nil && filepath.IsAbs(linkTarget) {
+					linkTarget, err = filepath.Rel(filepath.Dir(filepath.Join(resolvedRoot, relativePath)), resolvedPath)
+				}
+				if err != nil {
+					return err
+				}
 				return tarWriter.WriteHeader(&tar.Header{
 					Typeflag: tar.TypeSymlink,
 					Name:     relativePath,
@@ -132,25 +136,6 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	return nil
 }
 
-// LinkTargetInside reports whether the link at logicalPath in root leads into the directory resolvedRoot, and returns
-// the target a copy of that directory keeps for it. A target that leaves root on the way, absolute or through "..",
-// becomes the relative path to the same file, so the copy's link leads to the copy's file, not the original's.
-func LinkTargetInside(ctx context.Context, root acfs.Root, logicalPath, resolvedRoot string) (target string, inside bool, err error) {
-	// A link that doesn't resolve leads to no file to keep.
-	resolvedPath, resolveErr := filepath.EvalSymlinks(filepath.Join(root.Path, logicalPath))
-	if resolveErr != nil || !IsSafeSubdirectory(resolvedRoot, resolvedPath) {
-		return "", false, nil
-	}
-	target, err = root.Readlink(ctx, logicalPath)
-	if err != nil {
-		return "", false, err
-	}
-	if !staysInside(logicalPath, target) {
-		target, err = filepath.Rel(filepath.Dir(filepath.Join(resolvedRoot, logicalPath)), resolvedPath)
-	}
-	return target, err == nil, err
-}
-
 // ReadExternalEnvFile reads the file the project's .env links to, with its permissions, when the link leads outside
 // the project directory, so a copy of the directory alone would keep only the link. external is false for a regular
 // .env, a link inside the directory, or no .env at all.
@@ -173,17 +158,12 @@ func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byt
 	return content, perm, true, nil
 }
 
-// staysInside reports whether target, of the link at logicalPath, names a path in the link's root without leaving it.
-// It is checked without the root's own name, which a target like "../web/x" passes through on its way back in.
-func staysInside(logicalPath, target string) bool {
-	return !filepath.IsAbs(target) && filepath.IsLocal(filepath.Join(strings.TrimPrefix(path.Dir(logicalPath), "/"), target))
-}
-
 // OwnLinks points each link in the copy at projectPath that leads into one of sourceDirs, the directories the copy was
-// taken from, at the copy's own path for the same file. The part of a target inside the directory is kept as written, so
-// the system follows it through the copy as it did through the original, which may be gone. A link in a folder Arcane
-// can't change keeps its target, and report names every such link once.
+// taken from, at the copy's own file. A link Arcane can't change keeps its target, and report names them.
 func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, report func(ctx context.Context, message string)) error {
+	if len(sourceDirs) == 0 {
+		return nil
+	}
 	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
 	if err != nil {
 		return fmt.Errorf("resolve project directory: %w", err)
@@ -201,33 +181,24 @@ func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, repo
 		case entry.Type()&fs.ModeSymlink == 0:
 			return nil
 		}
-		relative, relErr := filepath.Rel(resolvedRoot, hostPath)
-		if relErr != nil {
-			return relErr
+		relative, err := filepath.Rel(resolvedRoot, hostPath)
+		if err != nil {
+			return err
 		}
-		target, linkErr := os.Readlink(hostPath)
-		if errors.Is(linkErr, fs.ErrPermission) {
+		target, err := os.Readlink(hostPath)
+		switch {
+		case err != nil:
+		case filepath.IsAbs(target):
+			err = ownLink(hostPath, resolvedRoot, target, sourceDirs)
+		// A relative target is followed from where the original directory really is, the last of sourceDirs.
+		case !filepath.IsLocal(filepath.Join(filepath.Dir(relative), target)):
+			err = ownLink(hostPath, resolvedRoot, filepath.Join(sourceDirs[len(sourceDirs)-1], filepath.Dir(relative), target), sourceDirs)
+		}
+		if errors.Is(err, fs.ErrPermission) {
 			readOnly = append(readOnly, relative)
 			return nil
 		}
-		if linkErr != nil || staysInside("/"+filepath.ToSlash(relative), target) {
-			return linkErr
-		}
-		inside, found := insideSource(target, filepath.Dir(relative), sourceDirs)
-		if !found {
-			return nil
-		}
-		// WalkDir only enters real directories, so the link and its folders are the copy's own; replacing the link
-		// doesn't follow any target.
-		linkErr = os.Remove(hostPath)
-		if linkErr == nil {
-			linkErr = os.Symlink(strings.Repeat("../", depth(filepath.Dir(relative)))+inside, hostPath)
-		}
-		if errors.Is(linkErr, fs.ErrPermission) {
-			readOnly = append(readOnly, relative)
-			return nil
-		}
-		return linkErr
+		return err
 	})
 	if walkErr != nil {
 		return fmt.Errorf("point the restored links at the project's own files: %w", walkErr)
@@ -238,37 +209,24 @@ func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, repo
 	return nil
 }
 
-// insideSource returns the part of a link's target past the source directory it leads into, as written. An absolute
-// target may name any of sourceDirs; a relative one is followed from the last, where the directory really is. A target
-// spelled some other way is read lexically.
-func insideSource(target, linkDir string, sourceDirs []string) (string, bool) {
-	for index, dir := range sourceDirs {
-		named := target
-		if !filepath.IsAbs(target) {
-			if index != len(sourceDirs)-1 {
-				continue
-			}
-			if rest, ok := strings.CutPrefix(target, strings.Repeat("../", depth(linkDir)+1)+filepath.Base(dir)+"/"); ok && filepath.IsLocal(rest) {
-				return rest, true
-			}
-			named = filepath.Join(dir, linkDir, target)
-		} else if rest, ok := strings.CutPrefix(target, dir+"/"); ok && filepath.IsLocal(rest) {
-			return rest, true
+// ownLink replaces the link at hostPath with one to the copy's own file when named is inside one of sourceDirs.
+// WalkDir only enters real directories, so replacing the link doesn't follow any target.
+func ownLink(hostPath, resolvedRoot, named string, sourceDirs []string) error {
+	for _, dir := range sourceDirs {
+		inside, err := filepath.Rel(dir, named)
+		if err != nil || !filepath.IsLocal(inside) {
+			continue
 		}
-		if IsSafeSubdirectory(dir, named) {
-			rest, err := filepath.Rel(dir, named)
-			return rest, err == nil
+		own, err := filepath.Rel(filepath.Dir(hostPath), filepath.Join(resolvedRoot, inside))
+		if err != nil {
+			return err
 		}
+		if removeErr := os.Remove(hostPath); removeErr != nil {
+			return removeErr
+		}
+		return os.Symlink(own, hostPath)
 	}
-	return "", false
-}
-
-// depth counts the folders in a path relative to the project directory.
-func depth(dir string) int {
-	if dir == "." {
-		return 0
-	}
-	return strings.Count(filepath.ToSlash(dir), "/") + 1
+	return nil
 }
 
 func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {
@@ -480,16 +438,9 @@ func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bo
 	if err != nil {
 		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, err)
 	}
-	var probe struct {
-		Kind          string `json:"kind"`
-		FormatVersion int    `json:"formatVersion"`
-	}
-	if json.Unmarshal(content, &probe) != nil || probe.Kind != types.ProjectManifestKindExport || probe.FormatVersion == 0 {
-		return types.ProjectManifest{}, false, nil
-	}
 	var manifest types.ProjectManifest
-	if decodeErr := json.Unmarshal(content, &manifest); decodeErr != nil {
-		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, decodeErr)
+	if json.Unmarshal(content, &manifest) != nil || manifest.Kind != types.ProjectManifestKindExport || manifest.FormatVersion == 0 {
+		return types.ProjectManifest{}, false, nil
 	}
 	return manifest, true, nil
 }

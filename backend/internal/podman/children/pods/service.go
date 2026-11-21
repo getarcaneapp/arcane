@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,8 +13,6 @@ import (
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/podman"
 	"getarcane.dev/types/v3"
@@ -78,30 +75,6 @@ func (s *Service) ListPaginated(ctx context.Context, params pagination.QueryPara
 	}
 	result := podPagination.SearchOrderAndPaginate(items, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
-}
-
-func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Pod], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.Pod]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.Pod]{}, err
-	}
-
-	pages := make([]pagination.EnvironmentPage[types.Pod], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.Pod]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
-	data, resp := pagination.MergeEnvironmentPages(podPagination, pages, params)
-
-	return types.Paginated[types.Pod]{
-		Success:            true,
-		Data:               data,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
 }
 
 func (s *Service) Inspect(ctx context.Context, nameOrID string) (types.PodInspect, error) {

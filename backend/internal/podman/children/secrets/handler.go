@@ -5,8 +5,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"kit.getarcane.app"
-
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -57,7 +55,7 @@ func NewHandler(service *Service, audit func(ctx context.Context, environmentID,
 func (h *Handler) List(ctx context.Context, input *ListSecretsInput) (*handlerutil.Page[types.PodmanSecret], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.Aggregate(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, secretPagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list Podman secrets: " + err.Error())
 		}
@@ -72,7 +70,7 @@ func (h *Handler) List(ctx context.Context, input *ListSecretsInput) (*handlerut
 	return &handlerutil.Page[types.PodmanSecret]{
 		Body: types.Paginated[types.PodmanSecret]{
 			Success:    true,
-			Data:       kit.Ternary(items != nil, items, []types.PodmanSecret{}),
+			Data:       items,
 			Pagination: handlerutil.PaginationResponse(page),
 		},
 	}, nil

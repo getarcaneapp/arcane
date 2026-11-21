@@ -212,7 +212,8 @@ func (s *Service) target(ctx context.Context, id string) (*target, error) {
 	}
 
 	host, prefix := registry.SplitRegistryURL(reg.URL)
-	registryName, err := name.NewRegistry(host, kit.Ternary(reg.Insecure, []name.Option{name.StrictValidation, name.Insecure}, []name.Option{name.StrictValidation})...)
+	nameOptions := kit.Ternary(reg.Insecure, []name.Option{name.StrictValidation, name.Insecure}, []name.Option{name.StrictValidation})
+	registryName, err := name.NewRegistry(host, nameOptions...)
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, fmt.Errorf("invalid registry URL %q: %w", reg.URL, err))
 	}
@@ -221,7 +222,7 @@ func (s *Service) target(ctx context.Context, id string) (*target, error) {
 		registry:    registryName,
 		prefix:      prefix,
 		cacheKey:    fmt.Sprintf("%s\x00%s\x00%s\x00%t", id, reg.URL, reg.Username, reg.Insecure),
-		nameOptions: kit.Ternary(reg.Insecure, []name.Option{name.StrictValidation, name.Insecure}, []name.Option{name.StrictValidation}),
+		nameOptions: nameOptions,
 		options: append([]remote.Option{
 			remote.WithContext(ctx),
 			remote.WithAuth(kit.Ternary(credential == nil,
@@ -233,15 +234,16 @@ func (s *Service) target(ctx context.Context, id string) (*target, error) {
 }
 
 func (t *target) repository(repository string) (name.Repository, error) {
-	if strings.Trim(strings.TrimSpace(repository), "/") == "" {
+	repoName := strings.Trim(strings.TrimSpace(repository), "/")
+	if repoName == "" {
 		return name.Repository{}, common.Classify(common.ErrValidation, errors.New("repository is required"))
 	}
-	if t.prefix != "" && !strings.HasPrefix(strings.Trim(strings.TrimSpace(repository), "/"), t.prefix+"/") {
-		return name.Repository{}, common.Classify(common.ErrValidation, fmt.Errorf("repository %q is outside the registry namespace %q", strings.Trim(strings.TrimSpace(repository), "/"), t.prefix))
+	if t.prefix != "" && !strings.HasPrefix(repoName, t.prefix+"/") {
+		return name.Repository{}, common.Classify(common.ErrValidation, fmt.Errorf("repository %q is outside the registry namespace %q", repoName, t.prefix))
 	}
-	repo, err := name.NewRepository(t.registry.Name()+"/"+strings.Trim(strings.TrimSpace(repository), "/"), t.nameOptions...)
+	repo, err := name.NewRepository(t.registry.Name()+"/"+repoName, t.nameOptions...)
 	if err != nil {
-		return name.Repository{}, common.Classify(common.ErrValidation, fmt.Errorf("invalid repository %q: %w", strings.Trim(strings.TrimSpace(repository), "/"), err))
+		return name.Repository{}, common.Classify(common.ErrValidation, fmt.Errorf("invalid repository %q: %w", repoName, err))
 	}
 	return repo, nil
 }
@@ -320,9 +322,8 @@ func tagDetails(repo name.Repository, options []remote.Option, tagName string) t
 	descriptor, err := remote.Get(repo.Tag(tagName), options...)
 	if err != nil {
 		return types.ContainerRegistryRepositoryTag{
-			Name:      tagName,
-			Platforms: []types.ContainerRegistryTagPlatform{},
-			Error:     err.Error(),
+			Name:  tagName,
+			Error: err.Error(),
 		}
 	}
 	tag := func(platforms []types.ContainerRegistryTagPlatform, created *time.Time, detailsErr error) types.ContainerRegistryRepositoryTag {
@@ -344,15 +345,15 @@ func tagDetails(repo name.Repository, options []remote.Option, tagName string) t
 	if !descriptor.MediaType.IsIndex() {
 		img, imageErr := descriptor.Image()
 		if imageErr != nil {
-			return tag([]types.ContainerRegistryTagPlatform{}, nil, imageErr)
+			return tag(nil, nil, imageErr)
 		}
 		config, imageErr := img.ConfigFile()
 		if imageErr != nil {
-			return tag([]types.ContainerRegistryTagPlatform{}, nil, imageErr)
+			return tag(nil, nil, imageErr)
 		}
 		platform, imageErr := tagPlatform(img, config.Platform(), descriptor.Digest)
 		if imageErr != nil {
-			return tag([]types.ContainerRegistryTagPlatform{}, nil, imageErr)
+			return tag(nil, nil, imageErr)
 		}
 		return tag(
 			[]types.ContainerRegistryTagPlatform{platform},
@@ -363,15 +364,15 @@ func tagDetails(repo name.Repository, options []remote.Option, tagName string) t
 
 	index, err := descriptor.ImageIndex()
 	if err != nil {
-		return tag([]types.ContainerRegistryTagPlatform{}, nil, err)
+		return tag(nil, nil, err)
 	}
 	manifest, err := index.IndexManifest()
 	if err != nil {
-		return tag([]types.ContainerRegistryTagPlatform{}, nil, err)
+		return tag(nil, nil, err)
 	}
 
 	var mu sync.Mutex
-	platforms := []types.ContainerRegistryTagPlatform{}
+	var platforms []types.ContainerRegistryTagPlatform
 	group := errgroup.Group{}
 	group.SetLimit(tagDetailsConcurrency)
 	for _, child := range manifest.Manifests {

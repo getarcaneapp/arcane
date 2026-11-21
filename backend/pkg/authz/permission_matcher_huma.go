@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/samber/mo"
 )
 
 const (
@@ -34,21 +33,15 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 		return
 	}
 	for path, item := range oapi.Paths {
-		if item == nil {
+		if item == nil || !strings.HasPrefix(path, envPathPrefix+"/") {
 			continue
 		}
-		suffix, ok := envResourceSuffix(path).Get()
-		if !ok {
-			continue
-		}
+		suffix := strings.TrimPrefix(path, envPathPrefix)
 		for method, op := range operationsByMethod(item) {
 			if op == nil {
 				continue
 			}
 			if aggregate, _ := op.Metadata[MetaEnvironmentAggregate].(bool); aggregate && method == http.MethodGet {
-				if m.aggregates == nil {
-					m.aggregates = map[string]struct{}{}
-				}
 				m.aggregates[method+" "+suffix] = struct{}{}
 			}
 			param, hasParam := op.Metadata[MetaActionParam].(string)
@@ -57,33 +50,15 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 				m.AddActions(method, suffix, param, perms)
 				continue
 			}
-			if perm, localOk := requiredPermission(op).Get(); localOk {
+			if perm, localOk := op.Metadata[MetaRequiredPermission].(string); localOk && perm != "" {
 				m.Add(method, suffix, perm)
 				continue
 			}
 			if op.Security != nil && len(op.Security) == 0 {
-				m.AddPublic(method, suffix)
+				m.Add(method, suffix, "")
 			}
 		}
 	}
-}
-
-func envResourceSuffix(path string) mo.Option[string] {
-	if !strings.HasPrefix(path, envPathPrefix+"/") {
-		return mo.None[string]()
-	}
-	return mo.Some(strings.TrimPrefix(path, envPathPrefix))
-}
-
-func requiredPermission(op *huma.Operation) mo.Option[string] {
-	if op.Metadata == nil {
-		return mo.None[string]()
-	}
-	perm, ok := op.Metadata[MetaRequiredPermission].(string)
-	if !ok || perm == "" {
-		return mo.None[string]()
-	}
-	return mo.Some(perm)
 }
 
 func operationsByMethod(item *huma.PathItem) map[string]*huma.Operation {

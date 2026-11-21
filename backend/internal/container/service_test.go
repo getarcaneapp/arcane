@@ -1167,7 +1167,7 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 				},
 			},
 		},
-		{name: "empty", status: http.StatusOK, body: `{}`, wantTitles: []string{}, wantRows: [][]string{}},
+		{name: "empty", status: http.StatusOK, body: `{}`},
 		{name: "not found", status: http.StatusNotFound, body: `{"message":"No such container: container-1"}`, wantErr: errdefs.IsNotFound},
 		{name: "not running", status: http.StatusConflict, body: `{"message":"container container-1 is not running"}`, wantErr: errdefs.IsConflict},
 		{

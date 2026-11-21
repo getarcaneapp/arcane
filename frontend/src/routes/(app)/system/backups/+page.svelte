@@ -449,7 +449,7 @@
 				projectService.restoreBackupAsNew(
 					restoreAsNewTarget.resourceId ?? '',
 					restoreAsNewTarget.id,
-					{ name: restoreAsNewName.trim(), files: true, start: restoreAsNewStart && canStartRestoredAsNew },
+					{ name: restoreAsNewName.trim(), start: restoreAsNewStart && canStartRestoredAsNew },
 					environmentId
 				)
 			),

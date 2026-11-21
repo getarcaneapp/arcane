@@ -14,7 +14,7 @@ import (
 	"unicode"
 
 	"github.com/compose-spec/compose-go/v2/loader"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
@@ -157,7 +157,7 @@ func parseArcaneComposeMetadataFromFile(ctx context.Context, composeFilePath str
 	return meta, nil
 }
 
-func extractArcaneComposeMetadata(ctx context.Context, project *composetypes.Project) ArcaneComposeMetadata {
+func extractArcaneComposeMetadata(ctx context.Context, project *composeTypes.Project) ArcaneComposeMetadata {
 	meta := emptyArcaneComposeMetadata()
 	if project == nil {
 		return meta
@@ -338,7 +338,7 @@ func emptyArcaneComposeMetadata() ArcaneComposeMetadata {
 	}
 }
 
-func loadComposeProjectForMetadataFromFile(ctx context.Context, composeFilePath string, envMap map[string]string) (*composetypes.Project, error) {
+func loadComposeProjectForMetadataFromFile(ctx context.Context, composeFilePath string, envMap map[string]string) (*composeTypes.Project, error) {
 	return LoadComposeProject(ctx, LoadOptions{
 		ComposeFile: composeFilePath,
 		EnvOverride: envMap,
@@ -425,8 +425,8 @@ func FindArcaneIconSet(labels any) IconSet {
 	}
 
 	for _, s := range kit.Collect(labels, kit.ToString) {
-		if key, value, ok := parseLabelPair(s); ok {
-			assignArcaneIconValue(&iconSet, key, value)
+		if key, value, ok := strings.Cut(s, "="); ok {
+			assignArcaneIconValue(&iconSet, strings.TrimSpace(key), strings.TrimSpace(value))
 		}
 	}
 
@@ -460,14 +460,6 @@ func normalizeArcaneIconLabel(key string) string {
 	default:
 		return ""
 	}
-}
-
-func parseLabelPair(raw string) (string, string, bool) {
-	parts := strings.SplitN(raw, "=", 2)
-	if len(parts) != 2 {
-		return "", "", false
-	}
-	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
 }
 
 func NormalizeProjectTag(name string) (string, error) {
@@ -520,7 +512,7 @@ func NormalizeProjectTagColor(color types.ProjectTagColor) (types.ProjectTagColo
 	return normalized, nil
 }
 
-func applyServiceLabelMetadata(project *composetypes.Project) error {
+func applyServiceLabelMetadata(project *composeTypes.Project) error {
 	blockLabels := func(block any) (map[string]string, error) {
 		labels, err := updaterMetadataLabels(block)
 		if err != nil {
@@ -559,7 +551,7 @@ func applyServiceLabelMetadata(project *composetypes.Project) error {
 		if len(defaults)+len(overrides) == 0 {
 			continue
 		}
-		labels := composetypes.Labels{}
+		labels := composeTypes.Labels{}
 		maps.Copy(labels, defaults)
 		maps.Copy(labels, overrides)
 		maps.Copy(labels, service.Labels)

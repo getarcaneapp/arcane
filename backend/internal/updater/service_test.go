@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -1835,7 +1835,7 @@ func TestUpdaterProjectChecksWithoutContainers(t *testing.T) {
 				target:     "3.20.0",
 			},
 		} {
-			localConfig := composetypes.ServiceConfig{
+			localConfig := composeTypes.ServiceConfig{
 				Name:   tt.name,
 				Image:  "alpine:3.20.0",
 				Labels: map[string]string{labels.LabelUpdateConstraint: tt.constraint},

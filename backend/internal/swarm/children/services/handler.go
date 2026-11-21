@@ -82,7 +82,7 @@ func NewHandler(
 func (h *Handler) ListServices(ctx context.Context, input *ListSwarmServicesInput) (*handlerutil.Page[types.SwarmServiceSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.Aggregate(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, servicePagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list swarm services: " + err.Error())
 		}
