@@ -36,9 +36,15 @@ type (
 )
 
 func securedApnsOperation(operationID, method, path, summary, description string) huma.Operation {
-	op := handlerutil.Operation(operationID, method, path, summary, description, "Mobile Push")
-	op.Security = handlerutil.DefaultOperationSecurity()
-	return op
+	return huma.Operation{
+		OperationID: operationID,
+		Method:      method,
+		Path:        path,
+		Summary:     summary,
+		Description: description,
+		Tags:        []string{"Mobile Push"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}
 }
 
 func apnsHTTPError(err error) error {

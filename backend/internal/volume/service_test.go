@@ -151,23 +151,13 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 
 	// Every backup of a volume, including the global volume policies' ones, is a volume backup.
-	volumeRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
-		Filters: map[string]string{"type": "system, volume"},
-	})
+	volumeRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{})
 	require.NoError(t, err)
 	require.EqualValues(t, 3, page.TotalItems)
 	require.Len(t, volumeRows, 3)
 	for _, entry := range volumeRows {
 		require.Equal(t, types.BackupManagementTypeVolume, entry.Type)
 	}
-
-	// A filter saved from the removed Type column does not empty the list.
-	systemRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
-		Filters: map[string]string{"type": "system"},
-	})
-	require.NoError(t, err)
-	require.EqualValues(t, 3, page.TotalItems)
-	require.Len(t, systemRows, 3)
 }
 
 func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {

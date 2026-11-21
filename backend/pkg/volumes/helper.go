@@ -66,19 +66,25 @@ func IsHelperContainer(c container.Summary) bool {
 }
 
 func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *container.HostConfig {
-	hostConfig := &container.HostConfig{
-		Binds:      binds,
-		Mounts:     mounts,
-		AutoRemove: true,
-	}
+	return helperHostConfig(helperImage, binds, mounts, true)
+}
 
-	if runtime.GOOS == "linux" && isArcaneFallbackImage(helperImage) {
-		hostConfig.Tmpfs = map[string]string{
-			"/app/data": "rw,noexec,nosuid,nodev",
+func helperHostConfig(helperImage string, binds []string, mounts []mount.Mount, autoRemove bool) *container.HostConfig {
+	var tmpfs map[string]string
+	if runtime.GOOS == "linux" {
+		if named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage)); err != nil || ref.Path(named) != toolsRepoPath {
+			tmpfs = map[string]string{
+				"/app/data": "rw,noexec,nosuid,nodev",
+			}
 		}
 	}
 
-	return hostConfig
+	return &container.HostConfig{
+		Binds:      binds,
+		Mounts:     mounts,
+		AutoRemove: autoRemove,
+		Tmpfs:      tmpfs,
+	}
 }
 
 func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsImage string) (string, error) {
@@ -120,9 +126,10 @@ func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client)
 	}
 
 	for _, label := range []string{"com.getarcaneapp.arcane=true", "com.getarcaneapp.arcane.agent=true"} {
-		filter := make(client.Filters)
-		filter = filter.Add("label", label)
-		containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{Filters: filter, All: true})
+		containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+			Filters: client.Filters{}.Add("label", label),
+			All:     true,
+		})
 		if err != nil || len(containers.Items) == 0 {
 			continue
 		}
@@ -167,9 +174,4 @@ func buildRuntimeImage(image string, entrypoint, command []string, source string
 		Command:    append([]string(nil), command...),
 		Source:     source,
 	}
-}
-
-func isArcaneFallbackImage(helperImage string) bool {
-	named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage))
-	return err != nil || ref.Path(named) != toolsRepoPath
 }

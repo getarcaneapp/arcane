@@ -164,10 +164,7 @@ type (
 	ScheduledRemoteRequest struct {
 		DestinationID string
 		Root          string
-		// InstanceID owns the repository at Root. Snapshots of other instances, discovered from the same destination,
-		// are in their own repositories, so they don't make a missing one look lost.
-		InstanceID string
-		Tables     []string
+		Tables        []string
 	}
 
 	// VolumeRepository is the volumes data repository that volume and project backups share.
@@ -1047,13 +1044,10 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 	if result.Reason == s3util.RepositoryReasonMissingRepository {
 		var retained int64
 		for _, table := range req.Tables {
-			query := db.WithContext(ctx).Table(table).Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID)
-			// Only tables that record discovered snapshots of other instances have the column.
-			if req.InstanceID != "" && db.WithContext(ctx).Migrator().HasColumn(table, "remote_instance_id") {
-				query = query.Where("COALESCE(remote_instance_id, '') IN ('', ?)", req.InstanceID)
-			}
 			var count int64
-			if countRetainedSnapshotsErr := query.Count(&count).Error; countRetainedSnapshotsErr != nil {
+			if countRetainedSnapshotsErr := db.WithContext(ctx).Table(table).
+				Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID).
+				Count(&count).Error; countRetainedSnapshotsErr != nil {
 				return countRetainedSnapshotsErr
 			}
 			retained += count
@@ -1127,6 +1121,18 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 		return query.Order("RANDOM()").Limit(DeletionBatchSize).Pluck("id", &expired).Error
 	})
 	return expired, err
+}
+
+// Destination names where a backup's snapshots are kept.
+func Destination(local, remote bool) types.VolumeBackupDestination {
+	switch {
+	case local && remote:
+		return types.VolumeBackupDestinationLocalS3
+	case remote:
+		return types.VolumeBackupDestinationS3
+	default:
+		return types.VolumeBackupDestinationLocal
+	}
 }
 
 func NewVolumeRepository(deps VolumeRepositoryDependencies) *VolumeRepository {

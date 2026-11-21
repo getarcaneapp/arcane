@@ -178,10 +178,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 			continue
 		}
 
-		containerLabels := map[string]string{}
-		if inspect.Config != nil && inspect.Config.Labels != nil {
-			containerLabels = inspect.Config.Labels
-		}
+		containerLabels := kit.FromPtr(inspect.Config).Labels
 
 		if labels.IsArcaneContainer(containerLabels) {
 			slog.InfoContext(ctx, "Found Arcane container by label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
@@ -203,9 +200,6 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 }
 
 func isLegacyServerLabel(containerLabels map[string]string) bool {
-	if containerLabels == nil {
-		return false
-	}
 	for k, v := range containerLabels {
 		if strings.EqualFold(k, labels.LabelArcaneLegacyServer) {
 			return strings.EqualFold(strings.TrimSpace(v), "true")
@@ -354,8 +348,7 @@ func shouldSkipContainer(ctx context.Context, c container.Summary, selfID string
 }
 
 func determineImageName(ctx context.Context, dockerClient *client.Client, cont container.InspectResponse) string {
-	imageName := extractImageNameFromConfig(cont)
-	imageName = stripDigest(imageName)
+	imageName, _, _ := strings.Cut(strings.TrimSpace(kit.FromPtr(cont.Config).Image), "@")
 
 	if !hasExplicitTag(imageName) {
 		if inferredName := inferImageNameFromDocker(ctx, dockerClient, cont.Image); inferredName != "" {
@@ -367,20 +360,6 @@ func determineImageName(ctx context.Context, dockerClient *client.Client, cont c
 		imageName = kit.Ternary(imageName == "", "ghcr.io/getarcaneapp/manager:latest", imageName+":latest")
 	}
 
-	return imageName
-}
-
-func extractImageNameFromConfig(cont container.InspectResponse) string {
-	if cont.Config == nil {
-		return ""
-	}
-	return strings.TrimSpace(cont.Config.Image)
-}
-
-func stripDigest(imageName string) string {
-	if before, _, ok := strings.Cut(imageName, "@"); ok {
-		return before
-	}
 	return imageName
 }
 
@@ -407,7 +386,7 @@ func inferImageNameFromDocker(ctx context.Context, dockerClient *client.Client, 
 			continue
 		}
 
-		t = stripDigest(t)
+		t, _, _ = strings.Cut(t, "@")
 
 		if strings.Contains(t, "arcane") {
 			arcaneAny = cmp.Or(arcaneAny, t)
@@ -417,7 +396,7 @@ func inferImageNameFromDocker(ctx context.Context, dockerClient *client.Client, 
 		}
 	}
 
-	return kit.Ternary(arcaneNonLatest != "", arcaneNonLatest, arcaneAny)
+	return cmp.Or(arcaneNonLatest, arcaneAny)
 }
 
 func pulledImageAlreadyRunning(ctx context.Context, dockerClient *client.Client, imageRef, runningImageID string) (bool, string) {

@@ -2,6 +2,7 @@ package pagination
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -97,25 +98,12 @@ func filterFn[T any](items []T, filters map[string]string, accessors []FilterAcc
 
 func itemMatches[T any](item T, filters map[string]string, accessors []FilterAccessor[T]) bool {
 	for key, value := range filters {
-		accessor := getAccessor(key, accessors)
-		if accessor == nil {
-			return false
-		}
-
-		if !matchValue(item, value, accessor) {
+		idx := slices.IndexFunc(accessors, func(a FilterAccessor[T]) bool { return a.Key == key })
+		if idx < 0 || !matchValue(item, value, &accessors[idx]) {
 			return false
 		}
 	}
 	return true
-}
-
-func getAccessor[T any](key string, accessors []FilterAccessor[T]) *FilterAccessor[T] {
-	for i := range accessors {
-		if accessors[i].Key == key {
-			return &accessors[i]
-		}
-	}
-	return nil
 }
 
 func matchValue[T any](item T, value string, accessor *FilterAccessor[T]) bool {

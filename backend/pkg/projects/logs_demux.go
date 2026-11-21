@@ -55,8 +55,11 @@ func wrapDockerCLIWithLogsDemux(cli command.Cli) command.Cli {
 		return nil
 	}
 	return &logsDemuxCompatibleDockerCli{
-		Cli:       cli,
-		apiClient: &logsDemuxDockerClient{APIClient: compat.WrapDockerAPIClientForInspectCompatibility(cli.Client())},
+		Cli: cli,
+		apiClient: &logsDemuxDockerClient{
+			APIClient:    compat.WrapDockerAPIClientForInspectCompatibility(cli.Client()),
+			containerTty: make(map[string]bool, 8),
+		},
 	}
 }
 
@@ -86,9 +89,6 @@ func (c *logsDemuxDockerClient) recordContainerTTY(containerID string, tty bool)
 	key := strings.ToLower(strings.TrimSpace(containerID))
 	c.ttyMu.Lock()
 	defer c.ttyMu.Unlock()
-	if c.containerTty == nil {
-		c.containerTty = make(map[string]bool, 8)
-	}
 	c.containerTty[key] = tty
 }
 

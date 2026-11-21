@@ -130,7 +130,7 @@ func NewHandler(p HandlerParams) *Handler {
 func (h *Handler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*handlerutil.Page[types.SwarmNode], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.Aggregate(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, h.service.buildNodePaginationConfig(), params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list swarm nodes: " + err.Error())
 		}
@@ -340,7 +340,9 @@ func (h *Handler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksIn
 
 func (h *Handler) GetJoinCandidates(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.SwarmJoinCandidate], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.AggregateJoinCandidates(ctx)
+		body, err := httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[[]types.SwarmJoinCandidate]) []types.SwarmJoinCandidate {
+			return nil
+		})
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list Easy Join candidates: " + err.Error())
 		}

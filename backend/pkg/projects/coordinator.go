@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 
 	"kit.getarcane.app"
@@ -39,7 +39,7 @@ func NewCoordinator(commands types.ComposeCommands) types.ComposeCoordinator {
 	return &composeCoordinator{commands: commands}
 }
 
-func (c *composeCoordinator) Deploy(ctx context.Context, request types.ComposeDeployment) (_ *composetypes.Project, err error) {
+func (c *composeCoordinator) Deploy(ctx context.Context, request types.ComposeDeployment) (_ *composeTypes.Project, err error) {
 	defer func() {
 		if err != nil && request.Recover != nil {
 			request.Recover(context.WithoutCancel(ctx))
@@ -112,9 +112,9 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 		return fmt.Errorf("pull updated service images: %w", pullServicesErr)
 	}
 	pulled := NormalizeBuildSelections(request.Services)
-	selected, err = selected.WithServicesTransform(func(name string, svc composetypes.ServiceConfig) (composetypes.ServiceConfig, error) {
+	selected, err = selected.WithServicesTransform(func(name string, svc composeTypes.ServiceConfig) (composeTypes.ServiceConfig, error) {
 		if ServiceSelected(pulled, name) && svc.Build == nil {
-			svc.PullPolicy = composetypes.PullPolicyMissing
+			svc.PullPolicy = composeTypes.PullPolicyMissing
 		}
 		return svc, nil
 	})
@@ -161,7 +161,7 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 	return nil
 }
 
-func SelectServices(model *composetypes.Project, services []string, options ...composetypes.DependencyOption) (*composetypes.Project, error) {
+func SelectServices(model *composeTypes.Project, services []string, options ...composeTypes.DependencyOption) (*composeTypes.Project, error) {
 	if model == nil {
 		return nil, errors.New("compose project is nil")
 	}
@@ -176,7 +176,7 @@ func SelectServices(model *composetypes.Project, services []string, options ...c
 	return selected.WithoutUnnecessaryResources(), nil
 }
 
-func NamespaceDependents(model *composetypes.Project, services []string) []string {
+func NamespaceDependents(model *composeTypes.Project, services []string) []string {
 	if model == nil {
 		return nil
 	}
@@ -186,16 +186,16 @@ func NamespaceDependents(model *composetypes.Project, services []string) []strin
 	}
 	added := map[string]struct{}{}
 	all := model.AllServices()
-	joins := func(svc composetypes.ServiceConfig) bool {
+	joins := func(svc composeTypes.ServiceConfig) bool {
 		for _, mode := range []string{svc.NetworkMode, svc.Ipc, svc.Pid} {
-			if name, ok := strings.CutPrefix(mode, composetypes.ServicePrefix); ok {
+			if name, ok := strings.CutPrefix(mode, composeTypes.ServicePrefix); ok {
 				if _, member := members[name]; member {
 					return true
 				}
 			}
 		}
 		for _, vol := range svc.VolumesFrom {
-			if strings.HasPrefix(vol, composetypes.ContainerPrefix) {
+			if strings.HasPrefix(vol, composeTypes.ContainerPrefix) {
 				continue
 			}
 			name, _, _ := strings.Cut(vol, ":")
@@ -222,7 +222,7 @@ func NamespaceDependents(model *composetypes.Project, services []string) []strin
 	return slices.Sorted(maps.Keys(added))
 }
 
-func (c *composeCoordinator) PullServices(ctx context.Context, model *composetypes.Project, services []string, operations types.ComposeImageOperations, progress io.Writer) error {
+func (c *composeCoordinator) PullServices(ctx context.Context, model *composeTypes.Project, services []string, operations types.ComposeImageOperations, progress io.Writer) error {
 	for _, imageRef := range SelectedImageRefs(model, services) {
 		if err := operations.Pull(ctx, imageRef, progress); err != nil {
 			return err
@@ -240,7 +240,7 @@ func (c *composeCoordinator) imageRefreshDue(ctx context.Context, imageRef strin
 	return lastTagged.IsZero() || time.Now().After(lastTagged.Add(window))
 }
 
-func (c *composeCoordinator) EnsureImagesPresent(ctx context.Context, model *composetypes.Project, progressWriter io.Writer, operations types.ComposeImageOperations) error {
+func (c *composeCoordinator) EnsureImagesPresent(ctx context.Context, model *composeTypes.Project, progressWriter io.Writer, operations types.ComposeImageOperations) error {
 	for img, step := range BuildImagePullPlan(model) {
 		exists, ierr := operations.Exists(ctx, img)
 		if ierr != nil && step.Mode != ImagePullModeAlways {
@@ -279,7 +279,7 @@ func (c *composeCoordinator) EnsureImagesPresent(ctx context.Context, model *com
 func (c *composeCoordinator) PrepareImagesForDeploy(
 	ctx context.Context,
 	projectID string,
-	project *composetypes.Project,
+	project *composeTypes.Project,
 	progressWriter io.Writer,
 	operations types.ComposeImageOperations,
 	pullPolicyOverride string,
@@ -327,7 +327,7 @@ func (c *composeCoordinator) PrepareImagesForDeploy(
 		}
 		dependentImages := api.GetDependentImages(localSvc, project.Name)
 		for _, vol := range localSvc.Volumes {
-			if vol.Type == composetypes.VolumeTypeImage && strings.TrimSpace(vol.Source) != "" {
+			if vol.Type == composeTypes.VolumeTypeImage && strings.TrimSpace(vol.Source) != "" {
 				dependentImages = append(dependentImages, strings.TrimSpace(vol.Source))
 			}
 		}
@@ -342,14 +342,14 @@ func (c *composeCoordinator) PrepareImagesForDeploy(
 		if job.Build != nil {
 			continue
 		}
-		jobSvc := composetypes.ServiceConfig{
+		jobSvc := composeTypes.ServiceConfig{
 			Name:          name,
 			ContainerSpec: job.ContainerSpec,
 			WorkloadSpec:  job.WorkloadSpec,
 		}
 		jobImages := []string{job.Image}
 		for _, vol := range job.Volumes {
-			if vol.Type == composetypes.VolumeTypeImage {
+			if vol.Type == composeTypes.VolumeTypeImage {
 				jobImages = append(jobImages, vol.Source)
 			}
 		}
@@ -366,9 +366,9 @@ func (c *composeCoordinator) PrepareImagesForDeploy(
 func (c *composeCoordinator) ensureDeployServiceImageReady(
 	ctx context.Context,
 	projectID string,
-	project *composetypes.Project,
+	project *composeTypes.Project,
 	serviceName string,
-	svc composetypes.ServiceConfig,
+	svc composeTypes.ServiceConfig,
 	imageName string,
 	decision DeployImageDecision,
 	progressWriter io.Writer,
@@ -417,9 +417,9 @@ func (c *composeCoordinator) ensureDeployServiceImageReady(
 func (c *composeCoordinator) buildServiceImageForDeploy(
 	ctx context.Context,
 	projectID string,
-	project *composetypes.Project,
+	project *composeTypes.Project,
 	serviceName string,
-	svc composetypes.ServiceConfig,
+	svc composeTypes.ServiceConfig,
 	progressWriter io.Writer,
 	operations types.ComposeImageOperations,
 ) error {
@@ -447,7 +447,7 @@ func (c *composeCoordinator) buildServiceImageForDeploy(
 
 func (c *composeCoordinator) BuildServices(ctx context.Context,
 	projectID string,
-	project *composetypes.Project,
+	project *composeTypes.Project,
 	options types.ProjectBuildOptions,
 	progressWriter io.Writer,
 	operations types.ComposeImageOperations,
@@ -511,7 +511,7 @@ func ServiceSelected(selected map[string]struct{}, name string) bool {
 	return ok
 }
 
-func EnsureServiceImage(projectID, projectName, serviceName string, svc composetypes.ServiceConfig) (string, composetypes.ServiceConfig, bool) {
+func EnsureServiceImage(projectID, projectName, serviceName string, svc composeTypes.ServiceConfig) (string, composeTypes.ServiceConfig, bool) {
 	imageName := strings.TrimSpace(svc.Image)
 	if imageName == "" {
 		imageName = BuildLocalImageTag(projectID, projectName, serviceName)
@@ -521,7 +521,7 @@ func EnsureServiceImage(projectID, projectName, serviceName string, svc composet
 	return imageName, svc, false
 }
 
-func PrepareDeployServiceConfig(projectID, projectName, serviceName string, svc composetypes.ServiceConfig) (composetypes.ServiceConfig, string, bool) {
+func PrepareDeployServiceConfig(projectID, projectName, serviceName string, svc composeTypes.ServiceConfig) (composeTypes.ServiceConfig, string, bool) {
 	if svc.Build == nil {
 		return svc, strings.TrimSpace(svc.Image), false
 	}
@@ -543,7 +543,7 @@ func ShouldPullDeployImage(decision DeployImageDecision, exists bool, lastTagged
 	return false
 }
 
-func SelectedImageRefs(compProj *composetypes.Project, servicesToUpdate []string) []string {
+func SelectedImageRefs(compProj *composeTypes.Project, servicesToUpdate []string) []string {
 	if compProj == nil {
 		return nil
 	}

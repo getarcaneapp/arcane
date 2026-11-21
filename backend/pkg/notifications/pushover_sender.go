@@ -23,13 +23,7 @@ func BuildPushoverURL(config PushoverConfig) (string, error) {
 		return "", errors.New("pushover priority must be between -2 and 2")
 	}
 
-	u := &url.URL{
-		Scheme: "pushover",
-		Host:   user,
-		User:   url.UserPassword("", token),
-	}
-
-	q := u.Query()
+	q := url.Values{}
 	devices := make([]string, 0, len(config.Devices))
 	for _, device := range config.Devices {
 		trimmed := strings.TrimSpace(device)
@@ -47,8 +41,12 @@ func BuildPushoverURL(config PushoverConfig) (string, error) {
 		q.Set("title", title)
 	}
 
-	u.RawQuery = q.Encode()
-	return u.String(), nil
+	return (&url.URL{
+		Scheme:   "pushover",
+		Host:     user,
+		User:     url.UserPassword("", token),
+		RawQuery: q.Encode(),
+	}).String(), nil
 }
 
 func SendPushover(ctx context.Context, config PushoverConfig, message string) error {

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/consts"
-	"github.com/compose-spec/compose-go/v2/dotenv"
 
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
@@ -38,7 +37,7 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 	// handling so the validation env matches the runtime env exactly.
 	if !parseComposeBool(fullEnvMap, consts.ComposeDisableDefaultEnvFile) {
 		if effectiveEnvContent != nil {
-			projectEnv, parseValidationEnvContentErr := ParseValidationEnvContent(*effectiveEnvContent, fullEnvMap)
+			projectEnv, parseValidationEnvContentErr := ParseProjectEnvContent(*effectiveEnvContent, fullEnvMap)
 			if parseValidationEnvContentErr != nil {
 				return nil, fmt.Errorf("parse provided env content: %w", parseValidationEnvContentErr)
 			}
@@ -74,26 +73,12 @@ func ParseValidationEnvFile(ctx context.Context, path string, contextEnv EnvMap)
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	return ParseValidationEnvContent(string(content), contextEnv)
-}
-
-func ParseValidationEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
-	lookupFn := func(key string) (string, bool) {
-		value, ok := contextEnv[key]
-		return value, ok
-	}
-
-	envMap, err := dotenv.ParseWithLookup(strings.NewReader(content), lookupFn)
-	if err != nil {
-		return nil, fmt.Errorf("parse env: %w", err)
-	}
-
-	return envMap, nil
+	return ParseProjectEnvContent(string(content), contextEnv)
 }
 
 func ParseEnvContent(content string) []types.EnvVariable {
 	if content == "" {
-		return []types.EnvVariable{}
+		return nil
 	}
 
 	var vars []types.EnvVariable
@@ -106,24 +91,19 @@ func ParseEnvContent(content string) []types.EnvVariable {
 			continue
 		}
 
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
+		rawKey, rawValue, ok := strings.Cut(line, "=")
+		if !ok {
 			continue
 		}
 
-		key := strings.TrimSpace(parts[0])
-		value := ""
-		if len(parts) == 2 {
-			value = strings.TrimSpace(parts[1])
-		}
+		key := strings.TrimSpace(rawKey)
+		value := strings.TrimSpace(rawValue)
 
 		if len(value) >= 2 {
 			if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
-				value = value[1 : len(value)-1]
-				value = strings.ReplaceAll(value, `\"`, `"`)
+				value = strings.ReplaceAll(value[1:len(value)-1], `\"`, `"`)
 			} else if strings.HasPrefix(value, `'`) && strings.HasSuffix(value, `'`) {
-				value = value[1 : len(value)-1]
-				value = strings.ReplaceAll(value, `\'`, `'`)
+				value = strings.ReplaceAll(value[1:len(value)-1], `\'`, `'`)
 			}
 		}
 

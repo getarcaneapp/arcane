@@ -10,12 +10,11 @@ import (
 	"math"
 	"net/netip"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	composegotypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	dockeropts "github.com/docker/cli/opts"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -26,13 +25,13 @@ import (
 )
 
 func buildServiceSpec(
-	service composegotypes.ServiceConfig,
+	service composeTypes.ServiceConfig,
 	ns namespace,
 	stackLabels map[string]string,
 	networkNameByKey map[string]string,
 	configMetaByKey map[string]resourceMeta,
 	secretMetaByKey map[string]resourceMeta,
-	projectVolumes composegotypes.Volumes,
+	projectVolumes composeTypes.Volumes,
 ) (swarm.ServiceSpec, error) {
 	serviceName := ns.Scope(service.Name)
 	serviceLabels := mergeLabels(nil, stackLabels)
@@ -58,8 +57,8 @@ func buildServiceSpec(
 	}
 	if runtimeConfigRef != nil {
 		configRefs = append(configRefs, runtimeConfigRef)
-		sort.Slice(configRefs, func(i, j int) bool {
-			return configRefs[i].ConfigName < configRefs[j].ConfigName
+		slices.SortFunc(configRefs, func(a, b *swarm.ConfigReference) int {
+			return strings.Compare(a.ConfigName, b.ConfigName)
 		})
 	}
 	healthcheck, err := convertHealthcheck(service.HealthCheck)
@@ -71,6 +70,22 @@ func buildServiceSpec(
 		return swarm.ServiceSpec{}, err
 	}
 	capabilityAdd, capabilityDrop := dockeropts.EffectiveCapAddCapDrop(service.CapAdd, service.CapDrop)
+
+	var logDriver *swarm.Driver
+	if service.Logging != nil {
+		logDriver = &swarm.Driver{
+			Name:    service.Logging.Driver,
+			Options: service.Logging.Options,
+		}
+	}
+	var dnsConfig *swarm.DNSConfig
+	if len(service.DNS) > 0 || len(service.DNSSearch) > 0 || len(service.DNSOpts) > 0 {
+		dnsConfig = &swarm.DNSConfig{
+			Nameservers: parseIPList(service.DNS),
+			Search:      service.DNSSearch,
+			Options:     service.DNSOpts,
+		}
+	}
 
 	spec := swarm.ServiceSpec{
 		Name:   serviceName,
@@ -96,6 +111,7 @@ func buildServiceSpec(
 				Secrets:         secretRefs,
 				Configs:         configRefs,
 				Hosts:           convertExtraHosts(service.ExtraHosts),
+				DNSConfig:       dnsConfig,
 				Healthcheck:     healthcheck,
 				Privileges:      privileges,
 				Isolation:       container.Isolation(service.Isolation),
@@ -105,24 +121,10 @@ func buildServiceSpec(
 				Ulimits:         convertUlimits(service.Ulimits),
 				OomScoreAdj:     service.OomScoreAdj,
 			},
-			Networks: networks,
-			Runtime:  swarm.RuntimeType(service.Runtime),
+			LogDriver: logDriver,
+			Networks:  networks,
+			Runtime:   swarm.RuntimeType(service.Runtime),
 		},
-	}
-
-	if service.Logging != nil {
-		spec.TaskTemplate.LogDriver = &swarm.Driver{
-			Name:    service.Logging.Driver,
-			Options: service.Logging.Options,
-		}
-	}
-
-	if len(service.DNS) > 0 || len(service.DNSSearch) > 0 || len(service.DNSOpts) > 0 {
-		spec.TaskTemplate.ContainerSpec.DNSConfig = &swarm.DNSConfig{
-			Nameservers: parseIPList(service.DNS),
-			Search:      service.DNSSearch,
-			Options:     service.DNSOpts,
-		}
 	}
 
 	if applyDeployConfigErr := applyDeployConfig(&spec, service.Deploy, service.Scale, service.Restart); applyDeployConfigErr != nil {
@@ -135,7 +137,7 @@ func buildServiceSpec(
 	return spec, nil
 }
 
-func convertExtraHosts(extraHosts composegotypes.HostsList) []string {
+func convertExtraHosts(extraHosts composeTypes.HostsList) []string {
 	hosts := make([]string, 0, len(extraHosts))
 	for hostName, addresses := range extraHosts {
 		for _, address := range addresses {
@@ -146,7 +148,7 @@ func convertExtraHosts(extraHosts composegotypes.HostsList) []string {
 	return hosts
 }
 
-func convertHealthcheck(healthcheck *composegotypes.HealthCheckConfig) (*container.HealthConfig, error) {
+func convertHealthcheck(healthcheck *composeTypes.HealthCheckConfig) (*container.HealthConfig, error) {
 	if healthcheck == nil {
 		return nil, nil
 	}
@@ -185,7 +187,7 @@ func convertHealthcheck(healthcheck *composegotypes.HealthCheckConfig) (*contain
 }
 
 func convertPrivileges(
-	credentialSpec *composegotypes.CredentialSpecConfig,
+	credentialSpec *composeTypes.CredentialSpecConfig,
 	securityOptions []string,
 	configMetaByKey map[string]resourceMeta,
 ) (*swarm.Privileges, *swarm.ConfigReference, error) {
@@ -210,7 +212,7 @@ func convertPrivileges(
 }
 
 func convertCredentialSpec(
-	credentialSpec *composegotypes.CredentialSpecConfig,
+	credentialSpec *composeTypes.CredentialSpecConfig,
 	configMetaByKey map[string]resourceMeta,
 ) (*swarm.CredentialSpec, *swarm.ConfigReference, error) {
 	if credentialSpec == nil {
@@ -332,7 +334,7 @@ func applySELinuxOption(privileges *swarm.Privileges, value, securityOption stri
 	return nil
 }
 
-func convertUlimits(ulimits map[string]*composegotypes.UlimitsConfig) []*container.Ulimit {
+func convertUlimits(ulimits map[string]*composeTypes.UlimitsConfig) []*container.Ulimit {
 	result := make([]*container.Ulimit, 0, len(ulimits))
 	for _, name := range slices.Sorted(maps.Keys(ulimits)) {
 		limit := ulimits[name]
@@ -352,7 +354,7 @@ func convertUlimits(ulimits map[string]*composegotypes.UlimitsConfig) []*contain
 	return result
 }
 
-func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composegotypes.DeployConfig, scale *int, restart string) error {
+func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composeTypes.DeployConfig, scale *int, restart string) error {
 	if deploy == nil {
 		if err := applyServiceMode(spec, "", scale); err != nil {
 			return err
@@ -427,7 +429,7 @@ func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composegotypes.DeployCon
 	return nil
 }
 
-func convertUpdateConfig(source *composegotypes.UpdateConfig) *swarm.UpdateConfig {
+func convertUpdateConfig(source *composeTypes.UpdateConfig) *swarm.UpdateConfig {
 	if source == nil {
 		return nil
 	}
@@ -445,7 +447,7 @@ func convertUpdateConfig(source *composegotypes.UpdateConfig) *swarm.UpdateConfi
 	}
 }
 
-func convertRestartPolicy(restart string, deployPolicy *composegotypes.RestartPolicy) (*swarm.RestartPolicy, error) {
+func convertRestartPolicy(restart string, deployPolicy *composeTypes.RestartPolicy) (*swarm.RestartPolicy, error) {
 	if deployPolicy != nil {
 		return &swarm.RestartPolicy{
 			Condition:   swarm.RestartPolicyCondition(deployPolicy.Condition),
@@ -492,7 +494,10 @@ func applyServiceMode(spec *swarm.ServiceSpec, mode string, replicas *int) error
 		}
 		spec.Mode = swarm.ServiceMode{GlobalJob: &swarm.GlobalJob{}}
 	case "replicated-job":
-		replicaCount := toUint64PointerFromOptionalInt(replicas)
+		var replicaCount *uint64
+		if replicas != nil && *replicas >= 0 {
+			replicaCount = new(uint64(*replicas))
+		}
 		spec.Mode = swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{
 			MaxConcurrent:    replicaCount,
 			TotalCompletions: replicaCount,
@@ -513,14 +518,7 @@ func applyServiceMode(spec *swarm.ServiceSpec, mode string, replicas *int) error
 	return nil
 }
 
-func toUint64PointerFromOptionalInt(value *int) *uint64 {
-	if value == nil || *value < 0 {
-		return nil
-	}
-	return new(uint64(*value))
-}
-
-func applyServicePorts(spec *swarm.ServiceSpec, ports []composegotypes.ServicePortConfig) error {
+func applyServicePorts(spec *swarm.ServiceSpec, ports []composeTypes.ServicePortConfig) error {
 	if len(ports) == 0 {
 		return nil
 	}
@@ -560,7 +558,7 @@ func applyServicePorts(spec *swarm.ServiceSpec, ports []composegotypes.ServicePo
 	return nil
 }
 
-func buildServiceNetworks(service composegotypes.ServiceConfig, networkNameByKey map[string]string) ([]swarm.NetworkAttachmentConfig, error) {
+func buildServiceNetworks(service composeTypes.ServiceConfig, networkNameByKey map[string]string) ([]swarm.NetworkAttachmentConfig, error) {
 	var attachments []swarm.NetworkAttachmentConfig
 	if len(service.Networks) == 0 {
 		defaultNetwork, ok := networkNameByKey["default"]
@@ -592,13 +590,13 @@ func buildServiceNetworks(service composegotypes.ServiceConfig, networkNameByKey
 			DriverOpts: cfg.DriverOpts,
 		})
 	}
-	sort.Slice(attachments, func(i, j int) bool {
-		return attachments[i].Target < attachments[j].Target
+	slices.SortFunc(attachments, func(a, b swarm.NetworkAttachmentConfig) int {
+		return strings.Compare(a.Target, b.Target)
 	})
 	return attachments, nil
 }
 
-func convertIPAM(cfg composegotypes.IPAMConfig) *network.IPAM {
+func convertIPAM(cfg composeTypes.IPAMConfig) *network.IPAM {
 	if cfg.Driver == "" && len(cfg.Config) == 0 && len(cfg.Options) == 0 {
 		return nil
 	}
@@ -675,7 +673,7 @@ func parseAuxAddresses(values map[string]string) map[string]netip.Addr {
 	return out
 }
 
-func convertEnv(env composegotypes.MappingWithEquals) []string {
+func convertEnv(env composeTypes.MappingWithEquals) []string {
 	if env == nil {
 		return nil
 	}
@@ -691,7 +689,7 @@ func convertEnv(env composegotypes.MappingWithEquals) []string {
 	return result
 }
 
-func convertDurationPtr(duration *composegotypes.Duration) *time.Duration {
+func convertDurationPtr(duration *composeTypes.Duration) *time.Duration {
 	if duration == nil {
 		return nil
 	}

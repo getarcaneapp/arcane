@@ -640,23 +640,14 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 }
 
 func (s *Service) createComposeVolume(ctx context.Context, volumeName string, target types.ComposeVolumeTarget) error {
-	_, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
-	})
-	if inspectErr == nil {
-		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", volumeName))
-	}
-	if !errdefs.IsNotFound(inspectErr) {
-		return fmt.Errorf("failed to inspect volume for restore: %w", inspectErr)
-	}
 	createOptions, err := projects.ComposeVolumeTargetCreateOptions(volumeName, target)
 	if err != nil {
 		return err
 	}
-	if _, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
-		return dockerClient.VolumeCreate(ctx, createOptions)
-	}); createErr != nil {
-		return fmt.Errorf("failed to create compose volume %s: %w", volumeName, createErr)
+	if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+		return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, createOptions)
+	}); err != nil {
+		return err
 	}
 	slog.InfoContext(ctx, "Created compose volume for restore", "volume", volumeName, "project", target.Project, "key", target.Key)
 	return nil

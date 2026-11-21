@@ -1110,12 +1110,12 @@ func TestMigration121_CreatesProjectBackupPolicies(t *testing.T) {
 		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT
 			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_backup_policies') +
 			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_project_backup_policies_project_id', 'idx_project_backups_policy_id')) +
-			(SELECT COUNT(*) FROM pragma_table_info('project_backups') WHERE name = 'policy_id')`).Scan(&count))
+			(SELECT COUNT(*) FROM pragma_table_info('project_backups') WHERE name IN ('policy_id', 'orphaned_at'))`).Scan(&count))
 		return count
 	}
 
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 121))
-	assert.Equal(t, 4, objects())
+	assert.Equal(t, 5, objects())
 	var policyID string
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT policy_id FROM project_backups WHERE id = 'pb1'`).Scan(&policyID))
 	assert.Empty(t, policyID, "existing backups are manual")

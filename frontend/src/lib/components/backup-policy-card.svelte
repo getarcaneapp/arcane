@@ -3,9 +3,14 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { EditIcon, PlayIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { BackupStatus } from '#lib/types/backup.js';
+	import type { BackupManagementType, BackupStatus } from '#lib/types/backup.js';
 	import type { BackupPolicy } from '#lib/types/ui/backup.js';
-	import { backupDestinationFromFlags, backupDestinationLabel, backupStatusLabel } from '#lib/utils/backups.js';
+	import {
+		backupDestinationFromFlags,
+		backupDestinationLabel,
+		backupManagementLabel,
+		backupStatusLabel
+	} from '#lib/utils/backups.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	type CardPolicy = BackupPolicy & {
@@ -25,7 +30,7 @@
 		running = false
 	}: {
 		policy: CardPolicy;
-		resourceType?: 'system' | 'project' | 'volume';
+		resourceType?: BackupManagementType;
 		showStopContainers?: boolean;
 		onEdit?: () => void;
 		editDisabled?: boolean;
@@ -33,12 +38,6 @@
 		runDisabled?: boolean;
 		running?: boolean;
 	} = $props();
-
-	const resourceLabel = $derived.by(() => {
-		if (resourceType === 'system') return m.system();
-		if (resourceType === 'project') return m.project();
-		return m.resource_volume_cap();
-	});
 
 	const s3Name = $derived(policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId || '');
 </script>
@@ -51,7 +50,7 @@
 	<code class="truncate">{policy.schedule}</code>
 	<div class="flex items-center gap-1.5 justify-self-end">
 		{#if resourceType}
-			<Badge variant="purple">{resourceLabel}</Badge>
+			<Badge variant="purple">{backupManagementLabel(resourceType)}</Badge>
 		{/if}
 		<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
 		{#if onRun}

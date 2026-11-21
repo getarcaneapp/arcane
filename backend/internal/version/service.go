@@ -15,7 +15,6 @@ import (
 
 	"github.com/distribution/reference"
 	"github.com/moby/moby/client"
-	"github.com/samber/mo"
 	"golang.org/x/mod/semver"
 
 	"kit.getarcane.app"
@@ -93,12 +92,9 @@ const (
 )
 
 func NewVersionService(p VersionServiceParams) *VersionService {
-	if p.HTTPClient == nil {
-		p.HTTPClient = http.DefaultClient
-	}
 	var service *VersionService
 	service = &VersionService{
-		httpClient: p.HTTPClient,
+		httpClient: cmp.Or(p.HTTPClient, http.DefaultClient),
 		cache: &cache.Cache[struct{}, latestRelease]{
 			Load: func(struct{}) (latestRelease, bool, error) {
 				ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
@@ -430,7 +426,7 @@ func (s *VersionService) storedOrDigestBasedUpdate(ctx context.Context, current 
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageId", current.ImageID, "error", err)
 		} else if found {
-			return record.HasUpdate, mo.PointerToOption(record.LatestDigest).OrEmpty()
+			return record.HasUpdate, kit.FromPtr(record.LatestDigest)
 		}
 	}
 

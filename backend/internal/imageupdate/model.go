@@ -3,8 +3,6 @@ package imageupdate
 import (
 	"time"
 
-	"github.com/samber/mo"
-
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/database"
@@ -91,18 +89,18 @@ func (i *ImageUpdateRecord) UpdateInfo() *types.ImageUpdateInfo {
 		Blocked:        i.HasUpdate && kit.FromPtr(i.BlockedReason) != "",
 		UpdateType:     i.UpdateType,
 		CurrentVersion: i.CurrentVersion,
-		LatestVersion:  mo.PointerToOption(i.LatestVersion).OrEmpty(),
-		CurrentDigest:  mo.PointerToOption(i.CurrentDigest).OrEmpty(),
-		LatestDigest:   mo.PointerToOption(i.LatestDigest).OrEmpty(),
+		LatestVersion:  kit.FromPtr(i.LatestVersion),
+		CurrentDigest:  kit.FromPtr(i.CurrentDigest),
+		LatestDigest:   kit.FromPtr(i.LatestDigest),
 		CurrentCreated: i.CurrentCreated,
 		LatestCreated:  i.LatestCreated,
 		CheckTime:      i.CheckTime,
 		ResponseTimeMs: i.ResponseTimeMs,
-		Error:          mo.PointerToOption(i.LastError).OrEmpty(),
+		Error:          kit.FromPtr(i.LastError),
 		BlockedReason:  kit.Ternary(i.HasUpdate, kit.FromPtr(i.BlockedReason), ""),
-		AuthMethod:     mo.PointerToOption(i.AuthMethod).OrEmpty(),
-		AuthUsername:   mo.PointerToOption(i.AuthUsername).OrEmpty(),
-		AuthRegistry:   mo.PointerToOption(i.AuthRegistry).OrEmpty(),
+		AuthMethod:     kit.FromPtr(i.AuthMethod),
+		AuthUsername:   kit.FromPtr(i.AuthUsername),
+		AuthRegistry:   kit.FromPtr(i.AuthRegistry),
 		UsedCredential: i.UsedCredential,
 	}
 }

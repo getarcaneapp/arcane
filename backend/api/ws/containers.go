@@ -49,13 +49,7 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 	go wshub.KeepAlive(ctx, cancel, conn)
 
 	send := func(batch types.ContainerResourceSampleBatch) error {
-		b, err := json.Marshal(batch)
-		if err != nil {
-			return err
-		}
-		wctx, wcancel := context.WithTimeout(ctx, 10*time.Second)
-		defer wcancel()
-		return conn.Write(wctx, websocket.MessageText, b)
+		return writeWSJSON(ctx, conn, batch)
 	}
 
 	select {

@@ -7,8 +7,6 @@ import (
 	"hash/fnv"
 	"log/slog"
 
-	"go.uber.org/fx"
-
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/system"
@@ -24,27 +22,20 @@ type (
 		projects        *project.Module
 		settingsService *settings.SettingsService
 	}
-
-	BackupRepositoryPruneJobParams struct {
-		fx.In
-
-		SystemService   *system.SystemService
-		VolumeService   *volume.VolumeService
-		Projects        *project.Module
-		SettingsService *settings.SettingsService
-	}
 )
 
 const (
 	BackupRepositoryPruneJobName = "backup-repository-prune"
 )
 
-func NewBackupRepositoryPruneJob(p BackupRepositoryPruneJobParams) *BackupRepositoryPruneJob {
+func NewBackupRepositoryPruneJob(
+	systemService *system.SystemService, volumeService *volume.VolumeService, projects *project.Module, settingsService *settings.SettingsService,
+) *BackupRepositoryPruneJob {
 	return &BackupRepositoryPruneJob{
-		systemService:   p.SystemService,
-		volumeService:   p.VolumeService,
-		projects:        p.Projects,
-		settingsService: p.SettingsService,
+		systemService:   systemService,
+		volumeService:   volumeService,
+		projects:        projects,
+		settingsService: settingsService,
 	}
 }
 

@@ -20,16 +20,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/volumes"
 )
 
-type ownerKey struct{}
-
-// OwnerLabel names what a Rustic container runs for, set through WithOwner.
-const OwnerLabel = "com.getarcaneapp.rustic.owner"
-
-// WithOwner labels the Rustic containers run with ctx, so their owner can find one left over after Arcane stopped.
-func WithOwner(ctx context.Context, owner string) context.Context {
-	return context.WithValue(ctx, ownerKey{}, owner)
-}
-
 func Run(ctx context.Context, dockerClient *client.Client, password string, command, environment []string, mounts []mount.Mount, networkMode container.NetworkMode) (string, error) {
 	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: CacheVolume, Labels: volumes.Labels()}); err != nil {
 		return "", fmt.Errorf("failed to provision Rustic cache volume: %w", err)
@@ -46,16 +36,12 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 	hostConfig := volumes.HostConfig(DefaultImage, nil, allMounts)
 	hostConfig.AutoRemove = false
 	hostConfig.NetworkMode = networkMode
-	labels := volumes.Labels()
-	if owner, _ := ctx.Value(ownerKey{}).(string); owner != "" {
-		labels[OwnerLabel] = owner
-	}
 	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image:  DefaultImage,
 			Cmd:    command,
 			Env:    env,
-			Labels: labels,
+			Labels: volumes.Labels(),
 		},
 		HostConfig: hostConfig,
 	})

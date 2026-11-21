@@ -37,7 +37,7 @@ func normalizeFederatedCredential(req types.FederatedCredential) (types.Federate
 			types.FederatedMatchTypeExact,
 		),
 		RoleID:          strings.TrimSpace(req.RoleID),
-		EnvironmentID:   mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(req.EnvironmentID).OrEmpty())).ToPointer(),
+		EnvironmentID:   mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(req.EnvironmentID))).ToPointer(),
 		TokenTTLSeconds: auth.ClampFederatedTokenTTLSeconds(req.TokenTTLSeconds),
 		ExpiresAt:       req.ExpiresAt,
 	}
@@ -82,7 +82,7 @@ func toFederatedCredentialDTO(credential *FederatedCredential) types.FederatedCr
 	if credential == nil {
 		return types.FederatedCredential{}
 	}
-	dto := types.FederatedCredential{
+	return types.FederatedCredential{
 		ID:              credential.ID,
 		Name:            credential.Name,
 		Description:     credential.Description,
@@ -100,15 +100,8 @@ func toFederatedCredentialDTO(credential *FederatedCredential) types.FederatedCr
 		ExpiresAt:       credential.ExpiresAt,
 		CreatedAt:       credential.CreatedAt,
 		UpdatedAt:       credential.UpdatedAt,
+		ServiceUsername: kit.FromPtr(credential.IdentityUser).Username,
+		RoleName:        kit.FromPtr(credential.Role).Name,
+		EnvironmentName: kit.FromPtr(credential.Environment).Name,
 	}
-	if credential.IdentityUser != nil {
-		dto.ServiceUsername = credential.IdentityUser.Username
-	}
-	if credential.Role != nil {
-		dto.RoleName = credential.Role.Name
-	}
-	if credential.Environment != nil {
-		dto.EnvironmentName = credential.Environment.Name
-	}
-	return dto
 }

@@ -319,18 +319,21 @@ func deviceDTO(d Device) types.ApnsDevice {
 }
 
 func (s *ApnsService) Status(ctx context.Context, userID string) (types.ApnsStatus, error) {
-	status := types.ApnsStatus{Enabled: s.Enabled(ctx), RelayURL: s.config.ApnsRelayUrl, Devices: []types.ApnsDevice{}}
-	if status.Enabled {
-		status.ChannelID = s.settings.GetStringSetting(ctx, "apnsChannelId")
-	}
+	enabled := s.Enabled(ctx)
 	var devices []Device
 	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at ASC").Find(&devices).Error; err != nil {
-		return status, fmt.Errorf("failed to list push devices: %w", err)
+		return types.ApnsStatus{}, fmt.Errorf("failed to list push devices: %w", err)
 	}
+	deviceDTOs := make([]types.ApnsDevice, 0, len(devices))
 	for _, d := range devices {
-		status.Devices = append(status.Devices, deviceDTO(d))
+		deviceDTOs = append(deviceDTOs, deviceDTO(d))
 	}
-	return status, nil
+	return types.ApnsStatus{
+		Enabled:   enabled,
+		RelayURL:  s.config.ApnsRelayUrl,
+		ChannelID: kit.Ternary(enabled, s.settings.GetStringSetting(ctx, "apnsChannelId"), ""),
+		Devices:   deviceDTOs,
+	}, nil
 }
 
 func (s *ApnsService) RegisterDevice(ctx context.Context, userID string, req types.ApnsRegisterDeviceRequest) (types.ApnsDevice, error) {
@@ -364,14 +367,19 @@ func (s *ApnsService) RegisterDevice(ctx context.Context, userID string, req typ
 	case err == nil && existing.UserID != userID:
 		return types.ApnsDevice{}, common.ErrApnsDeviceConflict
 	case err == nil:
-		existing.Label = req.Label
-		existing.Events = events
-		existing.EnvironmentIDs = environmentIDs
-		existing.LastSeenAt = &now
-		if updateDeviceErr := s.db.WithContext(ctx).Save(&existing).Error; updateDeviceErr != nil {
+		updated := Device{
+			BaseModel:      existing.BaseModel,
+			UserID:         existing.UserID,
+			RecipientID:    existing.RecipientID,
+			Label:          req.Label,
+			Events:         events,
+			EnvironmentIDs: environmentIDs,
+			LastSeenAt:     new(now),
+		}
+		if updateDeviceErr := s.db.WithContext(ctx).Save(&updated).Error; updateDeviceErr != nil {
 			return types.ApnsDevice{}, fmt.Errorf("failed to update push device: %w", updateDeviceErr)
 		}
-		return deviceDTO(existing), nil
+		return deviceDTO(updated), nil
 	case !errors.Is(err, gorm.ErrRecordNotFound):
 		return types.ApnsDevice{}, fmt.Errorf("failed to load push device: %w", err)
 	}

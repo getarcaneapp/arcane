@@ -1,14 +1,13 @@
 package notification
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-
-	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
@@ -59,16 +58,6 @@ type (
 		APIKey string `header:"X-API-Key" doc:"Remote environment access token"`
 	}
 )
-
-func normalizeNotificationTestType(testType string) string {
-	normalized := strings.TrimSpace(testType)
-	return kit.Ternary(normalized == "", notificationTestTypeSimple, normalized)
-}
-
-func isSupportedNotificationTestType(testType string) bool {
-	_, ok := notificationTestEventTypes[testType]
-	return ok
-}
 
 func (h *NotificationHandler) rejectOnAgent() error {
 	if h.config.AgentEnabled {
@@ -171,8 +160,8 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *Notif
 		return nil, err
 	}
 	provider := notifications.NotificationProvider(input.Provider)
-	testType := normalizeNotificationTestType(input.Type)
-	if !isSupportedNotificationTestType(testType) {
+	testType := cmp.Or(strings.TrimSpace(input.Type), notificationTestTypeSimple)
+	if _, ok := notificationTestEventTypes[testType]; !ok {
 		return nil, huma.Error400BadRequest("invalid notification test type")
 	}
 

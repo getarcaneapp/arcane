@@ -5,10 +5,13 @@ import (
 	"maps"
 	"slices"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
+	"github.com/moby/moby/api/types/container"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/types/v3"
@@ -18,7 +21,23 @@ const (
 	JobRunLabel = "com.docker.job.id"
 )
 
-func ProjectJobs(project *composetypes.Project) []types.ProjectJob {
+// IsServiceContainer reports whether a container runs a Compose service, not a hook, job run or one-off.
+func IsServiceContainer(labels map[string]string) bool {
+	return docker.ComposeServiceLabel(labels) != "" && labels[api.HookLabel] == "" && labels[JobRunLabel] == "" && labels[api.OneoffLabel] != "True"
+}
+
+// ContainerServices returns the Compose service names of the service containers, de-duplicated in first-seen order.
+func ContainerServices(containers []container.Summary) []string {
+	var services []string
+	for _, c := range containers {
+		if service := docker.ComposeServiceLabel(c.Labels); IsServiceContainer(c.Labels) && !slices.Contains(services, service) {
+			services = append(services, service)
+		}
+	}
+	return services
+}
+
+func ProjectJobs(project *composeTypes.Project) []types.ProjectJob {
 	if project == nil {
 		return nil
 	}
@@ -47,7 +66,7 @@ func ProjectJobs(project *composetypes.Project) []types.ProjectJob {
 	return jobs
 }
 
-func MaterializeJob(project *composetypes.Project, name string) (*composetypes.Project, error) {
+func MaterializeJob(project *composeTypes.Project, name string) (*composeTypes.Project, error) {
 	all := project.AllJobs()
 	job, ok := all[name]
 	if !ok {

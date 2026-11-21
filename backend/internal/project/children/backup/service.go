@@ -11,16 +11,12 @@ import (
 	"maps"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 	"uuid"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/containerd/errdefs"
-	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
@@ -31,7 +27,6 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
-	"kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -49,7 +44,6 @@ import (
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
-	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
@@ -57,24 +51,20 @@ import (
 
 type (
 	Dependencies struct {
-		DB         *database.DB
-		Docker     *dockerInternal.DockerClientService
-		Engine     *backup.Engine
-		Repository *backup.VolumeRepository
-		// ForgetSnapshots deletes snapshots from a repository and prunes it once.
-		ForgetSnapshots func(ctx context.Context, dockerClient *client.Client, repository backup.Repository, password string, snapshotIDs []string) error
-		S3Destinations  *s3.S3DestinationService
-		Settings        *settings.SettingsService
-		// Containers starts the stopped containers Compose can't start, as it does for volume backups.
-		Containers *backup.Containers
-		// LockVolumes waits for the named volumes' workspace locks, which volume backups and restores also take.
-		LockVolumes func(ctx context.Context, names []string) (func(), error)
-		Project     func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
-		// ComposeProject loads the project's Compose files, so the stopped services start in dependency order.
-		ComposeProject func(ctx context.Context, projectID string) (*composetypes.Project, error)
+		DB             *database.DB
+		Docker         *dockerInternal.DockerClientService
+		Engine         *backup.Engine
+		Repository     *backup.VolumeRepository
+		S3Destinations *s3.S3DestinationService
+		Settings       *settings.SettingsService
+		// LockVolumes takes the workspace locks that volume backups and restores also take.
+		LockVolumes  func(ctx context.Context, names []string) (func(), error)
+		Project      func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
+		StopProject  func(ctx context.Context, projectID string, services []string, user types.Actor) error
+		StartProject func(ctx context.Context, projectID string, services []string, user types.Actor) error
 		// Volume inspects a Docker volume and reports whether it exists.
 		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
-		// BackupStore names the volume holding local backup storage, which a backup never copies.
+		// BackupStore names the volume holding local backups, which a backup never copies.
 		BackupStore func(ctx context.Context) string
 		// LockProject takes the project lock that deploy, down and project edits also take.
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
@@ -82,8 +72,7 @@ type (
 		SoleDirectory func(ctx context.Context, project types.Project) error
 		// RunsArcane reports whether the project's containers include the running Arcane container.
 		RunsArcane func(ctx context.Context, projectID string) (bool, error)
-		// Down brings the project down without removing its volumes and Deploy deploys it; the caller holds the project lock.
-		Down   func(ctx context.Context, projectID string, user types.Actor) error
+		// Deploy deploys the project; the caller holds the project lock.
 		Deploy func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		// RewriteComposeName sets the Compose project name in the project's files, as an import does.
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
@@ -96,8 +85,10 @@ type (
 		// ProjectRoot returns the projects directory holding the project directory, which project file writes stay in.
 		ProjectRoot func(ctx context.Context, projectPath string) (string, error)
 		// Projects lists every project, archived ones included.
-		Projects   func(ctx context.Context) ([]types.ProjectRecord, error)
-		Activities activity.MessageAppender
+		Projects func(ctx context.Context) ([]types.ProjectRecord, error)
+		// DeleteVolume removes a volume a failed restore created.
+		DeleteVolume func(ctx context.Context, name string, user types.Actor) error
+		Activities   activity.MessageAppender
 		// Activity reads an activity and its latest messages.
 		Activity func(ctx context.Context, environmentID, activityID string, limit int) (*types.ActivityDetail, error)
 		// Config tells a manager, which runs the global policies, from an agent.
@@ -116,8 +107,6 @@ type (
 		restores  *flow.Workflow
 		scheduled *flow.Workflow
 		global    *flow.Workflow
-		// policyLocks serializes saving a project's policies with updating their jobs.
-		policyLocks concurrency.KeyedMutex
 		// globalConfig serializes every read-modify-save of the global policies' setting.
 		globalConfig sync.Mutex
 	}
@@ -133,7 +122,6 @@ type (
 	plan struct {
 		BackupID        string                `json:"backupId"`
 		ProjectID       string                `json:"projectId"`
-		PolicyID        string                `json:"policyId,omitempty"`
 		S3DestinationID string                `json:"s3DestinationId,omitempty"`
 		Volumes         []types.ProjectVolume `json:"volumes"`
 		LocalEnabled    bool                  `json:"localEnabled"`
@@ -150,17 +138,20 @@ type (
 		PolicyID string `json:"policyId"`
 	}
 
-	// globalRun runs a global policy; a run started by hand also carries its requester and the claim on the policy's
-	// admission its start parked.
+	// globalRun runs a global policy; a run started by hand also carries its requester.
 	globalRun struct {
 		Requester *types.BackupRequester `json:"requester,omitempty"`
 		PolicyID  string                 `json:"policyId"`
-		Claim     string                 `json:"claim,omitempty"`
 	}
 
-	// globalPlan is the checkpoint of the projects a global run backs up.
-	globalPlan struct {
-		ProjectIDs []string `json:"projectIds"`
+	// scheduledRemote is the S3 state of a scheduled policy, which checkRemote disables through Save.
+	scheduledRemote struct {
+		S3Enabled     *bool
+		Enabled       *bool
+		Save          func(field string) (bool, error)
+		Reschedule    func()
+		DestinationID string
+		LocalEnabled  bool
 	}
 
 	// admittedRun is a scheduled backup's plan, resolved under the admissions its leases hold, and the policy ID its
@@ -181,7 +172,7 @@ type (
 		Request       types.RestoreProjectBackupRequest
 	}
 
-	// restorePlan is an in-place restore's frozen request and, as it progresses, its recovery checkpoint.
+	// restorePlan is an in-place restore's frozen request, completed under the restore's locks.
 	restorePlan struct {
 		Redeploy  *bool  `json:"redeploy,omitempty"`
 		ID        string `json:"id"`
@@ -192,21 +183,12 @@ type (
 		// ComposeName is the project's Compose name before the restore, which restored files must keep.
 		ComposeName string                             `json:"composeName"`
 		SafetyID    string                             `json:"safetyId,omitempty"`
-		Failure     string                             `json:"failure,omitempty"`
 		Volumes     []types.ProjectBackupRestoreVolume `json:"volumes"`
 		Create      []client.VolumeCreateOptions       `json:"create,omitempty"`
-		// Created are the volumes this restore created; only these are removed on rollback.
-		Created []string `json:"created,omitempty"`
-		Files   bool     `json:"files"`
+		Files       bool                               `json:"files"`
 		// MayStop records that the project ran when the restore was requested, so the caller's right to stop it was checked.
 		MayStop bool `json:"mayStop"`
-		// Stopped records that the project had stopped containers, which the restore removes; projects:down was checked.
-		Stopped     bool `json:"stopped,omitempty"`
-		Running     bool `json:"running"`
-		Started     bool `json:"started"`
-		Restored    bool `json:"restored"`
-		Deploying   bool `json:"deploying"`
-		RollingBack bool `json:"rollingBack"`
+		Running bool `json:"running"`
 	}
 
 	restoreRun struct {
@@ -217,10 +199,8 @@ type (
 
 	// restoreSteps are the operations an in-place restore applies, bound to its run; tests pass fakes.
 	restoreSteps struct {
-		record  func(ctx context.Context, p restorePlan) error
 		report  func(ctx context.Context, message string)
-		down    func(ctx context.Context) error
-		clear   func(ctx context.Context, p restorePlan) error
+		stop    func(ctx context.Context, p restorePlan) error
 		deploy  func(ctx context.Context) error
 		safety  func(ctx context.Context, p restorePlan) (string, error)
 		inUse   func(ctx context.Context, p restorePlan) error
@@ -271,9 +251,6 @@ type (
 )
 
 const (
-	// restoreOwner and the restore's ID label its Rustic containers, the same for the restore and its rollback, so
-	// either finds one the other left.
-	restoreOwner   = "project-restore:"
 	admissionScope = "project-backup"
 	// globalAdmissionScope keeps one run of each global policy at a time; it is always taken before a project's.
 	globalAdmissionScope = "global-project-backup"
@@ -281,28 +258,20 @@ const (
 	restoreRoot          = "/dest"
 	manifestName         = "arcane-project.json"
 	// envName holds, beside the manifest, the file a project's .env links to outside the project directory.
-	envName           = "project.env"
-	targetType        = "project_backup"
-	restoreTargetType = "project_restore"
-	defaultSchedule   = "0 2 * * *"
-	backupsTable      = "project_backups"
-	globalConfigKey   = "projectBackupConfig"
-	// globalPlanTarget records the projects a global policy's run backs up.
-	globalPlanTarget = "global-project-plan"
+	envName          = "project.env"
+	targetType       = "project_backup"
+	defaultSchedule  = "0 2 * * *"
+	backupsTable     = "project_backups"
+	globalConfigKey  = "projectBackupConfig"
 	projectTagPrefix = "arcane-project:"
 	triggerTagPrefix = "arcane-trigger:"
 	policyTagPrefix  = "arcane-policy:"
 	// discoveryPendingKey is set by a system restore and cleared once discovery searched every repository.
 	discoveryPendingKey = "projectBackupDiscoveryPending"
-	// dockerStopGraceSeconds is how long Docker waits for a container without its own stop grace to exit.
-	dockerStopGraceSeconds = 10
 )
 
 var (
-	// unnamedVolumeName matches the generated name Docker gives an anonymous volume.
-	unnamedVolumeName     = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	errAlreadyRunning     = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
-	errGlobalRunning      = common.Classify(common.ErrConflict, errors.New("this backup policy is already running"))
 	errPolicyGone         = errors.New("backup policy disabled or deleted")
 	errRemoteOnlyDisabled = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
 	errProjectSkipped     = errors.New("the project is no longer selected or has its own enabled backup policy")
@@ -341,7 +310,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	if err != nil {
 		return err
 	}
-	// A restore runs as a workflow so that one interrupted with the project down is rolled back when it resumes.
+	// Like a backup, a restore runs as a workflow so it holds its admissions and reports through its activity.
 	s.restores, err = engine.Define(flow.Definition{
 		Name:        "project-restore",
 		Version:     1,
@@ -413,7 +382,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 		ComposeName:     project.ComposeName,
 		Status:          types.VolumeBackupStatusRunning,
 		Trigger:         types.VolumeBackupTriggerManual,
-		Destination:     destination(p.LocalEnabled, p.S3Enabled),
+		Destination:     backup.Destination(p.LocalEnabled, p.S3Enabled),
 		S3DestinationID: p.S3DestinationID,
 		Volumes:         backupVolumes(p.Volumes),
 	}
@@ -441,8 +410,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	return entry.DTO(DTOOptions{ActivityID: &activityID}), nil
 }
 
-// resolvePlan validates the request against the project; by default it captures every volume that exists and keeps its
-// data in Docker.
+// resolvePlan validates the request; by default it captures every existing volume that keeps its data in Docker.
 func (s *Service) resolvePlan(ctx context.Context, project types.Project, request types.CreateProjectBackupRequest) (plan, error) {
 	selected := cmp.Or(request.Destination, types.VolumeBackupDestinationLocal)
 	if !slices.Contains([]types.VolumeBackupDestination{types.VolumeBackupDestinationLocal, types.VolumeBackupDestinationS3, types.VolumeBackupDestinationLocalS3}, selected) {
@@ -475,8 +443,7 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 	}, nil
 }
 
-// inspectVolumes classifies the project's volumes and includes the requested ones, or by default every one, that exist
-// and keep their data in Docker, except the backup store; requesting any other volume fails.
+// inspectVolumes includes the requested volumes, or by default every one that can be backed up.
 func (s *Service) inspectVolumes(ctx context.Context, project types.Project, requested []string) ([]types.ProjectVolume, error) {
 	resolved, dockerVolumes, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
 		Project:     project,
@@ -491,7 +458,6 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 		wanted := requested == nil || slices.Contains(requested, volume.Key)
 		switch {
 		case wanted && requested != nil && volume.BackupStore:
-			// A backup of the store would read the repository it writes into, copying it into itself on every run.
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s holds Arcane's backups, so it cannot be backed up", volume.Key))
 		case wanted && requested != nil && volume.Missing:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s has not been created yet, so it holds no data to back up", volume.Key))
@@ -520,9 +486,8 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 	return inspected, nil
 }
 
-// mountedVolumeNames are every volume of the project, captured or not. A volume backup stops and starts the containers
-// mounting its volume under that volume's lock, so holding them all keeps any of the project's containers from being
-// started or stopped by another backup.
+// mountedVolumeNames are every volume of the project, captured or not, so no volume backup or restore starts or stops
+// the project's containers during the capture.
 func (p plan) mountedVolumeNames() []string {
 	var names []string
 	for _, volume := range p.Volumes {
@@ -547,8 +512,12 @@ func (p plan) volumeNames() []string {
 
 // admissions are the project's run and a volume-backup run for each volume, in the order every run takes them.
 func admissions(projectID string, volumeNames []string) []types.SchedulerAdmissionKey {
-	keys := []types.SchedulerAdmissionKey{{Scope: admissionScope, ID: projectID}}
-	for _, name := range volumeNames {
+	return append([]types.SchedulerAdmissionKey{{Scope: admissionScope, ID: projectID}}, volumeAdmissions(volumeNames)...)
+}
+
+func volumeAdmissions(names []string) []types.SchedulerAdmissionKey {
+	keys := make([]types.SchedulerAdmissionKey, 0, len(names))
+	for _, name := range names {
 		keys = append(keys, types.SchedulerAdmissionKey{Scope: backup.VolumeAdmissionScope, ID: name})
 	}
 	return keys
@@ -645,17 +614,9 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 	return succeeded, nil
 }
 
-// resume finishes a backup an earlier attempt left running, adopting the snapshots it already wrote. Like a volume
-// backup, one that stopped containers fails instead, since they may have changed since. A scheduled backup has no
-// requester.
-func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) (err error) {
-	// A resume that ends for good, a user cancel included, fails its backup as a first attempt does; shutdown and busy
-	// admissions retry it.
-	defer func() {
-		if err != nil && !handedBack(ctx, err) && !errors.Is(err, backup.ErrBackupSettled) {
-			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.BackupID, err.Error()))
-		}
-	}()
+// resume finishes a backup an earlier attempt left running; like a volume backup, one that stopped containers fails. A
+// scheduled backup has no requester.
+func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recorded plan) error {
 	// The admissions died with the process, so a restore may own the project until they are retaken.
 	leases, err := s.admit(ctx, admissions(recorded.ProjectID, recorded.volumeNames()), "")
 	if err != nil {
@@ -825,7 +786,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if err != nil {
 		return fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
 	}
-	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, externalEnv), env)
+	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, externalEnv), env)
 	if err != nil {
 		return err
 	}
@@ -843,23 +804,18 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 	if err != nil {
 		return err
 	}
-	if p.StopContainers {
-		var stopped []container.Summary
-		// Started again however the capture ends, as an export restarts its project; if Arcane stops first, the user
-		// starts them.
+	if p.StopContainers && len(active) > 0 {
+		services := projects.ContainerServices(active)
+		// Started again however the capture ends, as an export does.
 		defer func() {
-			if len(stopped) == 0 {
-				return
-			}
-			if startErr := s.startContainers(context.WithoutCancel(ctx), entry.ProjectID, stopped); startErr != nil {
+			if startErr := s.deps.StartProject(context.WithoutCancel(ctx), entry.ProjectID, services, types.SystemUser); startErr != nil {
 				err = errors.Join(err, fmt.Errorf("restart project containers: %w", startErr))
 			}
 		}()
-		var stopErr error
-		if stopped, stopErr = s.stopContainers(ctx, project.ComposeName); stopErr != nil {
+		entry.StoppedContainers = true
+		if stopErr := s.stopProject(ctx, entry.ProjectID, project.ComposeName, active, types.SystemUser); stopErr != nil {
 			return stopErr
 		}
-		entry.StoppedContainers = len(stopped) > 0
 	}
 	destinationID := entry.ID + ":" + kit.Ternary(remote, "remote", "local")
 	if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: destinationID, Status: types.RunStatusRunning}); progressErr != nil {
@@ -922,101 +878,23 @@ func (s *Service) containerUse(ctx context.Context, composeName string) (active 
 	return active, inUse, nil
 }
 
-// stopContainers stops the Compose project's running and restarting containers, except Arcane's own, and returns
-// those it stopped, also when it fails.
-func (s *Service) stopContainers(ctx context.Context, composeName string) ([]container.Summary, error) {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
+// stopProject stops the project's active containers, then refuses any still running: Compose stops only the services
+// its files name, so a one-off run or a removed service keeps running.
+func (s *Service) stopProject(ctx context.Context, projectID, composeName string, active []container.Summary, user types.Actor) error {
+	if err := s.deps.StopProject(ctx, projectID, projects.ContainerServices(active), user); err != nil {
+		return err
+	}
+	still, _, err := s.containerUse(ctx, composeName)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var stopped []container.Summary
-	for pass := range 2 {
-		found, listErr := projects.ListComposeProjectContainers(ctx, dockerClient, composeName)
-		if listErr != nil {
-			return stopped, listErr
-		}
-		var running []container.Summary
-		for _, c := range found {
-			if (c.State == container.StateRunning || c.State == container.StateRestarting) && !labels.IsArcaneContainer(c.Labels) {
-				running = append(running, c)
-			}
-		}
-		switch {
-		case len(running) == 0:
-			return stopped, nil
-		case pass > 0:
-			return stopped, fmt.Errorf("%d container(s) are still running; volume data was not copied", len(running))
-		}
-		stopBounds := make(map[string]time.Duration, len(running))
-		for _, c := range running {
-			inspected, inspectErr := dockerClient.ContainerInspect(ctx, c.ID, client.ContainerInspectOptions{})
-			if inspectErr != nil {
-				return stopped, fmt.Errorf("inspect container %s: %w", docker.ContainerNameFromNames(c.Names), inspectErr)
-			}
-			oneOff := c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != ""
-			if oneOff && kit.FromPtr(inspected.Container.HostConfig).AutoRemove {
-				return stopped, common.Classify(common.ErrConflict, fmt.Errorf(
-					"container %s removes itself when it stops (docker compose run --rm); wait for it to finish, then try again",
-					docker.ContainerNameFromNames(c.Names),
-				))
-			}
-			// Docker waits the container's stop grace before it kills it, so the bound only cuts off a daemon that
-			// stalls past that. A container told to wait forever is cut off too, since the run holds the project's locks.
-			grace := max(kit.FromPtr(kit.FromPtr(inspected.Container.Config).StopTimeout), dockerStopGraceSeconds)
-			stopBounds[c.ID] = time.Duration(grace)*time.Second + timeouts.DefaultDockerAPI
-		}
-		for _, c := range running {
-			stopped = append(stopped, c)
-			// Not cancelled with the run, so a container is never left half stopped, but bounded, so a stalled daemon
-			// can't keep the earlier containers down and the locks held forever.
-			stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), stopBounds[c.ID])
-			_, err = dockerClient.ContainerStop(stopCtx, c.ID, client.ContainerStopOptions{})
-			cancelStop()
-			if err != nil {
-				return stopped, fmt.Errorf("stop container %s: %w", docker.ContainerNameFromNames(c.Names), err)
-			}
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return stopped, ctxErr
-			}
-		}
+	if len(still) > 0 {
+		return common.Classify(common.ErrConflict, fmt.Errorf(
+			"%d container(s) of project %s are still running after its services stopped, such as one-off runs or removed services; nothing was written or copied",
+			len(still), composeName,
+		))
 	}
-	return stopped, nil
-}
-
-// startContainers starts the stopped containers' services with Compose, which follows their dependency order, and the
-// rest directly: a one-off, a service the Compose files no longer name, or all of them when the files don't load in
-// time or the start fails.
-func (s *Service) startContainers(ctx context.Context, projectID string, stopped []container.Summary) error {
-	// The caller's context is never cancelled and holds the project's locks, so the load gives up with the Docker API.
-	loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
-	model, err := s.deps.ComposeProject(loadCtx, projectID)
-	cancel()
-	var services []string
-	direct := stopped
-	if err == nil {
-		direct = nil
-		for _, c := range stopped {
-			service := docker.ComposeServiceLabel(c.Labels)
-			_, enabled := model.Services[service]
-			_, disabled := model.DisabledServices[service]
-			switch {
-			case (!enabled && !disabled) || c.Labels[api.OneoffLabel] == "True" || c.Labels[projects.JobRunLabel] != "":
-				direct = append(direct, c)
-			case !slices.Contains(services, service):
-				services = append(services, service)
-			}
-		}
-	}
-	var startErr error
-	if len(services) > 0 {
-		startErr = projects.ComposeStart(ctx, types.ComposeTarget{Project: model, DockerHost: s.deps.Docker.DockerHost(), Services: services})
-	}
-	if err != nil || startErr != nil {
-		slog.WarnContext(ctx, "Starting the stopped project containers without Compose", "projectId", projectID, "error", cmp.Or(err, startErr))
-		direct = stopped
-	}
-	_, err = s.deps.Containers.StartContainers(ctx, direct, types.SystemUser)
-	return errors.Join(startErr, err)
+	return nil
 }
 
 // checkPlanVolumes fails when the project's volumes changed after the backup was queued, for example by a compose edit
@@ -1112,7 +990,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan, active, externalEnv bool) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, externalEnv bool) types.ProjectManifest {
 	// A directory that doesn't resolve has only its configured path; the snapshot then fails to copy it anyway.
 	resolved, _ := filepath.EvalSymlinks(project.Path)
 	return types.ProjectManifest{
@@ -1127,14 +1005,13 @@ func backupManifest(project types.Project, p plan, active, externalEnv bool) typ
 		ProjectDirs:   slices.Compact([]string{project.Path, cmp.Or(resolved, project.Path)}),
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
-		Consistent:    (p.StopContainers || !active) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
+		Consistent:    p.StopContainers && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
 		ExternalEnv:   externalEnv,
 	}
 }
 
-// writeManifest stores the manifest in a new volume, with the external .env contents when the manifest records them.
-// The holder that receives it mounts only that volume and never starts, because Docker before 29.9 mishandles copies
-// into stopped containers with other mounts (#4870).
+// writeManifest stores the manifest, and any external .env, in a new volume. The holder mounts only that volume and
+// never starts, because Docker before 29.9 mishandles copies into stopped containers with other mounts (#4870).
 func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, manifest types.ProjectManifest, env []byte) (string, func(), error) {
 	data, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
@@ -1189,8 +1066,8 @@ func (s *Service) complete(ctx context.Context, entry *ProjectBackup, err error)
 	return err
 }
 
-// handedBack reports whether a failed attempt leaves its backup running for a retry to resume. A shutdown cancel and a
-// rejected run that nobody cancelled are retried; a user cancel never is, so its backup is failed now.
+// handedBack reports whether a failed scheduled attempt leaves its backup running for a retry: a shutdown cancel or a
+// busy admission, but not a user cancel.
 func handedBack(ctx context.Context, err error) bool {
 	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
 		return true
@@ -1302,9 +1179,12 @@ func (s *Service) HoldBackups(ctx context.Context, projectID string) (func(conte
 	return func(ctx context.Context) { release(ctx, leases) }, nil
 }
 
-// removeAll forgets the backups' snapshots with one ForgetSnapshots per repository, then deletes the rows whose
-// snapshots are gone; a repository that fails keeps its rows. The caller holds each project's admission.
+// removeAll forgets the backups' snapshots once per repository and deletes the rows whose snapshots are gone; the
+// caller holds each project's admission.
 func (s *Service) removeAll(ctx context.Context, entries []*ProjectBackup) error {
+	if len(entries) == 0 {
+		return nil
+	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
@@ -1320,7 +1200,6 @@ func (s *Service) removeAll(ctx context.Context, entries []*ProjectBackup) error
 		}
 	}
 	var removeErr error
-	changed := make(map[string]bool)
 	if len(localIDs) > 0 {
 		repository, repoErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if repoErr == nil {
@@ -1330,32 +1209,28 @@ func (s *Service) removeAll(ctx context.Context, entries []*ProjectBackup) error
 			removeErr = fmt.Errorf("failed to delete the local project snapshots: %w", repoErr)
 		} else {
 			for _, entry := range entries {
-				changed[entry.ID] = changed[entry.ID] || entry.LocalSnapshotID != ""
 				entry.LocalSnapshotID = ""
 			}
 		}
 	}
-	instanceID := s.deps.Settings.GetSettingsConfig().InstanceID.Value
+	root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
 	for destinationID, group := range remoteGroups {
-		repoErr := s.forgetRemote(ctx, dockerClient, destinationID, path.Join(backup.VolumeRoot, instanceID), group)
-		if repoErr != nil {
+		if repoErr := s.forgetRemote(ctx, dockerClient, destinationID, root, group); repoErr != nil {
 			removeErr = errors.Join(removeErr, fmt.Errorf("failed to delete the S3 project snapshots: %w", repoErr))
 			continue
 		}
 		for _, entry := range group {
-			changed[entry.ID] = true
 			entry.RemoteSnapshotID = ""
 		}
 	}
 	var deletedIDs []string
 	for _, entry := range entries {
-		switch {
-		case entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == "":
+		if entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == "" {
 			deletedIDs = append(deletedIDs, entry.ID)
-		case changed[entry.ID]:
-			entry.Destination = destination(entry.LocalSnapshotID != "", entry.RemoteSnapshotID != "")
-			removeErr = errors.Join(removeErr, s.deps.DB.WithContext(ctx).Save(entry).Error)
+			continue
 		}
+		entry.Destination = backup.Destination(entry.LocalSnapshotID != "", entry.RemoteSnapshotID != "")
+		removeErr = errors.Join(removeErr, s.deps.DB.WithContext(ctx).Save(entry).Error)
 	}
 	for batch := range slices.Chunk(deletedIDs, backup.DeletionBatchSize) {
 		removeErr = errors.Join(removeErr, s.deps.DB.WithContext(ctx).Where("id IN ?", batch).Delete(&ProjectBackup{}).Error)
@@ -1389,7 +1264,7 @@ func (s *Service) forgetSnapshots(ctx context.Context, dockerClient *client.Clie
 	if err != nil {
 		return err
 	}
-	return s.deps.ForgetSnapshots(ctx, dockerClient, repository, password, snapshotIDs)
+	return s.deps.Engine.ForgetSnapshots(ctx, dockerClient, repository, password, snapshotIDs)
 }
 
 // backupsByID loads the backups in batches that fit the database's parameter limit.
@@ -1437,8 +1312,6 @@ func (s *Service) Policies(ctx context.Context, projectID string) (types.Project
 
 // UpdatePolicies replaces the project's backup policies, schedules the enabled ones and unschedules the rest.
 func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates []types.UpdateProjectBackupPolicy) (types.ProjectBackupPolicyCollection, error) {
-	// Two saves for the same project must not register jobs in a different order from their commits.
-	defer s.policyLocks.Lock(projectID)()
 	project, err := s.deps.Project(ctx, projectID, projectDetails)
 	if err != nil {
 		return types.ProjectBackupPolicyCollection{}, err
@@ -1462,9 +1335,8 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 			volumes := slices.Clone(update.Volumes)
 			slices.Sort(volumes)
 			volumes = slices.Compact(volumes)
-			// A new selection follows the rules of a manual backup; an unchanged one is not checked again, so a volume
-			// that went stale does not block saving, and no selection keeps following the project's volumes.
-			if volumes != nil && (policy.ID == "" || !slices.Equal(volumes, policy.Volumes)) {
+			// No selection follows the project's volumes; a selection follows the rules of a manual backup.
+			if volumes != nil {
 				if _, inspectErr := s.inspectVolumes(ctx, project, volumes); inspectErr != nil {
 					return inspectErr
 				}
@@ -1483,10 +1355,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 			}
 			return nil
 		},
-		// A deleted policy's job stays while a backup it started is unfinished, so a restart can still resume it.
-		Unregister: func(ctx context.Context, policyID string) {
-			s.reschedule(ctx, &ProjectBackupPolicy{BaseModel: database.BaseModel{ID: policyID}, ProjectID: projectID})
-		},
+		Unregister: s.jobs.Unregister,
 		Reschedule: s.reschedule,
 	}
 	if runErr := reconcile.Run(ctx, updates); runErr != nil {
@@ -1495,25 +1364,11 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 	return s.Policies(ctx, projectID)
 }
 
-// RegisterJobsOnStartup schedules every enabled project backup policy and global project backup policy, and keeps the
-// job of a disabled or deleted per-project policy whose backup was interrupted, so the run can resume or fail it.
+// RegisterJobsOnStartup schedules every enabled project backup policy and global project backup policy.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
-	db := s.deps.DB.WithContext(ctx)
-	unfinished := db.Model(&ProjectBackup{}).Select("policy_id").
-		Where("status = ? AND trigger = ? AND policy_id <> ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled)
 	var policies []ProjectBackupPolicy
-	if err := db.Where("enabled = ? OR id IN (?)", true, unfinished).Find(&policies).Error; err != nil {
+	if err := s.deps.DB.WithContext(ctx).Where("enabled = ?", true).Find(&policies).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to load scheduled project backups", "error", err)
-	}
-	var orphaned []ProjectBackup
-	if err := db.Where("status = ? AND trigger = ? AND policy_id <> '' AND policy_id NOT LIKE ? AND policy_id NOT IN (?)",
-		types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled, types.GlobalProjectPolicyPrefix+"%",
-		db.Model(&ProjectBackupPolicy{}).Select("id"),
-	).Find(&orphaned).Error; err != nil {
-		slog.ErrorContext(ctx, "Failed to load interrupted project backups of deleted policies", "error", err)
-	}
-	for _, entry := range orphaned {
-		policies = append(policies, ProjectBackupPolicy{BaseModel: database.BaseModel{ID: entry.PolicyID}, ProjectID: entry.ProjectID})
 	}
 	for i := range policies {
 		s.reschedule(ctx, &policies[i])
@@ -1521,19 +1376,6 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	globals, err := s.globalPolicies()
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to load global project backup policies", "error", err)
-	}
-	// A deleted global policy's interrupted run resumes through its job as well.
-	var series []string
-	if seriesErr := db.Model(&ProjectBackup{}).Distinct("policy_id").
-		Where("status = ? AND trigger = ? AND policy_id LIKE ?", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled, types.GlobalProjectPolicyPrefix+"%").
-		Pluck("policy_id", &series).Error; seriesErr != nil {
-		slog.ErrorContext(ctx, "Failed to load interrupted global project backups", "error", seriesErr)
-	}
-	for _, seriesID := range series {
-		policyID, _, _ := strings.Cut(strings.TrimPrefix(seriesID, types.GlobalProjectPolicyPrefix), ":")
-		if !slices.ContainsFunc(globals, func(policy types.GlobalProjectBackupPolicy) bool { return policy.ID == policyID }) {
-			globals = append(globals, types.GlobalProjectBackupPolicy{ID: policyID})
-		}
 	}
 	for i := range globals {
 		s.rescheduleGlobal(ctx, &globals[i])
@@ -1543,13 +1385,11 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 
 // RemovePolicies unschedules and deletes a deleted project's backup policies, which leaves their backups unmanaged.
 func (s *Service) RemovePolicies(ctx context.Context, projectID string) {
-	defer s.policyLocks.Lock(projectID)()
 	policies, err := s.policies(ctx, projectID)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to load the backup policies of a deleted project", "projectId", projectID, "error", err)
 		return
 	}
-	// Deleted first, so a restart in between never schedules them again.
 	if deleteErr := s.deps.DB.WithContext(ctx).Where("project_id = ?", projectID).Delete(&ProjectBackupPolicy{}).Error; deleteErr != nil {
 		slog.WarnContext(ctx, "Failed to delete the backup policies of a deleted project", "projectId", projectID, "error", deleteErr)
 		return
@@ -1559,17 +1399,8 @@ func (s *Service) RemovePolicies(ctx context.Context, projectID string) {
 	}
 }
 
-// unfinished reports whether a scheduled backup of the job's policy is still running, matching a global policy's
-// per-project series too; a failed check counts as running, so its job is kept.
-func (s *Service) unfinished(ctx context.Context, jobID string) bool {
-	var count int64
-	err := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).
-		Where("(policy_id = ? OR policy_id LIKE ?) AND status = ?", jobID, jobID+":%", types.VolumeBackupStatusRunning).Count(&count).Error
-	return err != nil || count > 0
-}
-
 func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
-	if !policy.Enabled && !s.unfinished(ctx, policy.ID) {
+	if !policy.Enabled {
 		s.jobs.Unregister(ctx, policy.ID)
 		return
 	}
@@ -1598,14 +1429,6 @@ func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
 			}
 			return current.Schedule
 		},
-		// A disabled or deleted policy's job only finishes an interrupted backup; a run it starts finds the policy off
-		// and cancels.
-		ShouldRunFn: func(ctx context.Context) bool {
-			var current ProjectBackupPolicy
-			loadErr := s.deps.DB.WithContext(ctx).Where("id = ?", policyID).First(&current).Error
-			return (loadErr == nil && current.Enabled) || s.unfinished(ctx, policyID)
-		},
-		// A run whose workflow cannot be resumed still finishes, or fails, its backup.
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous)
 			if resumed || resumeErr != nil {
@@ -1616,8 +1439,8 @@ func (s *Service) reschedule(ctx context.Context, policy *ProjectBackupPolicy) {
 	})
 }
 
-// runScheduled waits for the project's admission and its volumes' leases instead of failing, then backs the project up
-// with its policy as it stands once admitted.
+// runScheduled resumes an interrupted backup of the policy, or waits for the project's admission and its volumes'
+// leases and backs the project up with the policy as it stands once admitted.
 func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	var input scheduledRun
 	if decodeErr := t.Payload(&input); decodeErr != nil {
@@ -1627,10 +1450,11 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	if outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous); resumed || resumeErr != nil {
 		return outcome, resumeErr
 	}
+	canceled := types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}
 	var policy ProjectBackupPolicy
 	if loadErr := s.deps.DB.WithContext(ctx).Where("id = ? AND enabled = ?", input.PolicyID, true).First(&policy).Error; loadErr != nil {
 		if errors.Is(loadErr, gorm.ErrRecordNotFound) {
-			return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
+			return canceled, nil
 		}
 		return nil, loadErr
 	}
@@ -1639,19 +1463,22 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	})
 	switch {
 	case errors.Is(err, errPolicyGone):
-		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
+		return canceled, nil
 	case errors.Is(err, errRemoteOnlyDisabled):
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	case err != nil:
 		return nil, err
 	}
+	defer release(context.WithoutCancel(ctx), admitted.leases)
 	backupErr := s.backUpScheduled(ctx, admitted)
-	release(context.WithoutCancel(ctx), admitted.leases)
 	if backupErr != nil {
 		slog.ErrorContext(ctx, "Scheduled project backup failed", "projectId", policy.ProjectID, "policyId", policy.ID, "error", backupErr)
 	}
-	// A failed run can leave a local snapshot too, so it counts against retention as well.
-	s.retain(ctx, policy.ProjectID, policy.ID)
+	// Retention runs under the project's admission, so it never deletes a backup a restore is reading. A failed run can
+	// leave a local snapshot too, so it counts against retention as well.
+	if retainErr := s.retain(ctx, policy.ID); retainErr != nil {
+		slog.ErrorContext(ctx, "Project backup retention failed", "projectId", policy.ProjectID, "policyId", policy.ID, "error", retainErr)
+	}
 	if backupErr != nil {
 		return nil, backupErr
 	}
@@ -1675,20 +1502,20 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 		return types.SchedulerOutcome{}, true, err
 	}
 	err := s.resume(ctx, previous, nil, recorded)
-	if errors.Is(err, backup.ErrBackupSettled) {
+	switch {
+	case errors.Is(err, backup.ErrBackupSettled):
 		return types.SchedulerOutcome{}, false, nil
-	}
-	// A resumed run that fails keeps its snapshots, so it counts against retention as well.
-	s.retain(ctx, recorded.ProjectID, recorded.PolicyID)
-	if err != nil {
+	case err != nil && !handedBack(ctx, err):
+		return types.SchedulerOutcome{}, true, errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.BackupID, err.Error()))
+	case err != nil:
 		return types.SchedulerOutcome{}, true, err
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, true, nil
 }
 
-// admitScheduled waits for the project's admission, then for the leases of the volumes its policy captures. Everything
-// the backup relies on is read again once they are all held: the policy and its S3 repository through read, and the
-// plan. Volumes that changed while it waited are leased in turn and checked again. The backup is recorded under policyID.
+// admitScheduled waits for the project's admission, reads the policy through read and plans the backup under it, then
+// waits for the leases of the volumes the plan captures, in name order so two waiting backups never hold one each of the
+// other's. The backup is recorded under policyID.
 func (s *Service) admitScheduled(
 	ctx context.Context, projectID, policyID string, read func(context.Context) (types.CreateProjectBackupRequest, bool, error),
 ) (admittedRun, error) {
@@ -1697,43 +1524,33 @@ func (s *Service) admitScheduled(
 		return admittedRun{}, err
 	}
 	leases := []*runs.Lease{projectLease}
-	var leased []string
-	remoteDisabled := false
-	for {
-		request, disabled, policyErr := read(ctx)
-		remoteDisabled = remoteDisabled || disabled
-		var project types.Project
-		var p plan
-		if policyErr == nil {
-			project, policyErr = s.deps.Project(ctx, projectID, projectDetails)
-		}
-		if policyErr == nil {
-			p, policyErr = s.resolvePlan(ctx, project, request)
-		}
-		if policyErr != nil {
-			release(context.WithoutCancel(ctx), leases)
-			return admittedRun{}, policyErr
-		}
-		names := p.volumeNames()
-		if slices.Equal(names, leased) {
-			return admittedRun{policyID: policyID, project: project, plan: p, leases: leases, remoteDisabled: remoteDisabled}, nil
-		}
-		// Leases are always taken in name order, so two waiting backups never hold one each of the other's.
-		release(context.WithoutCancel(ctx), leases[1:])
-		leases, leased = leases[:1], names
-		for _, name := range names {
-			lease, leaseErr := s.deps.Engine.AwaitRun(ctx, backup.VolumeAdmissionScope, name)
-			if leaseErr != nil {
-				release(context.WithoutCancel(ctx), leases)
-				return admittedRun{}, leaseErr
-			}
-			leases = append(leases, lease)
-		}
+	fail := func(err error) (admittedRun, error) {
+		release(context.WithoutCancel(ctx), leases)
+		return admittedRun{}, err
 	}
+	request, remoteDisabled, err := read(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	project, err := s.deps.Project(ctx, projectID, projectDetails)
+	if err != nil {
+		return fail(err)
+	}
+	p, err := s.resolvePlan(ctx, project, request)
+	if err != nil {
+		return fail(err)
+	}
+	for _, name := range p.volumeNames() {
+		lease, leaseErr := s.deps.Engine.AwaitRun(ctx, backup.VolumeAdmissionScope, name)
+		if leaseErr != nil {
+			return fail(leaseErr)
+		}
+		leases = append(leases, lease)
+	}
+	return admittedRun{policyID: policyID, project: project, plan: p, leases: leases, remoteDisabled: remoteDisabled}, nil
 }
 
-// scheduledPolicy reads the enabled policy under the project's admission and checks its S3 repository. A missing
-// repository disables S3, or the policy when S3 is its only destination, so the backup never recreates it.
+// scheduledPolicy reads the enabled policy under the project's admission and checks its S3 repository.
 func (s *Service) scheduledPolicy(ctx context.Context, policyID string) (types.CreateProjectBackupRequest, bool, error) {
 	var policy ProjectBackupPolicy
 	if err := s.deps.DB.WithContext(ctx).Where("id = ? AND enabled = ?", policyID, true).First(&policy).Error; err != nil {
@@ -1742,45 +1559,60 @@ func (s *Service) scheduledPolicy(ctx context.Context, policyID string) (types.C
 		}
 		return types.CreateProjectBackupRequest{}, false, err
 	}
-	var remoteErr error
-	if policy.S3Enabled {
-		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
-			DestinationID: policy.S3DestinationID,
-			Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
-			InstanceID:    s.deps.Settings.GetSettingsConfig().InstanceID.Value,
-			Tables:        backup.VolumeRepositoryTables,
-		})
-	}
-	disabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		return backup.DisableStoredRemote(ctx, s.deps.DB, backup.DisableRemoteRequest{
-			Model:         &ProjectBackupPolicy{},
-			ID:            policy.ID,
-			DestinationID: policy.S3DestinationID,
-			LocalEnabled:  policy.LocalEnabled,
-			Field:         field,
-		})
+	disabled, err := s.checkRemote(ctx, scheduledRemote{
+		S3Enabled:     &policy.S3Enabled,
+		Enabled:       &policy.Enabled,
+		DestinationID: policy.S3DestinationID,
+		LocalEnabled:  policy.LocalEnabled,
+		Save: func(field string) (bool, error) {
+			return backup.DisableStoredRemote(ctx, s.deps.DB, backup.DisableRemoteRequest{
+				Model:         &ProjectBackupPolicy{},
+				ID:            policy.ID,
+				DestinationID: policy.S3DestinationID,
+				LocalEnabled:  policy.LocalEnabled,
+				Field:         field,
+			})
+		},
+		Reschedule: func() { s.reschedule(ctx, &policy) },
 	})
-	// The repository is gone but the guarded save matched nothing: S3 was turned off or moved, or the policy changed,
-	// while it was checked, so the policy as it is now is checked instead.
-	if err == nil && !disabled && errors.Is(remoteErr, backup.ErrRemoteRepositoryMissing) {
-		return s.scheduledPolicy(ctx, policyID)
-	}
 	if err != nil {
-		return types.CreateProjectBackupRequest{}, false, err
-	}
-	if disabled {
-		// Rescheduled before the backup runs, so a later edit of the policy is not undone afterwards.
-		s.reschedule(ctx, &policy)
-	}
-	if disabled && !policy.LocalEnabled {
-		return types.CreateProjectBackupRequest{}, true, errRemoteOnlyDisabled
+		return types.CreateProjectBackupRequest{}, disabled, err
 	}
 	return types.CreateProjectBackupRequest{
 		StopContainers:  new(policy.StopContainers),
-		Destination:     destination(policy.LocalEnabled, policy.S3Enabled),
+		Destination:     backup.Destination(policy.LocalEnabled, policy.S3Enabled),
 		S3DestinationID: policy.S3DestinationID,
 		Volumes:         policy.Volumes,
 	}, disabled, nil
+}
+
+// checkRemote checks a scheduled policy's S3 repository. A missing repository disables S3, or the policy when S3 is its
+// only destination, through Save, so the backup never recreates it.
+func (s *Service) checkRemote(ctx context.Context, policy scheduledRemote) (bool, error) {
+	var remoteErr error
+	if *policy.S3Enabled {
+		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
+			DestinationID: policy.DestinationID,
+			Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
+			Tables:        backup.VolumeRepositoryTables,
+		})
+	}
+	disabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, policy.S3Enabled, policy.Enabled, policy.Save)
+	switch {
+	case err != nil:
+		return false, err
+	// The policy changed while its repository was checked, so the guarded save matched nothing; the next run checks it.
+	case !disabled && errors.Is(remoteErr, backup.ErrRemoteRepositoryMissing):
+		return false, remoteErr
+	case !disabled:
+		return false, nil
+	}
+	// Rescheduled before the backup runs, so a later edit of the policy is not undone afterwards.
+	policy.Reschedule()
+	if !policy.LocalEnabled {
+		return true, errRemoteOnlyDisabled
+	}
+	return true, nil
 }
 
 // backUpScheduled records the admitted run's backup and its checkpoint, then takes it as a manual backup does.
@@ -1793,7 +1625,7 @@ func (s *Service) backUpScheduled(ctx context.Context, admitted admittedRun) (er
 		ComposeName:     admitted.project.ComposeName,
 		Status:          types.VolumeBackupStatusRunning,
 		Trigger:         types.VolumeBackupTriggerScheduled,
-		Destination:     destination(p.LocalEnabled, p.S3Enabled),
+		Destination:     backup.Destination(p.LocalEnabled, p.S3Enabled),
 		S3DestinationID: p.S3DestinationID,
 		PolicyID:        admitted.policyID,
 		Volumes:         backupVolumes(p.Volumes),
@@ -1807,7 +1639,7 @@ func (s *Service) backUpScheduled(ctx context.Context, admitted admittedRun) (er
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 		}
 	}()
-	p.BackupID, p.PolicyID = entry.ID, entry.PolicyID
+	p.BackupID = entry.ID
 	if recordErr := s.record(ctx, p); recordErr != nil {
 		return recordErr
 	}
@@ -1818,101 +1650,81 @@ func (s *Service) backUpScheduled(ctx context.Context, admitted admittedRun) (er
 	return s.complete(ctx, entry, err)
 }
 
-// retain deletes the policy's backups beyond its newest RetentionCount under the project's admission. A busy project
-// keeps them until the policy's next backup, and a failure is logged without failing the backup.
-func (s *Service) retain(ctx context.Context, projectID, policyID string) {
-	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, admissionScope, projectID)
-	if err != nil || !admitted {
-		slog.InfoContext(ctx, "Skipping project backup retention until the policy's next backup", "projectId", projectID, "policyId", policyID, "error", err)
-		return
-	}
-	defer lease.Release(context.WithoutCancel(ctx))
-	// A global policy keeps its RetentionCount per project, in the project's series.
+// retain deletes the policy's backups beyond its newest RetentionCount; the caller holds the project's admission. The
+// policy is read again, since an edit or delete made while the backup ran must keep the backups it asks to keep. A global
+// policy keeps its RetentionCount per project, in the project's series.
+func (s *Service) retain(ctx context.Context, policyID string) error {
 	var keep int
 	if series, global := strings.CutPrefix(policyID, types.GlobalProjectPolicyPrefix); global {
 		owner, _, _ := strings.Cut(series, ":")
-		policy, loadErr := s.globalPolicy(owner)
-		if loadErr != nil || policy == nil {
-			return
+		policy, err := s.globalPolicy(owner)
+		if err != nil || policy == nil {
+			return err
 		}
 		keep = policy.RetentionCount
 	} else {
 		var policy ProjectBackupPolicy
-		if loadErr := s.deps.DB.WithContext(ctx).Where("id = ?", policyID).First(&policy).Error; loadErr != nil {
-			return
+		if err := s.deps.DB.WithContext(ctx).Where("id = ?", policyID).First(&policy).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
 		}
 		keep = policy.RetentionCount
 	}
 	if keep <= 0 {
-		return
+		return nil
 	}
 	expired, err := backup.ExpiredRunIDs(ctx, s.deps.DB, backupsTable, policyID, keep)
-	if err == nil {
-		var entries []*ProjectBackup
-		if entries, err = s.backupsByID(ctx, expired); err == nil {
-			err = s.removeAll(ctx, entries)
-		}
-	}
 	if err != nil {
-		slog.ErrorContext(ctx, "Project backup retention failed", "projectId", projectID, "policyId", policyID, "error", err)
+		return err
 	}
+	entries, err := s.backupsByID(ctx, expired)
+	if err != nil {
+		return err
+	}
+	return s.removeAll(ctx, entries)
 }
 
 // PruneUnmanagedBackups deletes safety backups and the backups of deleted policies once they have been unmanaged for
-// unmanagedBackupRetentionDays; a busy project's backups wait for the next run.
+// unmanagedBackupRetentionDays, under each project's admission; a busy project's backups wait for the next run.
 func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 	days := s.deps.Settings.GetIntSetting(ctx, "unmanagedBackupRetentionDays")
 	if days <= 0 {
 		return nil
 	}
-	now, retention := time.Now(), time.Duration(days)*24*time.Hour
-	expired, err := s.expiredUnmanaged(ctx, types.UnmanagedBackupSweep{Now: now, Retention: retention})
-	if err != nil || len(expired) == 0 {
+	expired, err := s.expiredUnmanaged(ctx, types.UnmanagedBackupSweep{Now: time.Now(), Retention: time.Duration(days) * 24 * time.Hour})
+	if err != nil {
 		return err
 	}
-	var entries []ProjectBackup
-	if loadErr := s.deps.DB.WithContext(ctx).Select("id", "project_id").Where("id IN ?", expired).Find(&entries).Error; loadErr != nil {
-		return loadErr
+	entries, err := s.backupsByID(ctx, expired)
+	if err != nil {
+		return err
 	}
-	byProject := make(map[string][]string)
+	byProject := make(map[string][]*ProjectBackup)
 	for _, entry := range entries {
-		byProject[entry.ProjectID] = append(byProject[entry.ProjectID], entry.ID)
+		byProject[entry.ProjectID] = append(byProject[entry.ProjectID], entry)
 	}
-	return s.pruneUnmanaged(ctx, byProject, types.UnmanagedBackupSweep{Now: now, Retention: retention})
-}
-
-// pruneUnmanaged holds every candidate project's admission, checks the candidates again, and deletes the expired ones of
-// the projects it got in one pass, so each repository is pruned once; a busy project's backups wait for the next run.
-func (s *Service) pruneUnmanaged(ctx context.Context, candidates map[string][]string, sweep types.UnmanagedBackupSweep) error {
 	var pruneErr error
-	var leases []*runs.Lease
-	var within []string
-	defer func() { release(context.WithoutCancel(ctx), leases) }()
-	for projectID, ids := range candidates {
-		lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, admissionScope, projectID)
-		if err != nil {
-			pruneErr = errors.Join(pruneErr, err)
+	var held []*ProjectBackup
+	var releases []func(context.Context)
+	defer func() {
+		for _, releaseBackups := range releases {
+			releaseBackups(context.WithoutCancel(ctx))
+		}
+	}()
+	for projectID, group := range byProject {
+		releaseBackups, holdErr := s.HoldBackups(ctx, projectID)
+		if holdErr != nil {
+			if !errors.Is(holdErr, errAlreadyRunning) {
+				pruneErr = errors.Join(pruneErr, holdErr)
+			}
 			continue
 		}
-		if !admitted {
-			slog.InfoContext(ctx, "Skipping unmanaged backup deletion for a busy project until the next run", "projectId", projectID)
-			continue
-		}
-		leases = append(leases, lease)
-		within = append(within, ids...)
+		releases = append(releases, releaseBackups)
+		held = append(held, group...)
 	}
-	if len(within) == 0 {
-		return pruneErr
-	}
-	ids, err := s.expiredUnmanaged(ctx, types.UnmanagedBackupSweep{Now: sweep.Now, Within: within, Retention: sweep.Retention})
-	if err != nil {
-		return errors.Join(pruneErr, err)
-	}
-	entries, err := s.backupsByID(ctx, ids)
-	if err != nil {
-		return errors.Join(pruneErr, err)
-	}
-	return errors.Join(pruneErr, s.removeAll(ctx, entries))
+	return errors.Join(pruneErr, s.removeAll(ctx, held))
 }
 
 // expiredUnmanaged marks scheduled backups whose policy no longer exists as unmanaged and returns those, and safety
@@ -1936,7 +1748,7 @@ func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBac
 	}
 	var orphaned []string
 	for _, candidate := range candidates {
-		if !slices.Contains(managed, candidate.PolicyID) {
+		if !managed[candidate.PolicyID] {
 			orphaned = append(orphaned, candidate.ID)
 		}
 	}
@@ -1944,15 +1756,15 @@ func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBac
 }
 
 // globalSeries returns the policy ID of each series a global policy manages: one for each project it selects.
-func (s *Service) globalSeries(references []types.ProjectReference) ([]string, error) {
+func (s *Service) globalSeries(references []types.ProjectReference) (map[string]bool, error) {
 	globals, err := s.globalPolicies()
 	if err != nil {
 		return nil, err
 	}
-	var series []string
+	series := make(map[string]bool)
 	for _, policy := range globals {
 		for _, project := range selectProjects(policy, references) {
-			series = append(series, types.GlobalProjectPolicyPrefix+policy.ID+":"+project.ID)
+			series[types.GlobalProjectPolicyPrefix+policy.ID+":"+project.ID] = true
 		}
 	}
 	return series, nil
@@ -2109,15 +1921,17 @@ func (s *Service) reconcileSnapshots(ctx context.Context, found []foundSnapshot)
 	if err != nil {
 		return nil, err
 	}
-	var managed []string
-	if pluckErr := s.deps.DB.WithContext(ctx).Model(&ProjectBackupPolicy{}).Pluck("id", &managed).Error; pluckErr != nil {
-		return nil, pluckErr
-	}
-	series, err := s.globalSeries(references)
+	managed, err := s.globalSeries(references)
 	if err != nil {
 		return nil, err
 	}
-	managed = append(managed, series...)
+	var policyIDs []string
+	if pluckErr := s.deps.DB.WithContext(ctx).Model(&ProjectBackupPolicy{}).Pluck("id", &policyIDs).Error; pluckErr != nil {
+		return nil, pluckErr
+	}
+	for _, policyID := range policyIDs {
+		managed[policyID] = true
+	}
 	var planned []discoveredBackup
 	for _, backupID := range backupIDs {
 		snapshots := groups[backupID]
@@ -2152,7 +1966,7 @@ func (s *Service) reconcileSnapshots(ctx context.Context, found []foundSnapshot)
 			owner, _, _ := strings.Cut(series, ":")
 			policyID = types.GlobalProjectPolicyPrefix + owner + ":" + projectID
 		}
-		if trigger != types.VolumeBackupTriggerScheduled || !slices.Contains(managed, policyID) {
+		if trigger != types.VolumeBackupTriggerScheduled || !managed[policyID] {
 			trigger, policyID = types.VolumeBackupTriggerManual, ""
 		}
 		planned = append(planned, discoveredBackup{
@@ -2186,13 +2000,12 @@ func fillSnapshots(entry ProjectBackup, snapshots []foundSnapshot, local int) (P
 	return ProjectBackup{
 		BaseModel:         entry.BaseModel,
 		CompletedAt:       entry.CompletedAt,
-		OrphanedAt:        entry.OrphanedAt,
 		ProjectID:         entry.ProjectID,
 		ProjectName:       entry.ProjectName,
 		ComposeName:       entry.ComposeName,
 		Status:            kit.Ternary(captured, types.VolumeBackupStatusSucceeded, entry.Status),
 		Trigger:           entry.Trigger,
-		Destination:       destination(localID != "", remoteID != ""),
+		Destination:       backup.Destination(localID != "", remoteID != ""),
 		LocalSnapshotID:   localID,
 		RemoteSnapshotID:  remoteID,
 		S3DestinationID:   kit.Ternary(fillRemote, snapshots[max(remote, 0)].s3DestinationID, entry.S3DestinationID),
@@ -2244,7 +2057,7 @@ func (s *Service) importSnapshots(ctx context.Context, found []foundSnapshot, op
 			ComposeName:      manifest.Project.ComposeName,
 			Status:           types.VolumeBackupStatusSucceeded,
 			Trigger:          item.trigger,
-			Destination:      destination(item.local != nil, item.remote != nil),
+			Destination:      backup.Destination(item.local != nil, item.remote != nil),
 			LocalSnapshotID:  kit.FromPtr(item.local).snapshot.ID,
 			RemoteSnapshotID: kit.FromPtr(item.remote).snapshot.ID,
 			S3DestinationID:  kit.FromPtr(item.remote).s3DestinationID,
@@ -2392,9 +2205,8 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.Upda
 			return nil
 		},
 		Persist: s.saveGlobalPolicies,
-		// A deleted policy's job stays while a backup it started is unfinished, so a restart can still resume it.
 		Unregister: func(ctx context.Context, policyID string) {
-			s.rescheduleGlobal(ctx, &types.GlobalProjectBackupPolicy{ID: policyID})
+			s.jobs.Unregister(ctx, types.GlobalProjectPolicyPrefix+policyID)
 		},
 		Reschedule: s.rescheduleGlobal,
 	}
@@ -2443,28 +2255,13 @@ func (s *Service) StartGlobal(ctx context.Context, user types.Actor, policyID st
 	case !policy.Enabled:
 		return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("enable the backup policy before running it"))
 	}
-	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, globalAdmissionScope, policyID)
-	if err != nil {
-		return types.BackupRunAccepted{}, err
-	}
-	if !admitted {
-		return types.BackupRunAccepted{}, errGlobalRunning
-	}
-	input := globalRun{Requester: &requester, PolicyID: policyID, Claim: uuid.NewV7().String()}
-	releaseHeld := s.deps.Engine.Hold(globalAdmissionScope, policyID, input.Claim, lease)
-	activityID, err := s.flow.Submit(ctx, s.global, input, activity.StartRequest{
+	activityID, err := s.flow.Submit(ctx, s.global, globalRun{Requester: &requester, PolicyID: policyID}, activity.StartRequest{
 		StartedBy: &user,
 		Metadata:  database.JSON{"action": "run_project_backups", "policyId": policyID},
 	})
 	if err != nil {
-		releaseHeld(ctx)
 		return types.BackupRunAccepted{}, err
 	}
-	// A run canceled before its task starts never takes the parked lease.
-	go func() {
-		_, _ = s.flow.Wait(context.WithoutCancel(ctx), s.global, activityID)
-		releaseHeld(context.WithoutCancel(ctx))
-	}()
 	return types.BackupRunAccepted{ActivityID: activityID, Status: "running"}, nil
 }
 
@@ -2474,7 +2271,7 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 		return
 	}
 	jobID := types.GlobalProjectPolicyPrefix + policy.ID
-	if !policy.Enabled && !s.unfinished(ctx, jobID) {
+	if !policy.Enabled {
 		s.jobs.Unregister(ctx, jobID)
 		return
 	}
@@ -2494,13 +2291,7 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *types.GlobalProj
 			}
 			return current.Schedule
 		},
-		// A disabled or deleted policy's job only finishes an interrupted run; a run it starts finds the policy off.
-		ShouldRunFn: func(ctx context.Context) bool {
-			current, err := s.globalPolicy(policyID)
-			return (err == nil && current != nil && current.Enabled) || s.unfinished(ctx, jobID)
-		},
-		// A run whose workflow cannot be resumed still finishes, or fails, the backups it checkpointed and backs up the
-		// rest of its projects, once, as a project policy's fallback does.
+		// A run whose workflow cannot be resumed settles its checkpointed backup and backs up the rest, once.
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.backUpGlobal(ctx, globalRun{PolicyID: policyID}, previous)
 		},
@@ -2517,32 +2308,29 @@ func (s *Service) runGlobal(ctx context.Context, t flow.Task) (any, error) {
 }
 
 // backUpGlobal backs up the projects a global policy selects one at a time, each through the path of a project's
-// scheduled backup. A resumed run first finishes, or fails, the backups the interrupted attempt checkpointed, as a
-// project policy's resumed run does, then backs up the rest of the projects that attempt planned.
+// scheduled backup. A resumed run first finishes, or fails, the backup the interrupted attempt checkpointed, as a project
+// policy's resumed run does, then backs up the projects that attempt had not finished.
 func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
-	lease, admitted, err := s.deps.Engine.AcquireRun(ctx, globalAdmissionScope, input.PolicyID, input.Claim)
-	switch {
-	case err == nil && !admitted && input.Requester == nil:
-		// A scheduled run or a fallback waits for the other run of the policy.
-		lease, err = s.deps.Engine.AwaitRun(ctx, globalAdmissionScope, input.PolicyID)
-	case err == nil && !admitted && len(previous.Outcome.Targets) > 0:
-		// A resumed run is handed back instead of failing, so a retry still settles the backups it checkpointed.
-		return types.SchedulerOutcome{}, fmt.Errorf("%w: %w", actor.ErrJobRejected, errGlobalRunning)
-	case err == nil && !admitted:
-		return types.SchedulerOutcome{}, errGlobalRunning
-	}
+	canceled := types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}
+	lease, err := s.deps.Engine.AwaitRun(ctx, globalAdmissionScope, input.PolicyID)
 	if err != nil {
 		return types.SchedulerOutcome{}, err
 	}
 	defer lease.Release(context.WithoutCancel(ctx))
-	planned, err := s.planGlobal(ctx, input.PolicyID, previous)
-	if errors.Is(err, errPolicyGone) {
-		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
-	}
-	if err != nil {
-		return types.SchedulerOutcome{}, err
-	}
 	finished := make(map[string]types.TargetOutcome)
+	report := func(projectID string, backupErr error) error {
+		status, message := types.RunStatusSucceeded, ""
+		switch {
+		case errors.Is(backupErr, errProjectSkipped):
+			status, message = types.RunStatusSkipped, backupErr.Error()
+		case backupErr != nil:
+			slog.ErrorContext(ctx, "Global project backup failed", "projectId", projectID, "policyId", input.PolicyID, "error", backupErr)
+			status, message = types.RunStatusFailed, backupErr.Error()
+		}
+		outcome := types.TargetOutcome{ResourceType: targetType, ID: projectID, Status: status, Message: message}
+		finished[projectID] = outcome
+		return jobcontext.Progress(ctx, outcome)
+	}
 	for _, target := range previous.Outcome.Targets {
 		if target.ResourceType != targetType {
 			continue
@@ -2551,129 +2339,77 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			finished[target.ID] = target
 			continue
 		}
-		if len(target.RecoveryData) == 0 {
-			continue
-		}
 		var recorded plan
 		if decodeErr := json.Unmarshal(target.RecoveryData, &recorded); decodeErr != nil {
 			return types.SchedulerOutcome{}, decodeErr
 		}
 		resumeErr := s.resume(ctx, previous, input.Requester, recorded)
+		// A resume that ends for good, a user cancel included, fails its backup as a project policy's does.
+		if resumeErr != nil && !errors.Is(resumeErr, backup.ErrBackupSettled) && !handedBack(ctx, resumeErr) {
+			resumeErr = errors.Join(resumeErr, s.fail(context.WithoutCancel(ctx), recorded.BackupID, resumeErr.Error()))
+		}
 		switch {
 		case ctx.Err() != nil:
 			return types.SchedulerOutcome{}, ctx.Err()
 		case errors.Is(resumeErr, actor.ErrJobRejected):
 			return types.SchedulerOutcome{}, resumeErr
 		case errors.Is(resumeErr, backup.ErrBackupSettled):
-			// The backup failed, for one interrupted with its containers stopped, so a new one runs, as for a project policy.
+			// The backup failed, so a new one runs below, as for a project policy.
 			continue
 		}
-		// A resumed backup that fails keeps its snapshots, so it counts against retention as well.
-		s.retain(ctx, recorded.ProjectID, recorded.PolicyID)
-		var outcome types.TargetOutcome
-		if resumeErr == nil {
-			outcome = types.TargetOutcome{ResourceType: targetType, ID: recorded.ProjectID, Status: types.RunStatusSucceeded}
-		} else {
-			outcome = types.TargetOutcome{ResourceType: targetType, ID: recorded.ProjectID, Status: types.RunStatusFailed, Message: resumeErr.Error()}
+		if reportErr := report(recorded.ProjectID, resumeErr); reportErr != nil {
+			return types.SchedulerOutcome{}, reportErr
 		}
-		if progressErr := jobcontext.Progress(ctx, outcome); progressErr != nil {
-			return types.SchedulerOutcome{}, progressErr
-		}
-		finished[recorded.ProjectID] = outcome
+	}
+	// The checkpointed backups are settled even when the policy was disabled or deleted since.
+	policy, err := s.globalPolicy(input.PolicyID)
+	if err != nil {
+		return types.SchedulerOutcome{}, err
+	}
+	if policy == nil || !policy.Enabled {
+		return canceled, nil
+	}
+	references, err := s.deps.ListProjects(ctx)
+	if err != nil {
+		return types.SchedulerOutcome{}, err
 	}
 	remoteDisabled := false
-	for _, projectID := range planned {
-		if _, done := finished[projectID]; done {
+	for _, project := range selectProjects(*policy, references) {
+		if _, done := finished[project.ID]; done {
 			continue
 		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return types.SchedulerOutcome{}, ctxErr
-		}
-		seriesID := types.GlobalProjectPolicyPrefix + input.PolicyID + ":" + projectID
-		admitted, admitErr := s.admitScheduled(ctx, projectID, seriesID, func(ctx context.Context) (types.CreateProjectBackupRequest, bool, error) {
-			return s.globalSettings(ctx, input, projectID)
+		seriesID := types.GlobalProjectPolicyPrefix + input.PolicyID + ":" + project.ID
+		admitted, backupErr := s.admitScheduled(ctx, project.ID, seriesID, func(ctx context.Context) (types.CreateProjectBackupRequest, bool, error) {
+			return s.globalSettings(ctx, input, project.ID)
 		})
 		switch {
-		case errors.Is(admitErr, errPolicyGone):
-			return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
-		case errors.Is(admitErr, errRemoteOnlyDisabled):
+		case errors.Is(backupErr, errPolicyGone):
+			return canceled, nil
+		case errors.Is(backupErr, errRemoteOnlyDisabled):
 			return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
-		case admitErr != nil && ctx.Err() != nil:
-			return types.SchedulerOutcome{}, ctx.Err()
-		}
-		backupErr := admitErr
-		if admitErr == nil {
+		case backupErr == nil:
 			remoteDisabled = remoteDisabled || admitted.remoteDisabled
 			backupErr = s.backUpScheduled(ctx, admitted)
+			// Retention runs under the project's admission, so it never deletes a backup a restore is reading. A failed
+			// backup can leave a local snapshot too, so it counts against retention as well.
+			if retainErr := s.retain(ctx, seriesID); retainErr != nil {
+				slog.ErrorContext(ctx, "Project backup retention failed", "projectId", project.ID, "policyId", seriesID, "error", retainErr)
+			}
 			release(context.WithoutCancel(ctx), admitted.leases)
 		}
 		// Shutdown interrupted this project; its checkpoint resumes it first.
 		if ctx.Err() != nil {
 			return types.SchedulerOutcome{}, ctx.Err()
 		}
-		var outcome types.TargetOutcome
-		switch {
-		case backupErr == nil:
-			outcome = types.TargetOutcome{ResourceType: targetType, ID: projectID, Status: types.RunStatusSucceeded}
-		case errors.Is(backupErr, errProjectSkipped):
-			outcome = types.TargetOutcome{ResourceType: targetType, ID: projectID, Status: types.RunStatusSkipped, Message: backupErr.Error()}
-		default:
-			slog.ErrorContext(ctx, "Global project backup failed", "projectId", projectID, "policyId", input.PolicyID, "error", backupErr)
-			outcome = types.TargetOutcome{ResourceType: targetType, ID: projectID, Status: types.RunStatusFailed, Message: backupErr.Error()}
+		if reportErr := report(project.ID, backupErr); reportErr != nil {
+			return types.SchedulerOutcome{}, reportErr
 		}
-		// A failed backup can leave a local snapshot too, so it counts against retention as well.
-		if outcome.Status != types.RunStatusSkipped {
-			s.retain(ctx, projectID, seriesID)
-		}
-		if progressErr := jobcontext.Progress(ctx, outcome); progressErr != nil {
-			return types.SchedulerOutcome{}, progressErr
-		}
-		finished[projectID] = outcome
 	}
 	return globalOutcome(finished, remoteDisabled), nil
 }
 
-// planGlobal returns the projects the run backs up: the ones an interrupted attempt planned, or else the ones the
-// enabled policy selects now, saved before any is backed up so a resumed run keeps to them.
-func (s *Service) planGlobal(ctx context.Context, policyID string, previous types.SchedulerRun) ([]string, error) {
-	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
-		return target.ID == globalPlanTarget && len(target.RecoveryData) > 0
-	})
-	if index >= 0 {
-		var recorded globalPlan
-		err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded)
-		return recorded.ProjectIDs, err
-	}
-	policy, err := s.globalPolicy(policyID)
-	if err != nil {
-		return nil, err
-	}
-	if policy == nil || !policy.Enabled {
-		return nil, errPolicyGone
-	}
-	references, err := s.deps.ListProjects(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var planned []string
-	for _, project := range selectProjects(*policy, references) {
-		planned = append(planned, project.ID)
-	}
-	frozen, err := json.Marshal(globalPlan{ProjectIDs: planned})
-	if err != nil {
-		return nil, err
-	}
-	return planned, jobcontext.Progress(ctx, types.TargetOutcome{
-		ResourceType: "backup_plan",
-		ID:           globalPlanTarget,
-		Status:       types.RunStatusSucceeded,
-		RecoveryData: frozen,
-	})
-}
-
 // globalSettings reads the global policy under the project's admission, checks the requester, that the policy still
-// selects the project and that the project has no enabled policy of its own, then checks the S3 repository. A missing
-// repository disables S3, or the policy when S3 is its only destination, so the backup never recreates it.
+// selects the project and that the project has no enabled policy of its own, then checks the S3 repository.
 func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID string) (types.CreateProjectBackupRequest, bool, error) {
 	if input.Requester != nil {
 		if err := s.deps.Engine.Authorize(ctx, *input.Requester); err != nil {
@@ -2701,65 +2437,51 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 	if own > 0 {
 		return types.CreateProjectBackupRequest{}, false, errProjectSkipped
 	}
-	var remoteErr error
-	if policy.S3Enabled {
-		remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
-			DestinationID: policy.S3DestinationID,
-			Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
-			InstanceID:    s.deps.Settings.GetSettingsConfig().InstanceID.Value,
-			Tables:        backup.VolumeRepositoryTables,
-		})
-	}
-	disabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		// Read again under the lock, so a concurrent edit or another run's disable is kept.
-		s.globalConfig.Lock()
-		defer s.globalConfig.Unlock()
-		policies, loadErr := s.globalPolicies()
-		if loadErr != nil {
-			return false, loadErr
-		}
-		index := slices.IndexFunc(policies, func(current types.GlobalProjectBackupPolicy) bool {
-			return current.ID == policy.ID && current.S3DestinationID == policy.S3DestinationID && current.S3Enabled && current.Enabled &&
-				current.LocalEnabled == policy.LocalEnabled
-		})
-		if index < 0 {
-			return false, nil
-		}
-		current := policies[index]
-		policies[index] = types.GlobalProjectBackupPolicy{ //exhaustruct:enforce
-			LastRun:           current.LastRun,
-			ID:                current.ID,
-			Schedule:          current.Schedule,
-			S3DestinationID:   current.S3DestinationID,
-			S3DestinationName: current.S3DestinationName,
-			SelectionMode:     current.SelectionMode,
-			ProjectIDs:        current.ProjectIDs,
-			RetentionCount:    current.RetentionCount,
-			Enabled:           current.Enabled && field != "enabled",
-			StopContainers:    current.StopContainers,
-			LocalEnabled:      current.LocalEnabled,
-			S3Enabled:         current.S3Enabled && field != "s3_enabled",
-		}
-		return true, s.saveGlobalPolicies(ctx, policies)
+	disabled, err := s.checkRemote(ctx, scheduledRemote{
+		S3Enabled:     &policy.S3Enabled,
+		Enabled:       &policy.Enabled,
+		DestinationID: policy.S3DestinationID,
+		LocalEnabled:  policy.LocalEnabled,
+		Save: func(field string) (bool, error) {
+			// Read again under the lock, so a concurrent edit or another run's disable is kept.
+			s.globalConfig.Lock()
+			defer s.globalConfig.Unlock()
+			policies, loadErr := s.globalPolicies()
+			if loadErr != nil {
+				return false, loadErr
+			}
+			index := slices.IndexFunc(policies, func(current types.GlobalProjectBackupPolicy) bool {
+				return current.ID == policy.ID && current.S3DestinationID == policy.S3DestinationID && current.S3Enabled && current.Enabled &&
+					current.LocalEnabled == policy.LocalEnabled
+			})
+			if index < 0 {
+				return false, nil
+			}
+			current := policies[index]
+			policies[index] = types.GlobalProjectBackupPolicy{ //exhaustruct:enforce
+				LastRun:           current.LastRun,
+				ID:                current.ID,
+				Schedule:          current.Schedule,
+				S3DestinationID:   current.S3DestinationID,
+				S3DestinationName: current.S3DestinationName,
+				SelectionMode:     current.SelectionMode,
+				ProjectIDs:        current.ProjectIDs,
+				RetentionCount:    current.RetentionCount,
+				Enabled:           current.Enabled && field != "enabled",
+				StopContainers:    current.StopContainers,
+				LocalEnabled:      current.LocalEnabled,
+				S3Enabled:         current.S3Enabled && field != "s3_enabled",
+			}
+			return true, s.saveGlobalPolicies(ctx, policies)
+		},
+		Reschedule: func() { s.rescheduleGlobal(ctx, policy) },
 	})
-	// The repository is gone but the guarded save matched nothing: S3 was turned off or moved, or the policy changed,
-	// while it was checked, so the policy as it is now is checked instead.
-	if err == nil && !disabled && errors.Is(remoteErr, backup.ErrRemoteRepositoryMissing) {
-		return s.globalSettings(ctx, input, projectID)
-	}
 	if err != nil {
-		return types.CreateProjectBackupRequest{}, false, err
-	}
-	if disabled {
-		// Rescheduled before the backup runs, so a later edit of the policy is not undone afterwards.
-		s.rescheduleGlobal(ctx, policy)
-	}
-	if disabled && !policy.LocalEnabled {
-		return types.CreateProjectBackupRequest{}, true, errRemoteOnlyDisabled
+		return types.CreateProjectBackupRequest{}, disabled, err
 	}
 	return types.CreateProjectBackupRequest{
 		StopContainers:  new(policy.StopContainers),
-		Destination:     destination(policy.LocalEnabled, policy.S3Enabled),
+		Destination:     backup.Destination(policy.LocalEnabled, policy.S3Enabled),
 		S3DestinationID: policy.S3DestinationID,
 	}, disabled, nil
 }
@@ -2797,19 +2519,8 @@ func backupVolumes(classified []types.ProjectVolume) []types.ProjectBackupVolume
 	return captured
 }
 
-func destination(local, remote bool) types.VolumeBackupDestination {
-	switch {
-	case local && remote:
-		return types.VolumeBackupDestinationLocalS3
-	case remote:
-		return types.VolumeBackupDestinationS3
-	default:
-		return types.VolumeBackupDestinationLocal
-	}
-}
-
-// StartRestore checks an in-place restore against the backup and the project, admits it, and hands it to the
-// workflow; a busy project or volume fails fast. It returns the restore's activity ID.
+// StartRestore checks an in-place restore against the backup, admits it, and hands it to the workflow, which checks the
+// project under its locks; a busy project or volume fails fast. It returns the restore's activity ID.
 func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (string, error) {
 	entry, err := s.restorable(ctx, opts.ProjectID, opts.BackupID)
 	if err != nil {
@@ -2818,9 +2529,6 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	project, err := s.deps.Project(ctx, opts.ProjectID, projectDetails)
 	if err != nil {
 		return "", err
-	}
-	if project.ComposeName == "" {
-		return "", common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before restoring it", project.Name))
 	}
 	var included []string
 	for _, volume := range entry.Volumes {
@@ -2840,19 +2548,9 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", err
 	}
-	if checkErr := s.checkInPlace(ctx, project, files); checkErr != nil {
-		return "", checkErr
-	}
 	active, _, err := s.containerUse(ctx, project.ComposeName)
 	if err != nil {
 		return "", err
-	}
-	stopped, running, err := s.projectContainers(ctx, project.ComposeName)
-	if err != nil {
-		return "", err
-	}
-	if unnamedErr := refuseUnnamedVolumes(project, slices.Concat(running, stopped)); unnamedErr != nil {
-		return "", unnamedErr
 	}
 	p := restorePlan{
 		Redeploy:  opts.Request.Redeploy,
@@ -2862,10 +2560,9 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 		Volumes:   targets,
 		Files:     files,
 		MayStop:   len(active) > 0,
-		Stopped:   len(stopped) > 0,
 	}
-	if permissionErr := middleware.RequirePermissions(ctx, opts.EnvironmentID, p.extraPermissions()); permissionErr != nil {
-		return "", permissionErr
+	if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, opts.EnvironmentID, p.extraPermissions())); permErr != nil {
+		return "", permErr
 	}
 	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore)
 	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
@@ -2917,15 +2614,11 @@ func restoreTargets(project types.Project, captured []types.ProjectBackupVolume,
 }
 
 // extraPermissions are the rights a restore needs besides projects:restore: stopping and deploying a running project,
-// removing a stopped one's containers, or deploying one it was asked to redeploy.
+// or deploying one it was asked to redeploy.
 func (p restorePlan) extraPermissions() []string {
 	switch {
 	case p.MayStop:
 		return []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
-	case p.Stopped && kit.FromPtr(p.Redeploy):
-		return []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
-	case p.Stopped:
-		return []string{authz.PermProjectsDown}
 	case kit.FromPtr(p.Redeploy):
 		return []string{authz.PermProjectsDeploy}
 	}
@@ -2951,7 +2644,7 @@ func (p restorePlan) safetyVolumes() []types.ProjectBackupRestoreVolume {
 	return existing
 }
 
-// runRestore applies an accepted restore, or resumes one whose checkpoint an earlier attempt recorded.
+// runRestore applies an accepted restore. One interrupted by a restart is not resumed; its safety backup undoes it.
 func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 	var input restoreRun
 	if err := t.Payload(&input); err != nil {
@@ -2966,43 +2659,26 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 		if detail == nil || detail.Activity.Status != types.ActivityStatusRunning {
 			return nil, fmt.Errorf("%w: interrupted by a system restore; the project was left as it is", actor.ErrJobPermanentFailure)
 		}
+		return nil, errors.New("the restore was interrupted by a restart; restore the project's latest safety backup if it was left half restored")
 	}
-	p := input.Plan
-	previous, _ := jobcontext.Run(ctx)
-	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
-		return target.ID == p.ID && len(target.RecoveryData) > 0
-	})
-	resumed := index >= 0
-	if resumed {
-		var recorded restorePlan
-		if err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded); err != nil {
-			return nil, err
-		}
-		p = recorded
-	}
-	unlock, err := s.lockRestore(ctx, p, kit.Ternary(resumed, "", p.ID))
-	// A resumed restore may have left the project down, so it waits for its turn instead of failing.
-	if err != nil && resumed {
-		return nil, fmt.Errorf("%w: %w", actor.ErrJobRejected, err)
-	}
+	unlock, err := s.lockRestore(ctx, input.Plan)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	if !resumed {
-		// Rights can be revoked while a restore waits for its turn, so each one it needs is checked again before the
-		// first change; a resumed restore must finish or roll back regardless.
-		for _, permission := range append([]string{input.Requester.Permission}, p.extraPermissions()...) {
-			requester := types.BackupRequester{
-				UserID: input.Requester.UserID, APIKeyID: input.Requester.APIKeyID, EnvironmentID: input.Requester.EnvironmentID, Permission: permission,
-			}
-			if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
-				return nil, authorizeErr
-			}
+	// Rights can be revoked while a restore waits for its turn, so each one it needs is checked again before the first
+	// change.
+	for _, permission := range append([]string{input.Requester.Permission}, input.Plan.extraPermissions()...) {
+		requester := types.BackupRequester{
+			UserID: input.Requester.UserID, APIKeyID: input.Requester.APIKeyID, EnvironmentID: input.Requester.EnvironmentID, Permission: permission,
 		}
-		if p, err = s.prepareRestore(ctx, p); err != nil {
-			return nil, err
+		if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
+			return nil, authorizeErr
 		}
+	}
+	p, err := s.prepareRestore(ctx, input.Plan)
+	if err != nil {
+		return nil, err
 	}
 	if applyErr := s.restoreSteps(input, t.ActivityID()).apply(ctx, p); applyErr != nil {
 		return nil, applyErr
@@ -3011,9 +2687,9 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 }
 
 // lockRestore takes the restore's admissions, then the project lock that deploy, down and edits take, then its volumes'
-// locks; run takes over the leases StartRestore parked for it.
-func (s *Service) lockRestore(ctx context.Context, p restorePlan, run string) (func(), error) {
-	leases, err := s.admit(ctx, admissions(p.ProjectID, p.volumeNames()), run)
+// locks; it takes over the leases StartRestore parked for it.
+func (s *Service) lockRestore(ctx context.Context, p restorePlan) (func(), error) {
+	leases, err := s.admit(ctx, admissions(p.ProjectID, p.volumeNames()), p.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -3030,12 +2706,7 @@ func (s *Service) lockRestore(ctx context.Context, p restorePlan, run string) (f
 		release(context.WithoutCancel(ctx), leases)
 		return nil, err
 	}
-	locked := p.volumeNames()
-	for _, volume := range projects.ClassifyProjectVolumes(project) {
-		if volume.Name != "" {
-			locked = append(locked, volume.Name)
-		}
-	}
+	locked := append(p.volumeNames(), plan{Volumes: projects.ClassifyProjectVolumes(project)}.mountedVolumeNames()...)
 	unlockVolumes, err := s.deps.LockVolumes(ctx, slices.Compact(slices.Sorted(slices.Values(locked))))
 	if err != nil {
 		unlockProject()
@@ -3049,7 +2720,7 @@ func (s *Service) lockRestore(ctx context.Context, p restorePlan, run string) (f
 	}, nil
 }
 
-// prepareRestore checks a fresh restore against the backup's manifest and the project as it is now.
+// prepareRestore checks the restore against the backup's manifest and the project as it is under the restore's locks.
 func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePlan, error) {
 	manifest, err := s.Manifest(ctx, p.ProjectID, p.BackupID)
 	if err != nil {
@@ -3059,7 +2730,7 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 	if err != nil {
 		return restorePlan{}, err
 	}
-	// Without its Compose name the project's containers can't be found, so none could be stopped or removed.
+	// Without its Compose name the project's containers can't be found, so none could be stopped.
 	if project.ComposeName == "" {
 		return restorePlan{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before restoring it", project.Name))
 	}
@@ -3075,15 +2746,7 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 	if !slices.Equal(targets, p.Volumes) {
 		return restorePlan{}, common.Classify(common.ErrConflict, fmt.Errorf("the volumes of project %s changed after the restore was requested; start it again", project.Name))
 	}
-	// The project's directory or containers can change after the request.
 	if checkErr := s.checkInPlace(ctx, project, p.Files); checkErr != nil {
-		return restorePlan{}, checkErr
-	}
-	stopped, running, err := s.projectContainers(ctx, project.ComposeName)
-	if err != nil {
-		return restorePlan{}, err
-	}
-	if checkErr := refuseUnnamedVolumes(project, slices.Concat(running, stopped)); checkErr != nil {
 		return restorePlan{}, checkErr
 	}
 	if freeErr := s.volumesFree(ctx, project, p.volumeNames()); freeErr != nil {
@@ -3111,7 +2774,6 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 		Create:      create,
 		Files:       p.Files,
 		MayStop:     p.MayStop,
-		Stopped:     p.Stopped,
 		Running:     len(active) > 0,
 	}, nil
 }
@@ -3173,29 +2835,27 @@ func (s *Service) volumesFree(ctx context.Context, project types.Project, names 
 }
 
 // missingVolumes returns how to create each target that does not exist yet the way Compose would; an external volume
-// gets the Docker labels the backup recorded instead of Compose's. An existing target must keep its data in Docker.
+// gets the Docker labels the backup recorded instead of Compose's. An existing target must keep its data in Docker, as
+// when backing up.
 func (s *Service) missingVolumes(ctx context.Context, project types.Project, manifest types.ProjectManifest, targets []types.ProjectBackupRestoreVolume) ([]client.VolumeCreateOptions, error) {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	resolved, _, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
+		Project:     project,
+		Inspect:     s.deps.Volume,
+		BackupStore: s.deps.BackupStore(ctx),
+	})
 	if err != nil {
 		return nil, err
 	}
-	classified := projects.ClassifyProjectVolumes(project)
 	var create []client.VolumeCreateOptions
 	for _, target := range targets {
-		if slices.ContainsFunc(create, func(options client.VolumeCreateOptions) bool { return options.Name == target.Name }) {
-			continue
-		}
-		current := classified[slices.IndexFunc(classified, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })]
-		found, inspectErr := dockerClient.VolumeInspect(ctx, target.Name, client.VolumeInspectOptions{})
+		current := resolved[slices.IndexFunc(resolved, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })]
 		switch {
-		// As when backing up: a named volume is restored whatever its driver; an external one only while Docker keeps
-		// its data.
-		case inspectErr == nil && current.Kind == types.ProjectVolumeExternal && (cmp.Or(found.Volume.Driver, "local") != "local" || len(found.Volume.Options) > 0):
-			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s now keeps its data outside Docker, so it cannot be restored", target.Name))
-		case inspectErr == nil:
+		case slices.ContainsFunc(create, func(options client.VolumeCreateOptions) bool { return options.Name == target.Name }):
 			continue
-		case !errdefs.IsNotFound(inspectErr):
-			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, inspectErr)
+		case !current.Missing && !current.Included:
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s now keeps its data outside Docker, so it cannot be restored", target.Name))
+		case !current.Missing:
+			continue
 		}
 		recorded := slices.IndexFunc(manifest.Volumes, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })
 		external := current.Kind == types.ProjectVolumeExternal
@@ -3214,92 +2874,54 @@ func (s *Service) missingVolumes(ctx context.Context, project types.Project, man
 	return create, nil
 }
 
-// apply runs an in-place restore from its checkpoint; one resumed before its restore finished, or during its rollback,
-// rolls back instead. On any failure the project is rolled back and deployed again if it ran.
+// apply stops the project, takes a safety backup and restores the backup; on any failure the project is rolled back and
+// deployed again if it ran.
 func (r restoreSteps) apply(ctx context.Context, p restorePlan) error {
-	switch {
-	case p.Failure != "":
-		return errors.New(p.Failure)
-	case p.RollingBack:
-		return r.rollback(ctx, p, errors.New("the restore was interrupted"))
-	case p.Restored:
-		return r.finish(ctx, p)
-	case p.Started:
-		return r.rollback(ctx, p, errors.New("the restore was interrupted"))
-	}
-	p.Started = true
-	if err := r.record(ctx, p); err != nil {
-		return err
-	}
 	if p.Running {
 		r.report(ctx, "Stopping the project")
-		if err := r.down(ctx); err != nil {
-			return r.rollback(ctx, p, fmt.Errorf("stop the project: %w", err))
-		}
 	}
-	// A stopped container can be started on its own, without the project lock the restore holds, so none is left.
-	if p.Stopped {
-		r.report(ctx, "Removing the project's stopped containers")
-	}
-	if err := r.clear(ctx, p); err != nil {
-		return r.rollback(ctx, p, fmt.Errorf("remove the project's stopped containers: %w", err))
+	// A stopped container can be started on its own, without the project lock the restore holds, so any running one is
+	// stopped.
+	if err := r.stop(ctx, p); err != nil {
+		return r.rollback(ctx, p, nil, fmt.Errorf("stop the project: %w", err))
 	}
 	r.report(ctx, "Taking a safety backup")
 	safetyID, err := r.safety(ctx, p)
 	if err != nil {
-		return r.rollback(ctx, p, fmt.Errorf("take a safety backup: %w", err))
+		return r.rollback(ctx, p, nil, fmt.Errorf("take a safety backup: %w", err))
 	}
 	// A container started during the safety backup could be using a volume now; nothing has been written yet, so
 	// the rollback leaves the volumes alone.
 	if err = r.inUse(ctx, p); err != nil {
-		return r.rollback(ctx, p, err)
+		return r.rollback(ctx, p, nil, err)
 	}
 	p.SafetyID = safetyID
-	if err = r.record(ctx, p); err != nil {
-		return r.rollback(ctx, p, err)
-	}
 	r.report(ctx, "Restoring the backup")
+	// Only the volumes this restore created are removed on rollback.
+	var created []string
 	for _, options := range p.Create {
 		if err = r.create(ctx, options); err != nil {
-			return r.rollback(ctx, p, fmt.Errorf("create the missing volumes: %w", err))
+			return r.rollback(ctx, p, created, fmt.Errorf("create the missing volumes: %w", err))
 		}
-		// Saved before the next one is created, so a resumed rollback removes every volume this restore created.
-		p.Created = append(p.Created, options.Name)
-		if err = r.record(ctx, p); err != nil {
-			return r.rollback(ctx, p, err)
-		}
+		created = append(created, options.Name)
 	}
-	if err = r.restoreBackup(ctx, p); err != nil {
-		return r.rollback(ctx, p, err)
+	if err = r.restore(ctx, types.ProjectBackupRestore{
+		ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes, Report: r.report,
+	}); err == nil {
+		err = r.verify(ctx, p)
 	}
-	p.Restored = true
-	if err = r.record(ctx, p); err != nil {
-		return r.rollback(ctx, p, err)
+	if err != nil {
+		return r.rollback(ctx, p, created, err)
 	}
-	return r.finish(ctx, p)
-}
-
-func (r restoreSteps) restoreBackup(ctx context.Context, p restorePlan) error {
-	if err := r.restore(ctx, types.ProjectBackupRestore{
-		ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes, Owner: restoreOwner + p.ID, Report: r.report,
-	}); err != nil {
-		return err
-	}
-	return r.verify(ctx, p)
-}
-
-// finish deploys the restored project when asked, by default when it ran before the restore.
-func (r restoreSteps) finish(ctx context.Context, p restorePlan) error {
+	// Deployed when asked, by default when it ran before the restore.
 	if !*cmp.Or(p.Redeploy, new(p.Running)) {
 		return nil
 	}
-	p.Deploying = true
-	if err := r.record(ctx, p); err != nil {
-		return r.rollback(ctx, p, err)
-	}
 	r.report(ctx, "Deploying the project")
-	if err := r.deploy(ctx); err != nil {
-		return r.rollback(ctx, p, fmt.Errorf("deploy the restored project: %w", err))
+	// The project the restore deploys is its own to stop again on rollback.
+	p.MayStop = true
+	if err = r.deploy(ctx); err != nil {
+		return r.rollback(ctx, p, created, fmt.Errorf("deploy the restored project: %w", err))
 	}
 	return nil
 }
@@ -3307,79 +2929,54 @@ func (r restoreSteps) finish(ctx context.Context, p restorePlan) error {
 // rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran; a
 // project whose safety backup could not be restored is left down rather than started on half-restored data, and one
 // that could not be stopped is left as is.
-func (r restoreSteps) rollback(ctx context.Context, p restorePlan, cause error) error {
+func (r restoreSteps) rollback(ctx context.Context, p restorePlan, created []string, cause error) error {
 	ctx = context.WithoutCancel(ctx)
-	p.RollingBack = true
-	cleanup := []error{r.record(ctx, p)}
-	var downErr, undoErr, deployErr error
-	if p.SafetyID != "" {
-		r.report(ctx, "Rolling back to the safety backup")
-		if p.Deploying {
-			downErr = r.down(ctx)
+	if p.SafetyID == "" {
+		if p.Running {
+			if err := r.deploy(ctx); err != nil {
+				return fmt.Errorf("%w; nothing was restored, but the project could not be deployed again: %w", cause, err)
+			}
 		}
-		if downErr == nil {
-			undoErr = r.restore(ctx, types.ProjectBackupRestore{
-				ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Owner: restoreOwner + p.ID, Report: r.report,
-			})
-			cleanup = append(cleanup, r.remove(ctx, p.Created))
-		}
+		return fmt.Errorf("%w; nothing was restored", cause)
 	}
-	if p.Running && downErr == nil && undoErr == nil {
-		// Saved first, so a run resumed during this deploy stops the project before restoring again.
-		p.Deploying = true
-		if deployErr = r.record(ctx, p); deployErr == nil {
-			deployErr = r.deploy(ctx)
-		}
+	r.report(ctx, "Rolling back to the safety backup")
+	if err := r.stop(ctx, p); err != nil {
+		return fmt.Errorf("%w; the project could not be stopped for the rollback (%w), so it was left as is; restore the safety backup %s by hand to undo the restore", cause, err, p.SafetyID)
 	}
-	var err error
-	switch failed := errors.Join(cleanup...); {
-	case downErr != nil:
-		err = fmt.Errorf(
-			"%w; the project could not be stopped for the rollback (%w), so it was left as is; restore the safety backup %s by hand to undo the restore",
-			cause, errors.Join(downErr, failed), p.SafetyID,
-		)
-	case undoErr != nil:
-		err = fmt.Errorf("%w; the rollback failed too (%w), so the project was left down; restore the safety backup %s to undo the restore", cause, errors.Join(undoErr, failed), p.SafetyID)
-	case deployErr != nil && p.SafetyID != "":
-		err = fmt.Errorf("%w; the project was rolled back to the safety backup %s, but could not be deployed: %w", cause, p.SafetyID, errors.Join(deployErr, failed))
-	case deployErr != nil:
-		err = fmt.Errorf("%w; nothing was restored, but the project could not be deployed again: %w", cause, deployErr)
-	case failed != nil:
-		err = fmt.Errorf("%w; the project was rolled back to the safety backup %s, but the rollback hit errors: %w", cause, p.SafetyID, failed)
-	case p.SafetyID != "":
-		err = fmt.Errorf("%w; the project was rolled back to the safety backup %s", cause, p.SafetyID)
-	default:
-		err = fmt.Errorf("%w; nothing was restored", cause)
+	undoErr := r.restore(ctx, types.ProjectBackupRestore{
+		ProjectID: p.ProjectID, BackupID: p.SafetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Report: r.report,
+	})
+	removeErr := r.remove(ctx, created)
+	if undoErr != nil {
+		return fmt.Errorf("%w; the rollback failed too (%w), so the project was left down; restore the safety backup %s to undo the restore", cause, errors.Join(undoErr, removeErr), p.SafetyID)
 	}
-	p.Failure = err.Error()
-	return errors.Join(err, r.record(ctx, p))
-}
-
-func createdNames(create []client.VolumeCreateOptions) []string {
-	names := make([]string, 0, len(create))
-	for _, options := range create {
-		names = append(names, options.Name)
+	var deployErr error
+	if p.Running {
+		deployErr = r.deploy(ctx)
 	}
-	return names
+	if failed := errors.Join(removeErr, deployErr); failed != nil {
+		return fmt.Errorf("%w; the project was rolled back to the safety backup %s, but the rollback hit errors: %w", cause, p.SafetyID, failed)
+	}
+	return fmt.Errorf("%w; the project was rolled back to the safety backup %s", cause, p.SafetyID)
 }
 
 func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps {
 	projectID := input.Plan.ProjectID
 	return restoreSteps{
-		record: func(ctx context.Context, p restorePlan) error {
-			checkpoint, err := json.Marshal(p)
-			if err != nil {
-				return err
-			}
-			return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: restoreTargetType, ID: p.ID, Status: types.RunStatusRunning, RecoveryData: checkpoint})
-		},
 		report: func(ctx context.Context, message string) {
 			activity.AppendOrWarn(ctx, s.deps.Activities, activityID, activity.AppendMessageRequest{Level: types.ActivityMessageLevelInfo, Message: message})
 		},
-		down: func(ctx context.Context) error {
-			return s.deps.Down(ctx, projectID, input.User)
+		stop: func(ctx context.Context, p restorePlan) error {
+			active, _, err := s.containerUse(ctx, p.ComposeName)
+			switch {
+			case err != nil || len(active) == 0:
+				return err
+			// projects:down was checked only for a project that ran; one the restore deployed is its own to stop.
+			case !p.MayStop:
+				return common.Classify(common.ErrConflict, fmt.Errorf("container %s was started during the restore", docker.ContainerNameFromNames(active[0].Names)))
+			}
+			return s.stopProject(ctx, projectID, p.ComposeName, active, input.User)
 		},
-		clear: s.removeStoppedContainers,
 		deploy: func(ctx context.Context) error {
 			return s.deps.Deploy(ctx, projectID, input.User, nil)
 		},
@@ -3394,10 +2991,22 @@ func (s *Service) restoreSteps(input restoreRun, activityID string) restoreSteps
 			}
 			return s.volumesFree(ctx, project, p.volumeNames())
 		},
-		create:  s.createVolume,
+		create: func(ctx context.Context, options client.VolumeCreateOptions) error {
+			dockerClient, err := s.deps.Docker.GetClient(ctx)
+			if err != nil {
+				return err
+			}
+			return projects.CreateNewVolume(ctx, dockerClient, options)
+		},
 		restore: s.RestoreTo,
 		verify:  s.verifyRestore,
-		remove:  s.removeVolumes,
+		remove: func(ctx context.Context, names []string) error {
+			errs := make([]error, 0, len(names))
+			for _, name := range names {
+				errs = append(errs, s.deps.DeleteVolume(ctx, name, input.User))
+			}
+			return errors.Join(errs...)
+		},
 	}
 }
 
@@ -3408,12 +3017,9 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 	if err != nil {
 		return "", err
 	}
-	created := createdNames(p.Create)
 	existing := make([]string, 0, len(p.Volumes))
-	for _, target := range p.Volumes {
-		if !slices.Contains(created, target.Name) {
-			existing = append(existing, target.Key)
-		}
+	for _, target := range p.safetyVolumes() {
+		existing = append(existing, target.Key)
 	}
 	captured, err := s.inspectVolumes(ctx, project, existing)
 	if err != nil {
@@ -3437,138 +3043,6 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 		return "", completeErr
 	}
 	return entry.ID, nil
-}
-
-// removeStoppedContainers removes the project's stopped containers, which a deploy creates again. The project is
-// stopped by now, so a running container is refused, and so is a stopped one the request did not check for.
-func (s *Service) removeStoppedContainers(ctx context.Context, p restorePlan) error {
-	stopped, active, err := s.projectContainers(ctx, p.ComposeName)
-	switch {
-	case err != nil:
-		return err
-	case len(active) > 0:
-		return common.Classify(common.ErrConflict, fmt.Errorf("container %s was started during the restore", docker.ContainerNameFromNames(active[0].Names)))
-	case len(stopped) > 0 && !p.Stopped && !p.MayStop:
-		return common.Classify(common.ErrConflict, errors.New("the project's containers changed after the restore was requested; start it again"))
-	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	for _, c := range stopped {
-		if _, removeErr := dockerClient.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
-			errs = append(errs, fmt.Errorf("remove container %s: %w", docker.ContainerNameFromNames(c.Names), removeErr))
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// refuseUnnamedVolumes refuses containers that keep data in an unnamed volume: only the container links the volume to
-// its service, so taking the project down or removing the container would leave the data behind, and the next deploy
-// would start on an empty volume that no safety backup holds. A volume the project declares by name, even a generated
-// one, is attached again by Compose.
-func refuseUnnamedVolumes(project types.Project, containers []container.Summary) error {
-	declared := map[string]bool{}
-	for _, volume := range projects.ClassifyProjectVolumes(project) {
-		declared[volume.Name] = true
-	}
-	for _, c := range containers {
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume && unnamedVolumeName.MatchString(m.Name) && !declared[m.Name] {
-				return common.Classify(common.ErrValidation, fmt.Errorf(
-					"container %s keeps data at %s in an unnamed volume, which taking the project down for the restore would lose; "+
-						"remove the container if that data is not needed, or move it to a named volume, then restore again",
-					docker.ContainerNameFromNames(c.Names), m.Destination,
-				))
-			}
-		}
-	}
-	return nil
-}
-
-// projectContainers lists the project's own containers, leaving out Arcane's and its helpers as containerUse does.
-func (s *Service) projectContainers(ctx context.Context, composeName string) (stopped, active []container.Summary, err error) {
-	if composeName == "" {
-		return nil, nil, errors.New("the project's Compose name is unknown, so its containers can't be found")
-	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("list containers: %w", err)
-	}
-	for _, c := range found.Items {
-		switch {
-		case volumes.IsHelperContainer(c) || labels.IsArcaneContainer(c.Labels):
-		case c.State == container.StateRunning || c.State == container.StateRestarting || c.State == container.StatePaused:
-			active = append(active, c)
-		default:
-			stopped = append(stopped, c)
-		}
-	}
-	return stopped, active, nil
-}
-
-// removeLeftovers removes the Rustic containers of an earlier run of this restore, left by an Arcane that stopped
-// mid-restore; writing alongside one would mix two restores, so the restore stops if one can't be removed.
-func removeLeftovers(ctx context.Context, dockerClient *client.Client, owner string) error {
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", rustic.OwnerLabel+"="+owner),
-	})
-	if err != nil {
-		return fmt.Errorf("list containers: %w", err)
-	}
-	for _, c := range found.Items {
-		slog.WarnContext(ctx, "Removing a Rustic container left over from an earlier run of this restore", "containerId", c.ID)
-		if _, removeErr := dockerClient.ContainerRemove(ctx, c.ID, volumes.RemoveOptions()); removeErr != nil && !errdefs.IsNotFound(removeErr) {
-			return common.Classify(common.ErrConflict, fmt.Errorf(
-				"a Rustic container left over from an earlier run of this restore (%s) could not be removed, so nothing was written; remove it and try again: %w",
-				c.ID, removeErr,
-			))
-		}
-	}
-	return nil
-}
-
-// createVolume creates a missing target volume; one someone else created since the restore was checked is refused, so
-// the restore never takes it over or removes it.
-func (s *Service) createVolume(ctx context.Context, options client.VolumeCreateOptions) error {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	_, inspectErr := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
-	switch {
-	case inspectErr == nil:
-		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created after the restore was checked", options.Name))
-	case !errdefs.IsNotFound(inspectErr):
-		return fmt.Errorf("inspect volume %s: %w", options.Name, inspectErr)
-	}
-	if _, createErr := dockerClient.VolumeCreate(ctx, options); createErr != nil {
-		return fmt.Errorf("create volume %s: %w", options.Name, createErr)
-	}
-	return nil
-}
-
-func (s *Service) removeVolumes(ctx context.Context, names []string) error {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	for _, name := range names {
-		if _, removeErr := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
-			errs = append(errs, fmt.Errorf("remove volume %s: %w", name, removeErr))
-		}
-	}
-	return errors.Join(errs...)
 }
 
 // verifyRestore sets the project's Compose name back in restored files that declare another one, then fails when they
@@ -3627,30 +3101,12 @@ func (s *Service) Manifest(ctx context.Context, projectID, backupID string) (typ
 // RestoreTo restores parts of a succeeded backup of the project, replacing the contents of the project directory and
 // volumes it names; the caller holds the locks they need, or asks for the volumes' with LockVolumes.
 func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore) error {
-	// Checked even with nothing to restore, since a leftover may still write to a volume a rollback is about to remove.
-	if opts.Owner != "" {
-		dockerClient, err := s.deps.Docker.GetClient(ctx)
-		if err != nil {
-			return err
-		}
-		if leftoverErr := removeLeftovers(ctx, dockerClient, opts.Owner); leftoverErr != nil {
-			return leftoverErr
-		}
-		ctx = rustic.WithOwner(ctx, opts.Owner)
-	}
 	if opts.ProjectPath == "" && len(opts.Volumes) == 0 {
 		return nil
 	}
 	if opts.LockVolumes {
-		var names []string
-		var keys []types.SchedulerAdmissionKey
-		for _, volume := range opts.Volumes {
-			if !slices.Contains(names, volume.Name) {
-				names = append(names, volume.Name)
-				keys = append(keys, types.SchedulerAdmissionKey{Scope: backup.VolumeAdmissionScope, ID: volume.Name})
-			}
-		}
-		leases, admitErr := s.admit(ctx, keys, "restore-to:"+opts.BackupID)
+		names := restorePlan{Volumes: opts.Volumes}.volumeNames()
+		leases, admitErr := s.admit(ctx, volumeAdmissions(names), "restore-to:"+opts.BackupID)
 		if admitErr != nil {
 			return admitErr
 		}
@@ -3795,9 +3251,6 @@ func restoreInput(projectMounts []mount.Mount, targets []types.ProjectBackupRest
 		if _, ok := restored[name]; !ok {
 			globs = append(globs, "!/volumes/"+name, "!/volumes/"+name+"/**")
 		}
-	}
-	if len(mounts) == 0 {
-		return mount.Mount{}, backup.RestoreOptions{}, common.Classify(common.ErrValidation, errors.New("select the project files or at least one volume to restore"))
 	}
 	return mounts[0], backup.RestoreOptions{DestinationPath: restoreRoot, ExtraMounts: mounts[1:], Globs: globs, DeleteExtra: true}, nil
 }
