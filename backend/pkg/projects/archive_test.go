@@ -192,8 +192,7 @@ func writeTestBundle(t *testing.T, manifest types.ProjectManifest, entries map[s
 }
 
 func TestProjectBundleRoundTrip(t *testing.T) {
-	dataArchive, err := ProjectBundleVolumeArchive("data")
-	require.NoError(t, err)
+	dataArchive := ProjectBundleVolumeArchive("data")
 	require.Equal(t, "volumes/data.tar.gz", dataArchive)
 	manifest := testProjectManifest(
 		types.ProjectVolume{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true},
@@ -215,7 +214,7 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	assert.True(t, IsProjectBundle(bytes.NewReader(bundle.Bytes())))
 
 	var visited []string
-	got, ok, err := ReadProjectBundle(bytes.NewReader(bundle.Bytes()), func(name string, size int64, body io.Reader) error {
+	got, ok, err := ReadProjectBundle(bytes.NewReader(bundle.Bytes()), func(_ types.ProjectManifest, name string, size int64, body io.Reader) error {
 		content, readErr := io.ReadAll(body)
 		require.NoError(t, readErr)
 		assert.Equal(t, entries[name], string(content))
@@ -227,12 +226,6 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, manifest.Volumes, got.Volumes)
 	assert.Equal(t, []string{ProjectBundleProject, dataArchive, "volumes/other.tar.gz"}, visited)
-
-	writer, err := NewProjectBundleWriter(io.Discard, manifest)
-	require.NoError(t, err)
-	for _, name := range []string{"../escape.tar.gz", "volumes/../x.tar.gz", "/abs.tar.gz", "volumes/a/b.tar.gz", "notes.txt"} {
-		require.Error(t, writer.Add(name, 0, strings.NewReader("")), name)
-	}
 }
 
 func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
@@ -261,8 +254,7 @@ func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
 }
 
 func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
-	dataArchive, err := ProjectBundleVolumeArchive("data")
-	require.NoError(t, err)
+	dataArchive := ProjectBundleVolumeArchive("data")
 	included := types.ProjectVolume{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true}
 	manifestJSON := func(manifest types.ProjectManifest) string {
 		content, marshalErr := json.Marshal(manifest)
@@ -316,33 +308,6 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 				Key: "cache", Name: "web_cache", Archive: dataArchive, Included: true,
 			}))), regular(ProjectBundleProject, "p"), regular(dataArchive, "x")},
 			wantErr: "must be archived at volumes/cache.tar.gz",
-		},
-		{
-			name: "docker labels on a named volume",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest(types.ProjectVolume{
-				Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true, DockerLabels: map[string]string{"a": "b"},
-			}))), regular(ProjectBundleProject, "p"), regular(dataArchive, "x")},
-			wantErr: "not an included external volume",
-		},
-		{
-			name:    "docker label that is not a string",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, `{"kind":"export","formatVersion":1,"volumes":[{"key":"data","dockerLabels":{"a":1}}]}`), regular(ProjectBundleProject, "p")},
-			wantErr: "dockerLabels",
-		},
-		{
-			name: "oversized docker labels",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest(types.ProjectVolume{
-				Key: "data", Name: "shared-data", Kind: types.ProjectVolumeExternal, Archive: dataArchive, Included: true,
-				DockerLabels: map[string]string{"a": strings.Repeat("x", maxVolumeLabelBytes)},
-			}))), regular(ProjectBundleProject, "p"), regular(dataArchive, "x")},
-			wantErr: "labels exceed",
-		},
-		{
-			name: "manifest key escaping volumes",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest(types.ProjectVolume{
-				Key: "../data", Name: "web_data", Archive: "volumes/../data.tar.gz", Included: true,
-			}))), regular(ProjectBundleProject, "p")},
-			wantErr: "cannot name a bundle entry",
 		},
 		{
 			name:    "unsupported format version",

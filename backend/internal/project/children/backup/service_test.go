@@ -191,22 +191,22 @@ func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false)
+	manifest := backupManifest(project, p, true, false)
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
 	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
 	require.Equal(t, p.Volumes, manifest.Volumes)
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
 	require.False(t, manifest.ExternalEnv)
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, true).ExternalEnv)
-	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}, false).Consistent, "nothing runs, so a live backup is consistent")
+	require.True(t, backupManifest(project, p, true, true).ExternalEnv)
+	require.True(t, backupManifest(project, p, false, false).Consistent, "nothing runs, so a live backup is consistent")
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
+	require.True(t, backupManifest(project, p, true, false).Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
+	require.False(t, backupManifest(project, p, true, false).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {

@@ -143,7 +143,6 @@ type (
 		Archive        io.Reader
 		ID             string
 		Tags           []string
-		ComposeFiles   []string
 		ExactName      bool
 	}
 
@@ -154,7 +153,6 @@ type (
 		ProjectPath        string
 		DirName            string
 		Name               string
-		ComposeFiles       []string
 	}
 
 	GitOpsProjectRequest struct {
@@ -623,15 +621,29 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 	return proj, nil
 }
 
-func (s *ProjectService) stopForExport(ctx context.Context, projectID string, user types.Actor) error {
+func (s *ProjectService) stopProject(ctx context.Context, projectID string, user types.Actor) error {
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
-	if noteErr := s.noteStopped(ctx, projectID, user, nil); noteErr != nil {
-		return fmt.Errorf("note that the export stops project %s: %w", proj.Name, noteErr)
+	model, err := s.loadComposeProjectForProject(ctx, proj, nil)
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
 	}
-	return s.downProject(ctx, proj, user)
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	if stopErr := composeStopProjectServices(ctx, types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   model.ServiceNames(),
+	}); stopErr != nil {
+		return stopErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStop, projectID, proj.Name, user, database.JSON{
+		"action":      "stop",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+	}, "could not log project stop action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
 }
 
 // noteStopped records that Arcane is stopping the project, before it does, with the containers to start again: the
@@ -1856,7 +1868,6 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 			ProjectPath:        projectPath,
 			DirName:            folderName,
 			Name:               name,
-			ComposeFiles:       opts.ComposeFiles,
 		})
 		if unpackErr != nil {
 			return nil, rollback(unpackErr)
@@ -1948,16 +1959,6 @@ func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projec
 	if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr))
 	}
-	if len(unpack.ComposeFiles) > 0 {
-		if selectErr := projects.SelectComposeFiles(ctx, projects.ComposeFileSelection{
-			ProjectsRoot:       unpack.ProjectsDirectory,
-			GlobalEnvDirectory: unpack.GlobalEnvDirectory,
-			ProjectPath:        unpack.ProjectPath,
-			Files:              unpack.ComposeFiles,
-		}); selectErr != nil {
-			return "", common.Classify(common.ErrValidation, fmt.Errorf("select the exported compose files: %w", selectErr))
-		}
-	}
 	detected, detectErr := projects.DetectComposeFile(ctx, unpack.ProjectsDirectory, unpack.ProjectPath)
 	if detected == "" {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("project archive has no compose file: %w", cmp.Or(detectErr, common.ErrComposeFileNotFound)))
@@ -2005,38 +2006,17 @@ func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types
 	}
 	defer cleanupSession()
 	proj, err := s.CreateProject(ctx, CreateProjectOptions{
-		Archive:      archive,
-		Actor:        user,
-		Name:         request.Name,
-		ID:           request.ProjectID,
-		Tags:         request.Tags,
-		ComposeFiles: request.ComposeFiles,
-		ExactName:    true,
+		Archive:   archive,
+		Actor:     user,
+		Name:      request.Name,
+		ID:        request.ProjectID,
+		Tags:      request.Tags,
+		ExactName: true,
 	})
 	if errors.Is(err, projects.ErrProjectDirExists) {
 		return nil, common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project directory for %q already exists", request.Name))
 	}
 	return proj, err
-}
-
-func (s *ProjectService) LoadedComposeFiles(ctx context.Context, projectID string) ([]string, error) {
-	projectsDirectory, err := s.GetProjectsDirectory(ctx)
-	if err != nil {
-		return nil, err
-	}
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	composeFile, err := s.ResolveProjectComposeFile(ctx, proj)
-	if err != nil {
-		return nil, fmt.Errorf("resolve the compose file of project %s: %w", proj.Name, err)
-	}
-	return projects.LoadedComposeFiles(ctx, projects.LoadedComposeFilesOptions{
-		GlobalEnvDirectory: projectsDirectory,
-		ProjectPath:        proj.Path,
-		ComposeFile:        composeFile,
-	}), nil
 }
 
 func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID string) (*types.UploadSession, error) {

@@ -73,8 +73,6 @@ type (
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
 		// StartContainers starts the project's stopped containers again; recovery starts a noted project's the same way.
 		StartContainers func(ctx context.Context, projectID string, stopped []container.Summary) error
-		// ComposeFiles returns the compose files the project loads, relative to its directory.
-		ComposeFiles func(ctx context.Context, projectID string) ([]string, error)
 	}
 
 	Service struct {
@@ -591,16 +589,12 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	if err != nil {
 		return err
 	}
-	composeFiles, err := s.deps.ComposeFiles(ctx, entry.ProjectID)
-	if err != nil {
-		return err
-	}
 	// The snapshot copies the project directory, which holds only the link of a .env kept outside it.
 	env, _, externalEnv, err := projects.ReadExternalEnvFile(ctx, project.Path)
 	if err != nil {
 		return fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
 	}
-	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, composeFiles, externalEnv), env)
+	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, len(active) > 0, externalEnv), env)
 	if err != nil {
 		return err
 	}
@@ -914,7 +908,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, proje
 	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }
 
-func backupManifest(project types.Project, p plan, active bool, composeFiles []string, externalEnv bool) types.ProjectManifest {
+func backupManifest(project types.Project, p plan, active, externalEnv bool) types.ProjectManifest {
 	return types.ProjectManifest{
 		CreatedAt:     time.Now().UTC(),
 		Kind:          types.ProjectManifestKindBackup,
@@ -924,7 +918,6 @@ func backupManifest(project types.Project, p plan, active bool, composeFiles []s
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
 		},
-		ComposeFiles:  composeFiles,
 		Volumes:       p.Volumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
 		Consistent:    (p.StopContainers || !active) && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
