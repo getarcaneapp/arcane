@@ -452,33 +452,32 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 		})
 	}
 	var externalVolumes, hostVolumes, sourceVolumes, missingVolumes, targetVolumes, built []string
-	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
-		config := project.Volumes[key]
-		if config.External {
-			externalVolumes = append(externalVolumes, config.Name)
-			continue
-		}
-		if len(config.DriverOpts) > 0 {
-			hostVolumes = append(hostVolumes, config.Name)
-			continue
-		}
-		if request.IncludeVolumes {
-			targetVolumes = append(targetVolumes, targetVolumeName(project.Name, key, config.Name, request.Name))
-			_, exists, existsErr := source.Volume(ctx, config.Name)
-			if existsErr != nil {
-				return fmt.Errorf("inspect source volume %s: %w", config.Name, existsErr)
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		switch volume.Kind {
+		case types.ProjectVolumeExternal:
+			externalVolumes = append(externalVolumes, volume.Name)
+		case types.ProjectVolumeDriverOpts:
+			hostVolumes = append(hostVolumes, volume.Name)
+		case types.ProjectVolumeNamed:
+			targetName := targetVolumeName(project.Name, volume.Key, volume.Name, request.Name)
+			if request.IncludeVolumes {
+				targetVolumes = append(targetVolumes, targetName)
+				_, exists, existsErr := source.Volume(ctx, volume.Name)
+				if existsErr != nil {
+					return fmt.Errorf("inspect source volume %s: %w", volume.Name, existsErr)
+				}
+				if !exists {
+					missingVolumes = append(missingVolumes, volume.Name)
+					continue
+				}
 			}
-			if !exists {
-				missingVolumes = append(missingVolumes, config.Name)
-				continue
-			}
+			sourceVolumes = append(sourceVolumes, volume.Name)
+			plan.Volumes = append(plan.Volumes, types.ProjectTransferVolume{
+				Key:        volume.Key,
+				SourceName: volume.Name,
+				TargetName: targetName,
+			})
 		}
-		sourceVolumes = append(sourceVolumes, config.Name)
-		plan.Volumes = append(plan.Volumes, types.ProjectTransferVolume{
-			Key:        key,
-			SourceName: config.Name,
-			TargetName: targetVolumeName(project.Name, key, config.Name, request.Name),
-		})
 	}
 	if !request.IncludeVolumes && len(sourceVolumes) > 0 {
 		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{

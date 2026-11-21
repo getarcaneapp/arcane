@@ -38,6 +38,15 @@ export function projectDetailQuery(environmentId: string, projectId: string) {
 	});
 }
 
+export function projectExportOptionsQuery(environmentId: string, projectId: string) {
+	return queryOptions({
+		queryKey: queryKeys.projects.exportOptions(environmentId, projectId),
+		queryFn: () => projectService.getExportOptions(projectId, environmentId),
+		staleTime: 0,
+		refetchOnWindowFocus: false
+	});
+}
+
 export function projectDirectoriesQuery(environmentId: string, view: 'projects' | 'settings') {
 	return queryOptions({
 		queryKey: queryKeys.projects.directories(environmentId, view),

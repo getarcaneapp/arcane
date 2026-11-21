@@ -136,6 +136,36 @@ var (
 		},
 	}
 
+	ProjectExportConditions = PermissionConditions{
+		{
+			In:         ConditionInBody,
+			Field:      "volumes",
+			Value:      "true",
+			Permission: PermVolumesBackup,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "stopProject",
+			Value:      "true",
+			Permission: PermProjectsDown,
+		},
+		{
+			In:         ConditionInBody,
+			Field:      "stopProject",
+			Value:      "true",
+			Permission: PermProjectsDeploy,
+		},
+	}
+
+	ProjectImportConditions = PermissionConditions{
+		{
+			In:         ConditionInBody,
+			Field:      "start",
+			Value:      "true",
+			Permission: PermProjectsDeploy,
+		},
+	}
+
 	BuildWorkspaceConditions = PermissionConditions{
 		{
 			In:         ConditionInBody,

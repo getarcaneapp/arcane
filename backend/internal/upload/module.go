@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
@@ -73,6 +74,16 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Metadata:    map[string]any{authz.MetaPermissionConditions: authz.UploadKindConditions},
 	}, h.ReadChunk)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "download-upload-session",
+		Method:      http.MethodGet,
+		Path:        "/agents/{id}/uploads/{kind}/{uploadId}/download",
+		Summary:     "Download an upload session",
+		Description: "Stream the file of a complete project-archive upload session; the session is deleted once the whole file was sent",
+		Tags:        []string{"Uploads"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermProjectsExport, h.DownloadSession)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-upload-session",

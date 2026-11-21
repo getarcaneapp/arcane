@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -111,6 +113,14 @@ func (c *composeNameCache) replace(byName map[string]string) {
 	c.mu.Lock()
 	c.byName = byName
 	c.mu.Unlock()
+}
+
+// knownServices drops services the Compose files no longer name: Compose rejects the whole command for one, and an empty list would mean every service.
+func knownServices(model *composeTypes.Project, services []string) []string {
+	return slices.DeleteFunc(slices.Clone(services), func(name string) bool {
+		_, ok := model.Services[name]
+		return !ok
+	})
 }
 
 func deleteProjectWithTags(tx *gorm.DB, projectID string) error {
