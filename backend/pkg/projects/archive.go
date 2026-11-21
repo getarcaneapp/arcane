@@ -14,7 +14,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -33,7 +32,7 @@ type (
 		tar  *tar.Writer
 	}
 
-	ProjectBundleVisitor func(name string, size int64, body io.Reader) error
+	ProjectBundleVisitor func(manifest types.ProjectManifest, name string, size int64, body io.Reader) error
 )
 
 const (
@@ -43,14 +42,7 @@ const (
 	maxArchiveEntries       = 200_000
 	unpackReserveBytes      = 1 << 30
 	maxProjectManifestBytes = 1 << 20
-	maxVolumeLabels         = 256
-	maxVolumeLabelBytes     = 64 << 10
 	projectBundleVolumes    = "volumes/"
-)
-
-var (
-	composeVolumeKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
-	dockerVolumeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
 )
 
 func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) error {
@@ -419,11 +411,8 @@ func unpackProjectEntry(ctx context.Context, destination acfs.Root, reader io.Re
 	return 0, fmt.Errorf("unsupported entry type %q", header.Typeflag)
 }
 
-func ProjectBundleVolumeArchive(key string) (string, error) {
-	if !composeVolumeKeyPattern.MatchString(key) || key == "." || key == ".." {
-		return "", fmt.Errorf("volume key %q cannot name a bundle entry", key)
-	}
-	return projectBundleVolumes + key + ".tar.gz", nil
+func ProjectBundleVolumeArchive(key string) string {
+	return projectBundleVolumes + key + ".tar.gz"
 }
 
 func NewProjectBundleWriter(w io.Writer, manifest types.ProjectManifest) (*ProjectBundleWriter, error) {
@@ -439,20 +428,13 @@ func NewProjectBundleWriter(w io.Writer, manifest types.ProjectManifest) (*Proje
 		return nil, err
 	}
 	writer := &ProjectBundleWriter{gzip: gzipWriter, tar: tar.NewWriter(gzipWriter)}
-	if addErr := writer.add(ProjectBundleManifest, int64(len(content)), bytes.NewReader(content)); addErr != nil {
+	if addErr := writer.Add(ProjectBundleManifest, int64(len(content)), bytes.NewReader(content)); addErr != nil {
 		return nil, addErr
 	}
 	return writer, nil
 }
 
 func (w *ProjectBundleWriter) Add(name string, size int64, body io.Reader) error {
-	if name != ProjectBundleProject && !isProjectBundleVolumeArchive(name) {
-		return fmt.Errorf("unexpected bundle entry %q", name)
-	}
-	return w.add(name, size, body)
-}
-
-func (w *ProjectBundleWriter) add(name string, size int64, body io.Reader) error {
 	if err := w.tar.WriteHeader(&tar.Header{
 		Typeflag: tar.TypeReg,
 		Name:     name,
@@ -475,16 +457,6 @@ func (w *ProjectBundleWriter) Close() error {
 		return fmt.Errorf("finish project bundle compression: %w", err)
 	}
 	return nil
-}
-
-func isProjectBundleVolumeArchive(name string) bool {
-	key, ok := strings.CutPrefix(name, projectBundleVolumes)
-	if !ok {
-		return false
-	}
-	key, ok = strings.CutSuffix(key, ".tar.gz")
-	archive, err := ProjectBundleVolumeArchive(key)
-	return ok && err == nil && archive == name
 }
 
 func IsProjectBundle(r io.Reader) bool {
@@ -564,7 +536,7 @@ func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectMa
 			return manifest, true, fmt.Errorf("unexpected bundle entry %q", name)
 		}
 		if visit != nil {
-			if visitErr := visit(name, header.Size, tarReader); visitErr != nil {
+			if visitErr := visit(manifest, name, header.Size, tarReader); visitErr != nil {
 				return manifest, true, visitErr
 			}
 		}
@@ -591,23 +563,12 @@ func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]boo
 			return nil, fmt.Errorf("project bundle lists volume %q twice", volume.Key)
 		}
 		keys[volume.Key] = struct{}{}
-		archive, err := ProjectBundleVolumeArchive(volume.Key)
-		if err != nil {
-			return nil, err
-		}
+		archive := ProjectBundleVolumeArchive(volume.Key)
 		switch {
 		case !volume.Included && volume.Archive != "":
 			return nil, fmt.Errorf("volume %q is not included but names archive %q", volume.Key, volume.Archive)
-		case len(volume.DockerLabels) > 0 && (!volume.Included || volume.Kind != types.ProjectVolumeExternal):
-			return nil, fmt.Errorf("volume %q records Docker labels but is not an included external volume", volume.Key)
-		case !volume.Included:
-		case !dockerVolumeNamePattern.MatchString(volume.Name):
-			return nil, fmt.Errorf("volume %q has invalid name %q", volume.Key, volume.Name)
-		case volume.Archive == archive:
+		case volume.Included && volume.Archive == archive:
 			owners[archive] = volume.Name
-		}
-		if labelErr := ValidateVolumeLabels(volume.DockerLabels); labelErr != nil {
-			return nil, fmt.Errorf("volume %q: %w", volume.Key, labelErr)
 		}
 	}
 	expected := map[string]bool{}
@@ -616,29 +577,11 @@ func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]boo
 			continue
 		}
 		if owner, ok := owners[volume.Archive]; !ok || owner != volume.Name {
-			archive, _ := ProjectBundleVolumeArchive(volume.Key)
-			return nil, fmt.Errorf("volume %q must be archived at %s or share the archive of another volume named %s, not %q", volume.Key, archive, volume.Name, volume.Archive)
+			return nil, fmt.Errorf("volume %q must be archived at %s or share the archive of another volume named %s, not %q", volume.Key, ProjectBundleVolumeArchive(volume.Key), volume.Name, volume.Archive)
 		}
 		expected[volume.Archive] = false
 	}
 	return expected, nil
-}
-
-func ValidateVolumeLabels(labels map[string]string) error {
-	if len(labels) > maxVolumeLabels {
-		return fmt.Errorf("more than %d labels", maxVolumeLabels)
-	}
-	size := 0
-	for key, value := range labels {
-		if key == "" {
-			return errors.New("a label has an empty key")
-		}
-		size += len(key) + len(value)
-	}
-	if size > maxVolumeLabelBytes {
-		return fmt.Errorf("labels exceed %d bytes", maxVolumeLabelBytes)
-	}
-	return nil
 }
 
 // SelectBackupVolumes returns the requested volume keys, or every included one when the request names none; the

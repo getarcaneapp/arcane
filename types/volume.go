@@ -68,7 +68,6 @@ type (
 		Project  string            `json:"project" required:"true" minLength:"1" doc:"Compose project name"`
 		Key      string            `json:"key" required:"true" minLength:"1" doc:"Volume key in the compose file's volumes section"`
 		Driver   string            `json:"driver,omitempty" doc:"Compose volume driver; defaults to local"`
-		Claim    string            `json:"claim,omitempty" maxLength:"64" doc:"Value of the volume's claim label, so the caller can later tell the volume it created from one created by others"`
 		External bool              `json:"external,omitempty" doc:"Create the volume without Compose labels, as Compose expects of an external volume"`
 	}
 

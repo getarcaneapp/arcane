@@ -48,19 +48,11 @@ type (
 		Kind     string
 		Filename string
 	}
-
-	reserveWriter struct {
-		ctx       context.Context
-		w         io.Writer
-		service   *UploadService
-		unchecked int64
-	}
 )
 
 const (
 	sessionMetaFilename = "meta.json"
 	sessionDataFilename = "data"
-	reserveCheckBytes   = 64 << 20
 )
 
 var uploadIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -118,10 +110,6 @@ func (s *UploadService) validateSize(ctx context.Context, kind string, size int6
 			return fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
 		}
 	}
-	return s.CheckFreeSpace(ctx, size)
-}
-
-func (s *UploadService) CheckFreeSpace(ctx context.Context, size int64) error {
 	checked := s.root
 	for {
 		if _, statErr := os.Stat(checked); statErr == nil || filepath.Dir(checked) == checked {
@@ -326,22 +314,6 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 	})
 }
 
-func (w *reserveWriter) Write(p []byte) (int, error) {
-	if pending := int64(len(p)); w.unchecked < pending {
-		allowance := max(reserveCheckBytes, pending)
-		if w.service.CheckFreeSpace(w.ctx, allowance) != nil {
-			allowance = pending
-			if err := w.service.CheckFreeSpace(w.ctx, allowance); err != nil {
-				return 0, fmt.Errorf("stop writing the upload: %w", err)
-			}
-		}
-		w.unchecked = allowance
-	}
-	n, err := w.w.Write(p)
-	w.unchecked -= int64(n)
-	return n, err
-}
-
 func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptions) (session *types.UploadSession, err error) {
 	kind := opts.Kind
 	filename, err := sessionFilename(kind, opts.Filename)
@@ -368,11 +340,7 @@ func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptio
 	if err != nil {
 		return nil, fmt.Errorf("create upload session data file: %w", err)
 	}
-	if writeErr := opts.Write(&reserveWriter{
-		ctx:     ctx,
-		w:       file,
-		service: s,
-	}); writeErr != nil {
+	if writeErr := opts.Write(file); writeErr != nil {
 		return nil, errors.Join(writeErr, file.Close())
 	}
 	info, err := file.Stat()

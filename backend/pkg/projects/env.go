@@ -62,19 +62,6 @@ type (
 		exists       bool
 	}
 
-	ComposeFileSelection struct {
-		ProjectsRoot       string
-		GlobalEnvDirectory string
-		ProjectPath        string
-		Files              []string
-	}
-
-	LoadedComposeFilesOptions struct {
-		GlobalEnvDirectory string
-		ProjectPath        string
-		ComposeFile        string
-	}
-
 	ComposeEnvOptions struct {
 		ConfigFiles   []string
 		Profiles      []string
@@ -834,62 +821,6 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	}
 	mergeComposeEnvFiles(ctx, dir, envMap, ParseProjectEnvFile, nil)
 	return resolveComposeFileSelection(ctx, dir, envMap)
-}
-
-func SelectComposeFiles(ctx context.Context, selection ComposeFileSelection) error {
-	if slices.Equal(LoadedComposeFiles(ctx, LoadedComposeFilesOptions{GlobalEnvDirectory: selection.GlobalEnvDirectory, ProjectPath: selection.ProjectPath}), selection.Files) {
-		return nil
-	}
-	current, err := acfs.Host{}.ReadFile(ctx, filepath.Join(selection.ProjectPath, EffectiveEnvFileName))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read %s: %w", EffectiveEnvFileName, err)
-	}
-	content, err := BuildEffectiveEnvContent(string(current), formatEnvMap(EnvMap{
-		consts.ComposeFilePath:      strings.Join(selection.Files, defaultComposePathSeparator),
-		consts.ComposePathSeparator: defaultComposePathSeparator,
-	}))
-	if err != nil {
-		return err
-	}
-	if writeErr := WriteProjectFile(ctx, selection.ProjectsRoot, selection.ProjectPath, EffectiveEnvFileName, content); writeErr != nil {
-		return writeErr
-	}
-	if _, selectErr := ComposeFileEnvSelection(ctx, selection.GlobalEnvDirectory, selection.ProjectPath); selectErr != nil {
-		return selectErr
-	}
-	if !slices.Equal(LoadedComposeFiles(ctx, LoadedComposeFilesOptions{GlobalEnvDirectory: selection.GlobalEnvDirectory, ProjectPath: selection.ProjectPath}), selection.Files) {
-		return common.Classify(common.ErrComposeFileEnvInvalid, fmt.Errorf("the project cannot select the compose files %s", strings.Join(selection.Files, ", ")))
-	}
-	return nil
-}
-
-func LoadedComposeFiles(ctx context.Context, opts LoadedComposeFilesOptions) []string {
-	projectPath := opts.ProjectPath
-	if files, err := ComposeFileEnvSelection(ctx, opts.GlobalEnvDirectory, projectPath); err == nil && len(files) > 0 {
-		relative := make([]string, 0, len(files))
-		for _, file := range files {
-			rel, relErr := filepath.Rel(projectPath, file)
-			relative = append(relative, kit.Ternary(relErr == nil, rel, file))
-		}
-		return relative
-	}
-	base := opts.ComposeFile
-	if base == "" {
-		// A file the loader can't pick (none, or several) means it loads none yet; SelectComposeFiles then pins its
-		// selection and checks the result again, so the error adds nothing there.
-		base, _ = DetectComposeFile(ctx, opts.GlobalEnvDirectory, projectPath)
-	}
-	if base == "" {
-		return nil
-	}
-	rel, relErr := filepath.Rel(projectPath, base)
-	loaded := []string{kit.Ternary(relErr == nil && filepath.IsAbs(base), rel, filepath.Base(base))}
-	if slices.Contains(ComposeFileCandidates, filepath.Base(base)) {
-		if override := DetectComposeOverrideFile(ctx, projectPath); override != "" {
-			loaded = append(loaded, filepath.Base(override))
-		}
-	}
-	return loaded
 }
 
 func ComposeFileEntriesFromEnv(env EnvMap) []string {

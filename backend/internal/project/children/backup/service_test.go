@@ -43,7 +43,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/s3"
-	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -78,14 +77,12 @@ type (
 	}
 
 	policyFixture struct {
-		db       *database.DB
-		engine   *backup.Engine
-		service  *Service
-		jobs     *fakeScheduler
-		forgets  *fakeForget
-		projects *[]types.ProjectReference
-		// started lists the IDs of the containers resumed backups started again.
-		started    func() []string
+		db         *database.DB
+		engine     *backup.Engine
+		service    *Service
+		jobs       *fakeScheduler
+		forgets    *fakeForget
+		projects   *[]types.ProjectReference
 		s3Requests *atomic.Int64
 		available  *atomic.Bool
 		// onS3 runs once on the next S3 request, to change things while a check is in flight.
@@ -124,29 +121,6 @@ func newTestDB(t *testing.T) *database.DB {
 func existingVolumes(existing ...string) func(context.Context, string) (types.Volume, bool, error) {
 	return func(_ context.Context, name string) (types.Volume, bool, error) {
 		return types.Volume{Name: name}, slices.Contains(existing, name), nil
-	}
-}
-
-// startRecorder stands in for the project service's container start and records each container it starts; while fail
-// is set, starts fail.
-func startRecorder(fail *atomic.Bool) (func(context.Context, string, []container.Summary) error, func() []string) {
-	var (
-		mu      sync.Mutex
-		started []string
-	)
-	start := func(_ context.Context, _ string, stopped []container.Summary) error {
-		mu.Lock()
-		defer mu.Unlock()
-		started = append(started, containerIDs(stopped)...)
-		if fail.Load() {
-			return errors.New("start failed")
-		}
-		return nil
-	}
-	return start, func() []string {
-		mu.Lock()
-		defer mu.Unlock()
-		return slices.Clone(started)
 	}
 }
 
@@ -245,7 +219,7 @@ func TestBackupManifestKind(t *testing.T) {
 	project := testProject()
 	p := plan{Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Included: true}}}
 
-	manifest := backupManifest(project, p, true, []string{"compose.yaml"}, false)
+	manifest := backupManifest(project, p, true, false)
 	require.Equal(t, types.ProjectManifestKindBackup, manifest.Kind)
 	require.Equal(t, types.ProjectManifestFormatVersion, manifest.FormatVersion)
 	require.Equal(t, types.ProjectManifestProject{ID: "p1", Name: "Web", ComposeName: "web"}, manifest.Project)
@@ -253,15 +227,15 @@ func TestBackupManifestKind(t *testing.T) {
 	require.False(t, manifest.Consistent, "a live backup of a running project is not consistent")
 	require.False(t, manifest.ExternalEnv)
 	require.Equal(t, []string{project.Path}, manifest.ProjectDirs, "a path that doesn't resolve is recorded as configured")
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, true).ExternalEnv)
-	require.True(t, backupManifest(project, p, false, []string{"compose.yaml"}, false).Consistent, "nothing runs, so a live backup is consistent")
+	require.True(t, backupManifest(project, p, true, true).ExternalEnv)
+	require.True(t, backupManifest(project, p, false, false).Consistent, "nothing runs, so a live backup is consistent")
 
 	p.StopContainers = true
-	require.True(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
+	require.True(t, backupManifest(project, p, true, false).Consistent)
 
 	// Other projects are not stopped, so a captured volume one of them mounts makes the copy inconsistent.
 	p.Volumes[0].InUse = true
-	require.False(t, backupManifest(project, p, true, []string{"compose.yaml"}, false).Consistent)
+	require.False(t, backupManifest(project, p, true, false).Consistent)
 }
 
 func TestStartBackupFailsFastWhenProjectOrVolumeIsBusy(t *testing.T) {
@@ -426,7 +400,7 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 			report := func(_ context.Context, message string) { reported = append(reported, message) }
 
 			// As the backup does: it records the project directory as configured and resolved, which the links name.
-			manifest := backupManifest(types.Project{Path: projectPath}, plan{}, false, nil, false)
+			manifest := backupManifest(types.Project{Path: projectPath}, plan{}, false, false)
 			resolvedPath, resolveErr := filepath.EvalSymlinks(projectPath)
 			require.NoError(t, resolveErr)
 			assert.Equal(t, []string{projectPath, resolvedPath}, manifest.ProjectDirs)
@@ -673,8 +647,8 @@ func (f *fakeRestore) steps() restoreSteps {
 		deploy: func(context.Context) error { return f.step("deploy") },
 		safety: func(context.Context, restorePlan) (string, error) { return "s1", f.step("safety") },
 		inUse:  func(context.Context, restorePlan) error { return f.step("in use") },
-		create: func(_ context.Context, volume volumes.ClaimedVolume) error {
-			return f.step("create " + volume.Options.Name + " claimed by " + volume.Claim)
+		create: func(_ context.Context, options client.VolumeCreateOptions) error {
+			return f.step("create " + options.Name)
 		},
 		restore: func(_ context.Context, opts types.ProjectBackupRestore) error {
 			names := make([]string, 0, len(opts.Volumes))
@@ -684,9 +658,7 @@ func (f *fakeRestore) steps() restoreSteps {
 			return f.step("restore " + opts.BackupID + " " + opts.ProjectPath + " " + strings.Join(names, ","))
 		},
 		verify: func(context.Context, restorePlan) error { return f.step("verify") },
-		remove: func(_ context.Context, names []string, claim string) error {
-			return f.step("remove " + strings.Join(names, ",") + " claimed by " + claim)
-		},
+		remove: func(_ context.Context, names []string) error { return f.step("remove " + strings.Join(names, ",")) },
 	}
 }
 
@@ -712,8 +684,8 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "rolled back to the safety backup s1")
 	// The volume the restore created is removed; the one that existed comes back from the safety backup.
 	require.Equal(t, []string{
-		"down", "clear", "safety", "in use", "create shop_cache claimed by project-restore:r1", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
-		"rolling back", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache claimed by project-restore:r1", "save deploy", "deploy",
+		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
+		"rolling back", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "save deploy", "deploy",
 	}, running.calls)
 	require.Equal(t, err.Error(), running.plans[len(running.plans)-1].Failure)
 
@@ -731,8 +703,8 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "rolled back to the safety backup s1, but could not be deployed")
 	require.NotContains(t, err.Error(), "the rollback failed too")
 	require.Equal(t, []string{
-		"down", "clear", "safety", "in use", "create shop_cache claimed by project-restore:r1", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
-		"rolling back", "down", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache claimed by project-restore:r1", "save deploy", "deploy",
+		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
+		"rolling back", "down", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "save deploy", "deploy",
 	}, redeploy.calls)
 
 	// A safety backup that cannot be restored leaves the project down instead of starting it on half-restored data.
@@ -741,8 +713,8 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "the rollback failed too")
 	require.ErrorContains(t, err, "the project was left down; restore the safety backup s1")
 	require.Equal(t, []string{
-		"down", "clear", "safety", "in use", "create shop_cache claimed by project-restore:r1", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify",
-		"rolling back", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache claimed by project-restore:r1",
+		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify",
+		"rolling back", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache",
 	}, undoFailed.calls)
 
 	// A container that started using a volume after the checks stops the restore before anything is written.
@@ -773,7 +745,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.Equal(t, []string{"deploy", "rolling back", "down"}, stuck.calls)
 }
 
-func TestRestoreRemovesOnlyTheVolumesItClaimed(t *testing.T) {
+func TestRestoreRemovesTheVolumesItCreates(t *testing.T) {
 	p := restorePlan{
 		ID:        "r1",
 		BackupID:  "b1",
@@ -782,51 +754,22 @@ func TestRestoreRemovesOnlyTheVolumesItClaimed(t *testing.T) {
 		Create:    []client.VolumeCreateOptions{{Name: "shop_cache"}, {Name: "shop_logs"}},
 	}
 	createErr := errors.New("disk full")
-	failed := &fakeRestore{fail: map[string]error{"create shop_logs claimed by project-restore:r1": createErr}}
+	failed := &fakeRestore{fail: map[string]error{"create shop_logs": createErr}}
 	err := failed.steps().apply(t.Context(), p)
 	require.ErrorIs(t, err, createErr)
-	// Docker may have created the volume whose create failed, so the rollback is handed every volume the restore was to
-	// create, with the claim that tells which of them it made.
-	require.Equal(t, []string{
-		"clear", "safety", "in use", "create shop_cache claimed by project-restore:r1", "create shop_logs claimed by project-restore:r1",
-		"rolling back", "restore s1  ", "remove shop_cache,shop_logs claimed by project-restore:r1",
-	}, failed.calls)
+	// The volume created before the failure is removed; the one that failed is not, since it may be someone else's.
+	require.Equal(t, []string{"clear", "safety", "in use", "create shop_cache", "create shop_logs", "rolling back", "restore s1  ", "remove shop_cache"}, failed.calls)
 
-	// Arcane stops during a create: the last checkpoint is the one saved with the safety backup, and the resumed run
-	// removes the claimed volumes from it.
-	index := slices.IndexFunc(failed.plans, func(recorded restorePlan) bool { return recorded.SafetyID != "" })
+	// Arcane stops between the two creates: the checkpoint saved after the first already names it, so the resumed run
+	// removes it.
+	index := slices.IndexFunc(failed.plans, func(recorded restorePlan) bool { return len(recorded.Created) > 0 })
 	require.GreaterOrEqual(t, index, 0)
+	require.Equal(t, []string{"shop_cache"}, failed.plans[index].Created)
 	resumed := &fakeRestore{}
 	err = resumed.steps().apply(t.Context(), failed.plans[index])
 	require.ErrorContains(t, err, "the restore was interrupted")
-	require.Contains(t, resumed.calls, "remove shop_cache,shop_logs claimed by project-restore:r1")
-	require.NotContains(t, resumed.calls, "create shop_logs claimed by project-restore:r1")
-
-	// Only a volume carrying the claim is removed; one that existed before the restore, or another restore claimed, is
-	// left alone, and one never created is skipped.
-	labels := map[string]map[string]string{
-		"shop_cache": {volumes.ClaimLabel: "project-restore:r1"},
-		"shop_logs":  {"team": "ops"},
-		"shop_tmp":   {volumes.ClaimLabel: "project-restore:r2"},
-	}
-	var removed []string
-	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, "/v1.41/volumes/")
-		found, exists := labels[name]
-		switch {
-		case !exists:
-			http.NotFound(w, r)
-		case r.Method == http.MethodDelete:
-			removed = append(removed, name)
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, volume.Volume{Name: name, Labels: found}))
-		}
-	}))
-	s := &Service{deps: Dependencies{Docker: dockerService}}
-	require.NoError(t, s.removeVolumes(t.Context(), []string{"shop_cache", "shop_logs", "shop_tmp", "shop_gone"}, "project-restore:r1"))
-	require.Equal(t, []string{"shop_cache"}, removed)
+	require.Contains(t, resumed.calls, "remove shop_cache")
+	require.NotContains(t, resumed.calls, "create shop_logs")
 }
 
 func TestRestoreRedeploysOnlyWhenTheProjectRanOrIsAsked(t *testing.T) {
@@ -853,7 +796,7 @@ func TestResumedRestoreNeverLeavesTheProjectDown(t *testing.T) {
 	resumed := &fakeRestore{}
 	err := resumed.steps().apply(t.Context(), restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", ProjectPath: "/p", Files: true, Running: true, Started: true, SafetyID: "s1"})
 	require.ErrorContains(t, err, "the restore was interrupted; the project was rolled back to the safety backup s1")
-	require.Equal(t, []string{"rolling back", "restore s1 /p ", "remove  claimed by project-restore:r1", "save deploy", "deploy"}, resumed.calls)
+	require.Equal(t, []string{"rolling back", "restore s1 /p ", "remove ", "save deploy", "deploy"}, resumed.calls)
 
 	// Interrupted before the safety backup: nothing changed, so the project is only deployed again.
 	early := &fakeRestore{}
@@ -872,7 +815,7 @@ func TestResumedRestoreNeverLeavesTheProjectDown(t *testing.T) {
 		ID: "r1", BackupID: "b1", ProjectID: "p1", ProjectPath: "/p", Files: true, Running: true, Started: true, SafetyID: "s1", Restored: true, Deploying: true, RollingBack: true,
 	})
 	require.ErrorContains(t, err, "the restore was interrupted; the project was rolled back to the safety backup s1")
-	require.Equal(t, []string{"rolling back", "down", "restore s1 /p ", "remove  claimed by project-restore:r1", "save deploy", "deploy"}, rolling.calls)
+	require.Equal(t, []string{"rolling back", "down", "restore s1 /p ", "remove ", "save deploy", "deploy"}, rolling.calls)
 }
 
 func TestVerifyRestoreKeepsTheComposeName(t *testing.T) {
@@ -1003,7 +946,6 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 			found, ok := live[name]
 			return types.NewVolume(found), ok, nil
 		},
-		ComposeFiles: func(context.Context, string) ([]string, error) { return []string{"compose.yaml"}, nil },
 	})
 
 	_, err = service.safetyBackup(t.Context(), restorePlan{
@@ -1108,7 +1050,6 @@ func newPolicyFixture(t *testing.T) policyFixture {
 
 	jobs := &fakeScheduler{jobs: map[string]types.SchedulerJob{}}
 	references := &[]types.ProjectReference{{ID: "p1", Name: "Web"}, {ID: "p2", Name: "Shop"}, {ID: "p3", Name: "Wiki"}}
-	start, started := startRecorder(&atomic.Bool{})
 	forgets := &fakeForget{calls: map[string][][]string{}, failing: map[string]bool{}}
 	// A new snapshot fails once it starts, when it lists the running containers that use its volumes.
 	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1139,11 +1080,6 @@ func newPolicyFixture(t *testing.T) policyFixture {
 		S3Destinations:  destinationService,
 		Settings:        settingsService,
 		LockVolumes:     lockingWith(&concurrency.KeyedMutex{}),
-		StartContainers: start,
-		NoteStopped:     noteNothing,
-		ForgetStopped:   forgetNothing,
-		NotedStopped:    stillNoted,
-		RecoverStopped:  func() {},
 		Project: func(_ context.Context, projectID string, _ types.ProjectDetailsOptions) (types.Project, error) {
 			project := testProject()
 			return types.Project{ID: projectID, Name: project.Name, ComposeName: project.ComposeName, Path: project.Path, Volumes: project.Volumes}, nil
@@ -1161,8 +1097,8 @@ func newPolicyFixture(t *testing.T) policyFixture {
 	require.NoError(t, service.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
 	return policyFixture{
-		db: db, engine: engine, service: service, jobs: jobs, forgets: forgets, projects: references, started: started,
-		s3Requests: requests, available: available, onS3: onS3, destination: destinations[0], secondary: destinations[1],
+		db: db, engine: engine, service: service, jobs: jobs, forgets: forgets, projects: references, s3Requests: requests,
+		available: available, onS3: onS3, destination: destinations[0], secondary: destinations[1],
 	}
 }
 
@@ -1690,71 +1626,6 @@ func TestGlobalRemoteCheckUsesThePolicyChangedDuringIt(t *testing.T) {
 	require.Equal(t, types.VolumeBackupDestinationLocal, request.Destination, "the run uses the policy as the user left it")
 }
 
-func TestGlobalBackupResumesWithoutLeavingContainersStopped(t *testing.T) {
-	f := newPolicyFixture(t)
-	policy := f.globalPolicies(t, types.UpdateGlobalProjectBackupPolicy{
-		UpdateBackupPolicy: types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", LocalEnabled: true},
-		SelectionMode:      types.SystemVolumeSelectionAll,
-		ProjectIDs:         []string{},
-	})[0]
-	// p2's own policy took over after the interrupted run planned it.
-	f.policy(t, ProjectBackupPolicy{ProjectID: "p2", Schedule: "0 3 * * *", Enabled: true, LocalEnabled: true})
-	seriesID := types.GlobalProjectPolicyPrefix + policy.ID + ":p1"
-	require.NoError(t, f.db.Create(&ProjectBackup{
-		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", PolicyID: seriesID,
-		Trigger: types.VolumeBackupTriggerScheduled, Status: types.VolumeBackupStatusFailed, Error: "snapshot failed",
-	}).Error)
-	checkpointed := []container.Summary{{ID: "web-1", Names: []string{"/web-1"}, Labels: map[string]string{"com.docker.compose.service": "web"}}}
-	checkpoint, err := json.Marshal(plan{
-		BackupID: "b1", ProjectID: "p1", PolicyID: seriesID, StopContainers: true, Stopped: checkpointed,
-		Volumes: []types.ProjectVolume{{Name: "web_data", Included: true}},
-	})
-	require.NoError(t, err)
-	planned, err := json.Marshal(globalPlan{ProjectIDs: []string{"p1", "p2"}})
-	require.NoError(t, err)
-	previous := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{
-		{ResourceType: "backup_plan", ID: globalPlanTarget, Status: types.RunStatusSucceeded, RecoveryData: planned},
-		{ResourceType: targetType, ID: "p1", Status: types.RunStatusRunning, RecoveryData: checkpoint},
-	}}}
-
-	// While another run holds the project the run is handed back, and the containers stay as they are until it can
-	// take the project.
-	held := f.hold(t, backup.VolumeAdmissionScope, "web_data")
-	_, err = f.service.backUpGlobal(t.Context(), globalRun{PolicyID: policy.ID}, previous)
-	require.ErrorIs(t, err, actor.ErrJobRejected)
-	require.Empty(t, f.started())
-
-	// A fallback waits for the admission instead, restarts the containers, then backs up the rest of the plan.
-	job, ok := f.jobs.jobs["project-backup:"+types.GlobalProjectPolicyPrefix+policy.ID].(*flow.Job)
-	require.True(t, ok)
-	done := make(chan types.SchedulerOutcome, 1)
-	go func() {
-		outcome, fallbackErr := job.FallbackFn(t.Context(), previous)
-		assert.NoError(t, fallbackErr)
-		done <- outcome
-	}()
-	select {
-	case <-done:
-		t.Fatal("the fallback resumed while another run held the volume")
-	case <-time.After(300 * time.Millisecond):
-	}
-	held.Release(t.Context())
-	var outcome types.SchedulerOutcome
-	select {
-	case outcome = <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the fallback did not resume after the other run finished")
-	}
-	// The checkpointed containers are started again.
-	require.Equal(t, []string{checkpointed[0].ID}, f.started())
-	require.Equal(t, types.RunStatusPartial, outcome.Status)
-	require.Equal(t, "1 project backups failed", outcome.Message)
-	require.Len(t, outcome.Targets, 1)
-	require.Equal(t, "p1", outcome.Targets[0].ID)
-	require.Contains(t, outcome.Targets[0].Message, "snapshot failed")
-	require.Equal(t, []string{"b1"}, f.backupIDs(t))
-}
-
 func TestGlobalPlanPassesStartupRecovery(t *testing.T) {
 	f := newPolicyFixture(t)
 	base := types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", LocalEnabled: true}
@@ -1990,7 +1861,7 @@ func TestInterruptedScheduledBackupsKeepTheirJobs(t *testing.T) {
 		})
 	}
 
-	// After a restart, a run interrupted with the project stopped can only resume through its policy's job.
+	// After a restart, an interrupted run can only resume, or fail, through its policy's job.
 	f.service.RegisterJobsOnStartup(t.Context())
 	require.True(t, f.jobs.HasJob("project-backup:"+enabled.ID))
 	require.True(t, f.jobs.HasJob("project-backup:"+disabled.ID))
@@ -2265,109 +2136,6 @@ func TestGlobalResumeAppliesRetentionAfterAFailedBackup(t *testing.T) {
 	require.Equal(t, map[string][][]string{"volumes:local": {{"local-f1", "local-f2", "local-f3"}}}, f.forgets.calls)
 }
 
-func TestResumeRetriesUntilTheStoppedContainersStart(t *testing.T) {
-	db := newTestDB(t)
-	harness := flowtest.New(t, activity.NewActivityService(db, nil))
-	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
-	require.NoError(t, gate.Register(harness.Runtime))
-	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
-	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	harness.Start(t)
-	require.NoError(t, db.Create(&ProjectBackup{
-		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusSucceeded,
-	}).Error)
-	var fail atomic.Bool
-	fail.Store(true)
-	start, started := startRecorder(&fail)
-	var recoveries, forgotten atomic.Int32
-	var noted atomic.Bool
-	noted.Store(true)
-	service := NewService(Dependencies{
-		DB:              db,
-		Engine:          engine,
-		LockVolumes:     lockingWith(&concurrency.KeyedMutex{}),
-		LockProject:     func(context.Context, string, string) (func(), error) { return func() {}, nil },
-		StartContainers: start,
-		NoteStopped:     noteNothing,
-		ForgetStopped: func(context.Context, string) error {
-			forgotten.Add(1)
-			return nil
-		},
-		NotedStopped:   func(context.Context, string) (bool, error) { return noted.Load(), nil },
-		RecoverStopped: func() { recoveries.Add(1) },
-	})
-	recorded := plan{
-		BackupID: "b1", ProjectID: "p1", StopContainers: true,
-		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
-	}
-
-	// A failed start hands the run back instead of ending it with the project down, and starts the project's recovery,
-	// which keeps trying even if this run never resumes.
-	require.ErrorIs(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded), actor.ErrJobRejected)
-	require.EqualValues(t, 1, recoveries.Load())
-	require.Zero(t, forgotten.Load())
-	fail.Store(false)
-	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded))
-	require.Equal(t, []string{"web-1", "web-1"}, started())
-	// Running again, the project's stop note is dropped.
-	require.EqualValues(t, 1, forgotten.Load())
-
-	// A deploy, down or archive dropped the note after a failed start; the person's choice stands, so the retry
-	// starts nothing and finishes the backup.
-	fail.Store(true)
-	noted.Store(false)
-	require.NoError(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded))
-	require.Equal(t, []string{"web-1", "web-1"}, started())
-	require.EqualValues(t, 1, recoveries.Load())
-}
-
-// A snapshot rejected after the copy keeps its backup running, with the rejection noted, while the containers stay
-// down, since a running backup keeps a disabled schedule's recovery; once they start, the backup fails instead of
-// completing the snapshot.
-func TestResumeFailsARejectedSnapshotOnlyOnceTheContainersStart(t *testing.T) {
-	db := newTestDB(t)
-	harness := flowtest.New(t, activity.NewActivityService(db, nil))
-	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
-	require.NoError(t, gate.Register(harness.Runtime))
-	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
-	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	harness.Start(t)
-	require.NoError(t, db.Create(&ProjectBackup{
-		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning,
-	}).Error)
-	var fail atomic.Bool
-	fail.Store(true)
-	start, started := startRecorder(&fail)
-	service := NewService(Dependencies{
-		DB:              db,
-		Engine:          engine,
-		LockVolumes:     lockingWith(&concurrency.KeyedMutex{}),
-		LockProject:     func(context.Context, string, string) (func(), error) { return func() {}, nil },
-		StartContainers: start,
-		NoteStopped:     noteNothing,
-		ForgetStopped:   forgetNothing,
-		NotedStopped:    stillNoted,
-		RecoverStopped:  func() {},
-	})
-	require.NoError(t, service.reject(t.Context(), "b1", "a volume was replaced while it was copied"))
-	recorded := plan{
-		BackupID: "b1", ProjectID: "p1", StopContainers: true,
-		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
-	}
-	status := func() string {
-		var stored ProjectBackup
-		require.NoError(t, db.First(&stored, "id = ?", "b1").Error)
-		return stored.Status
-	}
-
-	require.ErrorIs(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded), actor.ErrJobRejected)
-	require.Equal(t, string(types.VolumeBackupStatusRunning), status())
-	fail.Store(false)
-	require.ErrorContains(t, service.resume(t.Context(), types.SchedulerRun{}, nil, recorded), "a volume was replaced while it was copied")
-	require.Equal(t, []string{"web-1", "web-1"}, started())
-	require.Equal(t, string(types.VolumeBackupStatusFailed), status())
-}
-
 func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	db := newTestDB(t)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
@@ -2401,7 +2169,7 @@ func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
 
 func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	locks := &concurrency.KeyedMutex{}
-	service := NewService(Dependencies{LockVolumes: lockingWith(locks), NoteStopped: noteNothing, ForgetStopped: forgetNothing, RecoverStopped: func() {}})
+	service := NewService(Dependencies{LockVolumes: lockingWith(locks)})
 	p := plan{BackupID: "b1", ProjectID: "p1", Volumes: []types.ProjectVolume{
 		{Key: "data", Name: "web_data", Included: true},
 		{Key: "cache", Name: "web_cache", Included: false},
@@ -2414,140 +2182,14 @@ func TestCaptureWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	require.ErrorIs(t, service.capture(waiting, &ProjectBackup{BaseModel: database.BaseModel{ID: "b1"}, ProjectID: "p1"}, p), context.DeadlineExceeded)
 }
 
-func TestResumeRestartsOnlyOnceEveryProjectVolumeIsFree(t *testing.T) {
-	db := newTestDB(t)
-	harness := flowtest.New(t, activity.NewActivityService(db, nil))
-	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
-	require.NoError(t, gate.Register(harness.Runtime))
-	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
-	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	harness.Start(t)
-	locks := &concurrency.KeyedMutex{}
-	start, started := startRecorder(&atomic.Bool{})
-	service := NewService(Dependencies{
-		DB:          db,
-		Engine:      engine,
-		LockVolumes: lockingWith(locks),
-		NoteStopped: noteNothing, ForgetStopped: forgetNothing, NotedStopped: stillNoted, RecoverStopped: func() {},
-		LockProject:     func(context.Context, string, string) (func(), error) { return func() {}, nil },
-		StartContainers: start,
-	})
-	recorded := plan{
-		BackupID: "b1", ProjectID: "p1", StopContainers: true,
-		Volumes: []types.ProjectVolume{{Key: "data", Name: "web_data", Included: true}, {Key: "cache", Name: "web_cache"}},
-		Stopped: []container.Summary{{ID: "web-1", Names: []string{"/web-1"}}},
-	}
-
-	// A restore of the cache volume, which this backup didn't capture, is still writing it; the containers wait.
-	unlock := locks.Lock("web_cache")
-	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
-	err := service.resume(waiting, types.SchedulerRun{}, nil, recorded)
-	require.ErrorIs(t, err, actor.ErrJobRejected)
-	require.Empty(t, started())
-	unlock()
-}
-
-func TestCompleteLeavesAHandedBackRunRunning(t *testing.T) {
-	db := newTestDB(t)
-	entry := &ProjectBackup{BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()}, ProjectID: "p1", Status: types.VolumeBackupStatusRunning}
-	require.NoError(t, db.Create(entry).Error)
-	service := NewService(Dependencies{DB: db})
-
-	err := service.complete(t.Context(), entry, fmt.Errorf("%w: restart project containers: %w", actor.ErrJobRejected, errors.New("down")))
-	require.ErrorIs(t, err, actor.ErrJobRejected)
-	var stored ProjectBackup
-	require.NoError(t, db.First(&stored, "id = ?", "b1").Error)
-	require.Equal(t, types.VolumeBackupStatusRunning, stored.Status)
-}
-
-// A user cancel fails its backup, except while the project's containers are still stopped: the running backup is what
-// keeps their restart recoverable.
-func TestUserCancelKeepsABackupRunningOnlyWhileContainersAreDown(t *testing.T) {
+// A user cancel fails its backup; a rejected run nobody cancelled is retried.
+func TestUserCancelFailsTheBackup(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(errors.New("activity cancelled by user"))
 
 	require.False(t, handedBack(ctx, ctx.Err()))
 	require.False(t, handedBack(ctx, fmt.Errorf("%w: busy", actor.ErrJobRejected)))
-	require.True(t, handedBack(ctx, fmt.Errorf("%w: %w: %w", actor.ErrJobRejected, errContainersDown, ctx.Err())))
 	require.True(t, handedBack(t.Context(), fmt.Errorf("%w: busy", actor.ErrJobRejected)))
-}
-
-func TestResumeRestartsStoppedContainersOnlyOnceAdmitted(t *testing.T) {
-	db := newTestDB(t)
-	harness := flowtest.New(t, activity.NewActivityService(db, nil))
-	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
-	require.NoError(t, gate.Register(harness.Runtime))
-	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error { return nil })
-	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
-	harness.Start(t)
-	entry := &ProjectBackup{
-		BaseModel: database.BaseModel{ID: "b1", CreatedAt: time.Now()},
-		ProjectID: "p1",
-		Status:    types.VolumeBackupStatusFailed,
-		Error:     "snapshot failed",
-	}
-	require.NoError(t, db.Create(entry).Error)
-	locked := false
-	start, started := startRecorder(&atomic.Bool{})
-	service := NewService(Dependencies{
-		DB:          db,
-		Engine:      engine,
-		NoteStopped: noteNothing, ForgetStopped: forgetNothing, NotedStopped: stillNoted, RecoverStopped: func() {},
-		LockVolumes: lockingWith(&concurrency.KeyedMutex{}),
-		LockProject: func(_ context.Context, _, projectID string) (func(), error) {
-			assert.Equal(t, "p1", projectID)
-			locked = true
-			return func() { locked = false }, nil
-		},
-		StartContainers: func(ctx context.Context, projectID string, stopped []container.Summary) error {
-			assert.Equal(t, "p1", projectID)
-			assert.True(t, locked, "the containers start under the project lock")
-			return start(ctx, projectID, stopped)
-		},
-	})
-
-	checkpointed := []container.Summary{{ID: "web-1", Names: []string{"/web-1"}, Labels: map[string]string{"com.docker.compose.service": "web"}}}
-	recorded := plan{
-		BackupID:       "b1",
-		ProjectID:      "p1",
-		Volumes:        []types.ProjectVolume{{Name: "web_data", Included: true}},
-		StopContainers: true,
-		Stopped:        checkpointed,
-	}
-	checkpoint, marshalErr := json.Marshal(recorded)
-	require.NoError(t, marshalErr)
-	previous := types.SchedulerRun{Outcome: types.SchedulerOutcome{Targets: []types.TargetOutcome{{ResourceType: targetType, ID: "p1", RecoveryData: checkpoint}}}}
-	// After a restart a restore can take the project or a volume first; the resumed backup waits instead of starting
-	// the project under it.
-	for _, held := range admissions(recorded.ProjectID, recorded.volumeNames()) {
-		lease, admitted, err := engine.TryAcquireRun(t.Context(), held.Scope, held.ID)
-		require.NoError(t, err)
-		require.True(t, admitted)
-
-		err = service.resume(t.Context(), types.SchedulerRun{}, &types.BackupRequester{}, recorded)
-		require.ErrorIs(t, err, actor.ErrJobRejected)
-		// A resumed scheduled backup is handed back too, never replaced by a new one.
-		_, resumed, err := service.resumeScheduled(t.Context(), previous)
-		require.ErrorIs(t, err, actor.ErrJobRejected)
-		require.True(t, resumed)
-		require.Empty(t, started(), held)
-		lease.Release(t.Context())
-	}
-
-	resumeErr := service.resume(t.Context(), types.SchedulerRun{}, nil, recorded)
-	require.ErrorIs(t, resumeErr, backup.ErrBackupSettled)
-	require.ErrorContains(t, resumeErr, "snapshot failed")
-	// The checkpointed containers are started again.
-	require.Equal(t, []string{"web-1"}, started())
-	require.False(t, locked)
-	// The resumed run releases the admissions it took.
-	for _, key := range admissions(recorded.ProjectID, recorded.volumeNames()) {
-		lease, admitted, err := engine.TryAcquireRun(t.Context(), key.Scope, key.ID)
-		require.NoError(t, err)
-		require.True(t, admitted, key)
-		lease.Release(t.Context())
-	}
 }
 
 func TestContainersStopOnlyThisProject(t *testing.T) {
@@ -2813,10 +2455,3 @@ func lockingWith(locks *concurrency.KeyedMutex) func(context.Context, []string) 
 		return release, nil
 	}
 }
-
-// noteNothing, forgetNothing and stillNoted stand in for the project service's stop note.
-func noteNothing(context.Context, string, []container.Summary) error { return nil }
-
-func forgetNothing(context.Context, string) error { return nil }
-
-func stillNoted(context.Context, string) (bool, error) { return true, nil }
