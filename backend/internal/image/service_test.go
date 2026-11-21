@@ -26,6 +26,7 @@ import (
 
 	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/sys/crypto"
+	"kit.getarcane.app/updater/refs"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -36,6 +37,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/vulnerability"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -46,6 +48,7 @@ type (
 	testProjectRow struct {
 		database.BaseModel
 		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
+		ImageRefsJSON      string  `gorm:"column:image_refs_json"`
 		Name               string
 		Path               string
 	}
@@ -67,6 +70,7 @@ func setupImageProjectTestDB(t *testing.T) *database.DB {
 		&imageupdate.ImageUpdateRecord{},
 		&event.Event{},
 		&kv.KVEntry{},
+		&vulnerability.VulnerabilityScanRecord{},
 	))
 	return &database.DB{DB: db}
 }
@@ -1127,4 +1131,178 @@ func TestImagePaginationConfig_FiltersByLabel(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestImageService_RefNormalizationKeys(t *testing.T) {
+	// Digest-pinned refs normalize to empty; the container path strips the digest first.
+	assert.Empty(t, refs.NormalizeImageUpdateRef("nginx:alpine@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+	assert.NotEmpty(t, refs.NormalizeImageUpdateRef("nginx:alpine"))
+}
+
+func TestBuildCombinedUsageMap_UsesContainerRefWhenRepoTagsMissing(t *testing.T) {
+	refUsage := map[string][]types.ImageUsedBy{
+		refs.NormalizeImageUpdateRef("nginx:alpine"): {{Type: "project", Name: "web", ID: "proj-2"}},
+	}
+	containers := []container.Summary{
+		{ID: "c1", ImageID: "sha256:nginx", Image: "nginx:alpine@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+	}
+
+	usage := BuildCombinedUsageMap(nil, containers, nil, refUsage)
+	require.Len(t, usage["sha256:nginx"], 2)
+	assert.Equal(t, "container", usage["sha256:nginx"][0].Type)
+	assert.Equal(t, "c1", usage["sha256:nginx"][0].Name)
+	assert.Equal(t, "project", usage["sha256:nginx"][1].Type)
+	assert.Equal(t, "web", usage["sha256:nginx"][1].Name)
+}
+
+func TestBuildCombinedUsageMap_MergesContainerAndRefUsage(t *testing.T) {
+	refUsage := map[string][]types.ImageUsedBy{
+		refs.NormalizeImageUpdateRef("grafana/grafana:12.1"): {{Type: "project", Name: "grafana", ID: "proj-1"}},
+	}
+	dockerImages := []image.Summary{
+		{ID: "sha256:grafana", RepoTags: []string{"grafana/grafana:12.1"}},
+		{ID: "sha256:solo"},
+	}
+	containers := []container.Summary{
+		{ID: "c1", ImageID: "sha256:grafana", Image: "grafana/grafana:12.1", Labels: map[string]string{"com.docker.compose.project": "usedby-probe"}},
+		{ID: "c2", ImageID: "sha256:solo", Image: "redis:7"},
+	}
+	projectIDByName := map[string]string{"usedby-probe": "proj-probe"}
+
+	// Container label badge + project-definition badge appear together, dedup keyed by project.
+	usageMap := BuildCombinedUsageMap(dockerImages, containers, projectIDByName, refUsage)
+	grafUsage := usageMap["sha256:grafana"]
+	require.Len(t, grafUsage, 2)
+	assert.Equal(t, "usedby-probe", grafUsage[0].Name)
+	assert.Equal(t, "proj-probe", grafUsage[0].ID)
+	assert.Equal(t, "grafana", grafUsage[1].Name)
+	assert.Equal(t, "proj-1", grafUsage[1].ID)
+
+	// Containers keep their plain container badge.
+	require.Len(t, usageMap["sha256:solo"], 1)
+	assert.Equal(t, "container", usageMap["sha256:solo"][0].Type)
+	assert.Equal(t, "c2", usageMap["sha256:solo"][0].Name)
+}
+
+// refOnlyProjectRefUsage builds a ref usage map as projectImageRefUsage would.
+func refOnlyProjectRefUsage() map[string][]types.ImageUsedBy {
+	return map[string][]types.ImageUsedBy{
+		refs.NormalizeImageUpdateRef("grafana/grafana:12.1"): {{Type: "project", Name: "grafana", ID: "proj-1"}},
+	}
+}
+
+func TestBuildCombinedUsageMap_KeepsProjectBadgeWithoutContainers(t *testing.T) {
+	dockerImages := []image.Summary{
+		{ID: "sha256:grafana", RepoTags: []string{"grafana/grafana:12.1"}},
+	}
+
+	usage := BuildCombinedUsageMap(dockerImages, nil, nil, refOnlyProjectRefUsage())
+	require.Len(t, usage["sha256:grafana"], 1)
+	assert.Equal(t, "project", usage["sha256:grafana"][0].Type)
+	assert.Equal(t, "grafana", usage["sha256:grafana"][0].Name)
+	assert.Empty(t, usage["sha256:unknown"])
+}
+
+func TestImageService_ListImagesPaginated_IncludesRefOnlyProjectUsage(t *testing.T) {
+	db := setupImageProjectTestDB(t)
+	require.NoError(t, db.WithContext(t.Context()).Create(&testProjectRow{
+		Name:          "grafana",
+		Path:          t.TempDir(),
+		ImageRefsJSON: `["grafana/grafana:12.1"]`,
+	}).Error)
+
+	const mosqID = "sha256:refonly-mosq"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/images/json"):
+			_ = json.MarshalWrite(w, []image.Summary{
+				{ID: mosqID, RepoTags: []string{"grafana/grafana:12.1"}},
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.MarshalWrite(w, []container.Summary{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	lightConfig := &config.Config{}
+	lightSettings, settingsErr := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     db,
+		Config: lightConfig,
+		Env:    settings.Env{},
+	})
+	require.NoError(t, settingsErr)
+	t.Cleanup(func() { require.NoError(t, lightSettings.Stop(context.WithoutCancel(t.Context()))) })
+
+	imageSvc := NewImageService(ImageServiceParams{
+		DB:              db,
+		DockerService:   newImageTestDockerService(t, server),
+		EventService:    event.NewEventService(db, lightConfig, nil),
+		SettingsService: lightSettings,
+		VulnerabilityService: vulnerability.NewVulnerabilityService(vulnerability.VulnerabilityServiceParams{
+			DB:              db,
+			Config:          lightConfig,
+			DockerService:   newImageTestDockerService(t, server),
+			EventService:    event.NewEventService(db, lightConfig, nil),
+			SettingsService: lightSettings,
+			KVService:       kv.NewKVService(db),
+			HTTPClient:      http.DefaultClient,
+		}),
+	})
+
+	items, _, err := imageSvc.ListImagesPaginated(t.Context(), pagination.QueryParams{Start: 0, Limit: 20})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	usedBy := items[0].UsedBy
+	require.Len(t, usedBy, 1, "project badge must survive with no containers")
+	assert.Equal(t, "project", usedBy[0].Type)
+	assert.Equal(t, "grafana", usedBy[0].Name)
+	assert.NotEmpty(t, usedBy[0].ID)
+	assert.True(t, items[0].InUse)
+}
+
+func TestImageService_GetImageDetail_IncludesUsedBy(t *testing.T) {
+	db := setupImageProjectTestDB(t)
+	const detailID = "sha256:usedby-detail"
+	require.NoError(t, db.WithContext(t.Context()).Create(&testProjectRow{
+		Name:          "grafana",
+		Path:          t.TempDir(),
+		ImageRefsJSON: `["grafana/grafana:12.1"]`,
+	}).Error)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/images/json"):
+			_ = json.MarshalWrite(w, []image.Summary{{ID: detailID}})
+		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
+			_ = json.MarshalWrite(w, image.InspectResponse{
+				ID:       detailID,
+				RepoTags: []string{"grafana/grafana:12.1"},
+			})
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.MarshalWrite(w, []container.Summary{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	imageSvc := NewImageService(ImageServiceParams{
+		DB:            db,
+		DockerService: newImageTestDockerService(t, server),
+		EventService:  event.NewEventService(db, &config.Config{}, nil),
+	})
+
+	detail, err := imageSvc.GetImageDetail(t.Context(), detailID)
+	require.NoError(t, err)
+	require.NotNil(t, detail)
+	require.Len(t, detail.UsedBy, 1, "detail must carry project usage with no containers")
+	assert.Equal(t, "project", detail.UsedBy[0].Type)
+	assert.Equal(t, "grafana", detail.UsedBy[0].Name)
+	assert.True(t, detail.InUse)
 }

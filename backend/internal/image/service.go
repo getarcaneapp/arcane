@@ -49,6 +49,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/projects"
 	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
@@ -342,6 +343,13 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	if len(containers) > 0 {
 		out.PinnedReferences = collectPinnedReferencesByImageID(containers)[inspect.ID] // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
 	}
+	out.UsedBy = BuildCombinedUsageMap(
+		[]image.Summary{{ID: inspect.ID, RepoTags: inspect.RepoTags, RepoDigests: inspect.RepoDigests}},
+		containers,
+		s.BuildProjectIDMap(ctx, containers),
+		s.projectImageRefUsage(ctx),
+	)[inspect.ID]
+	out.InUse = len(out.UsedBy) > 0
 	if inspect.Config != nil {
 		out.Hardened = dhi.Info(inspect.Config.Labels, time.Now()) // keep: DetailSummary is mapped from the inspect response by imagetypes.NewDetailSummary
 	}
@@ -1150,7 +1158,12 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	result := s.getImagePaginationConfig().SearchOrderAndPaginate(MapDockerImagesToDTOs(
 		dockerImages,
 		containers,
-		BuildVolumeUsageMap(containers, s.BuildProjectIDMap(ctx, containers)),
+		BuildCombinedUsageMap(
+			dockerImages,
+			containers,
+			s.BuildProjectIDMap(ctx, containers),
+			s.projectImageRefUsage(ctx),
+		),
 		buildUpdateMap(updateRecords),
 		vulnerabilityMap,
 	), params)
@@ -1243,6 +1256,119 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 		}
 	}
 	return projectIDs
+}
+
+// projectImageRefUsage maps normalized image references (repo:tag) to the Arcane
+// projects whose Compose definitions reference them, regardless of whether any
+// container of the project currently exists.
+func (s *ImageService) projectImageRefUsage(ctx context.Context) map[string][]types.ImageUsedBy {
+	usage := make(map[string][]types.ImageUsedBy)
+	var rows []struct {
+		ID            string
+		Name          string
+		ImageRefsJSON string
+	}
+	if err := s.db.WithContext(ctx).
+		Table("projects").
+		Select("id", "name", "image_refs_json").
+		Where("image_refs_json IS NOT NULL AND image_refs_json <> ''").
+		Find(&rows).Error; err != nil {
+		slog.WarnContext(ctx, "failed to load project image refs for image usage", "error", err)
+		return usage
+	}
+
+	seenProjectRefs := make(map[string]map[string]struct{}, len(rows))
+	for _, row := range rows {
+		for _, ref := range projects.ParseImageRefsJSON(row.ImageRefsJSON) {
+			normalized := strings.ToLower(refs.NormalizeImageUpdateRef(ref))
+			if normalized == "" {
+				continue
+			}
+			if seenProjectRefs[normalized] == nil {
+				seenProjectRefs[normalized] = make(map[string]struct{})
+			}
+			key := cmp.Or(row.ID, row.Name)
+			if _, seen := seenProjectRefs[normalized][key]; seen {
+				continue
+			}
+			seenProjectRefs[normalized][key] = struct{}{}
+			usage[normalized] = append(usage[normalized], types.ImageUsedBy{
+				Type: "project",
+				Name: row.Name,
+				ID:   row.ID,
+			})
+		}
+	}
+	return usage
+}
+
+// BuildCombinedUsageMap merges container-label based usage with usage derived
+// from Compose project image references so an image keeps its project badges
+// even when none of its containers exist anymore. Matching runs on each image's
+// repo tags plus each container's image ref with the digest part stripped.
+func BuildCombinedUsageMap(
+	dockerImages []image.Summary,
+	containers []container.Summary,
+	projectIDByName map[string]string,
+	projectRefUsage map[string][]types.ImageUsedBy,
+) map[string][]types.ImageUsedBy {
+	usageMap := BuildVolumeUsageMap(containers, projectIDByName)
+	if len(projectRefUsage) == 0 {
+		return usageMap
+	}
+
+	seenProject := make(map[string]map[string]struct{})
+	for imageID, usages := range usageMap {
+		for _, usage := range usages {
+			if usage.Type != "project" {
+				continue
+			}
+			if seenProject[imageID] == nil {
+				seenProject[imageID] = make(map[string]struct{})
+			}
+			seenProject[imageID][cmp.Or(usage.ID, usage.Name)] = struct{}{}
+		}
+	}
+
+	refByImageID := make(map[string]string)
+	for _, di := range dockerImages {
+		for _, repoTag := range di.RepoTags {
+			normalized := strings.ToLower(refs.NormalizeImageUpdateRef(repoTag))
+			if normalized != "" {
+				refByImageID[di.ID] = normalized
+			}
+		}
+	}
+	// Containers may pin digests; strip the digest so the tag portion still matches.
+	for _, c := range containers {
+		if c.ImageID == "" {
+			continue
+		}
+		trimmed := strings.TrimSpace(c.Image)
+		if idx := strings.Index(trimmed, "@"); idx > 0 {
+			trimmed = trimmed[:idx]
+		}
+		if normalized := strings.ToLower(refs.NormalizeImageUpdateRef(trimmed)); normalized != "" {
+			if _, exists := refByImageID[c.ImageID]; !exists {
+				refByImageID[c.ImageID] = normalized
+			}
+		}
+	}
+
+	for imageID, ref := range refByImageID {
+		if seenProject[imageID] == nil {
+			seenProject[imageID] = make(map[string]struct{})
+		}
+		for _, usage := range projectRefUsage[ref] {
+			key := cmp.Or(usage.ID, usage.Name)
+			if _, seen := seenProject[imageID][key]; seen {
+				continue
+			}
+			seenProject[imageID][key] = struct{}{}
+			usageMap[imageID] = append(usageMap[imageID], usage)
+		}
+	}
+	return usageMap
 }
 
 func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[string]string) map[string][]types.ImageUsedBy {

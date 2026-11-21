@@ -155,7 +155,8 @@
 				{:else if table}
 					{#each table
 						.getAllColumns()
-						.filter((col) => typeof col.accessorFn !== 'undefined' && col.getCanHide()) as column (column)}
+						// Display-only columns (no accessorFn, e.g. custom cells) stay toggleable.
+						.filter((col) => col.getCanHide()) as column (column)}
 						{@const headerText = column.columnDef.meta?.title ?? column.id}
 						<DropdownMenu.CheckboxItem
 							checked={column.getIsVisible()}
