@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -23,10 +22,10 @@
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
 	import { AddIcon, AlertIcon, ClockIcon, DownloadIcon, InfoIcon, TrashIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { s3DestinationAllQuery } from '#lib/query/backups.js';
 	import { projectBackupListQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { S3Destination, SystemBackupDestination } from '#lib/types/backup.js';
 	import type { Paginated } from '#lib/types/base.js';
@@ -63,13 +62,10 @@
 	let stopContainers = $state(true);
 	let destination = $state<SystemBackupDestination>('local');
 	let s3DestinationId = $state('');
-	let s3Destinations = $state<S3Destination[]>([]);
-	let s3DestinationsError = $state<string | null>(null);
 	let creating = $state(false);
 
-	const selectable = (volume: ProjectVolume) => volume.included;
 	const selectedVolumes = $derived(
-		(options?.volumes ?? []).filter((volume) => selectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
+		(options?.volumes ?? []).filter((volume) => volume.included && (checkedOverrides[volume.key] ?? true))
 	);
 	const needsS3Destination = $derived(destination !== 'local');
 
@@ -102,12 +98,14 @@
 		}
 	);
 
-	onMount(async () => {
-		if (!canBackup || !canListS3Destinations) return;
-		const result = await tryCatch(s3DestinationService.listAll());
-		if (result.error !== null) s3DestinationsError = extractApiErrorMessage(result.error);
-		else s3Destinations = result.data;
-	});
+	const s3DestinationsQuery = createQuery(() => ({
+		...s3DestinationAllQuery(),
+		enabled: canBackup && canListS3Destinations,
+		retry: false,
+		refetchOnWindowFocus: false
+	}));
+	const s3Destinations = $derived<S3Destination[]>(canBackup && canListS3Destinations ? (s3DestinationsQuery.data ?? []) : []);
+	const s3DestinationsError = $derived(s3DestinationsQuery.error ? extractApiErrorMessage(s3DestinationsQuery.error) : null);
 
 	async function openDialog() {
 		dialogOpen = true;
@@ -365,8 +363,8 @@
 								<Checkbox
 									id={`project-backup-volume-${volume.key}`}
 									class="mt-0.5"
-									checked={selectable(volume) && (checkedOverrides[volume.key] ?? volume.included)}
-									disabled={!selectable(volume) || creating}
+									checked={volume.included && (checkedOverrides[volume.key] ?? true)}
+									disabled={!volume.included || creating}
 									onCheckedChange={(checked) => (checkedOverrides = { ...checkedOverrides, [volume.key]: checked === true })}
 								/>
 								<div class="grid min-w-0 gap-1">

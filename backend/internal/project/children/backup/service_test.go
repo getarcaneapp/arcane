@@ -99,6 +99,8 @@ func TestResolvePlanAndSnapshotInput(t *testing.T) {
 	require.Equal(t, map[string]bool{"cache": false, "data": true, "nfs": false, "shared": true}, included)
 	require.True(t, missing["cache"])
 	require.Equal(t, []string{"shared", "web_data"}, p.volumeNames())
+	// The capture locks every volume of the project, captured or not.
+	require.Equal(t, []string{"shared", "web_cache", "web_data", "web_nfs"}, p.mountedVolumeNames())
 
 	projectMounts := []mount.Mount{{Type: mount.TypeBind, Source: "/host/projects/web", Target: "/snapshot/project", ReadOnly: true}}
 	input := snapshotInput(projectMounts, "arcane-project-backup-meta", "b1", p)

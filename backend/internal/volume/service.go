@@ -97,10 +97,7 @@ type (
 	}
 )
 
-const (
-	internalVolumePruneFilterValue = selfcontainer.InternalResourceLabel + "=true"
-	legacyDefaultEncryptionKey     = "arcane-dev-key-32-characters!!!"
-)
+const internalVolumePruneFilterValue = selfcontainer.InternalResourceLabel + "=true"
 
 var (
 	ErrVolumeBackupAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup is already running for this volume"))

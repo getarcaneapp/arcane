@@ -255,18 +255,6 @@ func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APICli
 	return listResult.Items, nil
 }
 
-// ListComposeProjectContainers lists every container of one Compose project, stopped ones included.
-func ListComposeProjectContainers(ctx context.Context, dockerClient client.APIClient, composeName string) ([]container.Summary, error) {
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
-	}
-	return found.Items, nil
-}
-
 func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName, serviceName string) (string, error) {
 	containers, err := ComposePs(ctx, types.ComposePsOptions{
 		Project:    &composetypes.Project{Name: projectName},

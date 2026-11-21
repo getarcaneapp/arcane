@@ -53,15 +53,14 @@ type (
 		Repository     *backup.VolumeRepository
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
-		// LockVolumes waits for the named volumes' workspace locks, which volume backups and restores also take.
-		LockVolumes func(ctx context.Context, names []string) (func(), error)
-		Project     func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
-		// StopProject and StartProject stop and start the named services the Compose files still name, as an export does.
+		// LockVolumes takes the workspace locks that volume backups and restores also take.
+		LockVolumes  func(ctx context.Context, names []string) (func(), error)
+		Project      func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		StopProject  func(ctx context.Context, projectID string, services []string, user types.Actor) error
 		StartProject func(ctx context.Context, projectID string, services []string, user types.Actor) error
 		// Volume inspects a Docker volume and reports whether it exists.
 		Volume func(ctx context.Context, name string) (types.Volume, bool, error)
-		// BackupStore names the volume holding local backup storage, which a backup never copies.
+		// BackupStore names the volume holding local backups, which a backup never copies.
 		BackupStore func(ctx context.Context) string
 		// LockProject takes the project lock that deploy, down and project edits also take.
 		LockProject func(ctx context.Context, op, projectID string) (func(), error)
@@ -159,7 +158,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 		ComposeName:     project.ComposeName,
 		Status:          types.VolumeBackupStatusRunning,
 		Trigger:         types.VolumeBackupTriggerManual,
-		Destination:     destination(p.LocalEnabled, p.S3Enabled),
+		Destination:     backup.Destination(p.LocalEnabled, p.S3Enabled),
 		S3DestinationID: p.S3DestinationID,
 		Volumes:         backupVolumes(p.Volumes),
 	}
@@ -195,8 +194,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	return entry.DTO(DTOOptions{ActivityID: &activityID}), nil
 }
 
-// resolvePlan validates the request against the project; by default it captures every volume that exists and keeps its
-// data in Docker.
+// resolvePlan validates the request; by default it captures every existing volume that keeps its data in Docker.
 func (s *Service) resolvePlan(ctx context.Context, project types.Project, request types.CreateProjectBackupRequest) (plan, error) {
 	selected := cmp.Or(request.Destination, types.VolumeBackupDestinationLocal)
 	if !slices.Contains([]types.VolumeBackupDestination{types.VolumeBackupDestinationLocal, types.VolumeBackupDestinationS3, types.VolumeBackupDestinationLocalS3}, selected) {
@@ -229,8 +227,7 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 	}, nil
 }
 
-// inspectVolumes classifies the project's volumes and includes the requested ones, or by default every one, that exist
-// and keep their data in Docker, except the backup store; requesting any other volume fails.
+// inspectVolumes includes the requested volumes, or by default every one that can be backed up.
 func (s *Service) inspectVolumes(ctx context.Context, project types.Project, requested []string) ([]types.ProjectVolume, error) {
 	resolved, _, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
 		Project:     project,
@@ -245,7 +242,6 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 		wanted := requested == nil || slices.Contains(requested, volume.Key)
 		switch {
 		case wanted && requested != nil && volume.BackupStore:
-			// A backup of the store would read the repository it writes into, copying it into itself on every run.
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s holds Arcane's backups, so it cannot be backed up", volume.Key))
 		case wanted && requested != nil && volume.Missing:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s has not been created yet, so it holds no data to back up", volume.Key))
@@ -272,9 +268,8 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 	return inspected, nil
 }
 
-// mountedVolumeNames are every volume of the project, captured or not. A volume backup stops and starts the containers
-// mounting its volume under that volume's lock, so holding them all keeps any of the project's containers from being
-// started or stopped by another backup.
+// mountedVolumeNames are every volume of the project, captured or not, so no volume backup or restore starts or stops
+// the project's containers during the capture.
 func (p plan) mountedVolumeNames() []string {
 	var names []string
 	for _, volume := range p.Volumes {
@@ -384,8 +379,7 @@ func (s *Service) run(ctx context.Context, t flow.Task) (_ any, err error) {
 	return succeeded, nil
 }
 
-// resume finishes a backup an earlier attempt left running, adopting the snapshots it already wrote. Like a volume
-// backup, one that stopped containers fails instead, since they may have changed since.
+// resume finishes a backup an earlier attempt left running; like a volume backup, one that stopped containers fails.
 func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, input runInput, recorded plan) error {
 	// The admissions died with the process, so a restore may own the project until they are retaken.
 	leases, err := s.admit(ctx, recorded, "")
@@ -568,8 +562,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan) (er
 	}
 	if p.StopContainers && len(active) > 0 {
 		services := projects.ContainerServices(active)
-		// Started again however the capture ends, as an export restarts its project; if Arcane stops first, the user
-		// starts them.
+		// Started again however the capture ends, as an export does.
 		defer func() {
 			if startErr := s.deps.StartProject(context.WithoutCancel(ctx), entry.ProjectID, services, types.SystemUser); startErr != nil {
 				err = errors.Join(err, fmt.Errorf("restart project containers: %w", startErr))
@@ -739,9 +732,8 @@ func backupManifest(project types.Project, p plan, externalEnv bool) types.Proje
 	}
 }
 
-// writeManifest stores the manifest in a new volume, with the external .env contents when the manifest records them.
-// The holder that receives it mounts only that volume and never starts, because Docker before 29.9 mishandles copies
-// into stopped containers with other mounts (#4870).
+// writeManifest stores the manifest, and any external .env, in a new volume. The holder mounts only that volume and
+// never starts, because Docker before 29.9 mishandles copies into stopped containers with other mounts (#4870).
 func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, manifest types.ProjectManifest, env []byte) (string, func(), error) {
 	data, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
@@ -902,7 +894,7 @@ func (s *Service) Delete(ctx context.Context, projectID, backupID string) error 
 	}
 	if entry.RemoteSnapshotID != "" {
 		if forgetErr := s.forget(ctx, dockerClient, entry, true); forgetErr != nil {
-			entry.Destination = destination(entry.LocalSnapshotID != "", entry.RemoteSnapshotID != "")
+			entry.Destination = backup.Destination(entry.LocalSnapshotID != "", entry.RemoteSnapshotID != "")
 			return errors.Join(fmt.Errorf("failed to delete the S3 project snapshot: %w", forgetErr), s.deps.DB.WithContext(ctx).Save(entry).Error)
 		}
 	}
@@ -938,15 +930,4 @@ func backupVolumes(classified []types.ProjectVolume) []types.ProjectBackupVolume
 		captured = append(captured, types.ProjectBackupVolume{Key: volume.Key, Name: volume.Name, Included: volume.Included})
 	}
 	return captured
-}
-
-func destination(local, remote bool) types.VolumeBackupDestination {
-	switch {
-	case local && remote:
-		return types.VolumeBackupDestinationLocalS3
-	case remote:
-		return types.VolumeBackupDestinationS3
-	default:
-		return types.VolumeBackupDestinationLocal
-	}
 }

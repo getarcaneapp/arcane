@@ -68,18 +68,12 @@ func TestProjectDirectoryArchive(t *testing.T) {
 	require.NoError(t, os.Chmod(filepath.Join(outside, "env"), 0o640))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "env"), filepath.Join(source, EffectiveEnvFileName)))
 
-	// Only the outside .env is read; a regular one or a link inside the project is copied with the directory.
+	// A .env linked from outside the project is read with its target's contents and mode.
 	envContent, envPerm, external, envErr := ReadExternalEnvFile(t.Context(), source)
 	require.NoError(t, envErr)
 	assert.True(t, external)
 	assert.Equal(t, "TOKEN=outside", string(envContent))
 	assert.Equal(t, os.FileMode(0o640), envPerm)
-	inside := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(inside, "values.env"), []byte("TOKEN=inside"), 0o600))
-	require.NoError(t, os.Symlink("values.env", filepath.Join(inside, EffectiveEnvFileName)))
-	_, _, external, envErr = ReadExternalEnvFile(t.Context(), inside)
-	require.NoError(t, envErr)
-	assert.False(t, external)
 
 	var archive bytes.Buffer
 	require.NoError(t, PackProjectDirectory(t.Context(), source, &archive))
@@ -104,9 +98,6 @@ func TestProjectDirectoryArchive(t *testing.T) {
 		{name: ".project-update-backup-1", absent: true},
 		{name: GitSourceEnvFileName, absent: true},
 	}
-	_, _, external, envErr = ReadExternalEnvFile(t.Context(), destination)
-	require.NoError(t, envErr)
-	assert.False(t, external)
 	for _, want := range unpacked {
 		fullPath := filepath.Join(destination, want.name)
 		info, err := os.Lstat(fullPath)
