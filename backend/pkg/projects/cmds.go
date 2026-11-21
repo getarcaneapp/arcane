@@ -60,8 +60,7 @@ func ComposeRestart(ctx context.Context, target types.ComposeTarget) error {
 	})
 }
 
-// ComposeStart starts the services' existing containers in dependency order, leaving the services they depend on as
-// they are.
+// ComposeStart starts the services' existing containers, leaving their dependencies as they are.
 func ComposeStart(ctx context.Context, target types.ComposeTarget) error {
 	selected, err := SelectServices(target.Project, target.Services, composetypes.IgnoreDependencies)
 	if err != nil {
@@ -73,7 +72,7 @@ func ComposeStart(ctx context.Context, target types.ComposeTarget) error {
 	}
 	defer done()
 
-	return c.svc.Start(composeCtx, selected.Name, api.StartOptions{Project: selected, Services: target.Services})
+	return c.svc.Start(composeCtx, selected.Name, api.StartOptions{Project: selected})
 }
 
 func ComposeStop(ctx context.Context, target types.ComposeTarget) error {

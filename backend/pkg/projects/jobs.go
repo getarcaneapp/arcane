@@ -6,9 +6,11 @@ import (
 	"slices"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/types/v3"
@@ -17,6 +19,11 @@ import (
 const (
 	JobRunLabel = "com.docker.job.id"
 )
+
+// IsServiceContainer reports whether a container runs a Compose service, not a hook, job run or one-off.
+func IsServiceContainer(labels map[string]string) bool {
+	return docker.ComposeServiceLabel(labels) != "" && labels[api.HookLabel] == "" && labels[JobRunLabel] == "" && labels[api.OneoffLabel] != "True"
+}
 
 func ProjectJobs(project *composetypes.Project) []types.ProjectJob {
 	if project == nil {

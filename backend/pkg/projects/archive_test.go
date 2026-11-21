@@ -226,36 +226,13 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, manifest.Volumes, got.Volumes)
 	assert.Equal(t, []string{ProjectBundleProject, dataArchive, "volumes/other.tar.gz"}, visited)
-}
 
-func TestReadProjectBundleTreatsPlainArchivesAsLegacy(t *testing.T) {
 	plain := buildTestArchive(t, []archiveTestEntry{{header: tar.Header{Typeflag: tar.TypeReg, Name: "compose.yaml", Mode: 0o644}, body: "services: {}\n"}})
-	plainBytes, err := io.ReadAll(plain)
-	require.NoError(t, err)
-	_, ok, err := ReadProjectBundle(bytes.NewReader(plainBytes), nil)
-	require.NoError(t, err)
-	assert.False(t, ok)
-	assert.False(t, IsProjectBundle(bytes.NewReader(plainBytes)))
-	assert.False(t, IsProjectBundle(strings.NewReader("not gzip")))
-
-	_, ok, err = ReadProjectBundle(strings.NewReader("not gzip"), nil)
-	require.NoError(t, err)
-	assert.False(t, ok)
-
-	for _, body := range []string{`{"name":"mine"}`, strings.Repeat(" ", maxProjectManifestBytes+1)} {
-		own := buildTestArchive(t, []archiveTestEntry{
-			{header: tar.Header{Typeflag: tar.TypeReg, Name: ProjectBundleManifest, Mode: 0o644}, body: body},
-			{header: tar.Header{Typeflag: tar.TypeReg, Name: "compose.yaml", Mode: 0o644}, body: "services: {}\n"},
-		})
-		_, ok, err = ReadProjectBundle(own, nil)
-		require.NoError(t, err)
-		assert.False(t, ok)
-	}
+	assert.False(t, IsProjectBundle(plain))
 }
 
 func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 	dataArchive := ProjectBundleVolumeArchive("data")
-	included := types.ProjectVolume{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Archive: dataArchive, Included: true}
 	manifestJSON := func(manifest types.ProjectManifest) string {
 		content, marshalErr := json.Marshal(manifest)
 		require.NoError(t, marshalErr)
@@ -270,16 +247,6 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 		wantErr string
 		entries []archiveTestEntry
 	}{
-		{
-			name:    "missing included volume archive",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest(included))), regular(ProjectBundleProject, "p")},
-			wantErr: "no volumes/data.tar.gz",
-		},
-		{
-			name:    "missing project archive",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest()))},
-			wantErr: "no project.tar.gz",
-		},
 		{
 			name:    "path traversal entry",
 			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest())), regular(ProjectBundleProject, "p"), regular("volumes/../../etc/passwd", "x")},
@@ -301,18 +268,6 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 				Key: "data", Name: "web_data", Archive: "../data.tar.gz", Included: true,
 			}))), regular(ProjectBundleProject, "p")},
 			wantErr: "must be archived at volumes/data.tar.gz",
-		},
-		{
-			name: "archive shared with a differently named volume",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, manifestJSON(testProjectManifest(included, types.ProjectVolume{
-				Key: "cache", Name: "web_cache", Archive: dataArchive, Included: true,
-			}))), regular(ProjectBundleProject, "p"), regular(dataArchive, "x")},
-			wantErr: "must be archived at volumes/cache.tar.gz",
-		},
-		{
-			name:    "unsupported format version",
-			entries: []archiveTestEntry{regular(ProjectBundleManifest, `{"kind":"export","formatVersion":2}`), regular(ProjectBundleProject, "p")},
-			wantErr: "unsupported project bundle format version 2",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

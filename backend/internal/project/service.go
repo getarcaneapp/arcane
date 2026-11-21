@@ -622,6 +622,40 @@ func (s *ProjectService) stopProject(ctx context.Context, projectID string, user
 	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
 }
 
+func (s *ProjectService) startProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	model, err := s.loadComposeProjectForProject(ctx, proj, nil)
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	// Compose rejects the whole start for a service an undeployed edit removed; an empty list would start them all.
+	services = slices.DeleteFunc(slices.Clone(services), func(name string) bool {
+		_, ok := model.Services[name]
+		return !ok
+	})
+	if len(services) == 0 {
+		return nil
+	}
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); startErr != nil {
+		return startErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStart, projectID, proj.Name, user, database.JSON{
+		"action":      "start",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"services":    services,
+	}, "could not log project start action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning))
+}
+
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
 	waitCtx, cancel := context.WithTimeout(ctx, leaseWaitTimeout)
 	defer cancel()
