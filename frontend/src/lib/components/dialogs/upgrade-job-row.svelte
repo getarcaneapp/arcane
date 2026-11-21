@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
 
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
@@ -8,75 +7,28 @@
 	import { SuccessIcon, ClockIcon, AlertIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { MANAGER_ENVIRONMENT_ID } from '#lib/stores/upgrade-job.store.svelte.js';
-	import type { UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
+	import type { UpgradeJobResult } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
 
 	import UpdateAllElapsed from './update-all-elapsed.svelte';
+	import { createLogTailAttachment, formatUpgradeVersions, upgradeStageLabels, upgradeStatusDisplay } from './upgrade-job';
 
 	let { result, logsOpen = false }: { result: UpgradeJobResult; logsOpen?: boolean } = $props();
 
 	let showLogs = $derived(logsOpen);
 
-	const completedColors = {
-		badge: 'border-success/40 bg-success/10 text-success',
-		text: 'text-muted-foreground'
-	};
-	const warningColors = {
-		badge: 'border-warning/40 bg-warning/10 text-warning',
-		text: 'text-warning'
-	};
-	const statusDisplay: Record<UpgradeJobResultStatus, { label: () => string; badge: string; text: string }> = {
-		pending: {
-			label: m.common_pending,
-			badge: 'border-border bg-muted/40 text-muted-foreground/60',
-			text: 'text-muted-foreground'
-		},
-		updating: {
-			label: m.common_action_updating,
-			badge: 'border-primary/40 bg-primary/10 text-primary',
-			text: 'text-primary'
-		},
-		updated: { label: m.common_updated, ...completedColors },
-		up_to_date: { label: m.image_update_up_to_date_title, ...completedColors },
-		triggered: { label: m.environments_update_all_status_triggered, ...warningColors },
-		skipped_offline: { label: m.environments_update_all_status_skipped_offline, ...warningColors },
-		failed: {
-			label: m.common_failed,
-			badge: 'border-destructive/40 bg-destructive/10 text-destructive',
-			text: 'text-destructive'
-		}
-	};
-
-	const stageLabels: Record<UpgradeJobStage, () => string> = {
-		checking: m.environments_update_all_stage_checking,
-		starting: m.environments_update_all_stage_starting,
-		pulling: m.environments_update_all_stage_pulling,
-		upgrading: m.environments_update_all_stage_upgrading,
-		reconnecting: m.environments_update_all_stage_reconnecting,
-		verifying: m.environments_update_all_stage_verifying
-	};
-
-	const display = $derived(statusDisplay[result.status] ?? statusDisplay.pending);
+	const display = $derived(upgradeStatusDisplay[result.status] ?? upgradeStatusDisplay.pending);
 	const isManager = $derived(result.environmentId === MANAGER_ENVIRONMENT_ID);
 	const logs = $derived(result.logs ?? []);
 
 	const label = $derived.by(() => {
 		if (result.status !== 'updating' || !result.stage) return display.label();
 		if (result.stage === 'reconnecting' && isManager) return m.environments_update_all_stage_manager_restart();
-		return (stageLabels[result.stage] ?? display.label)();
+		return (upgradeStageLabels[result.stage] ?? display.label)();
 	});
 
-	const versions = $derived.by(() => {
-		const from = result.fromVersion?.trim() ?? '';
-		const to = result.toVersion?.trim() ?? '';
-		if (!from || !to || from === to) return to || from;
-		return `${from} → ${to}`;
-	});
-
-	const followLogTail: Attachment<HTMLPreElement> = (node) => {
-		void logs.length;
-		node.scrollTop = node.scrollHeight;
-	};
+	const versions = $derived(formatUpgradeVersions(result));
+	const followLogTail = createLogTailAttachment(() => logs.length);
 </script>
 
 <li class="px-6 py-2.5 text-sm">

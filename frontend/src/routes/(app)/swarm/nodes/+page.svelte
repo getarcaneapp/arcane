@@ -14,7 +14,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmNodesTable from './components/nodes-table.svelte';
@@ -25,14 +25,7 @@
 	const swarmQuery = createQuery(() => swarmEnvironmentsQuery('swarm-nodes:list'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
-	const nodesQuery = createQuery(() => {
-		const scope = swarm.scope;
-		return {
-			...swarmNodeListQuery(swarm, pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const nodesQuery = createQuery(() => scopedQueryOptions(swarm.scope, swarmNodeListQuery(swarm, pageState.requestOptions)));
 	const nodes = $derived(nodesQuery.data?.value ?? data.nodes);
 	const isRefreshing = $derived(nodesQuery.isFetching && !nodesQuery.isPending);
 

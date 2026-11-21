@@ -722,17 +722,9 @@
 		};
 	}
 
-	async function syncProjectQueries(updatedProject: Project) {
-		const currentEnvId = envId;
-
-		// The save response is slim (no directory walks), so merge it into the
-		// cached detail instead of replacing it wholesale.
-		queryClient.setQueryData(
-			queryKeys.projects.detail(currentEnvId, updatedProject.id),
-			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
-		);
-		await Promise.all(
-			listScopes([currentEnvId]).flatMap((scope) => [
+	function invalidateProjectListQueries(targetEnvId: string) {
+		return Promise.all(
+			listScopes([targetEnvId]).flatMap((scope) => [
 				queryClient.invalidateQueries({
 					queryKey: queryKeys.projects.listPrefix(scope)
 				}),
@@ -743,23 +735,25 @@
 		);
 	}
 
+	async function syncProjectQueries(updatedProject: Project) {
+		const currentEnvId = envId;
+
+		// The save response is slim (no directory walks), so merge it into the
+		// cached detail instead of replacing it wholesale.
+		queryClient.setQueryData(
+			queryKeys.projects.detail(currentEnvId, updatedProject.id),
+			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
+		);
+		await invalidateProjectListQueries(currentEnvId);
+	}
+
 	const checkProjectUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.projects.detailCheckUpdates(envId, projectId),
 		mutationFn: () => projectService.checkUpdates(projectId, envId),
 		onSuccess: async (result) => {
 			const currentEnvId = envId;
 			summarizeUpdateCheckResult(result);
-			await Promise.all([
-				refreshProjectDetails(),
-				...listScopes([currentEnvId]).flatMap((scope) => [
-					queryClient.invalidateQueries({
-						queryKey: queryKeys.projects.listPrefix(scope)
-					}),
-					queryClient.invalidateQueries({
-						queryKey: queryKeys.projects.statusCounts(scope)
-					})
-				])
-			]);
+			await Promise.all([refreshProjectDetails(), invalidateProjectListQueries(currentEnvId)]);
 		},
 		onError: () => {
 			toast.error(m.containers_check_updates_failed());
@@ -951,17 +945,7 @@
 				onSuccess: async () => {
 					toast.success(archiving ? m.compose_archive_success() : m.compose_unarchive_success());
 					await refreshProjectDetails();
-					const currentEnvId = envId;
-					await Promise.all(
-						listScopes([currentEnvId]).flatMap((scope) => [
-							queryClient.invalidateQueries({
-								queryKey: queryKeys.projects.listPrefix(scope)
-							}),
-							queryClient.invalidateQueries({
-								queryKey: queryKeys.projects.statusCounts(scope)
-							})
-						])
-					);
+					await invalidateProjectListQueries(envId);
 				}
 			});
 		} finally {

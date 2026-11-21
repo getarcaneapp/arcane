@@ -20,7 +20,12 @@ import type { ProjectStatusCounts } from '#lib/types/project.js';
 import type { SystemDiskUsage } from '#lib/types/system.js';
 import type { VersionInfo } from '#lib/types/version.js';
 import type { EnvironmentVulnerabilitySummary } from '#lib/types/vulnerability.js';
-import { readAcrossEnvironments, sumAcrossEnvironments, type EnvironmentFailure } from '#lib/utils/environments.js';
+import {
+	environmentScope,
+	readAcrossEnvironments,
+	sumAcrossEnvironments,
+	type EnvironmentFailure
+} from '#lib/utils/environments.js';
 import { fetchRiskOverview } from '#lib/utils/vulnerability.js';
 
 export const EMPTY_CONTAINER_COUNTS: ContainerStatusCounts = {
@@ -46,10 +51,6 @@ const EMPTY_DISK_USAGE: SystemDiskUsage = {
 };
 
 const RECENT_CONTAINER_EVENTS = { types: ['container.oom,container.die', 'container.start,container.restart'], limit: 50 };
-
-function environmentScope(environments: EnvironmentRef[]): string {
-	return environments.map((environment) => environment.id).join(',');
-}
 
 export function dashboardContainerCountsQuery(environments: EnvironmentRef[]) {
 	return queryOptions({

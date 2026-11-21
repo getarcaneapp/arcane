@@ -13,7 +13,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmStacksTable from './components/stacks-table.svelte';
@@ -25,14 +25,7 @@
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
 	const stacksScope = $derived(swarmStacksScope(swarm));
-	const stacksQuery = createQuery(() => {
-		const scope = stacksScope;
-		return {
-			...swarmStackListQuery(swarm, pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const stacksQuery = createQuery(() => scopedQueryOptions(stacksScope, swarmStackListQuery(swarm, pageState.requestOptions)));
 	const stacks = $derived(stacksQuery.data?.value ?? data.stacks);
 	const isRefreshing = $derived(stacksQuery.isFetching && !stacksQuery.isPending);
 

@@ -1,9 +1,3 @@
-export interface EventStreamEvent {
-	type: 'changed';
-	timestamp: string;
-	changes: EnvironmentChanges[];
-}
-
 export interface EnvironmentChanges {
 	kinds: Record<string, number>;
 	environmentId: string;

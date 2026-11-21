@@ -40,10 +40,6 @@ class RoleAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/roles/permissions')) as Promise<PermissionsManifest>;
 	}
 
-	async getUserAssignments(userId: string): Promise<RoleAssignment[]> {
-		return this.handleResponse(this.api.get(`/users/${userId}/roles`)) as Promise<RoleAssignment[]>;
-	}
-
 	async setUserAssignments(userId: string, payload: SetUserRoleAssignments): Promise<RoleAssignment[]> {
 		return this.handleResponse(this.api.put(`/users/${userId}/roles`, payload)) as Promise<RoleAssignment[]>;
 	}

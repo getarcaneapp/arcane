@@ -6,7 +6,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { portListQuery } from '#lib/query/networks.js';
 	import { readableEnvironments } from '#lib/utils/environments.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 
 	import PortTable from './components/port-table.svelte';
 
@@ -14,14 +14,12 @@
 
 	const pageState = new ResourceListPageState(untrack(() => data.portRequestOptions));
 
-	const portsQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...portListQuery(scope, readableEnvironments('containers:list'), pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const portsQuery = createQuery(() =>
+		scopedQueryOptions(
+			pageState.scope,
+			portListQuery(pageState.scope, readableEnvironments('containers:list'), pageState.requestOptions)
+		)
+	);
 
 	const resourcesReady = $derived(portsQuery.data?.envId === pageState.scope);
 	const ports = $derived(portsQuery.data?.value ?? data.ports);

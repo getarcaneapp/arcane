@@ -12,8 +12,7 @@
 	import { ContainersIcon, ProjectsIcon, PlayIcon, StopIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
-	import { projectTagsQuery } from '#lib/query/projects.js';
+	import { projectListQuery, projectStatusCountsQuery, projectTagsQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -31,6 +30,7 @@
 		settleAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
+	import { scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 
 	import ProjectsTable from './components/projects-table.svelte';
 
@@ -66,18 +66,12 @@
 	};
 
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
-	const projectsQuery = createQuery(() => {
-		const queryScope = scope;
-		return {
-			...projectListQuery(queryScope, readableEnvironments('projects:list'), projectRequestOptions),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value }),
+	const projectsQuery = createQuery(() =>
+		scopedQueryOptions(scope, {
+			...projectListQuery(scope, readableEnvironments('projects:list'), projectRequestOptions),
 			refetchOnMount: false
-		};
-	});
+		})
+	);
 	let projects = $derived(projectsQuery.data?.envId === scope ? projectsQuery.data.value : null);
 
 	const statusCountsQuery = createQuery(() => {

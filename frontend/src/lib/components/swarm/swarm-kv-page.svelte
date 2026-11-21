@@ -17,7 +17,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { destinationEnvironmentId, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import type { SwarmKvResource } from '#lib/utils/swarm-kv.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -45,14 +45,9 @@
 	let itemToEdit = $state<SwarmKvSummary | null>(null);
 	let sheetEnvironmentId = $state('');
 
-	const itemsQuery = createQuery(() => {
-		const scope = swarm.scope;
-		return {
-			...swarmKvListQuery(swarm, resource.kind, pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const itemsQuery = createQuery(() =>
+		scopedQueryOptions(swarm.scope, swarmKvListQuery(swarm, resource.kind, pageState.requestOptions))
+	);
 	const items = $derived(itemsQuery.data?.value ?? initialItems);
 	const refreshing = $derived(itemsQuery.isFetching && !itemsQuery.isPending);
 

@@ -4,7 +4,7 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import type { JobListResponse, JobScheduleConfig } from '#lib/types/jobschedule.js';
-import { readEachEnvironment } from '#lib/utils/environments.js';
+import { environmentScope, readEachEnvironment } from '#lib/utils/environments.js';
 
 const EMPTY_SCHEDULES: JobScheduleConfig = {
 	environmentHealthInterval: '',
@@ -18,10 +18,6 @@ const EMPTY_SCHEDULES: JobScheduleConfig = {
 	imageAutoPatchInterval: '',
 	autoHealInterval: ''
 };
-
-function environmentScope(environments: EnvironmentRef[]): string {
-	return environments.map((environment) => environment.id).join(',');
-}
 
 export function environmentJobsQuery(environmentId: string) {
 	return queryOptions({

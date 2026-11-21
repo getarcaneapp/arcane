@@ -182,15 +182,13 @@ export const queryKeys = {
 		all: ['events'] as const,
 		global: ['events', 'global'] as const,
 		listGlobal: (options: SearchPaginationSortRequest) => ['events', 'global', stableSerialize(options)] as const,
-		statsGlobal: () => ['events', 'global', 'stats'] as const,
-		deleteSelectedGlobal: () => ['events', 'delete-selected', 'global'] as const
+		statsGlobal: () => ['events', 'global', 'stats'] as const
 	},
 	system: {
 		appVersion: () => ['system', 'app-version'] as const,
 		latestRelease: () => ['github', 'getarcaneapp', 'arcane', 'latest-release'] as const,
 		upgradeAvailable: (scope: 'mobile-nav' | 'sidebar') => ['system', 'upgrade-available', scope] as const,
 		environmentUpgradeAvailable: (environmentId: string) => ['system', environmentId, 'upgrade-available'] as const,
-		upgradeHealth: (environmentId: string) => ['system', environmentId, 'upgrade-health'] as const,
 		versionInfo: (environmentId: string) => ['system', environmentId, 'version-info'] as const,
 		environmentVersions: (scope: string) => ['environment-versions', scope] as const,
 		dockerInfo: (environmentId: string) => ['system', environmentId, 'docker-info'] as const
@@ -301,7 +299,6 @@ export const queryKeys = {
 	},
 	vulnerabilities: {
 		overviewByEnvironment: (environmentId: string) => ['vulnerabilities', environmentId, 'overview'] as const,
-		scanSummaries: (scope: string, imageKeys: string[]) => ['vulnerabilities', scope, 'scan-summaries', ...imageKeys] as const,
 		scanResult: (environmentId: string, imageId: string) => ['vulnerabilities', environmentId, 'scan-result', imageId] as const,
 		allPrefix: (scope: string) => ['vulnerabilities', scope, 'all'] as const,
 		allByEnvironment: (environmentId: string, request: SearchPaginationSortRequest) =>
