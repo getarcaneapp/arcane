@@ -14,6 +14,7 @@
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
+	import { LabelsList } from '#lib/components/labels/index.js';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -29,7 +30,8 @@
 		CodeIcon,
 		InspectIcon,
 		HealthIcon,
-		LayoutListIcon
+		LayoutListIcon,
+		TagIcon
 	} from '#lib/icons/index.js';
 	import { EditIcon, ProjectsIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
@@ -154,7 +156,6 @@
 	const hasEnvVars = $derived(!!(container?.config?.env && container.config.env.length > 0));
 	const hasPorts = $derived(!!(container?.ports && container.ports.length > 0));
 	const hasLabels = $derived(!!(container?.labels && Object.keys(container.labels).length > 0));
-	const showConfiguration = $derived(hasEnvVars || hasLabels);
 
 	const hasNetworks = $derived(
 		!!(container?.networkSettings?.networks && Object.keys(container.networkSettings.networks).length > 0)
@@ -202,7 +203,7 @@
 		() => {
 			void refreshAfterUpdate();
 		},
-		() => data.container.id
+		() => container?.id ?? ''
 	);
 
 	onMount(() => {
@@ -397,7 +398,8 @@
 			{ value: 'logs', label: m.common_logs(), icon: FileTextIcon, visible: canViewLogs },
 			{ value: 'shell', label: m.common_shell(), icon: TerminalIcon, visible: showShell },
 			{ value: 'healthcheck', label: m.containers_nav_healthcheck(), icon: HealthIcon, visible: hasHealthcheck },
-			{ value: 'config', label: m.common_configuration(), icon: SettingsIcon, visible: showConfiguration },
+			{ value: 'environment', label: m.environment(), icon: SettingsIcon, visible: hasEnvVars },
+			{ value: 'labels', label: m.common_labels(), icon: TagIcon, visible: hasLabels },
 			{ value: 'network', label: m.resource_networks_cap(), icon: NetworksIcon, visible: showNetworkTab },
 			{ value: 'storage', label: m.storage(), icon: VolumesIcon, visible: hasMounts },
 			{ value: 'compose', label: m.compose(), icon: CodeIcon, visible: showComposeTab },
@@ -671,9 +673,15 @@
 		</Tabs.Content>
 	{/if}
 
-	{#if showConfiguration}
-		<Tabs.Content value="config" class="h-full">
-			<ContainerConfiguration {container} {hasEnvVars} {hasLabels} />
+	{#if hasEnvVars}
+		<Tabs.Content value="environment" class="h-full">
+			<ContainerConfiguration {container} />
+		</Tabs.Content>
+	{/if}
+
+	{#if hasLabels}
+		<Tabs.Content value="labels" class="h-full">
+			<LabelsList labels={container.labels} />
 		</Tabs.Content>
 	{/if}
 

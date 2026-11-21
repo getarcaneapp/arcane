@@ -60,12 +60,10 @@ func ComposeRestart(ctx context.Context, target types.ComposeTarget) error {
 	})
 }
 
+// ComposeStart starts the services' existing containers in dependency order, leaving the services they depend on as
+// they are.
 func ComposeStart(ctx context.Context, target types.ComposeTarget) error {
-	enabled, err := target.Project.WithServicesEnabled(target.Services...)
-	if err != nil {
-		return err
-	}
-	selected, err := enabled.WithSelectedServices(target.Services, composetypes.IgnoreDependencies)
+	selected, err := SelectServices(target.Project, target.Services, composetypes.IgnoreDependencies)
 	if err != nil {
 		return err
 	}

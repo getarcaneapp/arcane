@@ -161,26 +161,9 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 	return service
 }
 
-func (s *VolumeService) TryLockVolumes(names []string) (func(), error) {
-	return lockEach(names, func(name string) (func(), error) {
-		unlock, locked := s.workspaceLocks.TryLock(name)
-		if !locked {
-			return nil, common.Classify(common.ErrConflict, fmt.Errorf("volume %s is busy with a backup or restore", name))
-		}
-		return unlock, nil
-	})
-}
-
-// LockVolumes waits for each volume's workspace lock, for work that must not skip a busy volume.
+// LockVolumes waits for each volume's workspace lock, in sorted order so callers never deadlock on each other, and
+// returns one release for all of them; a lock that fails releases those already held.
 func (s *VolumeService) LockVolumes(ctx context.Context, names []string) (func(), error) {
-	return lockEach(names, func(name string) (func(), error) {
-		return s.workspaceLocks.LockContext(ctx, name)
-	})
-}
-
-// lockEach takes one lock per distinct name in sorted order, so callers never deadlock on each other, and returns one
-// release for all of them; a lock that fails releases those already held.
-func lockEach(names []string, lock func(name string) (func(), error)) (func(), error) {
 	var unlocks []func()
 	release := func() {
 		for _, unlock := range slices.Backward(unlocks) {
@@ -188,7 +171,7 @@ func lockEach(names []string, lock func(name string) (func(), error)) (func(), e
 		}
 	}
 	for _, name := range slices.Compact(slices.Sorted(slices.Values(names))) {
-		unlock, err := lock(name)
+		unlock, err := s.workspaceLocks.LockContext(ctx, name)
 		if err != nil {
 			release()
 			return nil, err

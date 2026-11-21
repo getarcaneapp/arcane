@@ -130,6 +130,7 @@ type (
 		Networks  *network.NetworkService
 
 		Repository     *backup.VolumeRepository
+		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 	}
 
@@ -204,8 +205,8 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Engine:         p.Backups,
 			Repository:     p.Repository,
 			S3Destinations: p.S3Destinations,
+			Containers:     p.Containers,
 			LockVolumes:    p.Volumes.LockVolumes,
-			TryLockVolumes: p.Volumes.TryLockVolumes,
 		},
 	})
 	if err := module.RegisterWorkflows(p.Engine); err != nil {

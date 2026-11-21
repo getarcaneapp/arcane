@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -39,16 +38,7 @@ type (
 		BackupStore string
 		Project     types.Project
 	}
-
-	ComposeVolumeTargetNameOptions struct {
-		SourceProject string
-		Key           string
-		SourceName    string
-		TargetProject string
-	}
 )
-
-var unnamedVolumeName = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
 	if composeProject == nil || len(composeProject.Volumes) == 0 {
@@ -234,28 +224,6 @@ func ProjectContainerUse(composeName string, containers []container.Summary) ([]
 		}
 	}
 	return active, inUse
-}
-
-func UnnamedVolumeMount(project types.Project, containers []container.Summary) (container.Summary, container.MountPoint, bool) {
-	declared := map[string]bool{}
-	for _, volume := range ClassifyProjectVolumes(project) {
-		declared[volume.Name] = true
-	}
-	for _, c := range containers {
-		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume && unnamedVolumeName.MatchString(m.Name) && !declared[m.Name] {
-				return c, m, true
-			}
-		}
-	}
-	return container.Summary{}, container.MountPoint{}, false
-}
-
-func ComposeVolumeTargetName(opts ComposeVolumeTargetNameOptions) string {
-	if opts.SourceName == NormalizeProjectName(opts.SourceProject)+"_"+opts.Key {
-		return NormalizeProjectName(opts.TargetProject) + "_" + opts.Key
-	}
-	return opts.SourceName
 }
 
 func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (client.VolumeCreateOptions, error) {

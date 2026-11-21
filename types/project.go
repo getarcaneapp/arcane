@@ -36,12 +36,11 @@ type (
 	}
 
 	ImportProjectArchive struct {
-		UploadID     string   `json:"uploadId" required:"true" doc:"ID of a complete project-archive upload session"`
-		Name         string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
-		ProjectID    string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
-		Tags         []string `json:"tags,omitempty" doc:"Project tags"`
-		ComposeFiles []string `json:"composeFiles,omitempty" doc:"Compose files the imported project loads, relative to its directory, the base file first"`
-		Start        bool     `json:"start,omitempty" doc:"Deploy the project after the import"`
+		UploadID  string   `json:"uploadId" required:"true" doc:"ID of a complete project-archive upload session"`
+		Name      string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
+		ProjectID string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
+		Tags      []string `json:"tags,omitempty" doc:"Project tags"`
+		Start     bool     `json:"start,omitempty" doc:"Deploy the project after the import"`
 	}
 
 	ExportProjectArchive struct {
@@ -82,7 +81,6 @@ type (
 		Kind          string                 `json:"kind"`
 		ArcaneVersion string                 `json:"arcaneVersion"`
 		Project       ProjectManifestProject `json:"project"`
-		ComposeFiles  []string               `json:"composeFiles,omitempty"`
 		ProjectDirs   []string               `json:"projectDirs,omitempty" doc:"The project directory as configured and fully resolved, which links into it may name"`
 		Volumes       []ProjectVolume        `json:"volumes"`
 		FormatVersion int                    `json:"formatVersion"`

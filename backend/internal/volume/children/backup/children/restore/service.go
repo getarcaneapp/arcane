@@ -653,17 +653,10 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 	if err != nil {
 		return err
 	}
-	created, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
-		return volumes.CreateClaimed(ctx, dockerClient, volumes.ClaimedVolume{
-			Options: createOptions,
-			Claim:   target.Claim,
-		})
-	})
-	if createErr != nil {
+	if _, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+		return dockerClient.VolumeCreate(ctx, createOptions)
+	}); createErr != nil {
 		return fmt.Errorf("failed to create compose volume %s: %w", volumeName, createErr)
-	}
-	if !created {
-		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", volumeName))
 	}
 	slog.InfoContext(ctx, "Created compose volume for restore", "volume", volumeName, "project", target.Project, "key", target.Key)
 	return nil

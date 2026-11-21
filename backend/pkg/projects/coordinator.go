@@ -161,7 +161,7 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 	return nil
 }
 
-func SelectServices(model *composetypes.Project, services []string) (*composetypes.Project, error) {
+func SelectServices(model *composetypes.Project, services []string, options ...composetypes.DependencyOption) (*composetypes.Project, error) {
 	if model == nil {
 		return nil, errors.New("compose project is nil")
 	}
@@ -169,7 +169,7 @@ func SelectServices(model *composetypes.Project, services []string) (*composetyp
 	if err != nil {
 		return nil, err
 	}
-	selected, err := enabled.WithSelectedServices(services)
+	selected, err := enabled.WithSelectedServices(services, options...)
 	if err != nil {
 		return nil, err
 	}
