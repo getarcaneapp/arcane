@@ -71,14 +71,7 @@ func New(p ModuleParams) *Module {
 			}
 			return p.Service.runsArcane(ctx, proj), nil
 		},
-		// A restore holds the project lock, so it brings the project down and deploys it without taking it again.
-		Down: func(ctx context.Context, projectID string, user types.Actor) error {
-			proj, err := p.Service.getMutableProject(ctx, projectID)
-			if err != nil {
-				return err
-			}
-			return p.Service.downProject(ctx, proj, user)
-		},
+		// A restore holds the project lock, so it deploys the project without taking it again.
 		Deploy:             p.Service.deployProject,
 		RewriteComposeName: p.Service.rewriteComposeName,
 		ProjectRoot:        p.Service.ProjectRootDirectory,

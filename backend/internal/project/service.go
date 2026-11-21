@@ -1984,8 +1984,17 @@ func (s *ProjectService) soleDirectory(ctx context.Context, project types.Projec
 	if err != nil {
 		return err
 	}
+	// A project recorded through a followed symlink is compared by the directory it resolves to as well.
+	resolve := func(path string) string {
+		resolved, _ := projects.ResolveDirectoryIdentity(path)
+		return cmp.Or(resolved, path)
+	}
+	dir := resolve(project.Path)
+	holds := func(path string) bool {
+		return projects.IsSafeSubdirectory(project.Path, path) || projects.IsSafeSubdirectory(dir, resolve(path))
+	}
 	for _, root := range roots {
-		if projects.IsSafeSubdirectory(project.Path, root.ContainerPath) {
+		if holds(root.ContainerPath) {
 			return common.Classify(common.ErrValidation, fmt.Errorf(
 				"project %s is the projects directory %s, so restoring its files would replace other projects' files too; restore only its volumes", project.Name, root.ContainerPath,
 			))
@@ -1996,7 +2005,7 @@ func (s *ProjectService) soleDirectory(ctx context.Context, project types.Projec
 		return fmt.Errorf("list projects: %w", err)
 	}
 	for _, other := range others {
-		if projects.IsSafeSubdirectory(project.Path, other.Path) {
+		if holds(other.Path) {
 			return common.Classify(common.ErrValidation, fmt.Errorf(
 				"the directory of project %s holds project %s, so restoring its files would replace that project's files too; restore only its volumes", project.Name, other.Name,
 			))

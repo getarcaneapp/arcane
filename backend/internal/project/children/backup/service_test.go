@@ -2,7 +2,6 @@ package backup
 
 import (
 	"archive/tar"
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -606,8 +605,7 @@ func (f *fakeRestore) steps() restoreSteps {
 			return nil
 		},
 		report: func(context.Context, string) {},
-		down:   func(context.Context) error { return f.step("down") },
-		clear:  func(context.Context, restorePlan) error { return f.step("clear") },
+		stop:   func(context.Context, restorePlan) error { return f.step("stop") },
 		deploy: func(context.Context) error { return f.step("deploy") },
 		safety: func(context.Context, restorePlan) (string, error) { return "s1", f.step("safety") },
 		inUse:  func(context.Context, restorePlan) error { return f.step("in use") },
@@ -648,15 +646,14 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "rolled back to the safety backup s1")
 	// The volume the restore created is removed; the one that existed comes back from the safety backup.
 	require.Equal(t, []string{
-		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
-		"rolling back", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "save deploy", "deploy",
+		"stop", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache",
+		"rolling back", "stop", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "save deploy", "deploy",
 	}, running.calls)
 	require.Equal(t, err.Error(), running.plans[len(running.plans)-1].Failure)
 
 	stopped := &fakeRestore{fail: map[string]error{"verify": restoreErr}}
 	err = stopped.steps().apply(t.Context(), plan(false))
 	require.ErrorIs(t, err, restoreErr)
-	require.NotContains(t, stopped.calls, "down")
 	require.NotContains(t, stopped.calls, "deploy", "a project that did not run is not deployed")
 	require.Contains(t, stopped.calls, "restore s1 /projects/web shop_data>shop_data")
 
@@ -667,8 +664,8 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "rolled back to the safety backup s1, but could not be deployed")
 	require.NotContains(t, err.Error(), "the rollback failed too")
 	require.Equal(t, []string{
-		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
-		"rolling back", "down", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "save deploy", "deploy",
+		"stop", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
+		"rolling back", "stop", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache", "save deploy", "deploy",
 	}, redeploy.calls)
 
 	// A safety backup that cannot be restored leaves the project down instead of starting it on half-restored data.
@@ -677,8 +674,8 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorContains(t, err, "the rollback failed too")
 	require.ErrorContains(t, err, "the project was left down; restore the safety backup s1")
 	require.Equal(t, []string{
-		"down", "clear", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify",
-		"rolling back", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache",
+		"stop", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify",
+		"rolling back", "stop", "restore s1 /projects/web shop_data>shop_data", "remove shop_cache",
 	}, undoFailed.calls)
 
 	// A container that started using a volume after the checks stops the restore before anything is written.
@@ -687,26 +684,26 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrConflict)
 	require.ErrorContains(t, err, "nothing was restored")
 	// Nothing was written yet, so the volume a container now uses is left alone and the project is deployed again.
-	require.Equal(t, []string{"down", "clear", "safety", "in use", "rolling back", "save deploy", "deploy"}, inUse.calls)
+	require.Equal(t, []string{"stop", "safety", "in use", "rolling back", "save deploy", "deploy"}, inUse.calls)
 
 	safetyFailed := &fakeRestore{fail: map[string]error{"safety": restoreErr}}
 	err = safetyFailed.steps().apply(t.Context(), plan(true))
 	require.ErrorContains(t, err, "nothing was restored")
-	require.Equal(t, []string{"down", "clear", "safety", "rolling back", "save deploy", "deploy"}, safetyFailed.calls)
+	require.Equal(t, []string{"stop", "safety", "rolling back", "save deploy", "deploy"}, safetyFailed.calls)
 
-	// A stopped container that was started again stops the restore before anything is written.
-	started := &fakeRestore{fail: map[string]error{"clear": common.Classify(common.ErrConflict, errors.New("container web-app-1 was started during the restore"))}}
+	// A container that keeps running after the stop stops the restore before anything is written.
+	started := &fakeRestore{fail: map[string]error{"stop": common.Classify(common.ErrConflict, errors.New("1 container(s) of project web are still running"))}}
 	err = started.steps().apply(t.Context(), plan(false))
 	require.ErrorIs(t, err, common.ErrConflict)
 	require.ErrorContains(t, err, "nothing was restored")
-	require.Equal(t, []string{"clear", "rolling back"}, started.calls)
+	require.Equal(t, []string{"stop", "rolling back"}, started.calls)
 
 	// A redeploy that failed and cannot be stopped may still run on the restored data, so nothing is written under it.
-	stuck := &fakeRestore{fail: map[string]error{"deploy": restoreErr, "down": errors.New("compose down failed")}}
+	stuck := &fakeRestore{fail: map[string]error{"deploy": restoreErr, "stop": errors.New("compose stop failed")}}
 	err = stuck.steps().apply(t.Context(), restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", ProjectPath: "/p", Files: true, Running: true, Started: true, SafetyID: "s1", Restored: true})
 	require.ErrorIs(t, err, restoreErr)
 	require.ErrorContains(t, err, "so it was left as is; restore the safety backup s1 by hand")
-	require.Equal(t, []string{"deploy", "rolling back", "down"}, stuck.calls)
+	require.Equal(t, []string{"deploy", "rolling back", "stop"}, stuck.calls)
 }
 
 func TestRestoreRemovesTheVolumesItCreates(t *testing.T) {
@@ -722,7 +719,7 @@ func TestRestoreRemovesTheVolumesItCreates(t *testing.T) {
 	err := failed.steps().apply(t.Context(), p)
 	require.ErrorIs(t, err, createErr)
 	// The volume created before the failure is removed; the one that failed is not, since it may be someone else's.
-	require.Equal(t, []string{"clear", "safety", "in use", "create shop_cache", "create shop_logs", "rolling back", "restore s1  ", "remove shop_cache"}, failed.calls)
+	require.Equal(t, []string{"stop", "safety", "in use", "create shop_cache", "create shop_logs", "rolling back", "stop", "restore s1  ", "remove shop_cache"}, failed.calls)
 
 	// Arcane stops between the two creates: the checkpoint saved after the first already names it, so the resumed run
 	// removes it.
@@ -750,7 +747,6 @@ func TestRestoreRedeploysOnlyWhenTheProjectRanOrIsAsked(t *testing.T) {
 		restore := &fakeRestore{}
 		require.NoError(t, restore.steps().apply(t.Context(), restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", Files: true, ProjectPath: "/p", Redeploy: test.redeploy, Running: test.running}), name)
 		require.Equal(t, test.deployed, slices.Contains(restore.calls, "deploy"), name)
-		require.Equal(t, test.running, slices.Contains(restore.calls, "down"), name)
 		require.NotContains(t, restore.calls, "restore s1 /p ", name)
 	}
 }
@@ -760,7 +756,7 @@ func TestResumedRestoreNeverLeavesTheProjectDown(t *testing.T) {
 	resumed := &fakeRestore{}
 	err := resumed.steps().apply(t.Context(), restorePlan{ID: "r1", BackupID: "b1", ProjectID: "p1", ProjectPath: "/p", Files: true, Running: true, Started: true, SafetyID: "s1"})
 	require.ErrorContains(t, err, "the restore was interrupted; the project was rolled back to the safety backup s1")
-	require.Equal(t, []string{"rolling back", "restore s1 /p ", "remove ", "save deploy", "deploy"}, resumed.calls)
+	require.Equal(t, []string{"rolling back", "stop", "restore s1 /p ", "remove ", "save deploy", "deploy"}, resumed.calls)
 
 	// Interrupted before the safety backup: nothing changed, so the project is only deployed again.
 	early := &fakeRestore{}
@@ -779,7 +775,7 @@ func TestResumedRestoreNeverLeavesTheProjectDown(t *testing.T) {
 		ID: "r1", BackupID: "b1", ProjectID: "p1", ProjectPath: "/p", Files: true, Running: true, Started: true, SafetyID: "s1", Restored: true, Deploying: true, RollingBack: true,
 	})
 	require.ErrorContains(t, err, "the restore was interrupted; the project was rolled back to the safety backup s1")
-	require.Equal(t, []string{"rolling back", "down", "restore s1 /p ", "remove ", "save deploy", "deploy"}, rolling.calls)
+	require.Equal(t, []string{"rolling back", "stop", "restore s1 /p ", "remove ", "save deploy", "deploy"}, rolling.calls)
 }
 
 func TestVerifyRestoreKeepsTheComposeName(t *testing.T) {
@@ -1029,79 +1025,9 @@ func TestRestoreNeedsTheRightsToStopAndDeployTheProject(t *testing.T) {
 		{name: "a running project is stopped and deployed again", plan: restorePlan{MayStop: true}, want: []string{authz.PermProjectsDown, authz.PermProjectsDeploy}},
 		{name: "a stopped project asked to start is deployed", plan: restorePlan{Redeploy: new(true)}, want: []string{authz.PermProjectsDeploy}},
 		{name: "a stopped project left stopped needs nothing more", plan: restorePlan{Redeploy: new(false)}},
-		// Removing a stopped project's containers takes them down as stopping it would.
-		{name: "a project with stopped containers needs the right to take it down", plan: restorePlan{Stopped: true}, want: []string{authz.PermProjectsDown}},
-		{
-			name: "a project with stopped containers asked to start", plan: restorePlan{Stopped: true, Redeploy: new(true)},
-			want: []string{authz.PermProjectsDown, authz.PermProjectsDeploy},
-		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, test.want, test.plan.extraPermissions())
-		})
-	}
-}
-
-func TestRestoreRemovesStoppedContainersAndRefusesStartedOnes(t *testing.T) {
-	exited := container.Summary{ID: "c1", Names: []string{"/web-app-1"}, State: container.StateExited}
-	for _, test := range []struct {
-		wantErr     error
-		name        string
-		wantMessage string
-		containers  []container.Summary
-		wantRemoved []string
-		stopped     bool
-	}{
-		{
-			name:        "stopped containers are removed",
-			containers:  []container.Summary{exited, {ID: "c2", Names: []string{"/web-db-1"}, State: container.StateCreated}},
-			wantRemoved: []string{"c1", "c2"},
-			stopped:     true,
-		},
-		// An agent the project runs is Arcane's, not the project's to remove or refuse on.
-		{
-			name:        "Arcane's own containers are left alone",
-			containers:  []container.Summary{exited, {ID: "agent", Names: []string{"/web-agent-1"}, State: container.StateRunning, Labels: map[string]string{"com.getarcaneapp.arcane.agent": "true"}}},
-			wantRemoved: []string{"c1"},
-			stopped:     true,
-		},
-		{
-			name:        "a container started again is refused",
-			containers:  []container.Summary{{ID: "c1", Names: []string{"/web-app-1"}, State: container.StateRunning}},
-			wantMessage: "container web-app-1 was started during the restore",
-			stopped:     true,
-		},
-		// The request checked projects:down only when it found stopped containers.
-		{
-			name:        "stopped containers the request did not find are refused",
-			containers:  []container.Summary{exited},
-			wantMessage: "the project's containers changed after the restore was requested",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			var removed []string
-			dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.Method {
-				case http.MethodDelete:
-					removed = append(removed, path.Base(r.URL.Path))
-					w.WriteHeader(http.StatusNoContent)
-				default:
-					assert.Equal(t, "1", r.URL.Query().Get("all"), "stopped containers are listed too")
-					assert.Contains(t, r.URL.Query().Get("filters"), "com.docker.compose.project=web")
-					w.Header().Set("Content-Type", "application/json")
-					assert.NoError(t, json.MarshalWrite(w, test.containers))
-				}
-			}))
-			service := NewService(Dependencies{Docker: dockerService})
-			err := service.removeStoppedContainers(t.Context(), restorePlan{ComposeName: "web", Stopped: test.stopped})
-			if test.wantMessage != "" {
-				require.ErrorIs(t, err, cmp.Or(test.wantErr, common.ErrConflict))
-				require.ErrorContains(t, err, test.wantMessage)
-				require.Empty(t, removed)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, test.wantRemoved, removed)
 		})
 	}
 }
@@ -1145,21 +1071,6 @@ func TestRestoreRemovesItsOwnLeftoverRusticContainers(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
-}
-
-func TestRestoreRefusesContainersThatKeepDataInUnnamedVolumes(t *testing.T) {
-	generated := strings.Repeat("ab", 32)
-	unnamed := container.MountPoint{Type: mount.TypeVolume, Name: generated, Destination: "/data"}
-	named := container.MountPoint{Type: mount.TypeVolume, Name: "web_data", Destination: "/data"}
-	project := testProject()
-	// Taking a running project down removes its containers too, so their unnamed volumes are refused as well.
-	err := refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateRunning, Mounts: []container.MountPoint{named, unnamed}}})
-	require.ErrorIs(t, err, common.ErrValidation)
-	require.ErrorContains(t, err, "container web-app-1 keeps data at /data in an unnamed volume")
-	require.NoError(t, refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{named}}}))
-	// A generated name the project adopts as an external volume is attached again by Compose.
-	project.Volumes["adopted"] = composeTypes.VolumeConfig{Name: generated, External: true}
-	require.NoError(t, refuseUnnamedVolumes(project, []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateExited, Mounts: []container.MountPoint{unnamed}}}))
 }
 
 func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
