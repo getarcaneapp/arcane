@@ -40,7 +40,7 @@ type (
 		Sort         string `query:"sort" default:"createdAt"`
 		Order        string `query:"order" default:"desc"`
 		Type         string `query:"type"`
-		ResourceType string `query:"resourceType" doc:"Resource filter: system or volume"`
+		ResourceType string `query:"resourceType" doc:"Resource filter: system, volume or project"`
 		Start        int    `query:"start" default:"0"`
 		Limit        int    `query:"limit" default:"20"`
 		IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`

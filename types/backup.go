@@ -229,6 +229,8 @@ type (
 		Type              BackupManagementType    `json:"type" sortable:"true"`
 		ResourceType      string                  `json:"resourceType"`
 		ResourceName      string                  `json:"resourceName" sortable:"true"`
+		ResourceID        string                  `json:"resourceId,omitempty" doc:"ID of the backed up project"`
+		ResourceMissing   bool                    `json:"resourceMissing,omitempty" doc:"True when the backed up project no longer exists"`
 		Size              int64                   `json:"size" sortable:"true"`
 	}
 
@@ -267,6 +269,7 @@ const (
 
 	BackupManagementTypeSystem     BackupManagementType      = "system"
 	BackupManagementTypeVolume     BackupManagementType      = "volume"
+	BackupManagementTypeProject    BackupManagementType      = "project"
 	SystemVolumePolicyPrefix                                 = "system-volume:"
 	SystemVolumeManualSeriesOwner                            = "manual"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"

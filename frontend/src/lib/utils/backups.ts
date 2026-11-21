@@ -36,13 +36,16 @@ export function backupTriggerLabel(trigger: BackupTrigger): string {
 }
 
 export function backupManagementLabel(type?: BackupManagementType): string {
-	return type === 'system' ? m.backups_system_managed() : m.backups_volume_managed();
+	if (type === 'system') return m.backups_system_managed();
+	if (type === 'project') return m.project_managed();
+	return m.backups_volume_managed();
 }
 
 export function backupManagementFilterOptions() {
 	return [
 		{ label: m.backups_system_managed(), value: 'system' },
-		{ label: m.backups_volume_managed(), value: 'volume' }
+		{ label: m.backups_volume_managed(), value: 'volume' },
+		{ label: m.project_managed(), value: 'project' }
 	];
 }
 

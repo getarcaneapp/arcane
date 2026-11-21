@@ -1,4 +1,6 @@
+import type { SystemBackupDestination, UpdateBackupPolicy } from './backup';
 import type { ImageUpdateInfo } from './image';
+import type { BackupRun } from './ui/backup';
 import type { WorkspaceFileChange } from './workspace';
 
 export interface ProjectIncludeFile {
@@ -241,4 +243,92 @@ export interface ProjectTransferPreflight {
 
 export interface ProjectTransferStarted {
 	activityId: string;
+}
+
+export type ProjectVolumeKind = 'named' | 'external' | 'driverOpts';
+
+export interface ProjectVolume {
+	key: string;
+	name: string;
+	kind: ProjectVolumeKind;
+	driver?: string;
+	labels?: Record<string, string>;
+	driverOpts?: Record<string, string>;
+	archive?: string;
+	included: boolean;
+	missing?: boolean;
+	inUse?: boolean;
+	backupStore?: boolean;
+}
+
+export interface ProjectExportOptions {
+	volumes: ProjectVolume[];
+	running: boolean;
+}
+
+export interface ExportProjectArchiveRequest {
+	volumes?: string[];
+	stopProject?: boolean;
+}
+
+export interface CreateProjectBackupRequest {
+	volumes?: string[];
+	stopContainers?: boolean;
+	destination?: SystemBackupDestination;
+	s3DestinationId?: string;
+}
+
+export interface ProjectBackupVolume {
+	key: string;
+	name: string;
+	included: boolean;
+}
+
+export interface RestoreProjectBackupRequest {
+	files?: boolean;
+	volumes?: string[];
+	redeploy?: boolean;
+}
+
+export interface RestoreProjectBackupAsNewRequest {
+	name: string;
+	volumes?: string[];
+	start?: boolean;
+}
+
+export type ProjectBackup = BackupRun & {
+	projectId: string;
+	projectName: string;
+	composeName: string;
+	completedAt?: string;
+	volumes: ProjectBackupVolume[];
+	stoppedContainers: boolean;
+};
+
+export interface ProjectBackupPolicy {
+	lastRun?: ProjectBackup;
+	id: string;
+	projectId: string;
+	schedule: string;
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	/** Omitted follows the volumes a manual backup includes by default; empty backs up only the files. */
+	volumes?: string[];
+	retentionCount: number;
+	enabled: boolean;
+	stopContainers: boolean;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+}
+
+export interface ProjectBackupPolicyCollection {
+	policies: ProjectBackupPolicy[];
+	s3Available: boolean;
+}
+
+export type UpdateProjectBackupPolicy = UpdateBackupPolicy & { volumes?: string[] };
+
+export interface ImportProjectArchiveRequest {
+	name: string;
+	start?: boolean;
 }

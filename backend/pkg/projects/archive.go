@@ -2,12 +2,15 @@ package projects
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -18,12 +21,28 @@ import (
 	"github.com/shirou/gopsutil/v4/disk"
 
 	"kit.getarcane.app/acfs"
-	"kit.getarcane.app/acfs/types"
+	acfstypes "kit.getarcane.app/acfs/types"
+
+	"getarcane.dev/types/v3"
+)
+
+type (
+	ProjectBundleWriter struct {
+		gzip *gzip.Writer
+		tar  *tar.Writer
+	}
+
+	ProjectBundleVisitor func(manifest types.ProjectManifest, name string, size int64, body io.Reader) error
 )
 
 const (
-	maxArchiveEntries  = 200_000
-	unpackReserveBytes = 1 << 30
+	ProjectBundleManifest = "arcane-project.json"
+	ProjectBundleProject  = "project.tar.gz"
+
+	maxArchiveEntries       = 200_000
+	unpackReserveBytes      = 1 << 30
+	maxProjectManifestBytes = 1 << 20
+	projectBundleVolumes    = "volumes/"
 )
 
 func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) error {
@@ -34,7 +53,7 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	root := acfs.Root{Path: projectPath}
 	gzipWriter := gzip.NewWriter(w)
 	tarWriter := tar.NewWriter(gzipWriter)
-	visit := func(entry types.Entry) error {
+	visit := func(entry acfstypes.Entry) error {
 		relativePath := strings.TrimPrefix(entry.Path, "/")
 		mode := os.FileMode(entry.UnixMode)
 		switch {
@@ -59,12 +78,8 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			if relativePath != EffectiveEnvFileName {
 				return nil
 			}
-			envPath, perm, _, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, relativePath))
-			if err != nil {
-				return err
-			}
-			content, err := acfs.Host{}.ReadFile(ctx, envPath)
-			if err != nil {
+			content, perm, external, err := ReadExternalEnvFile(ctx, projectPath)
+			if err != nil || !external {
 				return err
 			}
 			if headerErr := tarWriter.WriteHeader(&tar.Header{
@@ -109,7 +124,7 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 		_, err = io.CopyN(tarWriter, reader, entry.Size)
 		return err
 	}
-	if _, walkErr := root.Walk(ctx, "/", types.WalkOptions{}, visit); walkErr != nil {
+	if _, walkErr := root.Walk(ctx, "/", acfstypes.WalkOptions{}, visit); walkErr != nil {
 		return fmt.Errorf("pack project directory: %w", walkErr)
 	}
 	if closeErr := tarWriter.Close(); closeErr != nil {
@@ -121,14 +136,114 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	return nil
 }
 
+// ReadExternalEnvFile reads the file the project's .env links to, with its permissions, when the link leads outside
+// the project directory, so a copy of the directory alone would keep only the link. external is false for a regular
+// .env, a link inside the directory, or no .env at all.
+func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byte, perm os.FileMode, external bool, err error) {
+	envPath, perm, isSymlink, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, EffectiveEnvFileName))
+	if err != nil || !isSymlink {
+		return nil, 0, false, err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("resolve project directory: %w", err)
+	}
+	if IsSafeSubdirectory(resolvedRoot, envPath) {
+		return nil, 0, false, nil
+	}
+	content, err = acfs.Host{}.ReadFile(ctx, envPath)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return content, perm, true, nil
+}
+
+// OwnLinks points each link in the copy at projectPath that leads into one of sourceDirs, the directories the copy was
+// taken from, at the copy's own file. A link Arcane can't change keeps its target, and report names them.
+func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, report func(ctx context.Context, message string)) error {
+	if len(sourceDirs) == 0 {
+		return nil
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return fmt.Errorf("resolve project directory: %w", err)
+	}
+	var readOnly []string
+	// A directory Arcane can't read, such as a database's data, keeps its links as they are rather than failing.
+	walkErr := filepath.WalkDir(resolvedRoot, func(hostPath string, entry fs.DirEntry, err error) error {
+		switch {
+		case errors.Is(err, fs.ErrPermission):
+			return fs.SkipDir
+		case err != nil:
+			return err
+		case entry.IsDir() && IsInternalScratchDirName(entry.Name()):
+			return fs.SkipDir
+		case entry.Type()&fs.ModeSymlink == 0:
+			return nil
+		}
+		relative, err := filepath.Rel(resolvedRoot, hostPath)
+		if err != nil {
+			return err
+		}
+		target, err := os.Readlink(hostPath)
+		switch {
+		case err != nil:
+		case filepath.IsAbs(target):
+			err = ownLink(hostPath, resolvedRoot, target, sourceDirs)
+		// A relative target is followed from where the original directory really is, the last of sourceDirs.
+		case !filepath.IsLocal(filepath.Join(filepath.Dir(relative), target)):
+			err = ownLink(hostPath, resolvedRoot, filepath.Join(sourceDirs[len(sourceDirs)-1], filepath.Dir(relative), target), sourceDirs)
+		}
+		if errors.Is(err, fs.ErrPermission) {
+			readOnly = append(readOnly, relative)
+			return nil
+		}
+		return err
+	})
+	if walkErr != nil {
+		return fmt.Errorf("point the restored links at the project's own files: %w", walkErr)
+	}
+	if len(readOnly) > 0 {
+		report(ctx, "Arcane can't change links in read-only folders, so these still lead into the original project: "+strings.Join(readOnly, ", "))
+	}
+	return nil
+}
+
+// ownLink replaces the link at hostPath with one to the copy's own file when named is inside one of sourceDirs.
+// WalkDir only enters real directories, so replacing the link doesn't follow any target.
+func ownLink(hostPath, resolvedRoot, named string, sourceDirs []string) error {
+	for _, dir := range sourceDirs {
+		inside, err := filepath.Rel(dir, named)
+		if err != nil || !filepath.IsLocal(inside) {
+			continue
+		}
+		own, err := filepath.Rel(filepath.Dir(hostPath), filepath.Join(resolvedRoot, inside))
+		if err != nil {
+			return err
+		}
+		if removeErr := os.Remove(hostPath); removeErr != nil {
+			return removeErr
+		}
+		return os.Symlink(own, hostPath)
+	}
+	return nil
+}
+
+func FreeSpaceBudget(ctx context.Context, dir string) (budget, reserve int64, err error) {
+	usage, err := disk.UsageWithContext(ctx, dir)
+	if err != nil {
+		return 0, 0, err
+	}
+	reserve = max(unpackReserveBytes, int64(usage.Total/20))
+	return int64(usage.Free) - reserve, reserve, nil
+}
+
 func UnpackProjectDirectory(ctx context.Context, root string, r io.Reader) error {
 	destination := acfs.Root{Path: root}
-	usage, err := disk.UsageWithContext(ctx, root)
+	budget, reserve, err := FreeSpaceBudget(ctx, root)
 	if err != nil {
 		return fmt.Errorf("check free space for the project archive: %w", err)
 	}
-	reserve := max(unpackReserveBytes, int64(usage.Total/20))
-	budget := int64(usage.Free) - reserve
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
 		return fmt.Errorf("open project archive: %w", err)
@@ -252,4 +367,184 @@ func unpackProjectEntry(ctx context.Context, destination acfs.Root, reader io.Re
 		return 0, fmt.Errorf("hard links are not supported (target %q)", header.Linkname)
 	}
 	return 0, fmt.Errorf("unsupported entry type %q", header.Typeflag)
+}
+
+func ProjectBundleVolumeArchive(key string) string {
+	return projectBundleVolumes + key + ".tar.gz"
+}
+
+func NewProjectBundleWriter(w io.Writer, manifest types.ProjectManifest) (*ProjectBundleWriter, error) {
+	content, err := json.Marshal(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("encode bundle manifest: %w", err)
+	}
+	if len(content) > maxProjectManifestBytes {
+		return nil, fmt.Errorf("bundle manifest exceeds %d bytes", maxProjectManifestBytes)
+	}
+	gzipWriter, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+	if err != nil {
+		return nil, err
+	}
+	writer := &ProjectBundleWriter{gzip: gzipWriter, tar: tar.NewWriter(gzipWriter)}
+	if addErr := writer.Add(ProjectBundleManifest, int64(len(content)), bytes.NewReader(content)); addErr != nil {
+		return nil, addErr
+	}
+	return writer, nil
+}
+
+func (w *ProjectBundleWriter) Add(name string, size int64, body io.Reader) error {
+	if err := w.tar.WriteHeader(&tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     name,
+		Mode:     0o600,
+		Size:     size,
+	}); err != nil {
+		return fmt.Errorf("write bundle entry %s: %w", name, err)
+	}
+	if _, err := io.CopyN(w.tar, body, size); err != nil {
+		return fmt.Errorf("write bundle entry %s: %w", name, err)
+	}
+	return nil
+}
+
+func (w *ProjectBundleWriter) Close() error {
+	if err := w.tar.Close(); err != nil {
+		return fmt.Errorf("finish project bundle: %w", err)
+	}
+	if err := w.gzip.Close(); err != nil {
+		return fmt.Errorf("finish project bundle compression: %w", err)
+	}
+	return nil
+}
+
+func IsProjectBundle(r io.Reader) bool {
+	gzipReader, err := gzip.NewReader(r)
+	if err != nil {
+		return false
+	}
+	defer func() {
+		_ = gzipReader.Close()
+	}()
+	_, bundled, _ := readProjectBundleManifest(tar.NewReader(gzipReader))
+	return bundled
+}
+
+func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bool, error) {
+	header, err := tarReader.Next()
+	if err != nil || header.Name != ProjectBundleManifest || header.Typeflag != tar.TypeReg || header.Size > maxProjectManifestBytes {
+		return types.ProjectManifest{}, false, nil
+	}
+	content, err := io.ReadAll(tarReader)
+	if err != nil {
+		return types.ProjectManifest{}, true, fmt.Errorf("read %s: %w", ProjectBundleManifest, err)
+	}
+	var manifest types.ProjectManifest
+	if json.Unmarshal(content, &manifest) != nil || manifest.Kind != types.ProjectManifestKindExport || manifest.FormatVersion == 0 {
+		return types.ProjectManifest{}, false, nil
+	}
+	return manifest, true, nil
+}
+
+func ReadProjectBundle(r io.Reader, visit ProjectBundleVisitor) (types.ProjectManifest, bool, error) {
+	gzipReader, err := gzip.NewReader(r)
+	if err != nil {
+		return types.ProjectManifest{}, false, nil
+	}
+	defer func() {
+		_ = gzipReader.Close()
+	}()
+	tarReader := tar.NewReader(gzipReader)
+	manifest, bundled, err := readProjectBundleManifest(tarReader)
+	if !bundled || err != nil {
+		return manifest, bundled, err
+	}
+	expected, err := projectBundleVolumeArchives(manifest)
+	if err != nil {
+		return manifest, true, err
+	}
+	projectSeen := false
+	for {
+		header, nextErr := tarReader.Next()
+		if errors.Is(nextErr, io.EOF) {
+			break
+		}
+		if nextErr != nil {
+			return manifest, true, fmt.Errorf("read project bundle: %w", nextErr)
+		}
+		name, pathErr := archiveEntryPath(header)
+		if pathErr != nil {
+			return manifest, true, fmt.Errorf("bundle entry %q: %w", header.Name, pathErr)
+		}
+		seen, isVolume := expected[name]
+		switch {
+		case header.Typeflag != tar.TypeReg:
+			return manifest, true, fmt.Errorf("bundle entry %q is not a regular file", name)
+		case name == ProjectBundleProject && !projectSeen:
+			projectSeen = true
+		case isVolume && projectSeen && !seen:
+			expected[name] = true
+		default:
+			return manifest, true, fmt.Errorf("unexpected bundle entry %q", name)
+		}
+		if visit != nil {
+			if visitErr := visit(manifest, name, header.Size, tarReader); visitErr != nil {
+				return manifest, true, visitErr
+			}
+		}
+	}
+	if !projectSeen {
+		return manifest, true, fmt.Errorf("project bundle has no %s", ProjectBundleProject)
+	}
+	for _, name := range slices.Sorted(maps.Keys(expected)) {
+		if !expected[name] {
+			return manifest, true, fmt.Errorf("project bundle has no %s", name)
+		}
+	}
+	return manifest, true, nil
+}
+
+func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]bool, error) {
+	if manifest.FormatVersion != types.ProjectManifestFormatVersion {
+		return nil, fmt.Errorf("unsupported project bundle format version %d", manifest.FormatVersion)
+	}
+	owners := map[string]string{}
+	keys := map[string]struct{}{}
+	for _, volume := range manifest.Volumes {
+		if _, duplicate := keys[volume.Key]; duplicate {
+			return nil, fmt.Errorf("project bundle lists volume %q twice", volume.Key)
+		}
+		keys[volume.Key] = struct{}{}
+		archive := ProjectBundleVolumeArchive(volume.Key)
+		switch {
+		case !volume.Included && volume.Archive != "":
+			return nil, fmt.Errorf("volume %q is not included but names archive %q", volume.Key, volume.Archive)
+		case volume.Included && volume.Archive == archive:
+			owners[archive] = volume.Name
+		}
+	}
+	expected := map[string]bool{}
+	for _, volume := range manifest.Volumes {
+		if !volume.Included {
+			continue
+		}
+		if owner, ok := owners[volume.Archive]; !ok || owner != volume.Name {
+			return nil, fmt.Errorf("volume %q must be archived at %s or share the archive of another volume named %s, not %q", volume.Key, ProjectBundleVolumeArchive(volume.Key), volume.Name, volume.Archive)
+		}
+		expected[volume.Archive] = false
+	}
+	return expected, nil
+}
+
+// SelectBackupVolumes returns the requested volume keys, or every included one when the request names none; the
+// backup must include each requested key.
+func SelectBackupVolumes(included, requested []string) ([]string, error) {
+	if requested == nil {
+		return included, nil
+	}
+	for _, key := range requested {
+		if !slices.Contains(included, key) {
+			return nil, fmt.Errorf("the backup does not include the data of volume %s", key)
+		}
+	}
+	return slices.Compact(slices.Sorted(slices.Values(requested))), nil
 }

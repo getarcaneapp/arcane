@@ -230,8 +230,11 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		}
 		var remoteErr error
 		if current.S3Enabled {
-			root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
-			remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, "volume_backups", current.S3DestinationID, root)
+			remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
+				DestinationID: current.S3DestinationID,
+				Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
+				Tables:        backup.VolumeRepositoryTables,
+			})
 		}
 		var disableErr error
 		remoteDisabled, disableErr = backup.DisableMissingRemote(remoteErr, current.LocalEnabled, &current.S3Enabled, &current.Enabled, func(field string) (bool, error) {
