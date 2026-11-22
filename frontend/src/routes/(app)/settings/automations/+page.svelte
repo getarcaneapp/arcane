@@ -26,6 +26,12 @@
 	]}
 >
 	{#snippet content({ formInputs, mixed, lock }, scope)}
-		<AutomationsTab {formInputs} {mixed} {lock} environments={scope.entries.map(({ environment }) => environment)} />
+		<AutomationsTab
+			{formInputs}
+			{mixed}
+			{lock}
+			environments={scope.entries.map(({ environment }) => environment)}
+			containerModesSupported={scope.entries.every(({ settings }) => 'autoUpdateMode' in settings.values)}
+		/>
 	{/snippet}
 </EnvironmentSettingsPage>

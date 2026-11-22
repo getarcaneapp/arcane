@@ -58,7 +58,7 @@
 		selected: boolean;
 	};
 
-	let { formInputs = $bindable(), mixed, lock, environments }: AutomationsTabProps = $props();
+	let { formInputs = $bindable(), mixed, lock, environments, containerModesSupported }: AutomationsTabProps = $props();
 
 	const queryClient = useQueryClient();
 	const vulnerabilityManagementEnabled = $derived(
@@ -106,6 +106,11 @@
 	const autoHealMode = $derived<FormInput<ContainerMode | null> | undefined>(formInputs.autoHealMode);
 	const autoUpdateIncludeMode = $derived(autoUpdateMode?.value === 'include');
 	const autoHealIncludeMode = $derived(autoHealMode?.value === 'include');
+	// Older agents read a shared list as an exclusion list, so the mode is only offered when every
+	// selected environment supports it, and a list that is not in exclude mode stays read-only then.
+	const modesPartlySupported = $derived(!containerModesSupported && !!autoUpdateMode);
+	const autoUpdateListLocked = $derived(modesPartlySupported && autoUpdateMode?.value !== 'exclude');
+	const autoHealListLocked = $derived(modesPartlySupported && autoHealMode?.value !== 'exclude');
 	const containerModeOptions = [
 		{ value: 'exclude', label: m.container_mode_exclude() },
 		{ value: 'include', label: m.container_mode_include() }
@@ -151,12 +156,17 @@
 	}
 
 	// A label that decides the outcome locks the entry, unless the container is still listed and needs removing.
-	function containerItem(container: ContainerSummary, listed: ReadonlySet<string>, labelState?: LabelState): ContainerItem {
+	function containerItem(
+		container: ContainerSummary,
+		listed: ReadonlySet<string>,
+		labelState: LabelState | undefined,
+		listLocked: boolean
+	): ContainerItem {
 		const name = containerName(container);
 		return {
 			value: name,
 			label: name,
-			disabled: !!labelState && !listed.has(name),
+			disabled: listLocked || (!!labelState && !listed.has(name)),
 			hint: labelState?.hint,
 			selected: listed.has(name) || !!labelState?.selected
 		};
@@ -324,7 +334,9 @@
 {/snippet}
 
 {#snippet autoUpdateOptions()}
-	{#if autoUpdateMode}
+	{#if modesPartlySupported}
+		<p class="text-xs text-muted-foreground">{m.container_mode_unsupported_hint()}</p>
+	{:else if autoUpdateMode}
 		<SettingsRow
 			for="auto-update-mode"
 			label={m.auto_update_mode_label()}
@@ -393,7 +405,7 @@
 				{@render containerExclusionList({
 					term: updateSearchTerm,
 					idPrefix: 'container-',
-					item: (container) => containerItem(container, autoUpdateListed, autoUpdateLabelState(container)),
+					item: (container) => containerItem(container, autoUpdateListed, autoUpdateLabelState(container), autoUpdateListLocked),
 					onToggle: (name) => toggleListed('autoUpdateExcludedContainers', autoUpdateListed, name)
 				})}
 			</div>
@@ -402,7 +414,9 @@
 {/snippet}
 
 {#snippet autoHealOptions()}
-	{#if autoHealMode}
+	{#if modesPartlySupported}
+		<p class="text-xs text-muted-foreground">{m.container_mode_unsupported_hint()}</p>
+	{:else if autoHealMode}
 		<SettingsRow
 			for="auto-heal-mode"
 			label={m.auto_heal_mode_label()}
@@ -492,7 +506,7 @@
 				{@render containerExclusionList({
 					term: autoHealSearchTerm,
 					idPrefix: 'auto-heal-container-',
-					item: (container) => containerItem(container, autoHealListed, autoHealLabelState(container)),
+					item: (container) => containerItem(container, autoHealListed, autoHealLabelState(container), autoHealListLocked),
 					onToggle: (name) => toggleListed('autoHealExcludedContainers', autoHealListed, name)
 				})}
 			</div>

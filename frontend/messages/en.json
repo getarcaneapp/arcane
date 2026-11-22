@@ -4789,5 +4789,6 @@
   "auto_heal_mode_description": "Choose whether the list below names the containers to skip or the only containers to restart. In include mode, containers with the label {label} are restarted as well.",
   "container_mode_exclude": "All except the listed ones",
   "container_mode_include": "Only the listed ones",
-  "container_list_cleared_hint": "The list was cleared because the new mode gives it the opposite meaning. Switch back to restore it."
+  "container_list_cleared_hint": "The list was cleared because the new mode gives it the opposite meaning. Switch back to restore it.",
+  "container_mode_unsupported_hint": "Some selected environments run an older version without the include mode. Update them or edit each environment on its own to change the mode. A list in include mode stays read-only here."
 }
