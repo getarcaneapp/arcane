@@ -623,7 +623,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		return err
 	}
 	// The plan's locks and leases cover the volumes found when the backup was queued.
-	if planErr := checkPlanVolumes(project, p); planErr != nil {
+	if planErr := s.checkPlanVolumes(ctx, project, p); planErr != nil {
 		return planErr
 	}
 	// Containers outside the project keep running, so a volume they mount may change while it is captured. A
@@ -756,9 +756,13 @@ func (s *Service) stopProject(ctx context.Context, projectID, composeName string
 }
 
 // checkPlanVolumes fails when the project's volumes changed after the backup was queued, for example by a compose edit
-// and deploy, so the snapshot never pairs new compose files with old volume data.
-func checkPlanVolumes(project types.Project, p plan) error {
-	current := projects.ClassifyProjectVolumes(project)
+// and deploy, so the snapshot never pairs new compose files with old volume data. They are inspected as the plan's
+// were, since Docker's driver options also decide a volume's kind.
+func (s *Service) checkPlanVolumes(ctx context.Context, project types.Project, p plan) error {
+	current, err := s.inspectVolumes(ctx, project, nil)
+	if err != nil {
+		return err
+	}
 	same := len(current) == len(p.Volumes) && !slices.ContainsFunc(current, func(volume types.ProjectVolume) bool {
 		return !slices.ContainsFunc(p.Volumes, func(planned types.ProjectVolume) bool {
 			return planned.Key == volume.Key && planned.Name == volume.Name && planned.Kind == volume.Kind
