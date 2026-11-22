@@ -44,6 +44,7 @@
 	type ContainerListKey = 'autoUpdateExcludedContainers' | 'autoHealExcludedContainers';
 	type ContainerModeKey = 'autoUpdateMode' | 'autoHealMode';
 	type ContainerMode = 'exclude' | 'include';
+	type ClearedList = { list: string; mode: ContainerMode | null };
 
 	type LabelState = {
 		hint: string;
@@ -123,19 +124,23 @@
 		{ value: 'include', label: m.container_mode_include() }
 	];
 	// Switching the mode gives a list the opposite meaning, so it is cleared and restored if the switch is undone.
-	let clearedLists = $state<Partial<Record<ContainerListKey, string>>>({});
+	let clearedLists = $state<Partial<Record<ContainerListKey, ClearedList>>>({});
+	// A list that differs between environments or is set by an environment variable cannot be cleared with the
+	// mode change, so the mode stays as it is until the list can change too.
+	const autoUpdateModeBlocked = $derived(modeBlocked('autoUpdateExcludedContainers'));
+	const autoHealModeBlocked = $derived(modeBlocked('autoHealExcludedContainers'));
 	// Standalone containers that are not included are not restarted when a container they depend on is updated.
 	const autoUpdateListHelp = $derived(
 		[
 			m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` }),
 			autoUpdateIncludeMode ? m.auto_update_include_dependents_hint() : '',
-			clearedLists.autoUpdateExcludedContainers === undefined ? '' : m.container_list_cleared_hint()
+			listCleared('autoUpdateExcludedContainers', autoUpdateMode?.value) ? m.container_list_cleared_hint() : ''
 		]
 			.filter(Boolean)
 			.join(' ')
 	);
 	const autoHealListHelp = $derived(
-		clearedLists.autoHealExcludedContainers === undefined ? undefined : m.container_list_cleared_hint()
+		listCleared('autoHealExcludedContainers', autoHealMode?.value) ? m.container_list_cleared_hint() : undefined
 	);
 	const autoUpdateListed = $derived(parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers.value));
 	const autoHealListed = $derived(parseExcludedContainerSet(formInputs.autoHealExcludedContainers.value));
@@ -180,19 +185,31 @@
 		};
 	}
 
+	function modeBlocked(listKey: ContainerListKey): boolean {
+		return !!mixed(listKey) || (!!lock(listKey)?.locked && !!formInputs[listKey].value.trim());
+	}
+
+	function listCleared(listKey: ContainerListKey, mode: ContainerMode | null | undefined): boolean {
+		const cleared = clearedLists[listKey];
+		return !!cleared && cleared.mode !== mode && !formInputs[listKey].value.trim();
+	}
+
+	// The saved copy belongs to the mode it was cleared from, so it is only restored when switching back to that
+	// mode with the list still empty. A form reset or new entries leave it unused.
 	function changeMode(modeKey: ContainerModeKey, listKey: ContainerListKey, mode: ContainerMode) {
 		const modeInput = formInputs[modeKey];
 		const listInput = formInputs[listKey];
-		if (modeInput.value === mode) return;
+		const previous = modeInput.value;
+		if (previous === mode) return;
 		modeInput.value = mode;
 		const cleared = clearedLists[listKey];
-		if (cleared !== undefined) {
-			listInput.value = cleared;
+		if (cleared?.mode === mode && !listInput.value.trim()) {
+			listInput.value = cleared.list;
 			clearedLists = { ...clearedLists, [listKey]: undefined };
-		} else if (listInput.value.trim()) {
-			clearedLists = { ...clearedLists, [listKey]: listInput.value };
-			listInput.value = '';
+			return;
 		}
+		clearedLists = { ...clearedLists, [listKey]: listInput.value.trim() ? { list: listInput.value, mode: previous } : undefined };
+		listInput.value = '';
 	}
 
 	function toggleListed(key: ContainerListKey, current: ReadonlySet<string>, name: string) {
@@ -350,6 +367,7 @@
 			label={m.auto_update_mode_label()}
 			description={m.auto_update_mode_description({ label: `${AUTO_UPDATE_LABEL}=true` })}
 			class="p-0"
+			helpText={autoUpdateModeBlocked ? m.container_mode_blocked_hint() : undefined}
 			lock={lock('autoUpdateMode')}
 			mixed={mixed('autoUpdateMode')}
 		>
@@ -363,6 +381,7 @@
 					options={containerModeOptions}
 					onValueChange={(v) => changeMode('autoUpdateMode', 'autoUpdateExcludedContainers', v as ContainerMode)}
 					placeholder={mixed('autoUpdateMode') ? m.mixed() : undefined}
+					disabled={autoUpdateModeBlocked}
 					aria-describedby={describedBy}
 				/>
 			{/snippet}
@@ -430,6 +449,7 @@
 			label={m.auto_heal_mode_label()}
 			description={m.auto_heal_mode_description({ label: `${AUTO_HEAL_LABEL}=true` })}
 			class="p-0"
+			helpText={autoHealModeBlocked ? m.container_mode_blocked_hint() : undefined}
 			lock={lock('autoHealMode')}
 			mixed={mixed('autoHealMode')}
 		>
@@ -443,6 +463,7 @@
 					options={containerModeOptions}
 					onValueChange={(v) => changeMode('autoHealMode', 'autoHealExcludedContainers', v as ContainerMode)}
 					placeholder={mixed('autoHealMode') ? m.mixed() : undefined}
+					disabled={autoHealModeBlocked}
 					aria-describedby={describedBy}
 				/>
 			{/snippet}
