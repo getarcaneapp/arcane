@@ -822,7 +822,6 @@
 			onpointermove: _onpointermove,
 			onpointercancel: _onpointercancel,
 			onpointerup: _onpointerup,
-			disabled: _disabled,
 			oncontextmenu,
 			...rest
 		} = props;
@@ -830,8 +829,11 @@
 		return {
 			...rest,
 			oncontextmenu: (event: MouseEvent) => {
-				const pointerType = 'pointerType' in event ? event.pointerType : '';
-				if (isTouchDevice.current || pointerType === 'touch' || pointerType === 'pen') {
+				const pointerType = 'pointerType' in event && typeof event.pointerType === 'string' ? event.pointerType : null;
+				if (pointerType === 'touch' || pointerType === 'pen') {
+					return;
+				}
+				if (pointerType === null && event.button !== 2 && isTouchDevice.current) {
 					return;
 				}
 				if (typeof oncontextmenu === 'function') {
@@ -876,7 +878,7 @@
 
 <div class="arcane-code-editor {autoHeight ? 'auto-height' : 'full-height'}">
 	<ContextMenu.Root>
-		<ContextMenu.Trigger disabled={isTouchDevice.current}>
+		<ContextMenu.Trigger>
 			{#snippet child({ props })}
 				<div {...getEditorTriggerProps(props)} class="editor-main">
 					{#if isDiffActive}
