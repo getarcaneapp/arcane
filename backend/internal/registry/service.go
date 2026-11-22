@@ -913,7 +913,7 @@ func classifyDigestError(err error) error {
 	case errors.Is(err, context.DeadlineExceeded), errdefs.IsDeadlineExceeded(err):
 		return common.Classify(common.ErrTimeout, err)
 	case browse.IsUnauthorizedRegistryError(err):
-		return common.Classify(common.ErrUnauthorized, err)
+		return common.Classify(common.ErrBadRequest, err)
 	case errdefs.IsNotFound(err), isTransport && transportErr.StatusCode == http.StatusNotFound, strings.Contains(strings.ToLower(err.Error()), "manifest unknown"):
 		return common.Classify(common.ErrNotFound, err)
 	default:
@@ -993,6 +993,9 @@ func registryOperationWithCredentials[T any](
 	switch {
 	case err == nil:
 		return value, &types.ContainerRegistryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}, nil
+	case lastErr != nil && browse.IsUnauthorizedRegistryError(err):
+		return *new(T), lastResult, fmt.Errorf("%s failed: the saved credential for %s was rejected: %w",
+			operation, registryHost, errors.Join(lastErr, fmt.Errorf("anonymous retry failed: %w", err)))
 	case credErr != nil && browse.IsUnauthorizedRegistryError(err):
 		return *new(T), &types.ContainerRegistryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost},
 			fmt.Errorf("%s: anonymous access unauthorized; credential lookup failed: %w", operation, errors.Join(err, fmt.Errorf("failed to load enabled registries: %w", credErr)))
