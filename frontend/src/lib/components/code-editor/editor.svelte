@@ -1,15 +1,64 @@
+<script lang="ts" module>
+	import { StreamLanguage } from '@codemirror/language';
+	import type { Extension } from '@codemirror/state';
+
+	import type { CodeLanguage, CodeValidationMode } from './analysis/types';
+
+	const languageValidation: Record<CodeLanguage, CodeValidationMode> = {
+		yaml: 'compose',
+		env: 'env',
+		json: 'none',
+		toml: 'none',
+		dockerfile: 'none',
+		shell: 'none',
+		javascript: 'none',
+		typescript: 'none',
+		markdown: 'none',
+		systemd: 'none',
+		plaintext: 'none'
+	};
+
+	const languageExtensionLoaders: Record<CodeLanguage, () => Promise<Extension[]>> = {
+		yaml: async () => [(await import('@codemirror/lang-yaml')).yaml()],
+		env: async () => [StreamLanguage.define((await import('@codemirror/legacy-modes/mode/properties')).properties)],
+		json: async () => [(await import('@codemirror/lang-json')).json()],
+		toml: async () => [StreamLanguage.define((await import('@codemirror/legacy-modes/mode/toml')).toml)],
+		dockerfile: async () => [StreamLanguage.define((await import('@codemirror/legacy-modes/mode/dockerfile')).dockerFile)],
+		shell: async () => [StreamLanguage.define((await import('@codemirror/legacy-modes/mode/shell')).shell)],
+		javascript: async () => [(await import('@codemirror/lang-javascript')).javascript({ jsx: true })],
+		typescript: async () => [(await import('@codemirror/lang-javascript')).javascript({ typescript: true, jsx: true })],
+		markdown: async () => [(await import('@codemirror/lang-markdown')).markdown()],
+		systemd: async () => [StreamLanguage.define((await import('@codemirror/legacy-modes/mode/properties')).properties)],
+		plaintext: () => Promise.resolve([])
+	};
+
+	const loadedLanguageExtensions = new Map<CodeLanguage, Extension[]>([['plaintext', []]]);
+	const languageExtensionPromises = new Map<CodeLanguage, Promise<Extension[]>>();
+
+	function loadLanguageExtension(lang: CodeLanguage): Promise<Extension[]> {
+		const cached = loadedLanguageExtensions.get(lang);
+		if (cached) return Promise.resolve(cached);
+
+		let pending = languageExtensionPromises.get(lang);
+		if (!pending) {
+			pending = languageExtensionLoaders[lang]()
+				.then((extensions) => {
+					loadedLanguageExtensions.set(lang, extensions);
+					return extensions;
+				})
+				.finally(() => {
+					languageExtensionPromises.delete(lang);
+				});
+			languageExtensionPromises.set(lang, pending);
+		}
+		return pending;
+	}
+</script>
+
 <script lang="ts">
 	import { browser } from '$app/env';
 	import { autocompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
-	import { javascript } from '@codemirror/lang-javascript';
-	import { json } from '@codemirror/lang-json';
-	import { markdown } from '@codemirror/lang-markdown';
-	import { yaml } from '@codemirror/lang-yaml';
-	import { StreamLanguage, foldAll, unfoldAll, foldKeymap, indentUnit } from '@codemirror/language';
-	import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
-	import { properties } from '@codemirror/legacy-modes/mode/properties';
-	import { shell } from '@codemirror/legacy-modes/mode/shell';
-	import { toml } from '@codemirror/legacy-modes/mode/toml';
+	import { foldAll, unfoldAll, foldKeymap, indentUnit } from '@codemirror/language';
 	import {
 		linter,
 		lintGutter,
@@ -19,7 +68,7 @@
 		type Diagnostic,
 		type LintSource
 	} from '@codemirror/lint';
-	import { EditorState, type Extension } from '@codemirror/state';
+	import { EditorState } from '@codemirror/state';
 	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { mode } from 'mode-watcher';
 	import { onMount } from 'svelte';
@@ -35,29 +84,13 @@
 	import type { YamlPositionContext } from './analysis/compose-analysis';
 	import type { ComposeSchemaContext } from './analysis/compose-schema';
 	import { analyzeEnvContent } from './analysis/env-analysis';
-	import type { CodeLanguage, CodeValidationMode, DiagnosticSummary, EditorContext, OutlineItem } from './analysis/types';
+	import type { DiagnosticSummary, EditorContext, OutlineItem } from './analysis/types';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
 	import { createEnterIndentKeymap } from './enter-indentation';
 	import { focusScrollGuard } from './focus-scroll-guard';
 	import { createMergeHostAttachment, type MergeAttachmentParams } from './merge-editor.svelte.js';
 	import { getEditorStatusHost, hasEditorStatusHost } from './status-context';
 	import { createArcaneTheme } from './theme';
-
-	const languageSupport = new Map(
-		Object.entries({
-			yaml: { validation: 'compose', extensions: () => [yaml()] },
-			env: { validation: 'env', extensions: () => [StreamLanguage.define(properties)] },
-			json: { validation: 'none', extensions: () => [json()] },
-			toml: { validation: 'none', extensions: () => [StreamLanguage.define(toml)] },
-			dockerfile: { validation: 'none', extensions: () => [StreamLanguage.define(dockerFile)] },
-			shell: { validation: 'none', extensions: () => [StreamLanguage.define(shell)] },
-			javascript: { validation: 'none', extensions: () => [javascript({ jsx: true })] },
-			typescript: { validation: 'none', extensions: () => [javascript({ typescript: true, jsx: true })] },
-			markdown: { validation: 'none', extensions: () => [markdown()] },
-			systemd: { validation: 'none', extensions: () => [StreamLanguage.define(properties)] },
-			plaintext: { validation: 'none', extensions: () => [] }
-		} satisfies Record<CodeLanguage, { validation: CodeValidationMode; extensions: () => Extension[] }>)
-	);
 
 	type ComposeAnalysisModule = typeof import('./analysis/compose-analysis');
 	type ComposeSchemaModule = typeof import('./analysis/compose-schema');
@@ -131,7 +164,7 @@
 
 	const storageKey = $derived(fileId ? `arcane.editor.state:${fileId}` : null);
 	const isDiffActive = $derived(Boolean(enableDiff && diffOpen && originalValue !== undefined));
-	const effectiveValidationMode = $derived(validationMode ?? languageSupport.get(language)?.validation);
+	const effectiveValidationMode = $derived(validationMode ?? languageValidation[language]);
 	const effectiveEditorContext = $derived({
 		envContent: editorContext?.envContent ?? '',
 		composeContents: editorContext?.composeContents ?? [],
@@ -720,11 +753,31 @@
 		plaintext: createEnterIndentKeymap('plaintext')
 	};
 
-	function getBasicLanguageExtension(lang: CodeLanguage): Extension[] {
-		return languageSupport.get(lang)?.extensions() as Extension[];
-	}
+	let activeLanguageExtensions = $state.raw<Extension[]>([]);
 
-	function getLanguageExtension(lang: CodeLanguage, options: { lightweight?: boolean } = {}): Extension[] {
+	$effect(() => {
+		const lang = language;
+		const cached = loadedLanguageExtensions.get(lang);
+		if (cached) {
+			activeLanguageExtensions = cached;
+			return;
+		}
+		activeLanguageExtensions = [];
+		let cancelled = false;
+		void loadLanguageExtension(lang).then((loaded) => {
+			if (!cancelled) {
+				activeLanguageExtensions = loaded;
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	function getLanguageExtension(
+		lang: CodeLanguage,
+		options: { lightweight?: boolean; languageExtensions?: Extension[] } = {}
+	): Extension[] {
 		const lightweight = options.lightweight === true;
 		const extensions: Extension[] = [
 			editorLifecycleExtension,
@@ -737,7 +790,7 @@
 			extensions.push(enterIndentKeymaps[lang]);
 		}
 
-		extensions.push(...(getBasicLanguageExtension(lang) ?? []));
+		extensions.push(...(options.languageExtensions ?? activeLanguageExtensions));
 		switch (lang) {
 			case 'yaml':
 				if (!readOnly && !lightweight && effectiveValidationMode === 'compose') {
@@ -775,7 +828,7 @@
 		{
 			getTheme: () => theme,
 			getLanguageExtension,
-			getReadonlyLanguageExtension: getBasicLanguageExtension,
+			loadLanguageExtension,
 			onValueChange: (nextValue) => {
 				value = nextValue;
 			},
