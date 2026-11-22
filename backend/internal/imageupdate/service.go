@@ -39,13 +39,13 @@ import (
 	"getarcane.dev/arcane/v3/internal/imageupdate/children/releasenotes"
 	"getarcane.dev/arcane/v3/internal/imageupdate/children/tags"
 	"getarcane.dev/arcane/v3/internal/notification"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/projects"
-	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
 )
@@ -54,11 +54,11 @@ type (
 	ImageUpdateService struct {
 		db                  *database.DB
 		settingsService     *settings.SettingsService
-		registryService     *registry.ContainerRegistryService
+		registryService     *registryInternal.ContainerRegistryService
 		dockerService       *docker.DockerClientService
 		eventService        *event.EventService
 		notificationService *notification.NotificationService
-		registryLimiter     *arcaneregistry.RegistryRateLimiter
+		registryLimiter     *registry.RegistryRateLimiter
 		tags                *tags.Service
 		releaseNotes        *releasenotes.Service
 		activityService     *activity.ActivityService
@@ -132,7 +132,7 @@ type (
 
 		DB                  *database.DB
 		SettingsService     *settings.SettingsService
-		RegistryService     *registry.ContainerRegistryService
+		RegistryService     *registryInternal.ContainerRegistryService
 		DockerService       *docker.DockerClientService
 		EventService        *event.EventService
 		NotificationService *notification.NotificationService
@@ -141,7 +141,7 @@ type (
 )
 
 const (
-	imageCheckConcurrency        = 10
+	imageCheckConcurrency        = 24
 	imageCheckAttempts           = 3
 	staleDigestRecordDeleteChunk = 500
 )
@@ -154,7 +154,7 @@ var (
 )
 
 func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
-	registryLimiter := arcaneregistry.NewRegistryRateLimiter()
+	registryLimiter := registry.NewRegistryRateLimiter()
 	return &ImageUpdateService{
 		db:                  p.DB,
 		settingsService:     p.SettingsService,
@@ -679,7 +679,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 		RepositoryDigests: repositoryDigests,
 		RepoTags:          inspectResponse.RepoTags,
 		IsLocalBuild:      imageref.IsLocalImage(inspectResponse.InspectResponse) || isLocalBuildImageRef(imageRef, composeBuildRefs),
-		Version:           strings.TrimSpace(kit.FromPtr(inspectResponse.Config).Labels[registry.OCIImageVersionLabel]),
+		Version:           strings.TrimSpace(kit.FromPtr(inspectResponse.Config).Labels[registryInternal.OCIImageVersionLabel]),
 		Created:           created,
 		Platform: v1.Platform{
 			OS:           inspectResponse.Os,
@@ -887,7 +887,7 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 	// A registry rate limit is transient, so keep the previous good result.
 	if hasExisting &&
 		strings.TrimSpace(result.Error) != "" &&
-		registry.IsRateLimitErrorString(result.Error) &&
+		registryInternal.IsRateLimitErrorString(result.Error) &&
 		strings.TrimSpace(kit.FromPtr(existingRecord.LastError)) == "" {
 		slog.DebugContext(tx.Statement.Context, "Preserving previous image update result; check hit a registry rate limit",
 			"imageId", imageID, "repository", repo, "tag", tag, "error", result.Error)
@@ -1144,25 +1144,69 @@ func (s *ImageUpdateService) MarkUpdatesAsNotified(ctx context.Context, records 
 	})
 }
 
-// groupImageRefs groups refs naming the same registry/repo:tag; digest-pinned and invalid refs stay alone.
+// groupImageRefs groups refs naming the same registry/repo:tag and round-robin interleaves them by registry; digest-pinned and invalid refs stay alone.
 func (s *ImageUpdateService) groupImageRefs(imageRefs []string) [][]string {
-	var groups [][]string
-	indexByNormalizedRef := make(map[string]int)
+	type bucket struct {
+		groups [][]string
+	}
+	type groupLoc struct {
+		bucket *bucket
+		index  int
+	}
+	var buckets []*bucket
+	bucketByRegistry := make(map[string]*bucket)
+	locByNormalizedRef := make(map[string]groupLoc)
+
+	addGroup := func(registryKey, imageRef string) *bucket {
+		b, ok := bucketByRegistry[registryKey]
+		if !ok {
+			b = &bucket{}
+			bucketByRegistry[registryKey] = b
+			buckets = append(buckets, b)
+		}
+		b.groups = append(b.groups, []string{imageRef})
+		return b
+	}
+
+	total := 0
 	for _, imageRef := range imageRefs {
 		parts := s.parseImageReference(imageRef)
 		if parts == nil || digestPinnedImageUpdateResult(imageRef, "", 0).IsPresent() {
-			groups = append(groups, []string{imageRef})
+			addGroup("", imageRef)
+			total++
 			continue
 		}
 		normalizedRef := strings.ToLower(fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag))
-		if index, exists := indexByNormalizedRef[normalizedRef]; exists {
-			groups[index] = append(groups[index], imageRef)
+		if loc, exists := locByNormalizedRef[normalizedRef]; exists {
+			loc.bucket.groups[loc.index] = append(loc.bucket.groups[loc.index], imageRef)
 			continue
 		}
-		indexByNormalizedRef[normalizedRef] = len(groups)
-		groups = append(groups, []string{imageRef})
+		b := addGroup(strings.ToLower(strings.TrimSpace(parts.Registry)), imageRef)
+		locByNormalizedRef[normalizedRef] = groupLoc{bucket: b, index: len(b.groups) - 1}
+		total++
 	}
-	return groups
+
+	if len(buckets) == 0 {
+		return nil
+	}
+	if len(buckets) == 1 {
+		return buckets[0].groups
+	}
+
+	interleaved := make([][]string, 0, total)
+	for round := 0; len(buckets) > 0; round++ {
+		remaining := buckets[:0]
+		for _, b := range buckets {
+			if round < len(b.groups) {
+				interleaved = append(interleaved, b.groups[round])
+				if round+1 < len(b.groups) {
+					remaining = append(remaining, b)
+				}
+			}
+		}
+		buckets = remaining
+	}
+	return interleaved
 }
 
 func (s *ImageUpdateService) checkSingleImageInBatch(
@@ -1196,9 +1240,18 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		}, nil, nil
 	}
 
+	if acquireErr := s.registryLimiter.Acquire(ctx, parts.Registry); acquireErr != nil {
+		return &types.ImageUpdateResponse{
+			Error:          acquireErr.Error(),
+			CheckTime:      time.Now(),
+			ResponseTimeMs: int(time.Since(start).Milliseconds()),
+			ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+		}, nil, acquireErr
+	}
 	registryCtx, registryCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 	digestResult, digestErr := s.registryService.InspectImageDigest(registryCtx, imageRef, externalCreds)
 	registryCancel()
+	s.registryLimiter.Release(parts.Registry)
 	if digestErr != nil {
 		return &types.ImageUpdateResponse{
 			Error:          digestErr.Error(),
@@ -1254,9 +1307,14 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		if slices.Contains(snapshot.AllDigests, digestResult.Digest) {
 			return nil
 		}
+		if acquireErr := s.registryLimiter.Acquire(ctx, parts.Registry); acquireErr != nil {
+			slog.WarnContext(ctx, "Failed to acquire registry slot for image config", "imageRef", imageRef, "digest", digestResult.Digest, "error", acquireErr)
+			return nil
+		}
+		defer s.registryLimiter.Release(parts.Registry)
 		configCtx, configCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 		defer configCancel()
-		cfg, cfgErr := s.registryService.ImageConfig(configCtx, fmt.Sprintf("%s/%s@%s", parts.Registry, parts.Repository, digestResult.Digest), registry.ImageConfigOptions{
+		cfg, cfgErr := s.registryService.ImageConfig(configCtx, fmt.Sprintf("%s/%s@%s", parts.Registry, parts.Repository, digestResult.Digest), registryInternal.ImageConfigOptions{
 			Platform:    snapshot.Platform,
 			Credentials: externalCreds,
 		})
@@ -1270,7 +1328,7 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 		HasUpdate:      !slices.Contains(snapshot.AllDigests, digestResult.Digest),
 		UpdateType:     UpdateTypeDigest,
 		CurrentVersion: cmp.Or(snapshot.Version, snapshot.Tag),
-		LatestVersion:  strings.TrimSpace(kit.FromPtr(latestConfig).Config.Labels[registry.OCIImageVersionLabel]),
+		LatestVersion:  strings.TrimSpace(kit.FromPtr(latestConfig).Config.Labels[registryInternal.OCIImageVersionLabel]),
 		CurrentDigest:  kit.Ternary(slices.Contains(snapshot.AllDigests, digestResult.Digest), digestResult.Digest, snapshot.PrimaryDigest),
 		LatestDigest:   digestResult.Digest,
 		CurrentCreated: mo.EmptyableToOption(snapshot.Created).ToPointer(),
@@ -1337,8 +1395,8 @@ func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activit
 func (s *ImageUpdateService) RegisterWorkflows(engine *flow.Engine) error {
 	checkWorkflow, err := engine.Define(flow.Definition{
 		Name:        "image-check",
-		Version:     3,
-		Fingerprint: "e508fae9a6d269cc6aaac6375643f761c459e18571aab0efb61d5c0efb94b16d",
+		Version:     4,
+		Fingerprint: "abcd647b2da905b6969c610b7156d1d2778f1a05b9ceabdc0f188aef36c67363",
 		Concurrency: imageCheckConcurrency,
 		Timeout:     timeouts.DefaultImageUpdateScan,
 		Activity: activity.StartActivityRequest{
@@ -1517,10 +1575,6 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 		s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), types.ActivityMessageLevelError, group[0]+": "+err.Error(), nil, "")
 		return nil, err
 	}
-	if err := s.registryLimiter.Acquire(ctx, parts.Registry); err != nil {
-		return nil, err
-	}
-	defer s.registryLimiter.Release(parts.Registry)
 	var buildRefs []string
 	if err := t.DecodeOutput("prepare", &buildRefs); err != nil {
 		return nil, err

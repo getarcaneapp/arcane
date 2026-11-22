@@ -23,10 +23,10 @@ import (
 	"kit.getarcane.app/updater/refs"
 
 	"getarcane.dev/arcane/v3/internal/docker"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/imageref"
-	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
+	"getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
 )
@@ -34,17 +34,18 @@ import (
 type (
 	// Service evaluates container tag policies against registry listings.
 	Service struct {
-		registry *registry.ContainerRegistryService
+		registry *registryInternal.ContainerRegistryService
 		docker   *docker.DockerClientService
 		settings *settings.SettingsService
-		limiter  *arcaneregistry.RegistryRateLimiter
+		limiter  *registry.RegistryRateLimiter
 	}
 
 	// tagRegistry shares listings and digests per scan so replicas cost one request and scan credentials skip service caches.
 	tagRegistry struct {
-		service     *registry.ContainerRegistryService
+		service     *registryInternal.ContainerRegistryService
 		docker      *docker.DockerClientService
 		settings    *settings.SettingsService
+		limiter     *registry.RegistryRateLimiter
 		tags        *scanRegistryMemo[[]string]
 		digests     *scanRegistryMemo[string]
 		credentials []types.ContainerRegistryCredential
@@ -65,10 +66,10 @@ const (
 )
 
 func NewService(
-	registryService *registry.ContainerRegistryService,
+	registryService *registryInternal.ContainerRegistryService,
 	dockerService *docker.DockerClientService,
 	settingsService *settings.SettingsService,
-	limiter *arcaneregistry.RegistryRateLimiter,
+	limiter *registry.RegistryRateLimiter,
 ) *Service {
 	return &Service{
 		registry: registryService,
@@ -93,10 +94,11 @@ func (s *Service) Check(
 		credentials: credentials,
 		docker:      s.docker,
 		settings:    s.settings,
+		limiter:     s.limiter,
 		tags: &scanRegistryMemo[[]string]{
 			values:      map[string][]string{},
 			failures:    map[string]error{},
-			keepFailure: func(err error) bool { return registry.IsRateLimitErrorString(err.Error()) },
+			keepFailure: func(err error) bool { return registryInternal.IsRateLimitErrorString(err.Error()) },
 		},
 		digests: &scanRegistryMemo[string]{
 			values:      map[string]string{},
@@ -206,8 +208,15 @@ func (m *scanRegistryMemo[V]) do(key string, fetch func() (V, error)) (V, error)
 }
 
 func (r tagRegistry) ListTags(ctx context.Context, imageRef string) ([]string, error) {
-	fetch := func() ([]string, error) { return r.service.ListImageTags(ctx, imageRef, r.credentials) }
 	parsed, err := refs.NormalizeReference(imageRef)
+	fetch := func() ([]string, error) {
+		registryHost := kit.Ternary(err == nil, parsed.RegistryHost, "")
+		if acquireErr := r.limiter.Acquire(ctx, registryHost); acquireErr != nil {
+			return nil, acquireErr
+		}
+		defer r.limiter.Release(registryHost)
+		return r.service.ListImageTags(ctx, imageRef, r.credentials)
+	}
 	if err != nil {
 		return fetch()
 	}
@@ -220,19 +229,24 @@ func (r tagRegistry) ListTags(ctx context.Context, imageRef string) ([]string, e
 }
 
 func (r tagRegistry) ImageDigest(ctx context.Context, imageRef string) (string, error) {
+	parsed, err := refs.NormalizeReference(imageRef)
 	fetch := func() (string, error) {
+		registryHost := kit.Ternary(err == nil, parsed.RegistryHost, "")
+		if acquireErr := r.limiter.Acquire(ctx, registryHost); acquireErr != nil {
+			return "", acquireErr
+		}
+		defer r.limiter.Release(registryHost)
 		digestCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(r.settings.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 		defer cancel()
-		result, err := r.service.InspectImageDigest(digestCtx, imageRef, r.credentials)
-		if err != nil {
-			return "", err
+		result, inspectErr := r.service.InspectImageDigest(digestCtx, imageRef, r.credentials)
+		if inspectErr != nil {
+			return "", inspectErr
 		}
 		if result == nil {
 			return "", errors.New("registry returned no digest")
 		}
 		return result.Digest, nil
 	}
-	parsed, err := refs.NormalizeReference(imageRef)
 	if err != nil {
 		return fetch()
 	}
@@ -250,14 +264,9 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 			ResponseTimeMs: int(time.Since(start).Milliseconds()),
 		}
 	}
-	parsed, err := refs.NormalizeReference(cnt.Image)
-	if err != nil {
+	if _, err := refs.NormalizeReference(cnt.Image); err != nil {
 		return failed(err)
 	}
-	if acquireErr := s.limiter.Acquire(ctx, parsed.RegistryHost); acquireErr != nil {
-		return failed(acquireErr)
-	}
-	defer s.limiter.Release(parsed.RegistryHost)
 	checkCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settings.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
 	defer cancel()
 	check, err := engine.CheckContainerUpdate(checkCtx, cnt.ID)
