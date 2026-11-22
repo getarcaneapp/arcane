@@ -187,14 +187,35 @@ func TestCheckPlanVolumesRejectsChangedVolumes(t *testing.T) {
 	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: existingVolumes("web_data", "web_nfs", "shared")})
 	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
 	require.NoError(t, err)
-	require.NoError(t, checkPlanVolumes(testProject(), p))
+	require.NoError(t, service.checkPlanVolumes(t.Context(), testProject(), p))
 
 	// A compose edit and deploy while the backup waited moved the data volume to a new name.
 	changed := testProject()
 	changed.Volumes["data"] = composeTypes.VolumeConfig{Name: "web_data_v2"}
-	err = checkPlanVolumes(changed, p)
+	err = service.checkPlanVolumes(t.Context(), changed, p)
 	require.ErrorIs(t, err, common.ErrConflict)
 	require.ErrorContains(t, err, "changed after the backup was queued")
+
+	// Or made it external.
+	external := testProject()
+	external.Volumes["data"] = composeTypes.VolumeConfig{Name: "web_data", External: true}
+	err = service.checkPlanVolumes(t.Context(), external, p)
+	require.ErrorIs(t, err, common.ErrConflict)
+}
+
+func TestCheckPlanVolumesKeepsVolumesWithDockerDriverOptions(t *testing.T) {
+	// Compose names a plain volume, but the existing Docker volume binds a host directory.
+	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
+		if name == "web_data" {
+			return types.Volume{Name: name, Driver: "local", Options: map[string]string{"type": "none", "o": "bind", "device": "/srv/web"}}, true, nil
+		}
+		return types.Volume{Name: name}, slices.Contains([]string{"web_nfs", "shared"}, name), nil
+	}})
+	p, err := service.resolvePlan(t.Context(), testProject(), types.CreateProjectBackupRequest{})
+	require.NoError(t, err)
+	require.NotContains(t, p.volumeNames(), "web_data")
+
+	require.NoError(t, service.checkPlanVolumes(t.Context(), testProject(), p))
 }
 
 func TestBackupManifestKind(t *testing.T) {
