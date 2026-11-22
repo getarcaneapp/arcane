@@ -161,13 +161,17 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 		case !local:
 			kind = types.ProjectVolumeDriverOpts
 		}
-		classified = append(classified, types.ProjectVolume{
-			Labels:   config.Labels,
-			Key:      key,
-			Name:     config.Name,
-			Kind:     kind,
-			Driver:   config.Driver,
-			Included: local,
+		classified = append(classified, types.ProjectVolume{ //exhaustruct:enforce
+			Labels:       config.Labels,
+			DockerLabels: nil,
+			Key:          key,
+			Name:         config.Name,
+			Kind:         kind,
+			Driver:       config.Driver,
+			Archive:      "",
+			Included:     local,
+			Missing:      false,
+			InUse:        false,
 		})
 	}
 	return classified
@@ -192,15 +196,17 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 			kind = types.ProjectVolumeDriverOpts
 		}
 		inspected[volume.Name] = existing
-		resolved = append(resolved, types.ProjectVolume{
-			Labels:   volume.Labels,
-			Key:      volume.Key,
-			Name:     volume.Name,
-			Kind:     kind,
-			Driver:   volume.Driver,
-			Included: included,
-			Missing:  !exists,
-			InUse:    included && opts.InUse[volume.Name],
+		resolved = append(resolved, types.ProjectVolume{ //exhaustruct:enforce
+			Labels:       volume.Labels,
+			DockerLabels: nil,
+			Key:          volume.Key,
+			Name:         volume.Name,
+			Kind:         kind,
+			Driver:       volume.Driver,
+			Archive:      "",
+			Included:     included,
+			Missing:      !exists,
+			InUse:        included && opts.InUse[volume.Name],
 		})
 	}
 	return resolved, inspected, nil

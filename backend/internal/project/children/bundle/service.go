@@ -93,6 +93,8 @@ type (
 	}
 )
 
+var errVolumeRestoreForbidden = errors.New("permission denied: restoring the bundle's volumes requires volumes:create and volumes:upload")
+
 func New(deps Dependencies) *Service {
 	return &Service{deps: deps}
 }
@@ -106,7 +108,7 @@ func (s *Service) Options(ctx context.Context, projectID string) (types.ProjectE
 	if err != nil {
 		return types.ProjectExportOptions{}, err
 	}
-	return types.ProjectExportOptions{
+	return types.ProjectExportOptions{ //exhaustruct:enforce
 		Volumes: state.volumes,
 		Running: state.active,
 	}, nil
@@ -211,12 +213,17 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 	consistent := !state.active || request.StopProject
 	for _, volume := range state.volumes {
 		if !slices.Contains(request.Volumes, volume.Key) {
-			manifestVolumes = append(manifestVolumes, types.ProjectVolume{
-				Labels: volume.Labels,
-				Key:    volume.Key,
-				Name:   volume.Name,
-				Kind:   volume.Kind,
-				Driver: volume.Driver,
+			manifestVolumes = append(manifestVolumes, types.ProjectVolume{ //exhaustruct:enforce
+				Labels:       volume.Labels,
+				DockerLabels: nil,
+				Key:          volume.Key,
+				Name:         volume.Name,
+				Kind:         volume.Kind,
+				Driver:       volume.Driver,
+				Archive:      "",
+				Included:     false,
+				Missing:      false,
+				InUse:        false,
 			})
 			continue
 		}
@@ -227,7 +234,7 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 				"volumes %s and %s both name the Docker volume %s but are %s and %s volumes", first.Key, volume.Key, volume.Name, first.Kind, volume.Kind,
 			))
 		}
-		entry := types.ProjectVolume{
+		entry := types.ProjectVolume{ //exhaustruct:enforce
 			Labels:       volume.Labels,
 			DockerLabels: kit.Ternary(volume.Kind == types.ProjectVolumeExternal, state.docker[volume.Name].Labels, nil),
 			Key:          volume.Key,
@@ -236,6 +243,7 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 			Driver:       volume.Driver,
 			Archive:      kit.Ternary(shared, first.Archive, projects.ProjectBundleVolumeArchive(volume.Key)),
 			Included:     true,
+			Missing:      false,
 			InUse:        volume.InUse,
 		}
 		manifestVolumes = append(manifestVolumes, entry)
@@ -243,11 +251,11 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 			archived[volume.Name] = entry
 		}
 	}
-	return types.ProjectManifest{
+	return types.ProjectManifest{ //exhaustruct:enforce
 		CreatedAt:     time.Now().UTC(),
 		Kind:          types.ProjectManifestKindExport,
 		ArcaneVersion: config.Version,
-		Project: types.ProjectManifestProject{
+		Project: types.ProjectManifestProject{ //exhaustruct:enforce
 			ID:          project.ID,
 			Name:        project.Name,
 			ComposeName: project.ComposeName,
@@ -348,8 +356,10 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 		return "", err
 	}
 	manifest, bundled := projects.ReadProjectBundleManifest(bytes.NewReader(head))
-	if bundled && !opts.RestoreVolumes && slices.ContainsFunc(manifest.Volumes, func(volume types.ProjectVolume) bool { return volume.Included }) {
-		return "", common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the bundle's volumes requires volumes:create and volumes:upload"))
+	if bundled && !opts.RestoreVolumes && slices.ContainsFunc(manifest.Volumes, func(volume types.ProjectVolume) bool {
+		return volume.Included
+	}) {
+		return "", common.Classify(common.ErrForbidden, errVolumeRestoreForbidden)
 	}
 	if bundled || opts.Request.Start {
 		composeName := projects.NormalizeProjectName(opts.Request.Name)
@@ -361,7 +371,7 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 			return "", common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; import the project under another name", composeName))
 		}
 	}
-	request := types.ImportProjectArchive{
+	request := types.ImportProjectArchive{ //exhaustruct:enforce
 		UploadID:  opts.Request.UploadID,
 		Name:      opts.Request.Name,
 		ProjectID: cmp.Or(opts.Request.ProjectID, uuid.New().String()),
@@ -410,7 +420,7 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 			}
 		}
 		if len(included) > 0 && !opts.RestoreVolumes {
-			return common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the bundle's volumes requires volumes:create and volumes:upload"))
+			return common.Classify(common.ErrForbidden, errVolumeRestoreForbidden)
 		}
 		files, importErr := s.deps.Uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.ProjectBundleProject, size, body)
 		if importErr != nil {
@@ -423,7 +433,9 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 			Tags:      opts.Request.Tags,
 		}, opts.User)
 		if importErr != nil {
-			_ = s.deps.Uploads.DeleteSession(context.WithoutCancel(ctx), files.Kind, files.ID)
+			if deleteErr := s.deps.Uploads.DeleteSession(context.WithoutCancel(ctx), files.Kind, files.ID); deleteErr != nil && !errors.Is(deleteErr, common.ErrUploadSessionNotFound) {
+				return errors.Join(importErr, fmt.Errorf("clean up staged project archive: %w", deleteErr))
+			}
 			return importErr
 		}
 		target, importErr = s.importTarget(ctx, projectID, included)
@@ -441,7 +453,7 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 			User: opts.User,
 			Body: body,
 			Name: volume.Name,
-			Compose: types.ComposeVolumeTarget{
+			Compose: types.ComposeVolumeTarget{ //exhaustruct:enforce
 				Labels:   kit.Ternary(external, included[index].DockerLabels, volume.Labels),
 				Project:  target.composeName,
 				Key:      volume.Key,
@@ -525,10 +537,8 @@ func (s *Service) checkVolumeTargets(ctx context.Context, included, targets, cla
 		}
 		byName[target.Name] = index
 		restores[included[index].Archive] = index
-		if !checked[target.Name] {
-			checked[target.Name] = true
-			checkNames = append(checkNames, target.Name)
-		}
+		checked[target.Name] = true
+		checkNames = append(checkNames, target.Name)
 	}
 	for _, volume := range classified {
 		if volume.Kind != types.ProjectVolumeNamed || checked[volume.Name] {
@@ -562,8 +572,11 @@ func (s *Service) restoreVolume(ctx context.Context, restore volumeRestore) erro
 		ComposeVolume: &restore.Compose,
 		UploadID:      session.ID,
 	}, restore.User); err != nil {
-		_ = s.deps.Uploads.DeleteSession(context.WithoutCancel(ctx), session.Kind, session.ID)
-		return fmt.Errorf("restore volume %s: %w", restore.Name, err)
+		restoreErr := fmt.Errorf("restore volume %s: %w", restore.Name, err)
+		if deleteErr := s.deps.Uploads.DeleteSession(context.WithoutCancel(ctx), session.Kind, session.ID); deleteErr != nil && !errors.Is(deleteErr, common.ErrUploadSessionNotFound) {
+			return errors.Join(restoreErr, fmt.Errorf("clean up staged volume archive: %w", deleteErr))
+		}
+		return restoreErr
 	}
 	return nil
 }
