@@ -347,7 +347,10 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 	if err != nil {
 		return "", err
 	}
-	bundled := projects.IsProjectBundle(bytes.NewReader(head))
+	manifest, bundled := projects.ReadProjectBundleManifest(bytes.NewReader(head))
+	if bundled && !opts.RestoreVolumes && slices.ContainsFunc(manifest.Volumes, func(volume types.ProjectVolume) bool { return volume.Included }) {
+		return "", common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the bundle's volumes requires volumes:create and volumes:upload"))
+	}
 	if bundled || opts.Request.Start {
 		composeName := projects.NormalizeProjectName(opts.Request.Name)
 		stackExists, stackErr := s.deps.ComposeProjectInUse(ctx, composeName)
@@ -420,6 +423,7 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 			Tags:      opts.Request.Tags,
 		}, opts.User)
 		if importErr != nil {
+			_ = s.deps.Uploads.DeleteSession(context.WithoutCancel(ctx), files.Kind, files.ID)
 			return importErr
 		}
 		target, importErr = s.importTarget(ctx, projectID, included)
@@ -473,8 +477,9 @@ func (s *Service) importTarget(ctx context.Context, projectID string, included [
 	if imported.ComposeName == "" {
 		return importTarget{}, fmt.Errorf("the compose files of the imported project %s cannot be loaded", imported.Name)
 	}
+	classified := projects.ClassifyProjectVolumes(imported)
 	targets := map[string]types.ProjectVolume{}
-	for _, volume := range projects.ClassifyProjectVolumes(imported) {
+	for _, volume := range classified {
 		targets[volume.Key] = volume
 	}
 	resolved := make([]types.ProjectVolume, 0, len(included))
@@ -485,7 +490,7 @@ func (s *Service) importTarget(ctx context.Context, projectID string, included [
 		}
 		resolved = append(resolved, target)
 	}
-	restores, err := s.checkVolumeTargets(ctx, included, resolved)
+	restores, err := s.checkVolumeTargets(ctx, included, resolved, classified)
 	if err != nil {
 		return importTarget{}, err
 	}
@@ -496,10 +501,11 @@ func (s *Service) importTarget(ctx context.Context, projectID string, included [
 	}, nil
 }
 
-func (s *Service) checkVolumeTargets(ctx context.Context, included, targets []types.ProjectVolume) (map[string]int, error) {
+func (s *Service) checkVolumeTargets(ctx context.Context, included, targets, classified []types.ProjectVolume) (map[string]int, error) {
 	byName := map[string]int{}
 	restores := map[string]int{}
-	var conflicts []string
+	checked := map[string]bool{}
+	var checkNames []string
 	for index, target := range targets {
 		if first, shared := byName[target.Name]; shared {
 			switch {
@@ -519,12 +525,26 @@ func (s *Service) checkVolumeTargets(ctx context.Context, included, targets []ty
 		}
 		byName[target.Name] = index
 		restores[included[index].Archive] = index
-		_, exists, err := s.deps.Volume(ctx, target.Name)
+		if !checked[target.Name] {
+			checked[target.Name] = true
+			checkNames = append(checkNames, target.Name)
+		}
+	}
+	for _, volume := range classified {
+		if volume.Kind != types.ProjectVolumeNamed || checked[volume.Name] {
+			continue
+		}
+		checked[volume.Name] = true
+		checkNames = append(checkNames, volume.Name)
+	}
+	var conflicts []string
+	for _, name := range checkNames {
+		_, exists, err := s.deps.Volume(ctx, name)
 		if err != nil {
-			return nil, fmt.Errorf("inspect volume %s: %w", target.Name, err)
+			return nil, fmt.Errorf("inspect volume %s: %w", name, err)
 		}
 		if exists {
-			conflicts = append(conflicts, target.Name)
+			conflicts = append(conflicts, name)
 		}
 	}
 	if len(conflicts) > 0 {
@@ -542,6 +562,7 @@ func (s *Service) restoreVolume(ctx context.Context, restore volumeRestore) erro
 		ComposeVolume: &restore.Compose,
 		UploadID:      session.ID,
 	}, restore.User); err != nil {
+		_ = s.deps.Uploads.DeleteSession(context.WithoutCancel(ctx), session.Kind, session.ID)
 		return fmt.Errorf("restore volume %s: %w", restore.Name, err)
 	}
 	return nil

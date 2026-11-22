@@ -190,7 +190,8 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	first, err := tar.NewReader(gzipReader).Next()
 	require.NoError(t, err)
 	assert.Equal(t, ProjectBundleManifest, first.Name)
-	assert.True(t, IsProjectBundle(bytes.NewReader(bundle.Bytes())))
+	_, ok := ReadProjectBundleManifest(bytes.NewReader(bundle.Bytes()))
+	assert.True(t, ok)
 
 	var visited []string
 	got, ok, err := ReadProjectBundle(bytes.NewReader(bundle.Bytes()), func(_ types.ProjectManifest, name string, size int64, body io.Reader) error {
@@ -207,7 +208,8 @@ func TestProjectBundleRoundTrip(t *testing.T) {
 	assert.Equal(t, []string{ProjectBundleProject, dataArchive, "volumes/other.tar.gz"}, visited)
 
 	plain := buildTestArchive(t, []archiveTestEntry{{header: tar.Header{Typeflag: tar.TypeReg, Name: "compose.yaml", Mode: 0o644}, body: "services: {}\n"}})
-	assert.False(t, IsProjectBundle(plain))
+	_, ok = ReadProjectBundleManifest(plain)
+	assert.False(t, ok)
 }
 
 func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
@@ -254,7 +256,8 @@ func TestReadProjectBundleRejectsInvalidBundles(t *testing.T) {
 			_, ok, readErr := ReadProjectBundle(bytes.NewReader(archive), nil)
 			assert.True(t, ok)
 			require.ErrorContains(t, readErr, tt.wantErr)
-			assert.True(t, IsProjectBundle(bytes.NewReader(archive)))
+			_, peeked := ReadProjectBundleManifest(bytes.NewReader(archive))
+			assert.True(t, peeked)
 		})
 	}
 }

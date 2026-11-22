@@ -58,7 +58,6 @@ type (
 	ProjectVolume struct {
 		Labels       map[string]string `json:"labels,omitempty" doc:"Compose volume labels"`
 		DockerLabels map[string]string `json:"dockerLabels,omitempty" doc:"Docker labels of an included external volume, which an import recreates it with"`
-		DriverOpts   map[string]string `json:"driverOpts,omitempty" doc:"Compose volume driver options"`
 		Key          string            `json:"key" doc:"Volume key in the compose file"`
 		Name         string            `json:"name" doc:"Docker volume name"`
 		Kind         ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named and local external volumes hold Docker-managed data; driverOpts and other external volumes do not"`
