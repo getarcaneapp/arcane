@@ -15,6 +15,7 @@ type (
 		Workflow        *Workflow
 		ScheduleFn      func(ctx context.Context) string
 		ShouldRunFn     func(ctx context.Context) bool
+		SkipRunFn       func(ctx context.Context) string
 		FallbackFn      func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error)
 		ValidateRetryFn func(ctx context.Context, run types.SchedulerRun) error
 		JobName         string
@@ -33,6 +34,11 @@ func (j *Job) ShouldSchedule(ctx context.Context) bool {
 func (j *Job) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	if !j.ShouldSchedule(ctx) {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
+	}
+	if j.SkipRunFn != nil {
+		if message := j.SkipRunFn(ctx); message != "" {
+			return types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: message}, nil
+		}
 	}
 	return j.Engine.Run(ctx, j.Workflow, j.Payload, j.Activity, nil)
 }
