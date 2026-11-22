@@ -2033,6 +2033,12 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 			return cached.result, cached.err
 		}
 		shared, _, _ := flight.Do(cacheKey, func() (any, error) {
+			mu.Lock()
+			existing, hit := memo[cacheKey]
+			mu.Unlock()
+			if hit {
+				return existing, nil
+			}
 			if acquireErr := s.registryLimiter.Acquire(checkCtx, registryHost); acquireErr != nil {
 				return cachedCheck{err: acquireErr}, nil
 			}

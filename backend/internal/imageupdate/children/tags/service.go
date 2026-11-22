@@ -215,7 +215,9 @@ func (r tagRegistry) ListTags(ctx context.Context, imageRef string) ([]string, e
 			return nil, acquireErr
 		}
 		defer r.limiter.Release(registryHost)
-		return r.service.ListImageTags(ctx, imageRef, r.credentials)
+		listCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(r.settings.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
+		defer cancel()
+		return r.service.ListImageTags(listCtx, imageRef, r.credentials)
 	}
 	if err != nil {
 		return fetch()
@@ -267,9 +269,7 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 	if _, err := refs.NormalizeReference(cnt.Image); err != nil {
 		return failed(err)
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settings.GetSettingsConfig().RegistryTagTimeout.AsInt(), timeouts.DefaultRegistryTags))
-	defer cancel()
-	check, err := engine.CheckContainerUpdate(checkCtx, cnt.ID)
+	check, err := engine.CheckContainerUpdate(ctx, cnt.ID)
 	if err != nil {
 		return failed(err)
 	}
@@ -278,7 +278,7 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 		if !check.UpdateAvailable || check.TargetDigest != "" {
 			return check.TargetDigest
 		}
-		resolved, resolveErr := digests.ImageDigest(checkCtx, check.TargetRef)
+		resolved, resolveErr := digests.ImageDigest(ctx, check.TargetRef)
 		if resolveErr != nil {
 			slog.DebugContext(ctx, "Could not resolve tag update digest", "containerId", cnt.ID, "targetRef", check.TargetRef, "error", resolveErr)
 		}
