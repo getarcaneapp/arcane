@@ -337,8 +337,9 @@ func (s *GitOpsSyncService) registerSyncJob(ctx context.Context, syncID, environ
 			return schedule
 		},
 		SkipRunFn: func(runCtx context.Context) string {
+			run, _ := jobcontext.Run(runCtx)
 			syncRecord, err := s.GetSyncByID(runCtx, environmentID, syncID)
-			if err != nil || !s.sync.Unchanged(runCtx, syncRecord) {
+			if err != nil || len(run.Outcome.Targets) > 0 || !s.sync.Unchanged(runCtx, syncRecord) {
 				return ""
 			}
 			return "Branch " + syncRecord.Branch + " is unchanged at " + kit.FromPtr(syncRecord.LastSyncCommit)
@@ -778,7 +779,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 
 	updates := make(map[string]any)
-	changed := []bool{change.Submitted["envContent"] && kit.FromPtr(envContent) != kit.FromPtr(syncRecord.EnvContent)}
+	changed := []bool{kit.FromPtr(kit.Ternary(change.Submitted["envContent"], envContent, syncRecord.EnvContent)) != kit.FromPtr(syncRecord.EnvContent)}
 	for field, update := range map[string]struct {
 		value   any
 		current any
@@ -844,7 +845,12 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 		updates["pre_deploy_network_mode"] = cmp.Or(strings.TrimSpace(*lifecycleCfg.networkMode), "none")
 		changed = append(changed, updates["pre_deploy_network_mode"] != syncRecord.PreDeployNetworkMode)
 	}
-	if slices.Contains(changed, true) && kit.FromPtr(syncRecord.LastSyncStatus) == "success" && !slices.Contains(projectpkg.GitOpsPushModes, syncRecord.Mode) {
+	if slices.Contains(changed, true) && !slices.Contains(projectpkg.GitOpsPushModes, syncRecord.Mode) {
+		lease, leaseErr := s.jobs.Acquire(ctx, syncRecord.ID)
+		if leaseErr != nil {
+			return nil, fmt.Errorf("failed to wait for the running GitOps sync: %w", leaseErr)
+		}
+		defer lease.Release(ctx)
 		updates["last_sync_status"] = "pending"
 	}
 
