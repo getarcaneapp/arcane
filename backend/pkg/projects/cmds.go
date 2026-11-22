@@ -60,6 +60,21 @@ func ComposeRestart(ctx context.Context, target types.ComposeTarget) error {
 	})
 }
 
+// ComposeStart starts the services' existing containers, leaving their dependencies as they are.
+func ComposeStart(ctx context.Context, target types.ComposeTarget) error {
+	selected, err := SelectServices(target.Project, target.Services, composeTypes.IgnoreDependencies)
+	if err != nil {
+		return err
+	}
+	composeCtx, c, done, err := openCompose(ctx, ClientConfig{DockerHost: target.DockerHost})
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	return c.svc.Start(composeCtx, selected.Name, api.StartOptions{Project: selected})
+}
+
 func ComposeStop(ctx context.Context, target types.ComposeTarget) error {
 	if len(target.Services) == 0 {
 		return nil

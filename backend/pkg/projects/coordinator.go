@@ -24,6 +24,15 @@ type (
 	composeCoordinator struct {
 		commands types.ComposeCommands
 	}
+
+	deployImagePlan struct {
+		serviceImages   map[string]string
+		serviceUpdated  map[string]bool
+		buildersByImage map[string]string
+		builtImages     map[string]struct{}
+		decisions       map[string]DeployImageDecision
+		orderedServices []string
+	}
 )
 
 func NewCoordinator(commands types.ComposeCommands) types.ComposeCoordinator {
@@ -161,7 +170,7 @@ func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.C
 	return nil
 }
 
-func SelectServices(model *composeTypes.Project, services []string) (*composeTypes.Project, error) {
+func SelectServices(model *composeTypes.Project, services []string, options ...composeTypes.DependencyOption) (*composeTypes.Project, error) {
 	if model == nil {
 		return nil, errors.New("compose project is nil")
 	}
@@ -169,7 +178,7 @@ func SelectServices(model *composeTypes.Project, services []string) (*composeTyp
 	if err != nil {
 		return nil, err
 	}
-	selected, err := enabled.WithSelectedServices(services)
+	selected, err := enabled.WithSelectedServices(services, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -289,56 +298,167 @@ func (c *composeCoordinator) PrepareImagesForDeploy(
 		return nil
 	}
 
-	for name, svc := range project.Services {
-		localSvc, imageName, updated := PrepareDeployServiceConfig(projectID, project.Name, name, svc)
+	plan := buildDeployImagePlan(projectID, project)
+	for _, name := range plan.orderedServices {
+		if err := c.prepareDeployServicePrimaryImage(ctx, projectID, project, name, plan, pullPolicyOverride, build, progressWriter, operations); err != nil {
+			return err
+		}
+	}
+	for _, name := range plan.orderedServices {
+		if err := c.prepareDeployServiceDependentImages(ctx, projectID, project, name, plan, progressWriter, operations); err != nil {
+			return err
+		}
+	}
+	if err := c.prepareDeployJobImages(ctx, projectID, project, plan, pullPolicyOverride, progressWriter, operations); err != nil {
+		return err
+	}
+	markBuiltServiceImagesLocal(project, plan.builtImages)
+	return nil
+}
+
+func buildDeployImagePlan(projectID string, project *composeTypes.Project) *deployImagePlan {
+	serviceNames := slices.Sorted(maps.Keys(project.Services))
+	buildServices := make([]string, 0, len(serviceNames))
+	nonBuildServices := make([]string, 0, len(serviceNames))
+	serviceImages := make(map[string]string, len(serviceNames))
+	serviceUpdated := make(map[string]bool, len(serviceNames))
+	buildersByImage := map[string]string{}
+
+	for _, name := range serviceNames {
+		localSvc, imageName, updated := PrepareDeployServiceConfig(projectID, project.Name, name, project.Services[name])
 		if updated {
 			project.Services[name] = localSvc
 		}
-
-		if imageName == "" {
+		serviceImages[name] = imageName
+		serviceUpdated[name] = updated
+		if localSvc.Build == nil {
+			nonBuildServices = append(nonBuildServices, name)
 			continue
 		}
-
-		decision := DecideDeployImageAction(localSvc, pullPolicyOverride)
-		serviceDecision := decision
-		switch {
-		case build && localSvc.Build != nil:
-			serviceDecision = DeployImageDecision{Build: true}
-		case updated && !decision.Build:
-			exists, existsErr := operations.Exists(ctx, imageName)
-			if existsErr != nil {
-				slog.WarnContext(ctx, "failed to check local image existence", "image", imageName, "error", existsErr)
-			}
-			serviceDecision = DeployImageDecision{Build: !exists}
-		}
-		if err := c.ensureDeployServiceImageReady(ctx, projectID, project, name, localSvc, imageName, serviceDecision, progressWriter, operations); err != nil {
-			return err
-		}
-
-		// pre_start hook images and type:image volume sources cannot be built.
-		dependentDecision := DeployImageDecision{PullIfMissing: true}
-		switch {
-		case decision.RequireLocalOnly:
-			dependentDecision = DeployImageDecision{RequireLocalOnly: true}
-		case decision.PullAlways:
-			dependentDecision = DeployImageDecision{PullAlways: true}
-		case decision.PullIfStale:
-			dependentDecision = DeployImageDecision{PullIfStale: true, StaleAfter: decision.StaleAfter}
-		}
-		dependentImages := api.GetDependentImages(localSvc, project.Name)
-		for _, vol := range localSvc.Volumes {
-			if vol.Type == composeTypes.VolumeTypeImage && strings.TrimSpace(vol.Source) != "" {
-				dependentImages = append(dependentImages, strings.TrimSpace(vol.Source))
-			}
-		}
-		for _, img := range dependentImages {
-			if err := c.ensureDeployServiceImageReady(ctx, projectID, project, name, localSvc, img, dependentDecision, progressWriter, operations); err != nil {
-				return err
+		buildServices = append(buildServices, name)
+		for _, tag := range append([]string{imageName}, localSvc.Build.Tags...) {
+			if key := canonicalImageRef(tag); key != "" {
+				if _, exists := buildersByImage[key]; !exists {
+					buildersByImage[key] = name
+				}
 			}
 		}
 	}
 
-	for name, job := range project.Jobs {
+	return &deployImagePlan{
+		serviceImages:   serviceImages,
+		serviceUpdated:  serviceUpdated,
+		buildersByImage: buildersByImage,
+		builtImages:     map[string]struct{}{},
+		decisions:       make(map[string]DeployImageDecision, len(serviceNames)),
+		// Prepare build-enabled services first so shared images exist before reuse.
+		orderedServices: slices.Concat(buildServices, nonBuildServices),
+	}
+}
+
+func (c *composeCoordinator) prepareDeployServicePrimaryImage(
+	ctx context.Context,
+	projectID string,
+	project *composeTypes.Project,
+	name string,
+	plan *deployImagePlan,
+	pullPolicyOverride string,
+	build bool,
+	progressWriter io.Writer,
+	operations types.ComposeImageOperations,
+) error {
+	imageName := plan.serviceImages[name]
+	if imageName == "" {
+		return nil
+	}
+
+	localSvc := project.Services[name]
+	decision := DecideDeployImageAction(localSvc, pullPolicyOverride)
+	plan.decisions[name] = decision
+	serviceDecision := decision
+	switch {
+	case build && localSvc.Build != nil:
+		serviceDecision = DeployImageDecision{Build: true}
+	case plan.serviceUpdated[name] && !decision.Build:
+		exists, existsErr := operations.Exists(ctx, imageName)
+		if existsErr != nil {
+			slog.WarnContext(ctx, "failed to check local image existence", "image", imageName, "error", existsErr)
+		}
+		serviceDecision = DeployImageDecision{Build: !exists}
+	}
+
+	var fallbackService string
+	switch {
+	case localSvc.Build != nil && serviceDecision.FallbackBuildOnPullFail:
+		fallbackService = name
+	case localSvc.Build == nil && !serviceDecision.RequireLocalOnly:
+		fallbackService = plan.buildersByImage[canonicalImageRef(imageName)]
+	}
+
+	return c.ensureDeployServiceImageReady(
+		ctx, projectID, project, name, imageName, serviceDecision,
+		fallbackService, plan.builtImages, progressWriter, operations,
+	)
+}
+
+func (c *composeCoordinator) prepareDeployServiceDependentImages(
+	ctx context.Context,
+	projectID string,
+	project *composeTypes.Project,
+	name string,
+	plan *deployImagePlan,
+	progressWriter io.Writer,
+	operations types.ComposeImageOperations,
+) error {
+	decision, ok := plan.decisions[name]
+	if !ok {
+		return nil
+	}
+
+	localSvc := project.Services[name]
+	// pre_start hook images and type:image volume sources cannot be built by the parent service.
+	dependentDecision := DeployImageDecision{PullIfMissing: true}
+	switch {
+	case decision.RequireLocalOnly:
+		dependentDecision = DeployImageDecision{RequireLocalOnly: true}
+	case decision.PullAlways:
+		dependentDecision = DeployImageDecision{PullAlways: true}
+	case decision.PullIfStale:
+		dependentDecision = DeployImageDecision{PullIfStale: true, StaleAfter: decision.StaleAfter}
+	}
+
+	dependentImages := api.GetDependentImages(localSvc, project.Name)
+	for _, vol := range localSvc.Volumes {
+		if vol.Type == composeTypes.VolumeTypeImage && strings.TrimSpace(vol.Source) != "" {
+			dependentImages = append(dependentImages, strings.TrimSpace(vol.Source))
+		}
+	}
+	for _, img := range dependentImages {
+		var fallbackService string
+		if !dependentDecision.RequireLocalOnly {
+			fallbackService = plan.buildersByImage[canonicalImageRef(img)]
+		}
+		if err := c.ensureDeployServiceImageReady(
+			ctx, projectID, project, name, img, dependentDecision,
+			fallbackService, plan.builtImages, progressWriter, operations,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *composeCoordinator) prepareDeployJobImages(
+	ctx context.Context,
+	projectID string,
+	project *composeTypes.Project,
+	plan *deployImagePlan,
+	pullPolicyOverride string,
+	progressWriter io.Writer,
+	operations types.ComposeImageOperations,
+) error {
+	for _, name := range slices.Sorted(maps.Keys(project.Jobs)) {
+		job := project.Jobs[name]
 		if job.Build != nil {
 			continue
 		}
@@ -353,13 +473,20 @@ func (c *composeCoordinator) PrepareImagesForDeploy(
 				jobImages = append(jobImages, vol.Source)
 			}
 		}
+		jobDecision := DecideDeployImageAction(jobSvc, pullPolicyOverride)
 		for _, img := range kit.TrimNonEmpty(jobImages) {
-			if err := c.ensureDeployServiceImageReady(ctx, projectID, project, name, jobSvc, img, DecideDeployImageAction(jobSvc, pullPolicyOverride), progressWriter, operations); err != nil {
+			var fallbackService string
+			if !jobDecision.RequireLocalOnly {
+				fallbackService = plan.buildersByImage[canonicalImageRef(img)]
+			}
+			if err := c.ensureDeployServiceImageReady(
+				ctx, projectID, project, name, img, jobDecision,
+				fallbackService, plan.builtImages, progressWriter, operations,
+			); err != nil {
 				return err
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -368,14 +495,24 @@ func (c *composeCoordinator) ensureDeployServiceImageReady(
 	projectID string,
 	project *composeTypes.Project,
 	serviceName string,
-	svc composeTypes.ServiceConfig,
 	imageName string,
 	decision DeployImageDecision,
+	fallbackService string,
+	builtImages map[string]struct{},
 	progressWriter io.Writer,
 	operations types.ComposeImageOperations,
 ) error {
 	if decision.Build {
-		return c.buildServiceImageForDeploy(ctx, projectID, project, serviceName, svc, progressWriter, operations)
+		builtTags, err := c.buildServiceImageForDeploy(ctx, projectID, project, serviceName, project.Services[serviceName], progressWriter, operations)
+		if err != nil {
+			return err
+		}
+		recordBuiltImages(builtImages, builtTags)
+		return nil
+	}
+
+	if _, alreadyBuilt := builtImages[canonicalImageRef(imageName)]; alreadyBuilt {
+		return nil
 	}
 
 	exists, err := operations.Exists(ctx, imageName)
@@ -407,11 +544,48 @@ func (c *composeCoordinator) ensureDeployServiceImageReady(
 	if err == nil {
 		return nil
 	}
-	if svc.Build != nil && decision.FallbackBuildOnPullFail {
-		slog.WarnContext(ctx, "image pull failed, falling back to build", "service", serviceName, "image", imageName, "error", err)
-		return c.buildServiceImageForDeploy(ctx, projectID, project, serviceName, svc, progressWriter, operations)
+	if fallbackService != "" {
+		slog.WarnContext(ctx, "image pull failed, falling back to build", "service", serviceName, "buildService", fallbackService, "image", imageName, "error", err)
+		builtTags, buildErr := c.buildServiceImageForDeploy(ctx, projectID, project, fallbackService, project.Services[fallbackService], progressWriter, operations)
+		if buildErr != nil {
+			return buildErr
+		}
+		recordBuiltImages(builtImages, builtTags)
+		return nil
 	}
 	return fmt.Errorf("failed to pull image %s: %w", imageName, err)
+}
+
+func recordBuiltImages(builtImages map[string]struct{}, tags []string) {
+	for _, tag := range tags {
+		if key := canonicalImageRef(tag); key != "" {
+			builtImages[key] = struct{}{}
+		}
+	}
+}
+
+func markBuiltServiceImagesLocal(project *composeTypes.Project, builtImages map[string]struct{}) {
+	if len(builtImages) == 0 {
+		return
+	}
+	for name, svc := range project.Services {
+		switch NormalizePullPolicy(svc.PullPolicy) {
+		case "", composeTypes.PullPolicyMissing, composeTypes.PullPolicyNever, composeTypes.PullPolicyBuild:
+			continue
+		}
+		_, usesBuiltImage := builtImages[canonicalImageRef(svc.Image)]
+		if !usesBuiltImage {
+			usesBuiltImage = slices.ContainsFunc(api.GetDependentImages(svc, project.Name), func(img string) bool {
+				_, ok := builtImages[canonicalImageRef(img)]
+				return ok
+			})
+		}
+		if !usesBuiltImage {
+			continue
+		}
+		svc.PullPolicy = composeTypes.PullPolicyMissing
+		project.Services[name] = svc
+	}
 }
 
 func (c *composeCoordinator) buildServiceImageForDeploy(
@@ -422,27 +596,31 @@ func (c *composeCoordinator) buildServiceImageForDeploy(
 	svc composeTypes.ServiceConfig,
 	progressWriter io.Writer,
 	operations types.ComposeImageOperations,
-) error {
+) ([]string, error) {
 	if operations.Build == nil {
-		return fmt.Errorf("build service not available for service %s", serviceName)
+		return nil, fmt.Errorf("build service not available for service %s", serviceName)
 	}
 
 	buildReq, updatedSvc, updated, err := PrepareServiceBuildRequest(projectID, project, serviceName, svc, types.ProjectBuildOptions{}, operations.BuildProvider)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if updated {
 		project.Services[serviceName] = updatedSvc
 	}
 
 	if buildErr := operations.Build(ctx, buildReq, progressWriter, serviceName); buildErr != nil {
-		return buildErr
+		return nil, buildErr
 	}
 	if buildReq.Provider == "depot" {
-		return operations.Pull(ctx, strings.TrimSpace(updatedSvc.Image), progressWriter)
+		pulledImage := strings.TrimSpace(updatedSvc.Image)
+		if pullErr := operations.Pull(ctx, pulledImage, progressWriter); pullErr != nil {
+			return nil, pullErr
+		}
+		return []string{pulledImage}, nil
 	}
 
-	return nil
+	return buildReq.Tags, nil
 }
 
 func (c *composeCoordinator) BuildServices(ctx context.Context,

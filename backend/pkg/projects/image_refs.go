@@ -9,6 +9,7 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/platforms"
+	"github.com/distribution/reference"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
@@ -87,6 +88,18 @@ func uniqueImageRefs(size int, collect func(yield func(string))) []string {
 	refs := make([]string, 0, size)
 	collect(func(image string) { refs = append(refs, image) })
 	return kit.Unique(kit.TrimNonEmpty(refs))
+}
+
+func canonicalImageRef(imageRef string) string {
+	trimmed := strings.TrimSpace(imageRef)
+	if trimmed == "" {
+		return ""
+	}
+	named, err := reference.ParseNormalizedNamed(trimmed)
+	if err != nil {
+		return trimmed
+	}
+	return reference.TagNameOnly(named).String()
 }
 
 func PullableImageRefs(project *composeTypes.Project) []string {

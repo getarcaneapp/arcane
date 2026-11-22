@@ -25,7 +25,6 @@ import (
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
-	"kit.getarcane.app/sys/cgroup"
 
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -635,8 +634,7 @@ func projectsSnapshotPath(dataDirectory, projectsDirectory string) (projectsPath
 }
 
 func currentMounts(ctx context.Context, dockerClient *client.Client) (mounts []container.MountPoint, inContainer bool, err error) {
-	_, containerErr := cgroup.CurrentContainerID()
-	if inContainer = containerErr == nil; !inContainer {
+	if !selfcontainer.RunningInContainer() {
 		return nil, false, nil
 	}
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)

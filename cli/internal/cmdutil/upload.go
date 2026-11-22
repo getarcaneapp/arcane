@@ -3,9 +3,11 @@ package cmdutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,12 +15,19 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	acfstypes "kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/output"
 	clitypes "getarcane.dev/cli/v3/internal/types"
 	"getarcane.dev/types/v3"
 )
+
+type DownloadOptions struct {
+	OutputPath   string
+	Special      bool
+	ShowProgress bool
+}
 
 const (
 	uploadChunkAttempts = 3
@@ -99,4 +108,75 @@ func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID s
 	if resp, err := c.Request(context.WithoutCancel(ctx), http.MethodDelete, clitypes.UploadSession(c.EnvID(), kind, sessionID), nil); err == nil {
 		_ = resp.Body.Close()
 	}
+}
+
+func DownloadUploadSession(ctx context.Context, c *client.Client, session types.UploadSession, opts DownloadOptions) (written int64, err error) {
+	defer func() {
+		if err != nil {
+			AbortUploadSession(ctx, c, session.Kind, session.ID)
+		}
+	}()
+
+	resp, err := c.Request(ctx, http.MethodGet, clitypes.UploadSessionDownload(c.EnvID(), session.Kind, session.ID), nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to download file: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if statusErr := EnsureSuccessStatus(resp); statusErr != nil {
+		return 0, fmt.Errorf("failed to download file: %w", statusErr)
+	}
+	absPath, err := filepath.Abs(opts.OutputPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create output file: %w", err)
+	}
+	if opts.Special {
+		file, openErr := acfs.Host{Special: true}.OpenFile(ctx, absPath, acfs.OpenOptions{Write: true})
+		if openErr != nil {
+			return 0, fmt.Errorf("failed to open output file: %w", openErr)
+		}
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil && err == nil {
+				err = fmt.Errorf("failed to write output file: %w", closeErr)
+			}
+		}()
+		return copyUploadSession(ctx, file, resp.Body, session, opts.ShowProgress)
+	}
+	if entry, statErr := (acfs.Host{}).Stat(ctx, absPath, acfstypes.StatOptions{FollowFinal: true}); statErr == nil {
+		absPath = entry.Path
+	}
+	file, tempPath, err := acfs.Host{}.CreateTemp(ctx, filepath.Dir(absPath), "."+filepath.Base(absPath)+".*.part")
+	if err != nil {
+		return 0, fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to write output file: %w", closeErr)
+		}
+		if err == nil {
+			err = acfs.Host{}.Rename(ctx, tempPath, absPath)
+		}
+		if err != nil {
+			if removeErr := (acfs.Host{}).Remove(context.WithoutCancel(ctx), tempPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				err = errors.Join(err, fmt.Errorf("remove partial download %s: %w", tempPath, removeErr))
+			}
+		}
+	}()
+	return copyUploadSession(ctx, file, resp.Body, session, opts.ShowProgress)
+}
+
+func copyUploadSession(ctx context.Context, file io.Writer, body io.Reader, session types.UploadSession, showProgress bool) (int64, error) {
+	written, err := output.Copy(ctx, file, body, output.TransferOptions{
+		Total:        session.Size,
+		Label:        "Downloading",
+		ShowProgress: showProgress,
+	})
+	if err != nil {
+		return written, fmt.Errorf("failed to download file: %w", err)
+	}
+	if written != session.Size {
+		return written, fmt.Errorf("downloaded %d of %d bytes", written, session.Size)
+	}
+	return written, nil
 }

@@ -75,12 +75,19 @@ type (
 		TotalSize       int64
 		SkippedBinaries int
 	}
+
+	preparedClone struct {
+		authMethod transport.AuthMethod
+		url        string
+		tmpDir     string
+	}
 )
 
 const (
-	binarySniffBytes   = 512
-	CloneScratchPrefix = "gitops-"
-	errUnsupportedURL  = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
+	binarySniffBytes     = 512
+	minShortCommitHexLen = 4
+	CloneScratchPrefix   = "gitops-"
+	errUnsupportedURL    = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
 
 	SSHHostKeyVerificationStrict    = "strict"
 	SSHHostKeyVerificationAcceptNew = "accept_new"
@@ -350,6 +357,40 @@ func RepositoryAttribute(rawURL string) attribute.KeyValue {
 	return attribute.String("arcane.git.repository", endpoint.String())
 }
 
+func (c *Client) prepareClone(ctx context.Context, rawURL string, auth AuthConfig, span trace.Span) (preparedClone, error) {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return preparedClone{}, ctxErr
+	}
+
+	url, err := normalizeURL(rawURL)
+	if err != nil {
+		return preparedClone{}, err
+	}
+	span.SetAttributes(RepositoryAttribute(url))
+	authMethod, err := c.getAuth(ctx, url, auth)
+	if err != nil {
+		return preparedClone{}, err
+	}
+
+	workDir, err := filepath.Abs(cmp.Or(c.workDir, os.TempDir()))
+	if err != nil {
+		return preparedClone{}, fmt.Errorf("failed to resolve work dir: %w", err)
+	}
+	if err = (acfs.Host{}).MkdirAll(ctx, workDir, 0o755); err != nil {
+		return preparedClone{}, fmt.Errorf("failed to create work dir: %w", err)
+	}
+	tmpDir, err := acfs.Host{}.MkdirTemp(ctx, workDir, CloneScratchPrefix+"*")
+	if err != nil {
+		return preparedClone{}, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+
+	return preparedClone{
+		url:        url,
+		tmpDir:     tmpDir,
+		authMethod: authMethod,
+	}, nil
+}
+
 func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig, depth int) (repoPath string, err error) {
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitrepo.clone", trace.WithAttributes(
 		attribute.String("arcane.git.branch", branch),
@@ -359,55 +400,189 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig,
 
 	ctx, cancel := timeouts.WithDefault(ctx, timeouts.DefaultGitOperation)
 	defer cancel()
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return "", ctxErr
-	}
 
-	url, err = normalizeURL(url)
-	if err != nil {
-		return "", err
-	}
-	span.SetAttributes(RepositoryAttribute(url))
-	authMethod, err := c.getAuth(ctx, url, auth)
+	prepared, err := c.prepareClone(ctx, url, auth, span)
 	if err != nil {
 		return "", err
 	}
 
-	workDir, err := filepath.Abs(cmp.Or(c.workDir, os.TempDir()))
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve work dir: %w", err)
-	}
-	if err = (acfs.Host{}).MkdirAll(ctx, workDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create work dir: %w", err)
-	}
-	tmpDir, err := acfs.Host{}.MkdirTemp(ctx, workDir, CloneScratchPrefix+"*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp dir: %w", err)
-	}
-
-	cloneOptions := &git.CloneOptions{URL: url, Auth: authMethod, Depth: depth}
+	cloneOptions := &git.CloneOptions{URL: prepared.url, Auth: prepared.authMethod, Depth: depth}
 	if branch != "" {
 		cloneOptions.ReferenceName = plumbing.NewBranchReferenceName(branch)
 		cloneOptions.SingleBranch = true
 	}
 
-	repo, err := git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
+	repo, err := git.PlainCloneContext(ctx, prepared.tmpDir, false, cloneOptions)
 	if err != nil && depth > 0 && strings.Contains(err.Error(), "shallow") {
 		// Servers without shallow support, go-git's own included, get a full clone.
 		cloneOptions.Depth = 0
-		if err = (acfs.Host{}).RemoveAll(ctx, tmpDir); err == nil {
-			repo, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
+		if err = (acfs.Host{}).RemoveAll(ctx, prepared.tmpDir); err == nil {
+			repo, err = git.PlainCloneContext(ctx, prepared.tmpDir, false, cloneOptions)
 		}
 	}
 	if err != nil {
-		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), tmpDir)
+		_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), prepared.tmpDir)
 		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 	if head, headErr := repo.Head(); headErr == nil {
 		span.SetAttributes(attribute.String("arcane.git.commit", head.Hash().String()))
 	}
 
-	return tmpDir, nil
+	return prepared.tmpDir, nil
+}
+
+func (c *Client) CloneRef(ctx context.Context, url, ref string, auth AuthConfig) (repoPath string, err error) {
+	ref = strings.TrimSpace(ref)
+	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitrepo.clone_ref", trace.WithAttributes(
+		attribute.String("arcane.git.ref", ref),
+	))
+	defer func() { logging.EndSpan(span, err) }()
+
+	ctx, cancel := timeouts.WithDefault(ctx, timeouts.DefaultGitOperation)
+	defer cancel()
+
+	prepared, err := c.prepareClone(ctx, url, auth, span)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err != nil {
+			_ = acfs.Host{}.RemoveAll(context.WithoutCancel(ctx), prepared.tmpDir)
+		}
+	}()
+
+	var (
+		repo        *git.Repository
+		checkoutRef string
+	)
+	switch {
+	case ref == "" || ref == string(plumbing.HEAD):
+		repo, err = git.PlainCloneContext(ctx, prepared.tmpDir, false, &git.CloneOptions{
+			URL:  prepared.url,
+			Auth: prepared.authMethod,
+		})
+	case plumbing.IsHash(ref):
+		repo, err = git.PlainCloneContext(ctx, prepared.tmpDir, false, &git.CloneOptions{
+			URL:  prepared.url,
+			Auth: prepared.authMethod,
+		})
+		checkoutRef = strings.ToLower(ref)
+	case strings.HasPrefix(ref, "refs/"):
+		repo, err = cloneSingleRef(ctx, prepared, plumbing.ReferenceName(ref))
+	default:
+		repo, err = cloneSingleRef(ctx, prepared, plumbing.NewBranchReferenceName(ref))
+		if errors.Is(err, git.NoMatchingRefSpecError{}) {
+			repo, err = cloneSingleRef(ctx, prepared, plumbing.NewTagReferenceName(ref))
+		}
+		if errors.Is(err, git.NoMatchingRefSpecError{}) {
+			if isHexPrefix(ref) {
+				if err = (acfs.Host{}).RemoveAll(ctx, prepared.tmpDir); err == nil {
+					repo, err = git.PlainCloneContext(ctx, prepared.tmpDir, false, &git.CloneOptions{
+						URL:  prepared.url,
+						Auth: prepared.authMethod,
+					})
+					checkoutRef = strings.ToLower(ref)
+				}
+			} else {
+				err = fmt.Errorf("remote ref %q not found: %w", ref, plumbing.ErrReferenceNotFound)
+			}
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to clone repository: %w", err)
+	}
+	if checkoutRef != "" {
+		if err = checkoutRevision(ctx, repo, prepared.authMethod, checkoutRef); err != nil {
+			return "", fmt.Errorf("failed to clone repository: %w", err)
+		}
+	}
+	if head, headErr := repo.Head(); headErr == nil {
+		span.SetAttributes(attribute.String("arcane.git.commit", head.Hash().String()))
+	}
+
+	return prepared.tmpDir, nil
+}
+
+func cloneSingleRef(ctx context.Context, prepared preparedClone, refName plumbing.ReferenceName) (*git.Repository, error) {
+	if !refName.IsSafe() {
+		return nil, fmt.Errorf("invalid reference name %q", refName)
+	}
+	if err := (acfs.Host{}).RemoveAll(ctx, prepared.tmpDir); err != nil {
+		return nil, fmt.Errorf("failed to reset temp dir: %w", err)
+	}
+	if refName.IsBranch() || refName.IsTag() {
+		return git.PlainCloneContext(ctx, prepared.tmpDir, false, &git.CloneOptions{
+			URL:           prepared.url,
+			Auth:          prepared.authMethod,
+			ReferenceName: refName,
+			SingleBranch:  true,
+			Tags:          kit.Ternary(refName.IsTag(), git.NoTags, git.AllTags),
+		})
+	}
+
+	repo, err := git.PlainInit(prepared.tmpDir, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize repository: %w", err)
+	}
+	if _, createErr := repo.CreateRemote(&config.RemoteConfig{
+		Name: git.DefaultRemoteName,
+		URLs: []string{prepared.url},
+	}); createErr != nil {
+		return nil, fmt.Errorf("failed to configure remote: %w", createErr)
+	}
+	refSpec := config.RefSpec(fmt.Sprintf("+%s:%s", refName, refName))
+	if fetchErr := repo.FetchContext(ctx, &git.FetchOptions{
+		RemoteName: git.DefaultRemoteName,
+		Auth:       prepared.authMethod,
+		RefSpecs:   []config.RefSpec{refSpec},
+	}); fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+		return nil, fetchErr
+	}
+	if checkoutErr := checkoutRevision(ctx, repo, prepared.authMethod, string(refName)); checkoutErr != nil {
+		return nil, checkoutErr
+	}
+	return repo, nil
+}
+
+func checkoutRevision(ctx context.Context, repo *git.Repository, authMethod transport.AuthMethod, rev string) error {
+	hash, err := repo.ResolveRevision(plumbing.Revision(rev))
+	if errors.Is(err, plumbing.ErrReferenceNotFound) && plumbing.IsHash(rev) {
+		// Retry exact SHA-1 fetch for commits not reachable from advertised branches or tags.
+		refSpec := config.RefSpec(fmt.Sprintf("+%s:refs/remotes/%s/%s", rev, git.DefaultRemoteName, rev))
+		fetchErr := repo.FetchContext(ctx, &git.FetchOptions{
+			RemoteName: git.DefaultRemoteName,
+			Auth:       authMethod,
+			RefSpecs:   []config.RefSpec{refSpec},
+		})
+		if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+			return fmt.Errorf("failed to fetch ref %q: %w", rev, fetchErr)
+		}
+		hash, err = repo.ResolveRevision(plumbing.Revision(rev))
+	}
+	if err != nil {
+		return fmt.Errorf("failed to resolve ref %q: %w", rev, err)
+	}
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return fmt.Errorf("failed to open repository worktree: %w", err)
+	}
+	if err = worktree.Checkout(&git.CheckoutOptions{Hash: *hash, Force: true}); err != nil {
+		return fmt.Errorf("failed to checkout ref %q: %w", rev, err)
+	}
+	return nil
+}
+
+func isHexPrefix(ref string) bool {
+	if len(ref) < minShortCommitHexLen || len(ref) >= len(plumbing.ZeroHash)*2 {
+		return false
+	}
+	for i := range len(ref) {
+		c := ref[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string, error) {

@@ -229,6 +229,18 @@
 		stackWorkspace.closeTab('override');
 	}
 
+	function handleCreateStackFile(parentPath: string, name: string) {
+		if (!parentPath && name === '.env' && !envActive) {
+			addEnv();
+			return;
+		}
+		if (!parentPath && name === 'compose.override.yaml' && !overrideActive) {
+			addOverride();
+			return;
+		}
+		stackWorkspace.createFile(parentPath, name);
+	}
+
 	function buildStackFilePayload(): SwarmSyncFile[] {
 		return stackWorkspace.files
 			.filter((file) => !file.isDirectory)
@@ -482,7 +494,7 @@
 									selectedFile={stackWorkspace.selectedKey}
 									disabled={ui.saving || ui.isLoadingTemplateContent}
 									onSelect={stackWorkspace.openTab}
-									onCreateFile={stackWorkspace.createFile}
+									onCreateFile={handleCreateStackFile}
 									onCreateFolder={stackWorkspace.createFolder}
 									onUpload={(parentPath, files) => stackWorkspace.uploadFile(parentPath, files, workspaceMaxFileSizeMb)}
 									validateName={(name) => validateWorkspaceFileName(name)}

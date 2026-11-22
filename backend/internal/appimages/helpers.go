@@ -9,15 +9,14 @@ import (
 	"image/png"
 	"net/http"
 	"slices"
-
-	"golang.org/x/mod/semver"
+	"strings"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/semver"
 )
 
 func isStableVersion(version string) bool {
-	v := kit.EnsurePrefix(version, "v")
-	return semver.IsValid(v) && semver.Prerelease(v) == ""
+	return semver.IsStable(strings.TrimSpace(version))
 }
 
 func detectImageMimeType(data []byte) string {
