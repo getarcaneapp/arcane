@@ -1840,9 +1840,9 @@ func (s *Service) DiscoverAfterRestore(ctx context.Context) error {
 	return s.deps.Settings.UpdateSetting(ctx, discoveryPendingKey, "false")
 }
 
-// importSnapshots records a row, read from the backup's manifest, for each found backup whose row is missing, and gives
-// a failed row that recorded no snapshot the ones found. A backup keeps its policy only while that policy manages it,
-// so the unmanaged sweep never deletes it.
+// importSnapshots records a row, read from the backup's manifest, for each found backup whose row is missing, adds the
+// copies found to a succeeded row missing them, and gives a failed row that recorded no snapshot the ones found. A
+// backup keeps its policy only while that policy manages it, so the unmanaged sweep never deletes it.
 func (s *Service) importSnapshots(
 	ctx context.Context,
 	found []foundSnapshot,
@@ -1858,9 +1858,13 @@ func (s *Service) importSnapshots(
 		return 0, nil
 	}
 	backupIDs := slices.Sorted(maps.Keys(groups))
-	var existing []string
-	if err := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).Where("id IN ?", backupIDs).Pluck("id", &existing).Error; err != nil {
+	var stored []ProjectBackup
+	if err := s.deps.DB.WithContext(ctx).Select("id", "status", "local_snapshot_id", "remote_snapshot_id").Where("id IN ?", backupIDs).Find(&stored).Error; err != nil {
 		return 0, err
+	}
+	existing := make(map[string]ProjectBackup, len(stored))
+	for _, entry := range stored {
+		existing[entry.ID] = entry
 	}
 	references, err := s.deps.ListProjects(ctx)
 	if err != nil {
@@ -1896,17 +1900,10 @@ func (s *Service) importSnapshots(
 		largest := slices.MaxFunc(snapshots, func(a, b foundSnapshot) int {
 			return cmp.Compare(a.snapshot.Summary.TotalBytesProcessed, b.snapshot.Summary.TotalBytesProcessed)
 		})
-		if slices.Contains(existing, backupID) {
-			// A backup a system backup caught running is failed on restore, though its snapshots finished.
-			filled := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).
-				Where("id = ? AND status = ? AND COALESCE(local_snapshot_id, '') = '' AND COALESCE(remote_snapshot_id, '') = ''", backupID, types.VolumeBackupStatusFailed).
-				Updates(map[string]any{
-					"status": types.VolumeBackupStatusSucceeded, "error": "", "destination": backup.Destination(local >= 0, remote >= 0),
-					"local_snapshot_id": localSnapshot.snapshot.ID, "remote_snapshot_id": remoteSnapshot.snapshot.ID,
-					"s3_destination_id": remoteSnapshot.s3DestinationID, "size": largest.snapshot.Summary.TotalBytesProcessed,
-				})
-			importErr = errors.Join(importErr, filled.Error)
-			recorded += int(filled.RowsAffected)
+		if entry, recordedBefore := existing[backupID]; recordedBefore {
+			filled, fillErr := s.addFoundCopies(ctx, entry, localSnapshot, remoteSnapshot, largest.snapshot.Summary.TotalBytesProcessed)
+			importErr = errors.Join(importErr, fillErr)
+			recorded += int(filled)
 			continue
 		}
 		first := snapshots[kit.Ternary(local >= 0, local, remote)]
@@ -1954,6 +1951,34 @@ func (s *Service) importSnapshots(
 		recorded++
 	}
 	return recorded, importErr
+}
+
+// addFoundCopies adds the found local and remote snapshots, empty when not found, to a succeeded row missing them, and
+// gives a failed row that recorded no snapshot the ones found. It returns the number of rows updated.
+func (s *Service) addFoundCopies(ctx context.Context, entry ProjectBackup, localSnapshot, remoteSnapshot foundSnapshot, size int64) (int64, error) {
+	hasLocal, hasRemote := localSnapshot.snapshot.ID != "", remoteSnapshot.snapshot.ID != ""
+	// A backup a system backup caught running is failed on restore, though its snapshots finished.
+	interrupted := entry.Status == types.VolumeBackupStatusFailed && entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""
+	addLocal, addRemote := hasLocal && entry.LocalSnapshotID == "", hasRemote && entry.RemoteSnapshotID == ""
+	if (!interrupted && entry.Status != types.VolumeBackupStatusSucceeded) || (!addLocal && !addRemote) {
+		return 0, nil
+	}
+	updates := map[string]any{"destination": backup.Destination(entry.LocalSnapshotID != "" || hasLocal, entry.RemoteSnapshotID != "" || hasRemote)}
+	if addLocal || interrupted {
+		updates["local_snapshot_id"] = localSnapshot.snapshot.ID
+	}
+	if addRemote || interrupted {
+		updates["remote_snapshot_id"], updates["s3_destination_id"] = remoteSnapshot.snapshot.ID, remoteSnapshot.s3DestinationID
+	}
+	if interrupted {
+		updates["status"], updates["error"], updates["size"] = types.VolumeBackupStatusSucceeded, "", size
+	}
+	// Only a row unchanged since it was read is updated, so no snapshot it records is overwritten.
+	filled := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).
+		Where("id = ? AND status = ? AND COALESCE(local_snapshot_id, '') = ? AND COALESCE(remote_snapshot_id, '') = ?",
+			entry.ID, entry.Status, entry.LocalSnapshotID, entry.RemoteSnapshotID).
+		Updates(updates)
+	return filled.RowsAffected, filled.Error
 }
 
 // snapshotTag returns the value of the snapshot's tag with the prefix, or empty.

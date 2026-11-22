@@ -1223,6 +1223,66 @@ func TestDiscoveryRecordsMissingProjectBackups(t *testing.T) {
 	require.Zero(t, recorded)
 }
 
+func TestDiscoveryAddsFoundCopiesToRecordedBackups(t *testing.T) {
+	f := newPolicyFixture(t)
+	f.remoteBackup(t, "remote-only", types.VolumeBackupTriggerManual, "", time.Hour)
+	f.remoteBackup(t, "complete", types.VolumeBackupTriggerManual, "", time.Hour)
+	require.NoError(t, f.db.Model(&ProjectBackup{}).Where("id = ?", "complete").Updates(map[string]any{
+		"local_snapshot_id": "snapshot-complete-local", "destination": types.VolumeBackupDestinationLocalS3,
+	}).Error)
+	require.NoError(t, f.db.Create(&ProjectBackup{
+		BaseModel: database.BaseModel{ID: "failed-local"}, ProjectID: "p1", Status: types.VolumeBackupStatusFailed, Trigger: types.VolumeBackupTriggerManual,
+		Destination: types.VolumeBackupDestinationLocal, LocalSnapshotID: "snapshot-failed-local", Error: "upload failed",
+	}).Error)
+	tags := func(run string) []string {
+		return []string{"arcane-project:p1", "arcane-run:" + run, "arcane-trigger:manual"}
+	}
+	manifest := func(_ context.Context, snapshot foundSnapshot) (types.ProjectManifest, error) {
+		return types.ProjectManifest{Project: types.ProjectManifestProject{ID: "", Name: snapshot.snapshot.Label, ComposeName: "web"}}, nil
+	}
+
+	// Local discovery records the backup a lost data volume forgot, then S3 discovery adds its S3 copy to that row.
+	recorded, err := f.service.importSnapshots(t.Context(), []foundSnapshot{
+		projectSnapshot("local-only-local", "", "Web", time.Hour, tags("local-only")...),
+		projectSnapshot("remote-only-local", "", "Web", time.Hour, tags("remote-only")...),
+		projectSnapshot("complete-other", "", "Web", time.Hour, tags("complete")...),
+		projectSnapshot("failed-local-other", "", "Web", time.Hour, tags("failed-local")...),
+	}, manifest)
+	require.NoError(t, err)
+	require.Equal(t, 2, recorded)
+	recorded, err = f.service.importSnapshots(t.Context(), []foundSnapshot{
+		projectSnapshot("local-only-remote", f.destination, "Web", time.Hour, tags("local-only")...),
+		projectSnapshot("complete-other-remote", f.destination, "Web", time.Hour, tags("complete")...),
+		projectSnapshot("failed-local-remote", f.destination, "Web", time.Hour, tags("failed-local")...),
+	}, func(context.Context, foundSnapshot) (types.ProjectManifest, error) {
+		return types.ProjectManifest{}, errors.New("unexpected manifest read")
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, recorded)
+
+	rows := map[string]ProjectBackup{}
+	var stored []ProjectBackup
+	require.NoError(t, f.db.Find(&stored).Error)
+	for _, entry := range stored {
+		rows[entry.ID] = entry
+	}
+	// A recorded backup gets each copy it is missing, with its destination.
+	require.Equal(t, types.VolumeBackupDestinationLocalS3, rows["local-only"].Destination)
+	require.Equal(t, "local-only-local", rows["local-only"].LocalSnapshotID)
+	require.Equal(t, "local-only-remote", rows["local-only"].RemoteSnapshotID)
+	require.Equal(t, f.destination, rows["local-only"].S3DestinationID)
+	require.Equal(t, types.VolumeBackupDestinationLocalS3, rows["remote-only"].Destination)
+	require.Equal(t, "remote-only-local", rows["remote-only"].LocalSnapshotID)
+	require.Equal(t, "snapshot-remote-only", rows["remote-only"].RemoteSnapshotID)
+	// A snapshot a row already records is never replaced, and a failed row that recorded a snapshot stays as it is.
+	require.Equal(t, "snapshot-complete-local", rows["complete"].LocalSnapshotID)
+	require.Equal(t, "snapshot-complete", rows["complete"].RemoteSnapshotID)
+	require.Equal(t, types.VolumeBackupStatusFailed, rows["failed-local"].Status)
+	require.Equal(t, types.VolumeBackupDestinationLocal, rows["failed-local"].Destination)
+	require.Equal(t, "snapshot-failed-local", rows["failed-local"].LocalSnapshotID)
+	require.Empty(t, rows["failed-local"].RemoteSnapshotID)
+}
+
 func TestRestoreWaitsForEveryVolumeOfTheProject(t *testing.T) {
 	db := newTestDB(t)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
