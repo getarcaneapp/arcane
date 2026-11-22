@@ -2924,7 +2924,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		EventService:        event.NewEventService(db, &config.Config{}, nil),
 		NotificationService: newTestNotificationService(t, db),
 	})
-	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, checks, 2)
 	require.Equal(t, "1.1.0", checks["one"].LatestVersion)
@@ -2949,7 +2949,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 	// Changing one policy to an invalid expression clears its actionable state
 	// without overwriting the other container's result.
 	values["one"][labels.LabelUpdateConstraint] = "invalid"
-	checks, err = svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err = svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, checks["one"].Error)
 	require.False(t, checks["one"].HasUpdate)
@@ -3080,7 +3080,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&stale).Error)
 
-	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, checks, 1)
 	require.True(t, checks["install-excluded"].HasUpdate, "updater=false and the UI exclusion do not block checks")
@@ -3177,7 +3177,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 
 	scanCtx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	_, err = svc.checkContainerTagUpdates(scanCtx, []string{imageRefs["fast"], imageRefs["slow"]}, nil)
+	_, err = svc.checkContainerTagUpdates(scanCtx, []string{imageRefs["fast"], imageRefs["slow"]}, nil, nil)
 	require.ErrorContains(t, err, context.DeadlineExceeded.Error())
 	var records []ImageUpdateRecord
 	require.NoError(t, db.Find(&records).Error)

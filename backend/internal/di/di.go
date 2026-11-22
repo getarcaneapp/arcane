@@ -210,6 +210,7 @@ var (
 				return registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
 					DB:              db,
 					DockerClient:    func(ctx context.Context) (registry.RegistryDaemonClient, error) { return localDocker.GetClient(ctx) },
+					Engine:          localDocker.Engine,
 					KVService:       kvService,
 					SettingsService: settingsService,
 				})

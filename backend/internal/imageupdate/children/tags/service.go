@@ -40,6 +40,16 @@ type (
 		limiter  *registry.RegistryRateLimiter
 	}
 
+	// CheckRequest supplies the container inventory, filter, credentials, and callbacks for a tag check pass.
+	CheckRequest struct {
+		Wanted             map[string]bool
+		SeedDigests        map[string]string
+		ClearDigestTracked func(context.Context, []string) error
+		Save               func(context.Context, container.Summary, *types.ImageUpdateResponse) error
+		Listed             []container.Summary
+		Credentials        []types.ContainerRegistryCredential
+	}
+
 	// tagRegistry shares listings and digests per scan so replicas cost one request and scan credentials skip service caches.
 	tagRegistry struct {
 		service      *registryInternal.ContainerRegistryService
@@ -87,18 +97,41 @@ func NewService(
 }
 
 // Check evaluates each wanted container's tag policy and saves each result as soon as it finishes.
-func (s *Service) Check(
-	ctx context.Context,
-	listed []container.Summary,
-	wanted map[string]bool,
-	credentials []types.ContainerRegistryCredential,
-	clearDigestTracked func(context.Context, []string) error,
-	save func(context.Context, container.Summary, *types.ImageUpdateResponse) error,
-) (map[string]*types.ImageUpdateResponse, error) {
+func (s *Service) Check(ctx context.Context, req CheckRequest) (map[string]*types.ImageUpdateResponse, error) {
+	candidates := make([]container.Summary, 0, len(req.Listed))
+	var staleDigestContainerIDs []string
+	for _, cnt := range req.Listed {
+		if !req.Wanted[refs.NormalizeImageUpdateRef(cnt.Image)] || imageref.IsUpdateCheckDisabled(cnt.Labels) {
+			continue
+		}
+		tagPolicy, policyErr := tagpolicy.Resolve(cnt.Image, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
+		if policyErr == nil && tagPolicy.Strategy == "digest" {
+			staleDigestContainerIDs = append(staleDigestContainerIDs, cnt.ID)
+			continue
+		}
+		candidates = append(candidates, cnt)
+	}
+	if clearErr := req.ClearDigestTracked(ctx, staleDigestContainerIDs); clearErr != nil {
+		return map[string]*types.ImageUpdateResponse{}, clearErr
+	}
+	if len(candidates) == 0 {
+		return map[string]*types.ImageUpdateResponse{}, nil
+	}
+
+	seededDigests := make(map[string]string, len(req.SeedDigests))
+	for imageRef, digestValue := range req.SeedDigests {
+		if digestValue == "" {
+			continue
+		}
+		if parsed, parseErr := refs.NormalizeReference(imageRef); parseErr == nil {
+			seededDigests[parsed.NormalizedRef] = digestValue
+		}
+	}
+
 	// Read-only: only the update-check label opts a container out, so no Settings provider is wired.
 	adapter := tagRegistry{
 		service:      s.registry,
-		credentials:  credentials,
+		credentials:  req.Credentials,
 		docker:       s.docker,
 		dockerClient: &scanDockerClient{},
 		settings:     s.settings,
@@ -109,7 +142,7 @@ func (s *Service) Check(
 			keepFailure: func(err error) bool { return registryInternal.IsRateLimitErrorString(err.Error()) },
 		},
 		digests: &scanRegistryMemo[string]{
-			values:      map[string]string{},
+			values:      seededDigests,
 			failures:    map[string]error{},
 			keepFailure: func(error) bool { return false },
 		},
@@ -129,22 +162,6 @@ func (s *Service) Check(
 			slog.WarnContext(ctx, "close tag checker", "error", closeErr)
 		}
 	}()
-	candidates := make([]container.Summary, 0, len(listed))
-	var staleDigestContainerIDs []string
-	for _, cnt := range listed {
-		if !wanted[refs.NormalizeImageUpdateRef(cnt.Image)] || imageref.IsUpdateCheckDisabled(cnt.Labels) {
-			continue
-		}
-		tagPolicy, policyErr := tagpolicy.Resolve(cnt.Image, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
-		if policyErr == nil && tagPolicy.Strategy == "digest" {
-			staleDigestContainerIDs = append(staleDigestContainerIDs, cnt.ID)
-			continue
-		}
-		candidates = append(candidates, cnt)
-	}
-	if clearErr := clearDigestTracked(ctx, staleDigestContainerIDs); clearErr != nil {
-		return map[string]*types.ImageUpdateResponse{}, clearErr
-	}
 
 	// Saves are serialized on the group context so a cancelled scan keeps finished results without overwriting them.
 	checks := make([]*types.ImageUpdateResponse, len(candidates))
@@ -157,7 +174,7 @@ func (s *Service) Check(
 			checks[i] = s.checkContainerTag(groupCtx, engine, adapter, cnt)
 			saveMu.Lock()
 			defer saveMu.Unlock()
-			saveErr := save(groupCtx, cnt, checks[i])
+			saveErr := req.Save(groupCtx, cnt, checks[i])
 			if saveErr == nil || groupCtx.Err() != nil {
 				return saveErr
 			}
