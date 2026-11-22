@@ -506,6 +506,7 @@
 		environmentCards.filter(({ environment }) => !isEnvironmentOnline(environment)).map(({ environment }) => environment)
 	);
 	const diskUsage = $derived(diskUsageQuery.data?.byEnvironment ?? []);
+	const diskUsageFailures = $derived(diskUsageQuery.data?.failedEnvironments ?? []);
 
 	function handleAttentionAction(item: AttentionItem) {
 		if (item.target.kind === 'upgrade') {
@@ -841,7 +842,8 @@
 					reclaimable={{
 						bytes: diskUsageQuery.isError ? null : diskUsage.reduce((sum, entry) => sum + totalReclaimableBytes(entry.data), 0),
 						environments: diskUsage.length,
-						loading: loadableEnvironmentIds.size > 0 && diskUsageQuery.isPending
+						loading: loadableEnvironmentIds.size > 0 && diskUsageQuery.isPending,
+						failedEnvironments: diskUsageFailures
 					}}
 				/>
 			{:else if item.type === 'environments'}
@@ -905,6 +907,7 @@
 					usage={diskUsage}
 					loading={diskUsageQuery.isPending && loadableEnvironmentIds.size > 0}
 					failed={diskUsageQuery.isError}
+					failedEnvironments={diskUsageFailures}
 					onPrune={prunableEnvironments.length > 0 ? () => void openPruneDialog('all') : undefined}
 				/>
 			{:else if item.type === 'memory'}

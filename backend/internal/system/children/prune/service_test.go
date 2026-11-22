@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -99,6 +100,8 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 }
 
 func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
+	var mu sync.Mutex
+	var containerQuery url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/system/df"):
@@ -119,14 +122,11 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 				`{"ID":"idle","InUse":false,"Size":10},`+
 				`{"ID":"busy","InUse":true,"Size":20}]}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
-			if r.URL.Query().Get("size") != "1" {
-				http.Error(w, "missing size=1", http.StatusBadRequest)
-				return
-			}
+			mu.Lock()
+			containerQuery = r.URL.Query()
+			mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprint(w, `[`+
-				`{"Id":"stopped","State":"exited","SizeRw":30},`+
-				`{"Id":"running","State":"running","SizeRw":70}]`)
+			_, _ = fmt.Fprint(w, `[{"Id":"stopped","State":"exited","SizeRw":30}]`)
 		default:
 			http.Error(w, "unexpected request "+r.Method+" "+r.URL.Path, http.StatusNotFound)
 		}
@@ -171,6 +171,20 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 		UnusedVolumesBytes:     100,
 		StoppedContainersBytes: 30,
 	}, usage)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, "1", containerQuery.Get("all"))
+	require.Equal(t, "1", containerQuery.Get("size"))
+	var filters client.Filters
+	require.NoError(t, json.Unmarshal([]byte(containerQuery.Get("filters")), &filters))
+	require.Equal(t, client.Filters{
+		"status": {
+			"created":  true,
+			"removing": true,
+			"exited":   true,
+			"dead":     true,
+		},
+	}, filters)
 }
 
 func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
