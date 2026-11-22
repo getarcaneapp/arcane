@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -15,8 +14,6 @@ import (
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/podman"
 	"getarcane.dev/types/v3"
@@ -119,30 +116,6 @@ func (s *Service) ListPaginated(ctx context.Context, filters map[string][]string
 	}
 	result := quadletPagination.SearchOrderAndPaginate(items, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
-}
-
-func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.QuadletDetail], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.QuadletDetail]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.QuadletDetail]{}, err
-	}
-
-	pages := make([]pagination.EnvironmentPage[types.QuadletDetail], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.QuadletDetail]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
-	data, resp := pagination.MergeEnvironmentPages(quadletPagination, pages, params)
-
-	return types.Paginated[types.QuadletDetail]{
-		Success:            true,
-		Data:               data,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
 }
 
 func (s *Service) Get(ctx context.Context, name string) (types.QuadletDetail, error) {

@@ -93,6 +93,13 @@ type (
 
 	containerNameContextKey struct{}
 
+	ExecOptions struct {
+		Shell string
+		User  string
+		Cols  uint
+		Rows  uint
+	}
+
 	ExecSession struct {
 		hijackedResp client.HijackedResponse
 		dockerClient *client.Client
@@ -139,6 +146,8 @@ type (
 )
 
 const (
+	AutoShell = "auto"
+
 	containerGroupByProject  = "project"
 	containerNoProjectGroup  = "No Project"
 	containerIconMetadataTTL = 5 * time.Second
@@ -456,11 +465,6 @@ func (s *ContainerService) lockContainer(ctx context.Context, op, containerID st
 	return unlock, nil
 }
 
-func containerNameFromContext(ctx context.Context) string {
-	name, _ := ctx.Value(containerNameContextKey{}).(string)
-	return name
-}
-
 func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, containerID string, user types.Actor, cfg containerLifecycleAction) error {
 	unlock, err := s.lockContainer(ctx, cfg.action+" container", containerID)
 	if err != nil {
@@ -474,11 +478,12 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 	}
 	maps.Copy(metadata, cfg.metadata)
 
+	containerName, _ := ctx.Value(containerNameContextKey{}).(string)
 	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
 		Type:          cfg.eventType,
 		ResourceType:  "container",
 		ResourceID:    containerID,
-		ResourceName:  cmp.Or(containerNameFromContext(ctx), containerID),
+		ResourceName:  cmp.Or(containerName, containerID),
 		UserID:        user.ID,
 		Username:      user.Username,
 		EnvironmentID: "0",
@@ -1600,8 +1605,8 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 		return types.ContainerProcesses{}, common.ClassifyDockerError(fmt.Errorf("failed to list container processes: %w", err))
 	}
 	return types.ContainerProcesses{
-		Titles:    kit.Ternary(result.Titles == nil, []string{}, result.Titles),
-		Processes: kit.Ternary(result.Processes == nil, [][]string{}, result.Processes),
+		Titles:    result.Titles,
+		Processes: result.Processes,
 	}, nil
 }
 
@@ -2508,19 +2513,28 @@ func (s *ContainerService) CalculateStatusCounts(items []types.ContainerSummary)
 	}
 }
 
-func (s *ContainerService) CreateExec(ctx context.Context, containerID string, cmd []string, cols, rows uint) (string, error) {
+func (s *ContainerService) CreateExec(ctx context.Context, containerID string, opts ExecOptions) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	cmd := []string{cmp.Or(opts.Shell, "/bin/sh")}
+	if opts.Shell == AutoShell {
+		cmd = []string{"/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"}
+	}
+
 	execResp, err := dockerClient.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+		User:         opts.User,
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		TTY:          true,
-		ConsoleSize:  client.ConsoleSize{Height: rows, Width: cols},
-		Cmd:          cmd,
+		ConsoleSize: client.ConsoleSize{
+			Height: opts.Rows,
+			Width:  opts.Cols,
+		},
+		Cmd: cmd,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create exec: %w", err)

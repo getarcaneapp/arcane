@@ -276,18 +276,6 @@ func (s *SettingsService) IsLocked(key string) (bool, LockReason) {
 	}
 }
 
-func (s *SettingsService) GetSettings(_ context.Context) (*Settings, error) {
-	return s.GetSettingsConfig(), nil
-}
-
-func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *Settings {
-	cfg, err := s.GetSettings(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to load settings, falling back to defaults", "error", err)
-	}
-	return kit.Ternary(cfg == nil, &Settings{}, cfg)
-}
-
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
 	_, byKey := settingsFields()
 	if err := validateValue(byKey[key], value); err != nil {
@@ -808,9 +796,7 @@ func (s *SettingsService) SystemVolumeBackupPolicies() (*types.SystemVolumeBacku
 			return nil, fmt.Errorf("decode system-managed volume backup policies: %w", err)
 		}
 	}
-	return &types.SystemVolumeBackupPolicyCollection{
-		Policies: kit.Ternary(collection.Policies == nil, []types.SystemVolumeBackupPolicy{}, collection.Policies),
-	}, nil
+	return &collection, nil
 }
 
 func (s *SettingsService) ProjectsDirectories() ([]types.ProjectsDirectoryEntry, error) {
@@ -1035,7 +1021,7 @@ func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id types.Feature
 	if !ok {
 		return false
 	}
-	cfg := s.GetSettingsOrDefaults(ctx)
+	cfg := s.GetSettingsConfig()
 	value, _, _, err := cfg.FieldByKey(definition.SettingKey)
 	if err != nil || value == "" {
 		return definition.DefaultEnabled

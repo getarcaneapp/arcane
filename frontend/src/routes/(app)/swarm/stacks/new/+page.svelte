@@ -229,6 +229,18 @@
 		stackWorkspace.closeTab('override');
 	}
 
+	function handleCreateStackFile(parentPath: string, name: string) {
+		if (!parentPath && name === '.env' && !envActive) {
+			addEnv();
+			return;
+		}
+		if (!parentPath && name === 'compose.override.yaml' && !overrideActive) {
+			addOverride();
+			return;
+		}
+		stackWorkspace.createFile(parentPath, name);
+	}
+
 	function buildStackFilePayload(): SwarmSyncFile[] {
 		return stackWorkspace.files
 			.filter((file) => !file.isDirectory)
@@ -331,6 +343,26 @@
 	);
 </script>
 
+{#snippet stackNameControl(variant: 'inline' | 'block', nameClass?: string)}
+	<EnvironmentDestinationSelect
+		bind:value={destinationId}
+		permission={isEditMode ? 'swarm-stacks:update' : 'swarm-stacks:create'}
+		environments={data.environments}
+		variant="prefix"
+		readonly={isEditMode}
+	/>
+	<EditableName
+		bind:value={inputs.name.value}
+		bind:ref={nameInputRef}
+		{variant}
+		error={inputs.name.error ?? undefined}
+		originalValue={initialName}
+		placeholder={m.compose_project_name_placeholder()}
+		canEdit={!isEditMode && !ui.saving && !ui.isLoadingTemplateContent}
+		class={nameClass}
+	/>
+{/snippet}
+
 <div class="flex h-full min-h-0 flex-col">
 	<div class="sticky top-0 mb-2 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
@@ -345,23 +377,7 @@
 				/>
 				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden items-center sm:flex">
-					<EnvironmentDestinationSelect
-						bind:value={destinationId}
-						permission={isEditMode ? 'swarm-stacks:update' : 'swarm-stacks:create'}
-						environments={data.environments}
-						variant="prefix"
-						readonly={isEditMode}
-					/>
-					<EditableName
-						bind:value={inputs.name.value}
-						bind:ref={nameInputRef}
-						variant="inline"
-						error={inputs.name.error ?? undefined}
-						originalValue={initialName}
-						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!isEditMode && !ui.saving && !ui.isLoadingTemplateContent}
-						class="hidden sm:block"
-					/>
+					{@render stackNameControl('inline', 'hidden sm:block')}
 				</div>
 			</div>
 
@@ -398,22 +414,7 @@
 		<div class="mx-auto h-full w-full max-w-full min-w-0">
 			<div class="flex h-full min-h-0 flex-col">
 				<div class="flex flex-shrink-0 items-center px-2 py-4 sm:hidden sm:px-6">
-					<EnvironmentDestinationSelect
-						bind:value={destinationId}
-						permission={isEditMode ? 'swarm-stacks:update' : 'swarm-stacks:create'}
-						environments={data.environments}
-						variant="prefix"
-						readonly={isEditMode}
-					/>
-					<EditableName
-						bind:value={inputs.name.value}
-						bind:ref={nameInputRef}
-						variant="block"
-						error={inputs.name.error ?? undefined}
-						originalValue={initialName}
-						placeholder={m.compose_project_name_placeholder()}
-						canEdit={!isEditMode && !ui.saving && !ui.isLoadingTemplateContent}
-					/>
+					{@render stackNameControl('block')}
 				</div>
 
 				<form class="flex h-full min-h-0 flex-1 flex-col gap-3 px-2 pb-4 sm:px-6" onsubmit={preventDefault(handleSubmit)}>
@@ -493,7 +494,7 @@
 									selectedFile={stackWorkspace.selectedKey}
 									disabled={ui.saving || ui.isLoadingTemplateContent}
 									onSelect={stackWorkspace.openTab}
-									onCreateFile={stackWorkspace.createFile}
+									onCreateFile={handleCreateStackFile}
 									onCreateFolder={stackWorkspace.createFolder}
 									onUpload={(parentPath, files) => stackWorkspace.uploadFile(parentPath, files, workspaceMaxFileSizeMb)}
 									validateName={(name) => validateWorkspaceFileName(name)}

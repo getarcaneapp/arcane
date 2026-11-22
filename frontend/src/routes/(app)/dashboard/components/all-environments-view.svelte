@@ -261,7 +261,7 @@
 		enabled: userStore.hasPermission('apikeys:list')
 	}));
 
-	const environmentQueries = [
+	const summaryQueries = [
 		containersQuery,
 		projectsQuery,
 		imagesQuery,
@@ -271,9 +271,9 @@
 		riskQuery,
 		eventsQuery,
 		jobsQuery,
-		diskUsageQuery,
 		topMemoryQuery
 	];
+	const environmentQueries = [...summaryQueries, diskUsageQuery];
 
 	const containersByEnvironment = $derived(byEnvironmentId(containersQuery.data));
 	const projectsByEnvironment = $derived(byEnvironmentId(projectsQuery.data));
@@ -285,7 +285,7 @@
 	const diskUsageByEnvironment = $derived(byEnvironmentId(diskUsageQuery.data));
 
 	const failedEnvironments = $derived.by((): EnvironmentFailure[] => {
-		const failures = environmentQueries.flatMap((query) => query.data?.failedEnvironments ?? []);
+		const failures = summaryQueries.flatMap((query) => query.data?.failedEnvironments ?? []);
 		return failures.filter(
 			(failure, index) => failures.findIndex((other) => other.environment.id === failure.environment.id) === index
 		);
@@ -294,7 +294,7 @@
 		new Map(
 			Array.from(
 				Map.groupBy(
-					environmentQueries.flatMap((query) => query.data?.failedEnvironments ?? []),
+					summaryQueries.flatMap((query) => query.data?.failedEnvironments ?? []),
 					(failure) => failure.environment.id
 				),
 				([environmentId, failures]): [string, string[]] => [environmentId, failures.map((failure) => failure.message)]
@@ -302,7 +302,7 @@
 		)
 	);
 	const queryErrors = $derived(
-		[...environmentQueries, apiKeysQuery].flatMap((query) => (query.error ? [extractApiErrorMessage(query.error)] : []))
+		[...summaryQueries, apiKeysQuery].flatMap((query) => (query.error ? [extractApiErrorMessage(query.error)] : []))
 	);
 	const excludedEnvironmentCount = $derived(
 		Math.max(0, ...environmentQueries.map((query) => query.data?.excludedEnvironments?.length ?? 0))
@@ -506,6 +506,7 @@
 		environmentCards.filter(({ environment }) => !isEnvironmentOnline(environment)).map(({ environment }) => environment)
 	);
 	const diskUsage = $derived(diskUsageQuery.data?.byEnvironment ?? []);
+	const diskUsageFailures = $derived(diskUsageQuery.data?.failedEnvironments ?? []);
 
 	function handleAttentionAction(item: AttentionItem) {
 		if (item.target.kind === 'upgrade') {
@@ -839,7 +840,8 @@
 					reclaimable={{
 						bytes: diskUsageQuery.isError ? null : diskUsage.reduce((sum, entry) => sum + totalReclaimableBytes(entry.data), 0),
 						environments: diskUsage.length,
-						loading: loadableEnvironmentIds.size > 0 && diskUsageQuery.isPending
+						loading: loadableEnvironmentIds.size > 0 && diskUsageQuery.isPending,
+						failedEnvironments: diskUsageFailures
 					}}
 				/>
 			{:else if item.type === 'environments'}
@@ -903,6 +905,7 @@
 					usage={diskUsage}
 					loading={diskUsageQuery.isPending && loadableEnvironmentIds.size > 0}
 					failed={diskUsageQuery.isError}
+					failedEnvironments={diskUsageFailures}
 					onPrune={prunableEnvironments.length > 0 ? () => void openPruneDialog('all') : undefined}
 				/>
 			{:else if item.type === 'memory'}

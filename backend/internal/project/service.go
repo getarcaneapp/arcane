@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"maps"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
@@ -80,7 +79,7 @@ type (
 	ProjectService struct {
 		composeCoordinator types.ComposeCoordinator
 
-		parsedCompose types.ComposeCache[*composetypes.Project]
+		parsedCompose types.ComposeCache[*composeTypes.Project]
 		// metaCache is validated by compose/include/env file mtimes, not a TTL, since each entry costs a full compose load.
 		metaCache types.ComposeCache[projects.ArcaneComposeMetadata]
 		// composeIdentities lets a sync re-parse only projects whose compose or env files changed.
@@ -174,11 +173,6 @@ type (
 		EventService    *event.EventService
 		DockerService   *dockerInternal.DockerClientService
 		ImageService    *image.ImageService
-	}
-
-	DestroyOptions struct {
-		RemoveFiles   bool
-		RemoveVolumes bool
 	}
 
 	ServiceUpdateOptions struct {
@@ -369,7 +363,7 @@ func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList
 		projectsDirectory: projectsDirectory,
 		projectsRoots:     roots,
 		autoInjectEnv:     s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
-		settings:          s.settingsService.GetSettingsOrDefaults(ctx),
+		settings:          s.settingsService.GetSettingsConfig(),
 		gitOpsSyncs:       make(map[string]GitOpsSync),
 		pathMapper:        sync.OnceValue(func() *projects.PathMapper { return s.projectPathMapper(ctx) }),
 		composeFiles:      make(map[string]string, len(projectsList)),
@@ -381,7 +375,7 @@ func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList
 func (s *ProjectService) preloadGitOpsSyncs(ctx context.Context, env *projectMetadataEnv, projectsList []Project) {
 	syncIDs := make([]string, 0, len(projectsList))
 	for _, proj := range projectsList {
-		if id := strings.TrimSpace(kit.FromPtr((&proj).GitOpsManagedBy)); id != "" {
+		if id := strings.TrimSpace(kit.FromPtr(proj.GitOpsManagedBy)); id != "" {
 			syncIDs = append(syncIDs, id)
 		}
 	}
@@ -453,6 +447,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		parsedCompose:               projects.NewComposeCache(2048, projects.CloneComposeProject),
 		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
 		composeIdentities:           projects.NewComposeCache[types.ComposeIdentity](2048, nil),
+		composeNames:                composeNameCache{byName: make(map[string]string)},
 		FilesChanged:                concurrency.NewSignal[string](),
 	}
 	return s
@@ -600,6 +595,70 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 		return nil, common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	return proj, nil
+}
+
+func (s *ProjectService) stopProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	model, err := s.loadComposeProjectForProject(ctx, proj, nil)
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	// A stop cancelled partway would leave a slow container to exit after the restart skipped it.
+	if stopErr := composeStopProjectServices(context.WithoutCancel(ctx), types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); stopErr != nil {
+		return stopErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStop, projectID, proj.Name, user, database.JSON{
+		"action":      "stop",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"services":    services,
+	}, "could not log project stop action")
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
+}
+
+func (s *ProjectService) startProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	proj, err := s.getMutableProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	// Callers restart uncancelled while holding the project's locks, so the load gives up with the Docker API.
+	loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
+	model, err := s.loadComposeProjectForProject(loadCtx, proj, nil)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("failed to load compose project: %w", err)
+	}
+	services = knownServices(model, services)
+	if len(services) == 0 {
+		return nil
+	}
+	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
+	if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
+		Project:    model,
+		DockerHost: s.dockerService.DockerHost(),
+		Services:   services,
+	}); startErr != nil {
+		return startErr
+	}
+	s.logProjectEvent(ctx, event.EventTypeProjectStart, projectID, proj.Name, user, database.JSON{
+		"action":      "start",
+		"projectID":   projectID,
+		"projectName": proj.Name,
+		"services":    services,
+	}, "could not log project start action")
+	return s.updateRuntimeProjectStatus(context.WithoutCancel(ctx), projectID, ProjectStatusRunning)
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -881,13 +940,13 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 }
 
 // loadComposeProjectForProject runs prepare before host path translation; read paths pass nil.
-func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj *Project, prepare projects.PrepareProjectFunc, services ...string) (*composetypes.Project, error) {
+func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj *Project, prepare projects.PrepareProjectFunc, services ...string) (*composeTypes.Project, error) {
 	composeFileFullPath, err := s.ResolveProjectComposeFile(ctx, proj)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	cfg := s.settingsService.GetSettingsConfig()
 	projectsDirectory, dirErr := projects.GetProjectsDirectory(ctx, cfg.ProjectsDirectory.Value)
 	if dirErr != nil {
 		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", dirErr)
@@ -907,13 +966,13 @@ func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj 
 	return composeProject, nil
 }
 
-func (s *ProjectService) getCachedComposeProject(ctx context.Context, proj *Project, env *projectMetadataEnv) (*composetypes.Project, error) {
+func (s *ProjectService) getCachedComposeProject(ctx context.Context, proj *Project, env *projectMetadataEnv) (*composeTypes.Project, error) {
 	if proj == nil {
 		return nil, errors.New("project is nil")
 	}
 	cfg := func() *settings.Settings {
 		if env == nil {
-			return s.settingsService.GetSettingsOrDefaults(ctx)
+			return s.settingsService.GetSettingsConfig()
 		}
 		return env.settings
 	}()
@@ -945,7 +1004,7 @@ func (s *ProjectService) getCachedComposeProject(ctx context.Context, proj *Proj
 
 func (s *ProjectService) refreshComposeProjectName(ctx context.Context, proj *Project) {
 	meta, err := func() (types.ComposeIdentity, error) {
-		cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+		cfg := s.settingsService.GetSettingsConfig()
 		projectsDirectory, dirErr := projects.GetProjectsDirectory(ctx, cfg.ProjectsDirectory.Value)
 		if dirErr != nil {
 			return types.ComposeIdentity{}, dirErr
@@ -1045,11 +1104,8 @@ func (s *LifecycleService) runPreDeploy(ctx context.Context, project *Project, a
 	}
 
 	maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec")
-	timeout := time.Duration(kit.Ternary(
-		maxTimeoutSec > 0,
-		min(kit.Ternary(syncRecord.PreDeployTimeoutSec > 0, syncRecord.PreDeployTimeoutSec, types.LifecycleDefaultTimeoutSec), maxTimeoutSec),
-		kit.Ternary(syncRecord.PreDeployTimeoutSec > 0, syncRecord.PreDeployTimeoutSec, types.LifecycleDefaultTimeoutSec),
-	)) * time.Second
+	timeoutSec := kit.Ternary(syncRecord.PreDeployTimeoutSec > 0, syncRecord.PreDeployTimeoutSec, types.LifecycleDefaultTimeoutSec)
+	timeout := time.Duration(kit.Ternary(maxTimeoutSec > 0, min(timeoutSec, maxTimeoutSec), timeoutSec)) * time.Second
 	slog.InfoContext(ctx, "running pre-deploy lifecycle hook",
 		"projectId", project.ID,
 		"syncId", syncRecord.ID,
@@ -1396,7 +1452,7 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 		PreDeploy: func(ctx context.Context) error {
 			return s.lifecycleService.runPreDeploy(ctx, projectFromDb, user)
 		},
-		Load: func(ctx context.Context) (*composetypes.Project, error) {
+		Load: func(ctx context.Context) (*composeTypes.Project, error) {
 			model, loadComposeProjectForProjectErr := s.loadComposeProjectForProject(ctx, projectFromDb, deployment.PrepareProjectBindDirectories(projectFromDb.Path))
 			if loadComposeProjectForProjectErr == nil {
 				closeSuppression = s.eventService.BeginComposeSuppressionWindow(model.Name)
@@ -1739,35 +1795,16 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 	if err != nil {
 		return nil, err
 	}
-	projectsDirectory, err := s.GetProjectsDirectory(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get projects directory: %w", err)
+	pack := func(w io.Writer) error {
+		return projects.PackProjectDirectory(ctx, proj.Path, w)
 	}
-	archive, archiveLogical, err := acfs.Root{Path: projectsDirectory}.CreateTemp(ctx, "/", ".project-export-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create project archive: %w", err)
-	}
-	defer func() {
-		if closeErr := archive.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
-			slog.WarnContext(ctx, "failed to close temporary project archive", "projectId", projectID, "path", archiveLogical, "error", closeErr)
-		}
-		if removeErr := (acfs.Root{Path: projectsDirectory}).Remove(context.WithoutCancel(ctx), archiveLogical); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			slog.WarnContext(ctx, "failed to remove temporary project archive", "projectId", projectID, "path", archiveLogical, "error", removeErr)
-		}
-	}()
-	if packErr := projects.PackProjectDirectory(ctx, proj.Path, archive); packErr != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, packErr)
-	}
-	info, err := archive.Stat()
+	session, err := s.uploads.WriteSession(ctx, upload.WriteSessionOptions{
+		Write:    pack,
+		Kind:     types.UploadKindProjectArchive,
+		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
-	}
-	if _, seekErr := archive.Seek(0, io.SeekStart); seekErr != nil {
-		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, seekErr)
-	}
-	session, err := s.uploads.IngestSession(ctx, types.UploadKindProjectArchive, projects.SanitizeProjectName(proj.Name)+".tar.gz", info.Size(), archive)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store project archive: %w", err)
 	}
 	return session, nil
 }
@@ -1791,7 +1828,7 @@ func (s *ProjectService) createRootDirectory(ctx context.Context, directory stri
 	})
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts DestroyOptions, user types.Actor) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectId", projectID,
 		"removeFiles", opts.RemoveFiles,
@@ -1804,7 +1841,10 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 		return err
 	}
 	defer unlock()
+	return s.destroyProject(ctx, projectID, opts, user)
+}
 
+func (s *ProjectService) destroyProject(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1818,8 +1858,10 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, o
 	missing := func(err error) bool {
 		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
 	}
-	if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
-		return fmt.Errorf("failed to bring down project: %w", downErr)
+	if !opts.KeepContainers {
+		if downErr := s.downProject(ctx, proj, types.SystemUser); downErr != nil && !missing(downErr) {
+			return fmt.Errorf("failed to bring down project: %w", downErr)
+		}
 	}
 
 	if opts.RemoveVolumes {
@@ -2112,17 +2154,27 @@ func (s *ProjectService) updateProjectStatusAndCounts(ctx context.Context, proje
 	return nil
 }
 
-func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projectID string) {
-	restoreCtx := context.WithoutCancel(ctx)
-	services, err := s.projectServices(restoreCtx, projectID)
-	if err == nil {
-		if err = s.updateProjectStatusAndCounts(restoreCtx, projectID, mo.Some(ProjectStatus(listing.ProjectStatus(services)))); err == nil {
-			return
-		}
+func (s *ProjectService) updateRuntimeProjectStatus(ctx context.Context, projectID string, fallback ProjectStatus) error {
+	services, err := s.projectServices(ctx, projectID)
+	if err != nil {
+		slog.ErrorContext(ctx, "loading project services failed during status update", "projectId", projectID, "error", err)
+		return s.updateProjectStatus(ctx, projectID, fallback)
 	}
-	slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectId", projectID, "error", err)
-	if updateErr := s.updateProjectStatus(restoreCtx, projectID, ProjectStatusStopped); updateErr != nil {
-		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectId", projectID, "error", updateErr)
+	serviceCount, runningCount := listing.ServiceCounts(services)
+	if updateErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
+		"service_count": serviceCount,
+		"running_count": runningCount,
+		"status":        ProjectStatus(listing.ProjectStatus(services)),
+		"updated_at":    time.Now(),
+	}).Error; updateErr != nil {
+		return fmt.Errorf("failed to update project status and counts: %w", updateErr)
+	}
+	return nil
+}
+
+func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projectID string) {
+	if err := s.updateRuntimeProjectStatus(context.WithoutCancel(ctx), projectID, ProjectStatusStopped); err != nil {
+		slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectId", projectID, "error", err)
 	}
 }
 
@@ -2249,7 +2301,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		}
 		composeFile = kit.Ternary(detectErr != nil && (!errors.Is(detectErr, common.ErrProjectEnvUnreadable) || identified == ""), "", identified)
 	}
-	composeProj := func() *composetypes.Project {
+	composeProj := func() *composeTypes.Project {
 		if composeErr != nil || (!opts.IncludeServiceConfigs && !opts.IncludeUpdateInfo) {
 			return nil
 		}
@@ -2283,9 +2335,9 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 				return nil
 			}
 			configured := s.details.ConfiguredRuntimeServices(ctx, runtimeServices)
-			imageRefs := projects.ImageRefsFromComposeConfigs(composeServices)
+			imageRefs := projects.ImageRefsFrom(composeServices, func(svc composeTypes.ServiceConfig) string { return svc.Image })
 			if len(imageRefs) == 0 {
-				imageRefs = projects.ImageRefsFromRuntimeServices(configured)
+				imageRefs = projects.ImageRefsFrom(configured, func(svc types.ProjectRuntimeService) string { return svc.Image })
 			}
 			updateInfoByRef, updateInfoErr := s.imageService.GetUpdateInfoByImageRefs(ctx, imageRefs)
 			if updateInfoErr != nil {
@@ -2342,7 +2394,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		ServiceCount: kit.Ternary(serr == nil && services != nil, len(services), proj.ServiceCount),
 		IsArchived:   proj.IsArchived,
 		HasBuildDirective: len(projects.ParseImageRefsJSON(kit.FromPtr(proj.BuildImageRefsJSON))) > 0 ||
-			slices.ContainsFunc(composeServices, func(svc composetypes.ServiceConfig) bool { return svc.Build != nil }),
+			slices.ContainsFunc(composeServices, func(svc composeTypes.ServiceConfig) bool { return svc.Build != nil }),
 		RedeployDisabled:   slices.ContainsFunc(runtimeServices, func(svc types.ProjectRuntimeService) bool { return svc.RedeployDisabled }),
 		ConfigurationError: projects.CheckProjectEnvAccess(ctx, projectsDir, proj.Path),
 	}, nil
@@ -2375,7 +2427,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 
 	// A cancelled request leaves the remaining projects without configured services.
 	refsByIndex := make([][]string, len(projectsList))
-	servicesByIndex := make([][]composetypes.ServiceConfig, len(projectsList))
+	servicesByIndex := make([][]composeTypes.ServiceConfig, len(projectsList))
 	var g errgroup.Group
 	g.SetLimit(maxConcurrentComposeReads)
 	for i, proj := range projectsList {
@@ -2389,14 +2441,14 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 				refsByIndex[i] = slices.DeleteFunc(projects.ParseImageRefsJSON(proj.ImageRefsJSON), func(ref string) bool { return hiddenRefsByProjectID[proj.ID][ref] })
 				return nil
 			}
-			services := make([]composetypes.ServiceConfig, 0, len(composeProject.Services))
+			services := make([]composeTypes.ServiceConfig, 0, len(composeProject.Services))
 			for _, service := range composeProject.Services {
 				hidden, _ := kit.ParseBool(service.Labels[selfcontainer.HiddenResourceLabel])
 				if includeHidden || (!hidden && !hiddenServicesByProjectID[proj.ID][service.Name]) {
 					services = append(services, service)
 				}
 			}
-			refsByIndex[i], servicesByIndex[i] = projects.ImageRefsFromComposeConfigs(services), services
+			refsByIndex[i], servicesByIndex[i] = projects.ImageRefsFrom(services, func(svc composeTypes.ServiceConfig) string { return svc.Image }), services
 			return nil
 		})
 	}
@@ -2404,7 +2456,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 
 	projectIDs := make([]string, len(projectsList))
 	imageRefsByProjectID := make(map[string][]string, len(projectsList))
-	servicesByProjectID := make(map[string][]composetypes.ServiceConfig, len(projectsList))
+	servicesByProjectID := make(map[string][]composeTypes.ServiceConfig, len(projectsList))
 	for i, proj := range projectsList {
 		projectIDs[i] = proj.ID
 		imageRefsByProjectID[proj.ID], servicesByProjectID[proj.ID] = refsByIndex[i], servicesByIndex[i]
@@ -2445,7 +2497,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 				}
 				refs := imageRefsByProjectID[d.ID]
 				if len(refs) == 0 {
-					refs = projects.ImageRefsFromRuntimeServices(configuredByIndex[i])
+					refs = projects.ImageRefsFrom(configuredByIndex[i], func(svc types.ProjectRuntimeService) string { return svc.Image })
 				}
 				return buildUpdateInfoSummary(refs, projectdetails.MergeProjectContainerUpdateInfo(updateInfoByRef, configuredByIndex[i], scoped), nil)
 			}(),
@@ -2493,7 +2545,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 
 func BuildConfiguredUpdateInfo(
 	projectID string,
-	services []composetypes.ServiceConfig,
+	services []composeTypes.ServiceConfig,
 	byRef map[string]*types.ImageUpdateInfo,
 	records []imageupdate.ImageUpdateRecord,
 	runtimeUpdates ...map[string]*types.ImageUpdateInfo,
@@ -2563,7 +2615,7 @@ func BuildConfiguredUpdateInfo(
 			delete(merged, imageRef)
 		}
 	}
-	return buildUpdateInfoSummary(projects.ImageRefsFromComposeConfigs(services), merged, serviceUpdates)
+	return buildUpdateInfoSummary(projects.ImageRefsFrom(services, func(svc composeTypes.ServiceConfig) string { return svc.Image }), merged, serviceUpdates)
 }
 
 func buildUpdateInfoSummary(
@@ -3140,7 +3192,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		return fmt.Errorf("query existing project for %q failed: %w", dirPath, err)
 	}
 
-	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	cfg := s.settingsService.GetSettingsConfig()
 	composeMetadata, serviceCountErr := func() (types.ComposeIdentity, error) {
 		projectsDirectory, dirErr := projects.GetProjectsDirectory(ctx, cfg.ProjectsDirectory.Value)
 		if dirErr != nil {
@@ -3725,7 +3777,14 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 		return nil, fmt.Errorf("failed to connect to Docker for volume rename: %w", err)
 	}
 
-	return projects.PlanVolumeMigration(ctx, dockerClient, composeProject, oldComposeName, newComposeName, volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value))
+	return projects.PlanVolumeMigration(ctx, projects.VolumeMigrationPlanConfig{
+		DockerClient:   dockerClient,
+		UsageCache:     s.dockerService.VolumeUsage,
+		ComposeProject: composeProject,
+		OldComposeName: oldComposeName,
+		NewComposeName: newComposeName,
+		ToolsImage:     volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value),
+	})
 }
 
 func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, options ServiceUpdateOptions) error {
@@ -3958,31 +4017,17 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.Proj
 }
 
 func (s *ProjectService) AggregateProjects(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Project], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.Project]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.Project]{}, fmt.Errorf("collect environment projects: %w", err)
-	}
-	pages := make([]pagination.EnvironmentPage[types.Project], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.Project]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
 	byID := func(a, b types.Project) int { return strings.Compare(a.ID, b.ID) }
 	listConfig := listing.PaginationConfig()
-	items, resp := pagination.MergeEnvironmentPages(pagination.Config[types.Project]{
+	result, err := handlerutil.AggregatePaginated(ctx, pagination.Config[types.Project]{
 		SearchAccessors: listConfig.SearchAccessors,
 		SortBindings:    append([]pagination.SortBinding[types.Project]{{Key: "id", Fn: byID, DescFn: byID}}, listConfig.SortBindings...),
 		FilterAccessors: listConfig.FilterAccessors,
-	}, pages, params)
-	return types.Paginated[types.Project]{
-		Success:            true,
-		Data:               items,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
+	}, params)
+	if err != nil {
+		return types.Paginated[types.Project]{}, fmt.Errorf("collect environment projects: %w", err)
+	}
+	return result, nil
 }
 
 func (s *ProjectService) AggregateProjectCounts(ctx context.Context) (types.ApiResponse[types.ProjectStatusCounts], error) {

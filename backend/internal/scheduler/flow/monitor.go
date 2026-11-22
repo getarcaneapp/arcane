@@ -246,18 +246,14 @@ func decodeOutcome(status workflow.InstanceStatus, steps []types.StepOutcome, ac
 		if err := status.DecodeOutput(&outcome); err != nil {
 			outcome = types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Workflow returned an invalid outcome: " + err.Error()}
 		}
-		if outcome.Status == "" {
-			outcome.Status = types.RunStatusSucceeded
-		}
+		outcome.Status = cmp.Or(outcome.Status, types.RunStatusSucceeded)
 	case workflow.StatusCancelled:
 		outcome = types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: status.Cause}
 	case workflow.StatusFailed, workflow.StatusPending, workflow.StatusRunning, workflow.StatusSuspended, workflow.StatusCompensating:
 		outcome = types.SchedulerOutcome{Status: types.RunStatusFailed, Message: status.Cause}
 	}
 	outcome.Steps = steps
-	if outcome.ActivityID == "" {
-		outcome.ActivityID = activityID
-	}
+	outcome.ActivityID = cmp.Or(outcome.ActivityID, activityID)
 	return outcome
 }
 

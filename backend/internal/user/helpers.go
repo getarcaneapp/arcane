@@ -19,6 +19,7 @@ import (
 
 const (
 	maxCustomThemes          = 20
+	maxTerminalChoices       = 1000
 	dashboardColumns         = 12
 	maxDashboardWidgets      = 50
 	maxDashboardWidgetTitle  = 80
@@ -57,6 +58,24 @@ var (
 func CurrentUserFromContext(ctx context.Context) (*User, bool) {
 	u, ok := ctx.Value(types.CurrentUserContextKey{}).(*User)
 	return u, ok
+}
+
+func validateTerminalChoices(field string, choices map[string]string) error {
+	if len(choices) > maxTerminalChoices {
+		return common.Classify(common.ErrValidation, &types.FieldError{
+			Field: field,
+			Err:   fmt.Errorf("at most %d saved terminal choices are allowed", maxTerminalChoices),
+		})
+	}
+	for key, value := range choices {
+		if key == "" || len(key) > 512 || value == "" || len(value) > 255 {
+			return common.Classify(common.ErrValidation, &types.FieldError{
+				Field: field,
+				Err:   fmt.Errorf("invalid saved terminal choice %q", key),
+			})
+		}
+	}
+	return nil
 }
 
 func validateCustomThemes(themes []types.CustomTheme) error {

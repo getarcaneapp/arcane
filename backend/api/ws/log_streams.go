@@ -6,7 +6,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"log/slog"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -151,9 +150,9 @@ func broadcastLogStreamError(ctx context.Context, label, resourceID, format stri
 }
 
 func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
-	projectID := c.Param("projectId")
-	if strings.TrimSpace(projectID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Project ID is required"})
+	projectID, ok, err := requireWSParam(c, "projectId", "Project ID")
+	if !ok {
+		return err
 	}
 
 	streamLogs := h.projectLogStreamer
@@ -332,9 +331,9 @@ func mapLogLines[T any](ctx context.Context, lines <-chan string, transform func
 }
 
 func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
-	containerID := c.Param("containerId")
-	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
+	containerID, ok, err := requireWSParam(c, "containerId", "Container ID")
+	if !ok {
+		return err
 	}
 
 	streamLogs := h.containerLogStreamer
@@ -359,9 +358,9 @@ func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 }
 
 func (h *WebSocketHandler) ServiceLogs(c *echo.Context) error {
-	serviceID := c.Param("serviceId")
-	if strings.TrimSpace(serviceID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Service ID is required"})
+	serviceID, ok, err := requireWSParam(c, "serviceId", "Service ID")
+	if !ok {
+		return err
 	}
 
 	params := parseLogStreamParams(c)

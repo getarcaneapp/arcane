@@ -6,9 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"golang.org/x/mod/semver"
-
 	"kit.getarcane.app"
+	"kit.getarcane.app/semver"
 
 	"getarcane.dev/types/v3"
 )
@@ -249,12 +248,12 @@ func (r *RiskScore) AddEnvironment(environmentID string, basis types.RiskScoreBa
 }
 
 func (r *RiskScore) result(total float64) types.VulnerabilityPatchPriority {
-	result := types.VulnerabilityPatchPriority{RiskScore: int(math.Round(total)), ScoreStatus: types.VulnerabilityScoreStatusComplete}
-	result.RiskBand = RiskBand(result.RiskScore)
-	if len(r.scores) == 0 && len(r.unscored) > 0 {
-		result.ScoreStatus = types.VulnerabilityScoreStatusUnavailable
+	score := int(math.Round(total))
+	return types.VulnerabilityPatchPriority{
+		RiskScore:   score,
+		RiskBand:    RiskBand(score),
+		ScoreStatus: kit.Ternary(len(r.scores) == 0 && len(r.unscored) > 0, types.VulnerabilityScoreStatusUnavailable, types.VulnerabilityScoreStatusComplete),
 	}
-	return result
 }
 
 func RiskBand(score int) types.RiskBand {
@@ -276,7 +275,7 @@ func isNewerFixedVersion(candidate, current string) bool {
 	if current == "" {
 		return true
 	}
-	a, b := kit.EnsurePrefix(candidate, "v"), kit.EnsurePrefix(current, "v")
+	a, b := strings.TrimSpace(candidate), strings.TrimSpace(current)
 	return semver.IsValid(a) && semver.IsValid(b) && semver.Compare(a, b) > 0
 }
 

@@ -12,22 +12,6 @@
 
 	let { mounts }: Props = $props();
 
-	function getMountType(mount: SwarmServiceMount): string {
-		return mount.type || 'volume';
-	}
-
-	function getMountSource(mount: SwarmServiceMount): string {
-		return mount.source || '';
-	}
-
-	function getMountTarget(mount: SwarmServiceMount): string {
-		return mount.target || '';
-	}
-
-	function getMountReadOnly(mount: SwarmServiceMount): boolean {
-		return mount.readOnly || false;
-	}
-
 	function isBindBackedVolume(mount: SwarmServiceMount): boolean {
 		const opts = mount.volumeOptions;
 		return opts?.['type'] === 'none' && opts?.['o'] === 'bind';
@@ -61,10 +45,10 @@
 			{#if mounts.length > 0}
 				<div class="divide-y divide-border/60">
 					{#each mounts as mount (mount.target)}
-						{@const type = getMountType(mount)}
-						{@const source = getMountSource(mount)}
-						{@const target = getMountTarget(mount)}
-						{@const readOnly = getMountReadOnly(mount)}
+						{@const type = mount.type || 'volume'}
+						{@const source = mount.source || ''}
+						{@const target = mount.target || ''}
+						{@const readOnly = mount.readOnly || false}
 						{@const iconColor = getMountIconColor(type, mount)}
 						{@const bindBacked = type === 'volume' && isBindBackedVolume(mount)}
 						<section class="py-5 first:pt-0 last:pb-0">

@@ -26,7 +26,6 @@ const (
 	// actorDiagnosticsStreamInterval is slower because each push queries every environment.
 	actorDiagnosticsStreamInterval = 10 * time.Second
 	diagnosticsReadLimit           = 512
-	diagnosticsWriteWait           = 10 * time.Second
 	diagnosticsPingWait            = 10 * time.Second
 	diagnosticsPingPeriod          = 54 * time.Second
 )
@@ -51,16 +50,18 @@ var (
 )
 
 func buildDiagnostics(diag *diagnostics.DiagnosticsService) types.Diagnostics {
-	d := types.Diagnostics{Timestamp: time.Now().UTC()}
-	if diag != nil {
-		d.Runtime, d.Memory, d.GC = diag.Collect()
+	runtime, memory, gc := diag.Collect()
+	runtime.WSWorkerGoroutines = int(wshub.WorkerGoroutines.Load())
+	return types.Diagnostics{
+		Timestamp: time.Now().UTC(),
+		Runtime:   runtime,
+		Memory:    memory,
+		GC:        gc,
+		WebSocket: types.WebSocketDiagnostics{
+			Snapshot:    defaultWebSocketMetrics.Snapshot(),
+			Connections: defaultWebSocketMetrics.Connections(),
+		},
 	}
-	d.Runtime.WSWorkerGoroutines = int(wshub.WorkerGoroutines.Load())
-	d.WebSocket = types.WebSocketDiagnostics{
-		Snapshot:    defaultWebSocketMetrics.Snapshot(),
-		Connections: defaultWebSocketMetrics.Connections(),
-	}
-	return d
 }
 
 func (h *WebSocketHandler) diagnosticsRoutes() []middleware.EchoRoute {
@@ -90,38 +91,39 @@ func (h *WebSocketHandler) diagnosticsRoutes() []middleware.EchoRoute {
 func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 	ps, _ := c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
 	snapshot := func(context.Context) any {
-		d := buildDiagnostics(h.diagnosticsService)
-		return types.DiagnosticsMessage{Type: "snapshot", Snapshot: &d}
+		return types.DiagnosticsMessage{Type: "snapshot", Snapshot: new(buildDiagnostics(h.diagnosticsService))}
 	}
 	return h.streamSnapshots(c, diagnosticsStreamInterval, snapshot, func(ctx context.Context, cmd types.DiagnosticsCommand) any {
 		if cmd.Type == "refresh" {
 			return snapshot(ctx)
 		}
-		result := types.DiagnosticsMessage{Type: "result", ID: cmd.ID}
 		for _, perm := range diagnosticsCommandConditions.Required("type", cmd.Type) {
 			if !ps.Allows(perm, "") {
-				result.Error = "permission denied: " + perm
-				return result
+				return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Error: "permission denied: " + perm}
 			}
 		}
-		var err error
 		switch cmd.Type {
 		case "leakScan":
-			report, scanErr := h.diagnosticsService.ScanGoroutineLeaks()
-			result.LeakReport, err = &report, scanErr
+			report, err := h.diagnosticsService.ScanGoroutineLeaks()
+			if err != nil {
+				return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, LeakReport: &report, Error: err.Error()}
+			}
+			return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, LeakReport: &report}
 		case "dump":
-			var text []byte
-			text, err = h.diagnosticsService.Profile(ctx, cmd.Name, 0, 2)
-			result.Text = string(text)
+			text, err := h.diagnosticsService.Profile(ctx, cmd.Name, 0, 2)
+			if err != nil {
+				return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Text: string(text), Error: err.Error()}
+			}
+			return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Text: string(text)}
 		case "profile":
-			result.Data, err = h.diagnosticsService.Profile(ctx, cmd.Name, min(cmp.Or(cmd.Seconds, 30), 120), 0)
+			data, err := h.diagnosticsService.Profile(ctx, cmd.Name, min(cmp.Or(cmd.Seconds, 30), 120), 0)
+			if err != nil {
+				return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Data: data, Error: err.Error()}
+			}
+			return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Data: data}
 		default:
-			err = fmt.Errorf("unknown diagnostics command %q", cmd.Type)
+			return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Error: fmt.Sprintf("unknown diagnostics command %q", cmd.Type)}
 		}
-		if err != nil {
-			result.Error = err.Error()
-		}
-		return result
 	})
 }
 
@@ -145,13 +147,7 @@ func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Durati
 
 	ctx := c.Request().Context()
 	write := func(v any) bool {
-		b, marshalErr := json.Marshal(v)
-		if marshalErr != nil {
-			return true
-		}
-		wctx, cancel := context.WithTimeout(ctx, diagnosticsWriteWait)
-		defer cancel()
-		return conn.Write(wctx, websocket.MessageText, b) == nil
+		return writeWSJSON(ctx, conn, v) == nil
 	}
 	var onMessage func([]byte)
 	if handle != nil {
@@ -225,13 +221,7 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 	ctx := c.Request().Context()
 	done := diagnosticsReadLoop(ctx, conn, nil)
 	write := func(e logs.Entry) bool {
-		b, marshalErr := json.Marshal(e)
-		if marshalErr != nil {
-			return true
-		}
-		wctx, wcancel := context.WithTimeout(ctx, diagnosticsWriteWait)
-		defer wcancel()
-		return conn.Write(wctx, websocket.MessageText, b) == nil
+		return writeWSJSON(ctx, conn, e) == nil
 	}
 
 	for _, e := range defaultLogBroadcaster.Recent() {

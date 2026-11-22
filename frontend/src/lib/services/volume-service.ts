@@ -1,7 +1,7 @@
 import type { MessageResponse } from '#lib/types/base.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import type { VolumeCreate, VolumesPaginatedResponse } from '#lib/types/ui/volume.js';
-import type { Volume, VolumeUsageResponse, VolumeUsageCounts, VolumeRename, VolumeSizeInfo } from '#lib/types/volume.js';
+import type { Volume, VolumeUsageResponse, VolumeRename, VolumeSizeInfo } from '#lib/types/volume.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
@@ -25,11 +25,6 @@ class VolumeService extends BaseAPIService {
 		return this.handleResponse(
 			this.api.get(`/agents/${environmentId}/volumes/${volumeName}/usage`)
 		) as Promise<VolumeUsageResponse>;
-	}
-
-	async getVolumeUsageCounts(environmentId: string, config?: APIRequestConfig): Promise<VolumeUsageCounts> {
-		const res = await this.api.get<{ data: VolumeUsageCounts }>(`/agents/${environmentId}/volumes/counts`, config);
-		return res.data.data;
 	}
 
 	async getVolumeSizes(environmentId: string, config?: APIRequestConfig): Promise<VolumeSizeInfo[]> {

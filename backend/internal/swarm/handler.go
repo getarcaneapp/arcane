@@ -75,7 +75,7 @@ func NewHandler(swarmService *SwarmService, eventService *event.EventService) *S
 func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.swarmService.AggregateTasks(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, taskPagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list swarm tasks: " + err.Error())
 		}

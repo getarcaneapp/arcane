@@ -111,7 +111,16 @@ var (
 		routeSurface("route.gitops.repositories", "/gitops/repositories", "Git Repositories", AccessScopeModeGlobalOnly, []string{PermGitReposList, PermGitReposRead}, 43),
 
 		settingsCategorySurface("apikeys", "/system/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
-		allOfSettingsCategorySurface("authentication", "/system/authentication", "Authentication", AccessScopeModeGlobalOnly, AllPermissions()),
+		{
+			ID:          "settings.category.authentication",
+			Kind:        AccessSurfaceKindSettingsCategory,
+			URL:         "/system/authentication",
+			Label:       "Authentication",
+			AccessMode:  AccessModePermissions,
+			MatchMode:   AccessMatchModeAllOf,
+			ScopeMode:   AccessScopeModeGlobalOnly,
+			Permissions: AllPermissions(),
+		},
 		settingsCategorySurface("notifications", "/system/notifications", "Notifications", AccessScopeModeGlobalOnly, []string{PermNotificationsList, PermNotificationsRead}),
 		settingsCategorySurface("roles", "/system/roles", "Roles", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}),
 		settingsCategorySurface("s3destinations", "/system/backups/s3", "S3 Destinations", AccessScopeModeGlobalOnly, []string{PermS3DestinationsList, PermS3DestinationsRead}),
@@ -130,7 +139,16 @@ var (
 		settingsCategorySurface("tunnel", "/settings/tunnel", "Agent Tunnel", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		settingsCategorySurface("activity", "/settings/activity", "Activity", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
 		settingsCategorySurface("build", "/settings/builds", "Builds", AccessScopeModeEnvPlusGlobal, []string{PermEnvironmentSettingsRead}),
-		allOfSettingsCategorySurface("jobschedule", "/settings/automations", "Automations", AccessScopeModeEnvPlusGlobal, []string{PermJobsList, PermEnvironmentSettingsRead}),
+		{
+			ID:          "settings.category.jobschedule",
+			Kind:        AccessSurfaceKindSettingsCategory,
+			URL:         "/settings/automations",
+			Label:       "Automations",
+			AccessMode:  AccessModePermissions,
+			MatchMode:   AccessMatchModeAllOf,
+			ScopeMode:   AccessScopeModeEnvPlusGlobal,
+			Permissions: []string{PermJobsList, PermEnvironmentSettingsRead},
+		},
 	}
 
 	accessSurfacesByID = buildAccessSurfaceIndex(accessSurfaces)
@@ -230,15 +248,22 @@ func routeSurface(id, url, label, scopeMode string, permissions []string, fallba
 		AccessMode:    AccessModePermissions,
 		MatchMode:     AccessMatchModeAnyOf,
 		ScopeMode:     scopeMode,
-		Permissions:   append([]string(nil), permissions...),
+		Permissions:   slices.Clone(permissions),
 		FallbackOrder: fallbackOrder,
 	}
 }
 
 func allOfRouteSurface(id, url, label, scopeMode string, permissions []string) AccessSurface {
-	surface := routeSurface(id, url, label, scopeMode, permissions, 0)
-	surface.MatchMode = AccessMatchModeAllOf
-	return surface
+	return AccessSurface{
+		ID:          id,
+		Kind:        AccessSurfaceKindRoute,
+		URL:         url,
+		Label:       label,
+		AccessMode:  AccessModePermissions,
+		MatchMode:   AccessMatchModeAllOf,
+		ScopeMode:   scopeMode,
+		Permissions: slices.Clone(permissions),
+	}
 }
 
 func settingsCategorySurface(categoryID, url, label, scopeMode string, permissions []string) AccessSurface {
@@ -250,14 +275,8 @@ func settingsCategorySurface(categoryID, url, label, scopeMode string, permissio
 		AccessMode:  AccessModePermissions,
 		MatchMode:   AccessMatchModeAnyOf,
 		ScopeMode:   scopeMode,
-		Permissions: append([]string(nil), permissions...),
+		Permissions: slices.Clone(permissions),
 	}
-}
-
-func allOfSettingsCategorySurface(categoryID, url, label, scopeMode string, permissions []string) AccessSurface {
-	surface := settingsCategorySurface(categoryID, url, label, scopeMode, permissions)
-	surface.MatchMode = AccessMatchModeAllOf
-	return surface
 }
 
 func landingSurface(id, url, label string, children []string, fallbackOrder int) AccessSurface {
@@ -269,7 +288,7 @@ func landingSurface(id, url, label string, children []string, fallbackOrder int)
 		AccessMode:    AccessModeAnyChild,
 		MatchMode:     AccessMatchModeAnyOf,
 		ScopeMode:     AccessScopeModeEnvPlusGlobal,
-		Children:      append([]string(nil), children...),
+		Children:      slices.Clone(children),
 		FallbackOrder: fallbackOrder,
 	}
 }

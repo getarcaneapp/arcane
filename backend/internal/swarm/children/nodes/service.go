@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -25,18 +24,16 @@ import (
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/pkg/agent"
-	"getarcane.dev/arcane/v3/pkg/handlerutil"
-	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	Service struct {
-		docker             *dockerInternal.DockerClientService
+		docker             *docker.DockerClientService
 		ensureManager      func(ctx context.Context) error
 		listTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 		localJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
@@ -47,7 +44,7 @@ type (
 	}
 
 	ServiceParams struct {
-		DockerService      *dockerInternal.DockerClientService
+		DockerService      *docker.DockerClientService
 		EnsureManager      func(ctx context.Context) error
 		ListTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 		LocalJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
@@ -399,13 +396,12 @@ func (s *Service) buildNodeAgentCoverage(ctx context.Context, environmentID stri
 	g, groupCtx := errgroup.WithContext(ctx)
 	g.SetLimit(swarmNodeIdentityProbeConcurrency)
 	for _, candidate := range probeEnvsByID {
-		env := candidate
 		g.Go(func() (workerErr error) {
 			defer concurrency.RecoverToError(&workerErr, "swarm worker")
 
-			runtime := s.resolveSwarmNodeAgentRuntime(groupCtx, &env)
+			runtime := s.resolveSwarmNodeAgentRuntime(groupCtx, &candidate)
 			runtimeMu.Lock()
-			runtimeByEnvID[env.ID] = runtime
+			runtimeByEnvID[candidate.ID] = runtime
 			runtimeMu.Unlock()
 			return nil
 		})
@@ -416,8 +412,7 @@ func (s *Service) buildNodeAgentCoverage(ctx context.Context, environmentID stri
 
 	boundEnvsByNodeID := make(map[string][]environment.Environment, len(agentEnvs))
 	for _, env := range agentEnvs {
-		if env.SwarmNodeID != nil && strings.TrimSpace(*env.SwarmNodeID) != "" {
-			nodeID := strings.TrimSpace(*env.SwarmNodeID)
+		if nodeID := strings.TrimSpace(kit.FromPtr(env.SwarmNodeID)); nodeID != "" {
 			boundEnvsByNodeID[nodeID] = append(boundEnvsByNodeID[nodeID], env)
 		}
 	}
@@ -774,30 +769,6 @@ func (s *Service) ListNodeTasksPaginated(ctx context.Context, nodeID string, par
 	return s.listTasks(ctx, filters, params)
 }
 
-func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmNode], error) {
-	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmNode]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
-	if err != nil {
-		return types.Paginated[types.SwarmNode]{}, err
-	}
-
-	pages := make([]pagination.EnvironmentPage[types.SwarmNode], 0, len(collection.Results))
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.SwarmNode]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-	}
-	data, resp := pagination.MergeEnvironmentPages(s.buildNodePaginationConfig(), pages, params)
-
-	return types.Paginated[types.SwarmNode]{
-		Success:            true,
-		Data:               data,
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
-	}, nil
-}
-
 func (s *Service) buildNodePaginationConfig() pagination.Config[types.SwarmNode] {
 	return pagination.Config[types.SwarmNode]{
 		SearchAccessors: []pagination.SearchAccessor[types.SwarmNode]{
@@ -816,12 +787,6 @@ func (s *Service) buildNodePaginationConfig() pagination.Config[types.SwarmNode]
 			{Key: "updated", Fn: func(a, b types.SwarmNode) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
 		},
 	}
-}
-
-func (s *Service) AggregateJoinCandidates(ctx context.Context) (types.ApiResponse[[]types.SwarmJoinCandidate], error) {
-	return httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[[]types.SwarmJoinCandidate]) []types.SwarmJoinCandidate {
-		return nil
-	})
 }
 
 func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) ([]types.SwarmJoinCandidate, error) {

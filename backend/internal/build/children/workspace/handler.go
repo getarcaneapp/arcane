@@ -79,7 +79,7 @@ func (h *Handler) UpdateBuildWorkspace(ctx context.Context, input *UpdateBuildWo
 	if !ok || permissions == nil {
 		return nil, huma.Error403Forbidden("insufficient permissions")
 	}
-	required, valid := authz.BuildWorkspaceRequiredPermissions(manifest.FileChanges)
+	required, valid := authz.WorkspaceRequiredPermissions(authz.BuildWorkspaceConditions, manifest.FileChanges, func(c types.WorkspaceFileChange) string { return c.Operation })
 	if !valid {
 		return nil, huma.Error400BadRequest("unsupported build workspace operation")
 	}

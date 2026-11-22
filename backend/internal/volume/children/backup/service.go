@@ -1002,6 +1002,11 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 }
 
 func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
+	unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return nil, err

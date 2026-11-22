@@ -159,10 +159,8 @@ func (ps *PlaywrightService) CreateTestGitOpsProject(ctx context.Context) error 
 		return fmt.Errorf("failed to verify GitOps test project: %w", err)
 	}
 	if details.Name != testProjectName ||
-		details.GitOpsManagedBy == nil ||
-		*details.GitOpsManagedBy != sync.ID ||
-		details.LastSyncCommit == nil ||
-		*details.LastSyncCommit != *sync.LastSyncCommit {
+		kit.FromPtr(details.GitOpsManagedBy) != sync.ID ||
+		kit.FromPtr(details.LastSyncCommit) != *sync.LastSyncCommit {
 		return errors.New("GitOps test project does not match its managed sync")
 	}
 	return nil

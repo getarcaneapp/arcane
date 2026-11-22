@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/go-units"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
@@ -40,6 +40,48 @@ type (
 		Name      string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
 		ProjectID string   `json:"projectId,omitempty" format:"uuid" doc:"ID for the new project, chosen by the caller so it can recognize the project after an interrupted import"`
 		Tags      []string `json:"tags,omitempty" doc:"Project tags"`
+		Start     bool     `json:"start,omitempty" doc:"Deploy the project after the import"`
+	}
+
+	ExportProjectArchive struct {
+		Volumes     []string `json:"volumes,omitempty" doc:"Compose keys of the named and local external volumes whose data the export includes; empty exports only the project files"`
+		StopProject bool     `json:"stopProject,omitempty" doc:"Stop a running project while its volumes are exported and start it again afterwards"`
+	}
+
+	ProjectExportOptions struct {
+		Volumes []ProjectVolume `json:"volumes" doc:"The project's volumes; kind explains why external and driverOpts volumes cannot be included"`
+		Running bool            `json:"running" doc:"True when the project has running or restarting containers"`
+	}
+
+	ProjectVolumeKind string
+
+	ProjectVolume struct {
+		Labels       map[string]string `json:"labels,omitempty" doc:"Compose volume labels"`
+		DockerLabels map[string]string `json:"dockerLabels,omitempty" doc:"Docker labels of an included external volume, which an import recreates it with"`
+		Key          string            `json:"key" doc:"Volume key in the compose file"`
+		Name         string            `json:"name" doc:"Docker volume name"`
+		Kind         ProjectVolumeKind `json:"kind" enum:"named,external,driverOpts" doc:"named and local external volumes hold Docker-managed data; driverOpts and other external volumes do not"`
+		Driver       string            `json:"driver,omitempty" doc:"Compose volume driver"`
+		Archive      string            `json:"archive,omitempty" doc:"Path of the volume's data archive inside a project bundle; volumes naming one Docker volume share it"`
+		Included     bool              `json:"included" doc:"Whether the volume's data is included; by default named and local external volumes that exist are"`
+		Missing      bool              `json:"missing,omitempty" doc:"True when the volume has not been created in Docker yet, so it has no data to export"`
+		InUse        bool              `json:"inUse,omitempty" doc:"True when a running container that is not stopped mounts the volume, so its data may change during an export"`
+	}
+
+	ProjectManifestProject struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		ComposeName string `json:"composeName"`
+	}
+
+	ProjectManifest struct {
+		CreatedAt     time.Time              `json:"createdAt"`
+		Kind          string                 `json:"kind"`
+		ArcaneVersion string                 `json:"arcaneVersion"`
+		Project       ProjectManifestProject `json:"project"`
+		Volumes       []ProjectVolume        `json:"volumes"`
+		FormatVersion int                    `json:"formatVersion"`
+		Consistent    bool                   `json:"consistent" doc:"True when no project container ran, and no other running container mounted an included volume, while the volumes were exported"`
 	}
 
 	ProjectTransferMode string
@@ -158,7 +200,7 @@ type (
 	ProjectRuntimeService struct {
 		ContainerLabels  map[string]string           `json:"-"`
 		Health           *string                     `json:"health,omitempty"`
-		ServiceConfig    *composetypes.ServiceConfig `json:"serviceConfig,omitempty"`
+		ServiceConfig    *composeTypes.ServiceConfig `json:"serviceConfig,omitempty"`
 		ImageID          string                      `json:"-"`
 		Name             string                      `json:"name"`
 		Image            string                      `json:"image"`
@@ -276,11 +318,11 @@ type (
 
 		ComposeFiles    []string                     `json:"composeFiles,omitempty" readOnly:"true"`
 		RuntimeServices []ProjectRuntimeService      `json:"runtimeServices,omitempty" readOnly:"true"`
-		Services        []composetypes.ServiceConfig `json:"services,omitempty" readOnly:"true"`
+		Services        []composeTypes.ServiceConfig `json:"services,omitempty" readOnly:"true"`
 		Jobs            []ProjectJob                 `json:"jobs,omitempty" readOnly:"true"`
 		ComposeName     string                       `json:"composeName,omitempty" readOnly:"true"`
-		Volumes         composetypes.Volumes         `json:"volumes,omitempty" readOnly:"true"`
-		Networks        composetypes.Networks        `json:"networks,omitempty" readOnly:"true"`
+		Volumes         composeTypes.Volumes         `json:"volumes,omitempty" readOnly:"true"`
+		Networks        composeTypes.Networks        `json:"networks,omitempty" readOnly:"true"`
 		URLs            []ProjectURL                 `json:"urls,omitempty" readOnly:"true"`
 		IncludeFiles    []ProjectIncludeFile         `json:"includeFiles,omitempty" readOnly:"true"`
 		RunningCount    int                          `json:"runningCount" readOnly:"true"`
@@ -291,6 +333,12 @@ type (
 		HasBuildDirective bool `json:"hasBuildDirective,omitzero" readOnly:"true"`
 		RedeployDisabled  bool `json:"redeployDisabled,omitzero" readOnly:"true"`
 		EnvFileExists     bool `json:"envFileExists,omitzero" readOnly:"true"`
+	}
+
+	ProjectDestroyOptions struct {
+		RemoveFiles    bool
+		RemoveVolumes  bool
+		KeepContainers bool
 	}
 
 	ProjectDestroy struct {
@@ -318,7 +366,7 @@ type (
 	}
 
 	VolumeSourcePathMapper interface {
-		TranslateVolumeSources(project *composetypes.Project, translateFileResources bool) error
+		TranslateVolumeSources(project *composeTypes.Project, translateFileResources bool) error
 		ContainerToHost(containerPath string) (hostPath string, mapped bool, err error)
 	}
 
@@ -351,7 +399,7 @@ type (
 		Options           *ProjectDeployOptions
 		AuthConfigs       map[string]registry.AuthConfig
 		PreDeploy         func(context.Context) error
-		Load              func(context.Context) (*composetypes.Project, error)
+		Load              func(context.Context) (*composeTypes.Project, error)
 		ResolveImages     func(context.Context) (ComposeImageOperations, error)
 		Recover           func(context.Context)
 		ProjectID         string
@@ -364,7 +412,7 @@ type (
 
 	ComposeServiceUpdate struct {
 		Progress              io.Writer
-		Project               *composetypes.Project
+		Project               *composeTypes.Project
 		AuthConfigs           map[string]registry.AuthConfig
 		RestoreBeforeMutation func(context.Context)
 		Recover               func(context.Context)
@@ -378,7 +426,7 @@ type (
 	}
 
 	ComposeTarget struct {
-		Project    *composetypes.Project
+		Project    *composeTypes.Project
 		DockerHost string
 		Services   []string
 	}
@@ -409,7 +457,7 @@ type (
 
 	ComposeRunJobOptions struct {
 		AuthConfigs map[string]registry.AuthConfig
-		Project     *composetypes.Project
+		Project     *composeTypes.Project
 		DockerHost  string
 		Job         string
 		Timeout     time.Duration
@@ -422,11 +470,11 @@ type (
 	}
 
 	ComposeCoordinator interface {
-		Deploy(ctx context.Context, request ComposeDeployment) (*composetypes.Project, error)
+		Deploy(ctx context.Context, request ComposeDeployment) (*composeTypes.Project, error)
 		UpdateServices(ctx context.Context, request ComposeServiceUpdate) error
-		PullServices(ctx context.Context, model *composetypes.Project, services []string, operations ComposeImageOperations, progress io.Writer) error
-		EnsureImagesPresent(ctx context.Context, model *composetypes.Project, progress io.Writer, operations ComposeImageOperations) error
-		BuildServices(ctx context.Context, projectID string, model *composetypes.Project, options ProjectBuildOptions, progress io.Writer, operations ComposeImageOperations) error
+		PullServices(ctx context.Context, model *composeTypes.Project, services []string, operations ComposeImageOperations, progress io.Writer) error
+		EnsureImagesPresent(ctx context.Context, model *composeTypes.Project, progress io.Writer, operations ComposeImageOperations) error
+		BuildServices(ctx context.Context, projectID string, model *composeTypes.Project, options ProjectBuildOptions, progress io.Writer, operations ComposeImageOperations) error
 	}
 
 	runtimeServiceAlias ProjectRuntimeService
@@ -489,12 +537,13 @@ type (
 	}
 
 	ProjectRenameRecoveryOperations struct {
-		Docker               func(context.Context, bool) (*client.Client, error)
-		WriteJournal         func(context.Context, *ProjectRenameJournal, string) error
-		ClearJournal         func(context.Context, string) error
-		ClearRollbackCleanup func(context.Context, string) error
-		RestoreState         func(context.Context, *ProjectRenameJournal) error
-		WriteRollbackCleanup func(context.Context, *ProjectRenameJournal) error
+		Docker                func(context.Context, bool) (*client.Client, error)
+		InvalidateVolumeUsage func(*client.Client)
+		WriteJournal          func(context.Context, *ProjectRenameJournal, string) error
+		ClearJournal          func(context.Context, string) error
+		ClearRollbackCleanup  func(context.Context, string) error
+		RestoreState          func(context.Context, *ProjectRenameJournal) error
+		WriteRollbackCleanup  func(context.Context, *ProjectRenameJournal) error
 	}
 
 	ProjectWorkspaceUpdateManifest struct {
@@ -557,10 +606,18 @@ const (
 	ProjectTransferVolumeDataExternal                             = "volume_data_external"
 	ProjectTransferComposeInvalid                                 = "compose_invalid"
 	ProjectTransferVolumeMissing                                  = "volume_missing"
+
+	ProjectVolumeNamed      ProjectVolumeKind = "named"
+	ProjectVolumeExternal   ProjectVolumeKind = "external"
+	ProjectVolumeDriverOpts ProjectVolumeKind = "driverOpts"
+
+	ProjectManifestFormatVersion = 1
+	ProjectManifestKindExport    = "export"
+	ProjectBundleExtension       = ".arcane.tar.gz"
 )
 
 var composeUnmarshalers = json.JoinUnmarshalers(
-	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composetypes.UnitBytes) error {
+	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composeTypes.UnitBytes) error {
 		token, err := decoder.ReadToken()
 		if err != nil {
 			return err
@@ -574,7 +631,7 @@ var composeUnmarshalers = json.JoinUnmarshalers(
 			if parseMemoryErr != nil {
 				return parseMemoryErr
 			}
-			*value = composetypes.UnitBytes(parsed)
+			*value = composeTypes.UnitBytes(parsed)
 			return nil
 		case jsontext.KindNumber:
 			raw := token.String()
@@ -589,7 +646,7 @@ var composeUnmarshalers = json.JoinUnmarshalers(
 					return fmt.Errorf("invalid UnitBytes value %q", raw)
 				}
 			}
-			*value = composetypes.UnitBytes(parsed)
+			*value = composeTypes.UnitBytes(parsed)
 			return nil
 		case jsontext.KindInvalid, jsontext.KindFalse, jsontext.KindTrue,
 			jsontext.KindBeginObject, jsontext.KindEndObject,
@@ -599,7 +656,7 @@ var composeUnmarshalers = json.JoinUnmarshalers(
 
 		return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
 	}),
-	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composetypes.UlimitsConfig) error {
+	json.UnmarshalFromFunc(func(decoder *jsontext.Decoder, value *composeTypes.UlimitsConfig) error {
 		if decoder.PeekKind() != jsontext.KindNumber {
 			return errors.ErrUnsupported
 		}

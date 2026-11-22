@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/network"
 	dockerclient "github.com/moby/moby/client"
 
 	"kit.getarcane.app"
@@ -39,34 +40,20 @@ func cleanupStackResources(
 	configMetaByKey map[string]resourceMeta,
 	secretMetaByKey map[string]resourceMeta,
 ) error {
-	desiredConfigNames := make(map[string]struct{}, len(configMetaByKey))
-	for _, meta := range configMetaByKey {
-		desiredConfigNames[meta.Name] = struct{}{}
-	}
-	if err := cleanupStaleManagedResources(
-		ctx,
-		stackName,
-		desiredConfigNames,
-		configFileResourceAdapter(dockerClient),
-		true,
-		true,
-	); err != nil {
-		return err
-	}
-
-	desiredSecretNames := make(map[string]struct{}, len(secretMetaByKey))
-	for _, meta := range secretMetaByKey {
-		desiredSecretNames[meta.Name] = struct{}{}
-	}
-	if err := cleanupStaleManagedResources(
-		ctx,
-		stackName,
-		desiredSecretNames,
-		secretFileResourceAdapter(dockerClient),
-		true,
-		true,
-	); err != nil {
-		return err
+	for _, target := range []struct {
+		meta    map[string]resourceMeta
+		adapter fileResourceAdapter
+	}{
+		{meta: configMetaByKey, adapter: configFileResourceAdapter(dockerClient)},
+		{meta: secretMetaByKey, adapter: secretFileResourceAdapter(dockerClient)},
+	} {
+		desiredNames := make(map[string]struct{}, len(target.meta))
+		for _, meta := range target.meta {
+			desiredNames[meta.Name] = struct{}{}
+		}
+		if err := cleanupStaleManagedResources(ctx, stackName, desiredNames, target.adapter, true, true); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -93,7 +80,7 @@ func cleanupStaleManagedResources(
 		resourceTypeLabels = []string{resourceTypeLabel, legacyResourceTypeLabel}
 	}
 
-	resources := make([]staleManagedResource, 0)
+	var resources []staleManagedResource
 	seenResourceIDs := make(map[string]struct{})
 	for _, typeLabel := range resourceTypeLabels {
 		filters := make(dockerclient.Filters)
@@ -172,8 +159,8 @@ func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client
 		return fmt.Errorf("failed to list stack networks: %w", err)
 	}
 	networks := networksResult.Items
-	sort.Slice(networks, func(i, j int) bool {
-		return networks[i].Name < networks[j].Name
+	slices.SortFunc(networks, func(a, b network.Summary) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 	for _, stackNetwork := range networks {
 		if stackNetwork.Ingress {

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -39,12 +38,9 @@ import (
 
 type (
 	NetworkService struct {
-		db            *database.DB
-		dockerService *dockerInternal.DockerClientService
-		eventService  *event.EventService
-
-		// Shared, immutable topology build; network mutations bump topologyGen,
-		// which retires cached entries and in-flight builds started before them.
+		db             *database.DB
+		dockerService  *dockerInternal.DockerClientService
+		eventService   *event.EventService
 		topologyFlight singleflight.Group
 		topologyCache  atomic.Pointer[networkTopologyCacheEntry]
 		topologyGen    atomic.Uint64
@@ -496,35 +492,23 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 }
 
 func (s *NetworkService) AggregateNetworks(ctx context.Context, params pagination.QueryParams) (types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts], error) {
-	collection, err := httpx.CollectEnvironments[types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	var counts types.NetworkUsageCounts
+	page, err := handlerutil.AggregatePaginated(ctx, s.buildNetworkPaginationConfig(), params, handlerutil.WithCounts(&counts, func(acc, next types.NetworkUsageCounts) types.NetworkUsageCounts {
+		return types.NetworkUsageCounts{
+			Inuse:  acc.Inuse + next.Inuse,
+			Unused: acc.Unused + next.Unused,
+			Total:  acc.Total + next.Total,
+		}
+	}))
 	if err != nil {
 		return types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]{}, err
 	}
-
-	pages := make([]pagination.EnvironmentPage[types.NetworkSummary], 0, len(collection.Results))
-	inUse, unused, total := 0, 0, 0
-	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[types.NetworkSummary]{
-			Environment:    result.Environment,
-			Items:          result.Value.Data,
-			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
-		})
-		inUse += result.Value.Counts.Inuse
-		unused += result.Value.Counts.Unused
-		total += result.Value.Counts.Total
-	}
-	data, resp := pagination.MergeEnvironmentPages(s.buildNetworkPaginationConfig(), pages, params)
-
 	return types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]{
-		Success: true,
-		Data:    data,
-		Counts: types.NetworkUsageCounts{
-			Inuse:  inUse,
-			Unused: unused,
-			Total:  total,
-		},
-		Pagination:         handlerutil.PaginationResponse(resp),
-		FailedEnvironments: collection.Failures,
+		Success:            page.Success,
+		Data:               page.Data,
+		Counts:             counts,
+		Pagination:         page.Pagination,
+		FailedEnvironments: page.FailedEnvironments,
 	}, nil
 }
 

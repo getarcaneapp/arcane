@@ -96,7 +96,7 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 		tlsConfig.Certificates = []tls.Certificate{certificate}
 	}
 
-	http2Window := p.SettingsService.GetSettingsOrDefaults(p.AppCtx).HTTP2ReceiveWindowMb.AsInt() << 20
+	http2Window := p.SettingsService.GetSettingsConfig().HTTP2ReceiveWindowMb.AsInt() << 20
 	// Request contexts deliberately do not inherit the app lifecycle marker.
 	baseCtx, cancelBase := context.WithCancel(context.Background()) //nolint:forbidigo // HTTP requests need a root without the application lifecycle marker.
 	srv := &http.Server{

@@ -15,13 +15,12 @@ import (
 
 	"github.com/distribution/reference"
 	"github.com/moby/moby/client"
-	"github.com/samber/mo"
-	"golang.org/x/mod/semver"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/agg"
+	"kit.getarcane.app/semver"
 	"kit.getarcane.app/sys/cgroup"
 
 	"getarcane.dev/arcane/v3/buildables"
@@ -93,12 +92,9 @@ const (
 )
 
 func NewVersionService(p VersionServiceParams) *VersionService {
-	if p.HTTPClient == nil {
-		p.HTTPClient = http.DefaultClient
-	}
 	var service *VersionService
 	service = &VersionService{
-		httpClient: p.HTTPClient,
+		httpClient: cmp.Or(p.HTTPClient, http.DefaultClient),
 		cache: &cache.Cache[struct{}, latestRelease]{
 			Load: func(struct{}) (latestRelease, bool, error) {
 				ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
@@ -334,7 +330,7 @@ func (s *VersionService) updateCheckImageRef(currentImageRef string) string {
 }
 
 func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionInfo {
-	isSemver := semver.IsValid(kit.EnsurePrefix(s.version, "v"))
+	isSemver := semver.IsValid(strings.TrimSpace(s.version))
 	ver := s.normalizeVersion(s.version)
 	// Semver versions (including prereleases like 2.4.0-next.1) display as v<version>.
 	displayVersion := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
@@ -413,7 +409,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionIn
 		EnabledFeatures:  append(kit.Unique(kit.TrimNonEmpty(strings.Split(strings.ToLower(buildables.EnabledFeatures), ","))), apns.FeatureName),
 		BuildTime:        config.BuildTime,
 		IsSemverVersion:  isSemver,
-		IsStableVersion:  isSemver && semver.Prerelease(kit.EnsurePrefix(s.version, "v")) == "",
+		IsStableVersion:  semver.IsStable(strings.TrimSpace(s.version)),
 		NewestVersion:    update.NewestVersion,
 		NewestDigest:     update.NewestDigest,
 		UpdateAvailable:  update.UpdateAvailable,
@@ -430,7 +426,7 @@ func (s *VersionService) storedOrDigestBasedUpdate(ctx context.Context, current 
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageId", current.ImageID, "error", err)
 		} else if found {
-			return record.HasUpdate, mo.PointerToOption(record.LatestDigest).OrEmpty()
+			return record.HasUpdate, kit.FromPtr(record.LatestDigest)
 		}
 	}
 

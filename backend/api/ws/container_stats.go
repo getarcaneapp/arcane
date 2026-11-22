@@ -5,8 +5,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"log/slog"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,9 +19,9 @@ const (
 )
 
 func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
-	containerID := c.Param("containerId")
-	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
+	containerID, ok, err := requireWSParam(c, "containerId", "Container ID")
+	if !ok {
+		return err
 	}
 
 	conn, onRemove, ok := h.acceptWS(c, types.WSKindContainerStats, containerID)

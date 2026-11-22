@@ -6,14 +6,10 @@ import (
 	"fmt"
 
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/signal"
+	"github.com/samber/mo"
 )
 
 func BuildSignalURL(config SignalConfig) (string, error) {
-	notifySelf := true
-	if config.NotifySelf != nil {
-		notifySelf = *config.NotifySelf
-	}
-
 	signalConfig := &signal.Config{
 		Host:       config.Host,
 		Port:       config.Port,
@@ -23,11 +19,10 @@ func BuildSignalURL(config SignalConfig) (string, error) {
 		Source:     config.Source,
 		Recipients: config.Recipients,
 		DisableTLS: config.DisableTLS,
-		NotifySelf: notifySelf,
+		NotifySelf: mo.PointerToOption(config.NotifySelf).OrElse(true),
 	}
 
-	url := signalConfig.GetURL()
-	return url.String(), nil
+	return signalConfig.GetURL().String(), nil
 }
 
 func SendSignal(ctx context.Context, config SignalConfig, message string) error {

@@ -3,7 +3,6 @@ package ws
 import (
 	"cmp"
 	"context"
-	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"runtime"
@@ -36,9 +35,6 @@ func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interv
 	h.systemStatsSampler.lifecycleMu.Lock()
 
 	h.systemStatsSampler.clients++
-	if h.systemStatsSampler.intervals == nil {
-		h.systemStatsSampler.intervals = map[time.Duration]int{}
-	}
 	h.systemStatsSampler.intervals[interval]++
 	h.refreshSystemStatsSamplerIntervalLocked()
 	if h.systemStatsSampler.running {
@@ -288,13 +284,8 @@ func (h *WebSocketHandler) streamDockerHostStats(ctx context.Context, conn *webs
 		if !ok {
 			return true
 		}
-		payload, err := json.Marshal(stats)
-		if err != nil {
-			return false
-		}
-		writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		return conn.Write(writeCtx, websocket.MessageText, payload) == nil
+		// writeWSJSON is the shared socket write path; it already json-encodes and bounds the write.
+		return writeWSJSON(ctx, conn, stats) == nil
 	}
 
 	if !send() {
@@ -363,9 +354,6 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 		h.activeConnectionsMu.Unlock()
 		return c.JSON(http.StatusTooManyRequests, map[string]any{"success": false, "error": "Too many concurrent stats connections for this client"})
 	}
-	if h.activeConnections == nil {
-		h.activeConnections = make(map[string]int)
-	}
 	h.activeConnections[clientKey]++
 	h.activeConnectionsMu.Unlock()
 	defer func() {
@@ -431,13 +419,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 
 	send := func() error {
 		stats, _ := h.systemStatsSampler.latest.Load()
-		b, err := json.Marshal(stats)
-		if err != nil {
-			return err
-		}
-		wctx, localCancel := context.WithTimeout(ctx, 10*time.Second)
-		defer localCancel()
-		return conn.Write(wctx, websocket.MessageText, b)
+		return writeWSJSON(ctx, conn, stats)
 	}
 
 	if err := send(); err != nil {

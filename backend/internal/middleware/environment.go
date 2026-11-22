@@ -340,6 +340,9 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 		if len(segments) == 2 && method == http.MethodPost ||
 			len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete) ||
 			len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks" {
+			if len(segments) == 3 && method == http.MethodDelete && segments[1] == types.UploadKindProjectArchive && ps.Allows(authz.PermProjectsExport, envID) {
+				return true
+			}
 			perms := authz.UploadKindConditions.Required("kind", segments[1])
 			denied := len(perms) == 0 || slices.ContainsFunc(perms, func(perm string) bool {
 				return !ps.Allows(perm, envID)

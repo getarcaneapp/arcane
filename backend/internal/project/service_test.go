@@ -1,7 +1,9 @@
 package project
 
 import (
+	"archive/tar"
 	"cmp"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"encoding/json/v2"
@@ -23,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
@@ -34,7 +36,6 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
-	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -55,6 +56,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/listing"
@@ -64,6 +66,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/workspace"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -467,7 +470,7 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{
 		RemoveFiles: true,
 	}, types.Actor{}))
 
@@ -494,7 +497,7 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	require.NoError(t, svc.DestroyProject(ctx, project.ID, DestroyOptions{}, types.Actor{}))
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{}, types.Actor{}))
 
 	assert.NoDirExists(t, projectPath)
 	assert.NoFileExists(t, projectDataPath)
@@ -555,7 +558,7 @@ func TestProjectService_DestroyProject_KeepsRowWhenDownFails(t *testing.T) {
 		Status:  ProjectStatusRunning,
 	}).Error)
 
-	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", DestroyOptions{
+	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", types.ProjectDestroyOptions{
 		RemoveFiles:   true,
 		RemoveVolumes: true,
 	}, types.Actor{}))
@@ -895,8 +898,8 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	assert.False(t, currentRecord.HasUpdate)
 	assert.Equal(t, repository, currentRecord.Repository)
 	assert.Equal(t, "1.2.3", currentRecord.Tag)
-	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.CurrentDigest).OrEmpty())
-	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
+	assert.Equal(t, imageDigest, kit.FromPtr(currentRecord.CurrentDigest))
+	assert.Equal(t, imageDigest, kit.FromPtr(currentRecord.LatestDigest))
 }
 
 func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -962,11 +965,11 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 		t,
 		svc.composeCoordinator.EnsureImagesPresent(
 			ctx,
-			&composetypes.Project{
-				Services: composetypes.Services{
+			&composeTypes.Project{
+				Services: composeTypes.Services{
 					"api": {
 						Image:      imageRef,
-						PullPolicy: composetypes.PullPolicyAlways,
+						PullPolicy: composeTypes.PullPolicyAlways,
 					},
 				},
 			},
@@ -987,7 +990,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	var currentRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
+	assert.Equal(t, imageDigest, kit.FromPtr(currentRecord.LatestDigest))
 }
 
 func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -1059,7 +1062,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	var currentRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
+	assert.Equal(t, imageDigest, kit.FromPtr(currentRecord.LatestDigest))
 }
 
 func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *testing.T) {
@@ -1125,9 +1128,9 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
-	projectDef := &composetypes.Project{
+	projectDef := &composeTypes.Project{
 		Name: "compose-selected",
-		Services: composetypes.Services{
+		Services: composeTypes.Services{
 			"app": {
 				Name:  "app",
 				Image: privateImageRef,
@@ -1142,7 +1145,7 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 			},
 			"builder": {
 				Name:  "builder",
-				Build: &composetypes.BuildConfig{Context: "."},
+				Build: &composeTypes.BuildConfig{Context: "."},
 			},
 		},
 	}
@@ -1197,12 +1200,12 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 	var privateCurrentRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", privateImageID).First(&privateCurrentRecord).Error)
 	assert.False(t, privateCurrentRecord.HasUpdate)
-	assert.Equal(t, privateImageDigest, mo.PointerToOption(privateCurrentRecord.LatestDigest).OrEmpty())
+	assert.Equal(t, privateImageDigest, kit.FromPtr(privateCurrentRecord.LatestDigest))
 
 	var publicCurrentRecord imageupdate.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", publicImageID).First(&publicCurrentRecord).Error)
 	assert.False(t, publicCurrentRecord.HasUpdate)
-	assert.Equal(t, publicImageDigest, mo.PointerToOption(publicCurrentRecord.LatestDigest).OrEmpty())
+	assert.Equal(t, publicImageDigest, kit.FromPtr(publicCurrentRecord.LatestDigest))
 }
 
 func TestProjectService_ComposePullSelectedServices_LeavesRecordsWhenPullFails(t *testing.T) {
@@ -1252,9 +1255,9 @@ func TestProjectService_ComposePullSelectedServices_LeavesRecordsWhenPullFails(t
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
 
-	projectDef := &composetypes.Project{
+	projectDef := &composeTypes.Project{
 		Name: "compose-selected",
-		Services: composetypes.Services{
+		Services: composeTypes.Services{
 			"app": {
 				Name:  "app",
 				Image: imageRef,
@@ -8846,8 +8849,8 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 		"tagged:\r\n    image: !!str app:1.3.0\r\n  escaped:\r\n    image: \"app:1.3.0\"\r\n  untouched:\r\n    image: " +
 		"app:1.2.0 # stays\r\n\r\r  plain:\r\n    image: app:1.3.0\r\n  qualified:\r\n    image: docker.io/library/app:1.3.0\r\n  " +
 		"omitted:\r\n    image: registry.example.com:5000/team/app:1.3.0"
-	effective := &composetypes.Project{
-		Services: composetypes.Services{
+	effective := &composeTypes.Project{
+		Services: composeTypes.Services{
 			"web": {
 				Image: "app:1.2.0",
 			},
@@ -8902,7 +8905,7 @@ func TestPrepareProjectServiceImagesRejectsUnsupportedSource(t *testing.T) {
 		{name: "multi-line plain image", source: "services:\n  web:\n    image: app:${VERSION}\n      tail\n", expected: "app:1.2.0"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			effective := &composetypes.Project{Services: composetypes.Services{"web": {Image: "app:1.2.0"}}}
+			effective := &composeTypes.Project{Services: composeTypes.Services{"web": {Image: "app:1.2.0"}}}
 			updated, _, err := update.PrepareProjectServiceImages([]byte(tt.source), effective, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: tt.expected, TargetRef: "app:1.3.0"}})
 			require.Error(t, err)
 			require.Nil(t, updated)
@@ -9000,7 +9003,7 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 		composeStopProjectServices = originalComposeStop
 		composeUpProjectServices = originalComposeUp
 	})
-	var deployed []*composetypes.Project
+	var deployed []*composeTypes.Project
 	var scopes [][]string
 	composeStopProjectServices = func(context.Context, types.ComposeTarget) error {
 		return nil
@@ -9396,7 +9399,7 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 				composeStopProjectServices = originalComposeStop
 				composeUpProjectServices = originalComposeUp
 			})
-			var deployed []*composetypes.Project
+			var deployed []*composeTypes.Project
 			var scopes [][]string
 			composeStopProjectServices = func(context.Context, types.ComposeTarget) error {
 				return nil
@@ -9461,42 +9464,42 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 
 func TestProjectServiceManualUpdateRejectsUnsafeTagPolicies(t *testing.T) {
 	for _, tt := range []struct {
-		change func(*composetypes.ServiceConfig)
+		change func(*composeTypes.ServiceConfig)
 		name   string
 	}{
-		{name: "invalid constraint", change: func(s *composetypes.ServiceConfig) { s.Labels[labels.LabelUpdateConstraint] = "not semver" }},
-		{name: "local build", change: func(s *composetypes.ServiceConfig) { s.Build = &composetypes.BuildConfig{Context: "."} }},
-		{name: "digest pin", change: func(s *composetypes.ServiceConfig) { s.Image = "app@sha256:" + strings.Repeat("a", 64) }},
+		{name: "invalid constraint", change: func(s *composeTypes.ServiceConfig) { s.Labels[labels.LabelUpdateConstraint] = "not semver" }},
+		{name: "local build", change: func(s *composeTypes.ServiceConfig) { s.Build = &composeTypes.BuildConfig{Context: "."} }},
+		{name: "digest pin", change: func(s *composeTypes.ServiceConfig) { s.Image = "app@sha256:" + strings.Repeat("a", 64) }},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			serviceConfig := composetypes.ServiceConfig{Image: "app:1.2.0", Labels: composetypes.Labels{labels.LabelUpdateStrategy: "tag"}}
+			serviceConfig := composeTypes.ServiceConfig{Image: "app:1.2.0", Labels: composeTypes.Labels{labels.LabelUpdateStrategy: "tag"}}
 			tt.change(&serviceConfig)
 			service := NewProjectService(ProjectServiceParams{
 				DockerService:               newUnreachableDockerService(t),
 				BuildService:                testBuildBuilder{},
 				RegistryCredentialsProvider: testRegistryCredentials,
 			})
-			changes, err := service.updates.ImageChanges(t.Context(), &composetypes.Project{Services: composetypes.Services{"app": serviceConfig}}, nil, false)
+			changes, err := service.updates.ImageChanges(t.Context(), &composeTypes.Project{Services: composeTypes.Services{"app": serviceConfig}}, nil, false)
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), "registry service unavailable")
 			require.Nil(t, changes)
 		})
 	}
-	local := composetypes.ServiceConfig{Name: "app", Image: "app:1.2.0", Build: &composetypes.BuildConfig{Context: "."}}
+	local := composeTypes.ServiceConfig{Name: "app", Image: "app:1.2.0", Build: &composeTypes.BuildConfig{Context: "."}}
 	emptyService := NewProjectService(ProjectServiceParams{
 		DockerService:               newUnreachableDockerService(t),
 		BuildService:                testBuildBuilder{},
 		RegistryCredentialsProvider: testRegistryCredentials,
 	})
-	changes, err := emptyService.updates.ImageChanges(t.Context(), &composetypes.Project{Services: composetypes.Services{"app": local}}, nil, false)
+	changes, err := emptyService.updates.ImageChanges(t.Context(), &composeTypes.Project{Services: composeTypes.Services{"app": local}}, nil, false)
 	require.NoError(t, err)
 	require.Empty(t, changes, "automatic inference must preserve local-build handling")
 }
 
 func TestConfiguredProjectTagChecksMatchCurrentServicePolicy(t *testing.T) {
-	services := []composetypes.ServiceConfig{
-		{Name: "stable", Image: "example:3.1.0", Labels: composetypes.Labels{labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "3.x"}},
-		{Name: "next", Image: "example:3.1.0", Labels: composetypes.Labels{labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "4.x"}},
+	services := []composeTypes.ServiceConfig{
+		{Name: "stable", Image: "example:3.1.0", Labels: composeTypes.Labels{labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "3.x"}},
+		{Name: "next", Image: "example:3.1.0", Labels: composeTypes.Labels{labels.LabelUpdateStrategy: "tag", labels.LabelUpdateConstraint: "4.x"}},
 	}
 	byRef := map[string]*types.ImageUpdateInfo{"example:3.1.0": {HasUpdate: false, UpdateType: "digest", CheckTime: time.Now()}}
 	unknown := BuildConfiguredUpdateInfo("project", services, byRef, nil)
@@ -9692,7 +9695,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 }
 
 func TestConfiguredProjectAggregatesReplicaAndPreviewChecks(t *testing.T) {
-	configs := []composetypes.ServiceConfig{{Name: "web", Image: "example:3.1.0"}}
+	configs := []composeTypes.ServiceConfig{{Name: "web", Image: "example:3.1.0"}}
 	runtimeServices := []types.ProjectRuntimeService{
 		{Name: "web", ContainerID: "one", Image: "example:3.1.0"},
 		{Name: "web", ContainerID: "two", Image: "docker.io/library/example:3.1.0"},
@@ -9756,13 +9759,13 @@ func TestConfiguredProjectAggregatesReplicaAndPreviewChecks(t *testing.T) {
 func TestPrepareProjectBindDirectories(t *testing.T) {
 	t.Parallel()
 
-	newProject := func(volumes ...composetypes.ServiceVolumeConfig) *composetypes.Project {
-		return &composetypes.Project{Services: composetypes.Services{
+	newProject := func(volumes ...composeTypes.ServiceVolumeConfig) *composeTypes.Project {
+		return &composeTypes.Project{Services: composeTypes.Services{
 			"app": {Name: "app", Volumes: volumes},
 		}}
 	}
-	bind := func(source string) composetypes.ServiceVolumeConfig {
-		return composetypes.ServiceVolumeConfig{Type: composetypes.VolumeTypeBind, Source: source, Target: "/t", Bind: &composetypes.ServiceVolumeBind{CreateHostPath: true}}
+	bind := func(source string) composeTypes.ServiceVolumeConfig {
+		return composeTypes.ServiceVolumeConfig{Type: composeTypes.VolumeTypeBind, Source: source, Target: "/t", Bind: &composeTypes.ServiceVolumeBind{CreateHostPath: true}}
 	}
 
 	t.Run("creates missing nested directories only", func(t *testing.T) {
@@ -9774,21 +9777,21 @@ func TestPrepareProjectBindDirectories(t *testing.T) {
 		existingDir := filepath.Join(projectPath, "data")
 		require.NoError(t, os.Mkdir(existingDir, 0o700))
 
-		noCreate := composetypes.ServiceVolumeConfig{
-			Type:   composetypes.VolumeTypeBind,
+		noCreate := composeTypes.ServiceVolumeConfig{
+			Type:   composeTypes.VolumeTypeBind,
 			Source: filepath.Join(projectPath, "manual"),
 			Target: "/t",
-			Bind:   &composetypes.ServiceVolumeBind{CreateHostPath: false},
+			Bind:   &composeTypes.ServiceVolumeBind{CreateHostPath: false},
 		}
 		project := newProject(
 			bind(filepath.Join(projectPath, "caddy", "conf")),
-			composetypes.ServiceVolumeConfig{Type: composetypes.VolumeTypeBind, Source: filepath.Join(projectPath, "plain"), Target: "/p"},
+			composeTypes.ServiceVolumeConfig{Type: composeTypes.VolumeTypeBind, Source: filepath.Join(projectPath, "plain"), Target: "/p"},
 			bind(existingFile),
 			bind(existingDir),
 			bind(projectPath),
 			bind(filepath.Join(outside, "elsewhere")),
 			noCreate,
-			composetypes.ServiceVolumeConfig{Type: composetypes.VolumeTypeVolume, Source: "named", Target: "/v"},
+			composeTypes.ServiceVolumeConfig{Type: composeTypes.VolumeTypeVolume, Source: "named", Target: "/v"},
 		)
 
 		require.NoError(t, deployment.PrepareProjectBindDirectories(projectPath)(t.Context(), project))
@@ -9967,9 +9970,9 @@ func TestPrepareProjectBindDirectories_PermissionFailure(t *testing.T) {
 				require.ErrorIs(t, statErr, fs.ErrNotExist)
 			}
 
-			project := &composetypes.Project{Services: composetypes.Services{
-				"app": {Name: "app", Volumes: []composetypes.ServiceVolumeConfig{{
-					Type: composetypes.VolumeTypeBind, Source: source, Target: "/etc/caddy",
+			project := &composeTypes.Project{Services: composeTypes.Services{
+				"app": {Name: "app", Volumes: []composeTypes.ServiceVolumeConfig{{
+					Type: composeTypes.VolumeTypeBind, Source: source, Target: "/etc/caddy",
 				}}},
 			}}
 
@@ -10576,8 +10579,8 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 	stored := loadSync()
 	require.NotNil(t, stored.PreDeployLastRunAt)
 	assert.WithinRange(t, *stored.PreDeployLastRunAt, before, time.Now())
-	assert.Equal(t, "success", mo.PointerToOption(stored.PreDeployLastRunStatus).OrEmpty())
-	assert.Equal(t, "hello\n--- stderr ---\nboom", mo.PointerToOption(stored.PreDeployLastRunOutput).OrEmpty())
+	assert.Equal(t, "success", kit.FromPtr(stored.PreDeployLastRunStatus))
+	assert.Equal(t, "hello\n--- stderr ---\nboom", kit.FromPtr(stored.PreDeployLastRunOutput))
 
 	exitCode.Store(3)
 	before = time.Now()
@@ -10587,8 +10590,8 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 	stored = loadSync()
 	require.NotNil(t, stored.PreDeployLastRunAt)
 	assert.WithinRange(t, *stored.PreDeployLastRunAt, before, time.Now())
-	assert.Equal(t, "failed", mo.PointerToOption(stored.PreDeployLastRunStatus).OrEmpty())
-	assert.Equal(t, "hello\n--- stderr ---\nboom", mo.PointerToOption(stored.PreDeployLastRunOutput).OrEmpty())
+	assert.Equal(t, "failed", kit.FromPtr(stored.PreDeployLastRunStatus))
+	assert.Equal(t, "hello\n--- stderr ---\nboom", kit.FromPtr(stored.PreDeployLastRunOutput))
 }
 
 func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
@@ -11091,4 +11094,124 @@ func TestProjectService_ListProjectsDirectories(t *testing.T) {
 	enabled, err := svc.EnabledProjectsRoots(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{primary, extra, missing}, enabled)
+}
+
+func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+
+	sourceLabels := map[string]string{"backup.schedule": "nightly", "owner": "ops"}
+	var exported atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.MarshalWrite(w, []container.Summary{})
+		case strings.HasSuffix(r.URL.Path, "/volumes/shared-data") && !exported.Load():
+			_ = json.MarshalWrite(w, volume.Volume{Name: "shared-data", Driver: "local", Labels: sourceLabels})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	uploads := upload.NewUploadService(settingsService)
+	svc := NewProjectService(ProjectServiceParams{
+		DB:                          db,
+		SettingsService:             settingsService,
+		EventService:                event.NewEventService(db, &config.Config{}, nil),
+		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
+		BuildService:                testBuildBuilder{},
+		Uploads:                     uploads,
+		Config:                      loadTestConfig(t),
+		KVService:                   kv.NewKVService(db),
+		RegistryCredentialsProvider: testRegistryCredentials,
+	})
+	projectPath := createComposeProjectDir(t, projectsDir, "demo")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
+		"services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - first:/first\n      - second:/second\n"+
+			"volumes:\n  first:\n    external: true\n    name: shared-data\n  second:\n    external: true\n    name: shared-data\n",
+	), 0o644))
+	require.NoError(t, db.Create(&Project{ID: "proj-demo", Name: "demo", DirName: new("demo"), Path: projectPath, Status: ProjectStatusStopped}).Error)
+	var data strings.Builder
+	gzipWriter := gzip.NewWriter(&data)
+	tarWriter := tar.NewWriter(gzipWriter)
+	require.NoError(t, tarWriter.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "./", Mode: 0o755}))
+	require.NoError(t, tarWriter.Close())
+	require.NoError(t, gzipWriter.Close())
+
+	var (
+		exports  []string
+		restored []string
+		targets  []types.ComposeVolumeTarget
+	)
+	module := New(ModuleParams{
+		Service: svc,
+		Transfer: TransferDependencies{
+			ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
+				exports = append(exports, name)
+				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
+			},
+			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
+				restored = append(restored, name)
+				targets = append(targets, *request.ComposeVolume)
+				return uploads.DeleteSession(ctx, types.UploadKindVolumeBackup, request.UploadID)
+			},
+		},
+	})
+
+	options, err := module.bundles.Options(ctx, "proj-demo")
+	require.NoError(t, err)
+	require.Len(t, options.Volumes, 2)
+	assert.True(t, options.Volumes[0].Included)
+	assert.False(t, options.Running)
+
+	session, err := module.bundles.Export(ctx, bundle.ExportOptions{
+		ProjectID: "proj-demo",
+		Request:   types.ExportProjectArchive{Volumes: []string{"first", "second"}},
+	})
+	require.NoError(t, err)
+	file, _, cleanup, err := uploads.Consume(ctx, types.UploadKindProjectArchive, session.ID)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+	content, err := io.ReadAll(file)
+	require.NoError(t, err)
+	var visited []string
+	manifest, _, err := projects.ReadProjectBundle(strings.NewReader(string(content)), func(_ types.ProjectManifest, name string, _ int64, _ io.Reader) error {
+		visited = append(visited, name)
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"shared-data"}, exports)
+	assert.Equal(t, []string{projects.ProjectBundleProject, "volumes/first.tar.gz"}, visited)
+	require.Len(t, manifest.Volumes, 2)
+	for _, volume := range manifest.Volumes {
+		assert.Equal(t, "volumes/first.tar.gz", volume.Archive, volume.Key)
+		assert.Equal(t, sourceLabels, volume.DockerLabels, volume.Key)
+	}
+
+	exported.Store(true)
+	uploaded, err := uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.arcane.tar.gz", int64(len(content)), strings.NewReader(string(content)))
+	require.NoError(t, err)
+	_, err = module.bundles.Import(ctx, bundle.ImportOptions{
+		Request: types.ImportProjectArchive{UploadID: uploaded.ID, Name: "copy"},
+	})
+	require.ErrorIs(t, err, common.ErrForbidden)
+
+	uploaded, err = uploads.IngestSession(ctx, types.UploadKindProjectArchive, "demo.arcane.tar.gz", int64(len(content)), strings.NewReader(string(content)))
+	require.NoError(t, err)
+	projectID, err := module.bundles.Import(ctx, bundle.ImportOptions{
+		Request:        types.ImportProjectArchive{UploadID: uploaded.ID, Name: "copy"},
+		RestoreVolumes: true,
+	})
+	require.NoError(t, err)
+	imported, err := svc.GetProjectFromDatabaseByID(ctx, projectID)
+	require.NoError(t, err)
+	assert.Equal(t, "copy", imported.Name)
+	assert.Equal(t, []string{"shared-data"}, restored)
+	assert.Equal(t, []types.ComposeVolumeTarget{{Labels: sourceLabels, Project: "copy", Key: "first", External: true}}, targets)
 }

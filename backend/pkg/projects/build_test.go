@@ -3,7 +3,7 @@ package projects
 import (
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -11,8 +11,8 @@ import (
 )
 
 func TestResolveBuildContext_AllowsRemoteGitContext(t *testing.T) {
-	svc := composetypes.ServiceConfig{
-		Build: &composetypes.BuildConfig{
+	svc := composeTypes.ServiceConfig{
+		Build: &composeTypes.BuildConfig{
 			Context: "https://github.com/getarcaneapp/arcane.git#main:docker/app",
 		},
 	}
@@ -23,8 +23,8 @@ func TestResolveBuildContext_AllowsRemoteGitContext(t *testing.T) {
 }
 
 func TestResolveBuildContext_AllowsRemoteGitContextWithoutGitSuffix(t *testing.T) {
-	svc := composetypes.ServiceConfig{
-		Build: &composetypes.BuildConfig{
+	svc := composeTypes.ServiceConfig{
+		Build: &composeTypes.BuildConfig{
 			Context: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app",
 		},
 	}
@@ -36,9 +36,9 @@ func TestResolveBuildContext_AllowsRemoteGitContextWithoutGitSuffix(t *testing.T
 
 func TestBuildPlatformsFromCompose(t *testing.T) {
 	t.Run("uses service platform when build platforms missing", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{
+		svc := composeTypes.ServiceConfig{
 			Platform: "linux/amd64",
-			Build: &composetypes.BuildConfig{
+			Build: &composeTypes.BuildConfig{
 				Context: ".",
 			},
 		}
@@ -48,9 +48,9 @@ func TestBuildPlatformsFromCompose(t *testing.T) {
 	})
 
 	t.Run("keeps explicit build platforms", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{
+		svc := composeTypes.ServiceConfig{
 			Platform: "linux/amd64",
-			Build: &composetypes.BuildConfig{
+			Build: &composeTypes.BuildConfig{
 				Context:   ".",
 				Platforms: []string{"linux/arm64"},
 			},
@@ -62,17 +62,17 @@ func TestBuildPlatformsFromCompose(t *testing.T) {
 }
 
 func TestPrepareServiceBuildRequest_MapsComposeFields(t *testing.T) {
-	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
+	proj := &composeTypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
 
-	serviceCfg := composetypes.ServiceConfig{
+	serviceCfg := composeTypes.ServiceConfig{
 		Name:     "web",
 		Image:    "example/web:latest",
 		Platform: "linux/amd64",
-		Build: &composetypes.BuildConfig{
+		Build: &composeTypes.BuildConfig{
 			Context:    ".",
 			Dockerfile: "Dockerfile.custom",
 			Target:     "prod",
-			Args: composetypes.MappingWithEquals{
+			Args: composeTypes.MappingWithEquals{
 				"FOO": new("bar"),
 			},
 			Tags:      []string{"example/web:sha", "example/web:latest"},
@@ -82,16 +82,16 @@ func TestPrepareServiceBuildRequest_MapsComposeFields(t *testing.T) {
 			Pull:      true,
 			Network:   "host",
 			Isolation: "default",
-			ShmSize:   composetypes.UnitBytes(64 * 1024 * 1024),
-			Ulimits: map[string]*composetypes.UlimitsConfig{
+			ShmSize:   composeTypes.UnitBytes(64 * 1024 * 1024),
+			Ulimits: map[string]*composeTypes.UlimitsConfig{
 				"nofile": {Soft: 1024, Hard: 2048},
 			},
 			Entitlements: []string{"network.host"},
 			Privileged:   true,
-			ExtraHosts: composetypes.HostsList{
+			ExtraHosts: composeTypes.HostsList{
 				"registry.local": {"10.0.0.5"},
 			},
-			Labels: composetypes.Labels{
+			Labels: composeTypes.Labels{
 				"com.example.team": "platform",
 			},
 		},
@@ -129,12 +129,12 @@ func TestPrepareServiceBuildRequest_MapsComposeFields(t *testing.T) {
 }
 
 func TestPrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
-	proj := &composetypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
+	proj := &composeTypes.Project{WorkingDir: "/app/data/projects/demo", Name: "demo"}
 
-	serviceCfg := composetypes.ServiceConfig{
+	serviceCfg := composeTypes.ServiceConfig{
 		Name:  "web",
 		Image: "example/web:latest",
-		Build: &composetypes.BuildConfig{
+		Build: &composeTypes.BuildConfig{
 			Context:    ".",
 			Dockerfile: "/app/data/projects/demo/Dockerfile.custom",
 		},
@@ -154,12 +154,12 @@ func TestPrepareServiceBuildRequest_KeepsContainerPaths(t *testing.T) {
 }
 
 func TestPrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
-	proj := &composetypes.Project{WorkingDir: "/app/data/projects/caddy", Name: "caddy"}
+	proj := &composeTypes.Project{WorkingDir: "/app/data/projects/caddy", Name: "caddy"}
 
-	serviceCfg := composetypes.ServiceConfig{
+	serviceCfg := composeTypes.ServiceConfig{
 		Name:  "caddy",
 		Image: "caddy",
-		Build: &composetypes.BuildConfig{
+		Build: &composeTypes.BuildConfig{
 			Context: ".",
 		},
 	}
@@ -178,12 +178,12 @@ func TestPrepareServiceBuildRequest_BuildDotKeepsContainerPath(t *testing.T) {
 }
 
 func TestPrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
-	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
+	proj := &composeTypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
 
-	serviceCfg := composetypes.ServiceConfig{
+	serviceCfg := composeTypes.ServiceConfig{
 		Name:  "web",
 		Image: "example/web:latest",
-		Build: &composetypes.BuildConfig{
+		Build: &composeTypes.BuildConfig{
 			Context:          ".",
 			DockerfileInline: "FROM alpine:3.20\nRUN echo inline\n",
 		},
@@ -204,11 +204,11 @@ func TestPrepareServiceBuildRequest_UsesInlineDockerfile(t *testing.T) {
 }
 
 func TestPrepareServiceBuildRequest_GeneratedImageProviderGuardrails(t *testing.T) {
-	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
+	proj := &composeTypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
 
-	serviceCfg := composetypes.ServiceConfig{
+	serviceCfg := composeTypes.ServiceConfig{
 		Name: "web",
-		Build: &composetypes.BuildConfig{
+		Build: &composeTypes.BuildConfig{
 			Context: ".",
 		},
 	}

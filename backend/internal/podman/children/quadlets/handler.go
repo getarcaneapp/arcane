@@ -59,7 +59,7 @@ func NewHandler(service *Service, audit func(ctx context.Context, environmentID,
 func (h *Handler) List(ctx context.Context, input *ListQuadletsInput) (*handlerutil.Page[types.QuadletDetail], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.Aggregate(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, quadletPagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list quadlets: " + err.Error())
 		}

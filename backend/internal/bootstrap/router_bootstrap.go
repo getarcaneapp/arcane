@@ -304,18 +304,18 @@ func newRouter(p RouterParams) *echo.Echo {
 	permissionMatcher.CollectFromHumaAPI(humaAPI)
 	ws.AddProxiedPermissions(permissionMatcher)
 
-	ws.NewWebSocketHandler(
-		p.Context,
-		apiGroup,
-		p.HandlerDeps.Project.Service(),
-		p.HandlerDeps.Container.Service(),
-		p.HandlerDeps.Swarm.Service(),
-		p.HandlerDeps.System.Service(),
-		p.HandlerDeps.Diagnostics,
-		p.AuthMiddleware,
-		p.HandlerDeps.Settings.Service(),
-		p.Config,
-	)
+	ws.NewWebSocketHandler(ws.HandlerParams{
+		AppCtx:             p.Context,
+		Group:              apiGroup,
+		ProjectService:     p.HandlerDeps.Project.Service(),
+		ContainerService:   p.HandlerDeps.Container.Service(),
+		SwarmService:       p.HandlerDeps.Swarm.Service(),
+		SystemService:      p.HandlerDeps.System.Service(),
+		DiagnosticsService: p.HandlerDeps.Diagnostics,
+		AuthMiddleware:     p.AuthMiddleware,
+		SettingsService:    p.HandlerDeps.Settings.Service(),
+		Config:             p.Config,
+	})
 
 	apiNotFound := func(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]any{

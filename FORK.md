@@ -9,11 +9,11 @@ upstream's and lives at [getarcane.app](https://getarcane.app).
 | Branch | Tracks          | Notes                                                                          |
 | ------ | --------------- | ------------------------------------------------------------------------------ |
 | `main` | upstream 3.1.x  | Current line. Carries the fork features below.                                 |
-| `v3`   | same as `main`  | Working name kept for the v3 line while the fork migrated off the 2.x `main`.  |
 | `2.x`  | upstream 2.17.x | Frozen maintenance line, the former `main`. Only versioned images are updated. |
 
-`main` moved to the v3 line once the v3 images were published. 2.x deployments stay on the
-`2.x` branch and its versioned images.
+`main` moved to the v3 line once the v3 images were published; 2.x deployments stay on the
+`2.x` branch and its versioned images. The granular history of the migration is tagged
+`archive/v3-history`.
 
 ## Images
 

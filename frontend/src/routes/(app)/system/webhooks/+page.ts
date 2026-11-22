@@ -13,7 +13,6 @@ export const load: PageLoad = async ({ parent }) => {
 	const webhooks = await queryClient.query(webhookListQuery(scope, readableEnvironments('webhooks:list'), webhookRequestOptions));
 
 	return {
-		scope,
 		webhooks,
 		webhookRequestOptions
 	};

@@ -9,37 +9,58 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"go.yaml.in/yaml/v4"
 
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
+	"kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
-func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {
-	if composeProject == nil || len(composeProject.Volumes) == 0 {
+type (
+	ResolveProjectVolumesOptions struct {
+		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
+		InUse   map[string]bool
+		Project types.Project
+	}
+
+	VolumeMigrationPlanConfig struct {
+		DockerClient   *client.Client
+		UsageCache     *docker.VolumeUsageCache
+		ComposeProject *composeTypes.Project
+		OldComposeName string
+		NewComposeName string
+		ToolsImage     string
+	}
+)
+
+func PlanVolumeMigration(ctx context.Context, cfg VolumeMigrationPlanConfig) (types.VolumeMigration, error) {
+	if cfg.ComposeProject == nil || len(cfg.ComposeProject.Volumes) == 0 {
 		return nil, nil
 	}
-	if strings.TrimSpace(oldComposeName) == "" || strings.TrimSpace(newComposeName) == "" || oldComposeName == newComposeName {
+	if strings.TrimSpace(cfg.OldComposeName) == "" || strings.TrimSpace(cfg.NewComposeName) == "" || cfg.OldComposeName == cfg.NewComposeName {
 		return nil, nil
 	}
 
-	explicitVolumeNames, err := composeVolumeKeysWithExplicitName(ctx, composeProject.ComposeFiles)
+	explicitVolumeNames, err := composeVolumeKeysWithExplicitName(ctx, cfg.ComposeProject.ComposeFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse compose volume names: %w", err)
 	}
 
-	entries, err := collectProjectRenameVolumeEntries(ctx, dockerClient, composeProject.Volumes, explicitVolumeNames, oldComposeName, newComposeName)
+	entries, err := collectProjectRenameVolumeEntries(ctx, cfg.DockerClient, cfg.ComposeProject.Volumes, explicitVolumeNames, cfg.OldComposeName, cfg.NewComposeName)
 	if err != nil {
 		return nil, err
 	}
@@ -49,17 +70,18 @@ func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, compo
 	}
 
 	return volumes.NewMigration(volumes.MigrationConfig{
-		DockerClient: dockerClient,
+		DockerClient: cfg.DockerClient,
+		UsageCache:   cfg.UsageCache,
 		Entries:      entries,
-		OldProject:   oldComposeName,
-		NewProject:   newComposeName,
-		ToolsImage:   toolsImage,
+		OldProject:   cfg.OldComposeName,
+		NewProject:   cfg.NewComposeName,
+		ToolsImage:   cfg.ToolsImage,
 	}), nil
 }
 
 func collectProjectRenameVolumeEntries(ctx context.Context,
 	dockerClient *client.Client,
-	localVolumes map[string]composetypes.VolumeConfig,
+	localVolumes map[string]composeTypes.VolumeConfig,
 	explicitVolumeNames map[string]struct{},
 	oldComposeName,
 	newComposeName string) ([]types.VolumeRenameEntry,
@@ -81,7 +103,7 @@ func collectProjectRenameVolumeEntries(ctx context.Context,
 func inspectProjectRenameVolumeEntry(ctx context.Context,
 	dockerClient *client.Client,
 	key string,
-	volumeConfig composetypes.VolumeConfig,
+	volumeConfig composeTypes.VolumeConfig,
 	explicitVolumeNames map[string]struct{},
 	oldComposeName,
 	newComposeName string) (types.VolumeRenameEntry,
@@ -127,10 +149,103 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 	}, true, nil
 }
 
-func ComposeVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, newComposeName string) composetypes.VolumeConfig {
+func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
+	classified := make([]types.ProjectVolume, 0, len(project.Volumes))
+	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
+		config := project.Volumes[key]
+		local := cmp.Or(config.Driver, "local") == "local" && len(config.DriverOpts) == 0
+		kind := types.ProjectVolumeNamed
+		switch {
+		case bool(config.External):
+			kind = types.ProjectVolumeExternal
+		case !local:
+			kind = types.ProjectVolumeDriverOpts
+		}
+		classified = append(classified, types.ProjectVolume{ //exhaustruct:enforce
+			Labels:       config.Labels,
+			DockerLabels: nil,
+			Key:          key,
+			Name:         config.Name,
+			Kind:         kind,
+			Driver:       config.Driver,
+			Archive:      "",
+			Included:     local,
+			Missing:      false,
+			InUse:        false,
+		})
+	}
+	return classified
+}
+
+func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOptions) ([]types.ProjectVolume, map[string]types.Volume, error) {
+	classified := ClassifyProjectVolumes(opts.Project)
+	resolved := make([]types.ProjectVolume, 0, len(classified))
+	inspected := map[string]types.Volume{}
+	for _, volume := range classified {
+		if !volume.Included {
+			resolved = append(resolved, volume)
+			continue
+		}
+		existing, exists, err := opts.Inspect(ctx, volume.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("inspect volume %s: %w", volume.Name, err)
+		}
+		included := exists && cmp.Or(existing.Driver, "local") == "local" && len(existing.Options) == 0
+		kind := volume.Kind
+		if exists && !included && kind == types.ProjectVolumeNamed {
+			kind = types.ProjectVolumeDriverOpts
+		}
+		inspected[volume.Name] = existing
+		resolved = append(resolved, types.ProjectVolume{ //exhaustruct:enforce
+			Labels:       volume.Labels,
+			DockerLabels: nil,
+			Key:          volume.Key,
+			Name:         volume.Name,
+			Kind:         kind,
+			Driver:       volume.Driver,
+			Archive:      "",
+			Included:     included,
+			Missing:      !exists,
+			InUse:        included && opts.InUse[volume.Name],
+		})
+	}
+	return resolved, inspected, nil
+}
+
+func ProjectContainerUse(composeName string, containers []container.Summary) ([]container.Summary, map[string]bool) {
+	var active []container.Summary
+	inUse := map[string]bool{}
+	for _, c := range containers {
+		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
+			if c.State == container.StateRunning || c.State == container.StateRestarting {
+				active = append(active, c)
+			}
+			continue
+		}
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume {
+				inUse[m.Name] = true
+			}
+		}
+	}
+	return active, inUse
+}
+
+// ComposeVolumeTargetCreateOptions creates a restore target as Compose would, or as its own volume when it is external.
+func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (client.VolumeCreateOptions, error) {
+	if target.External {
+		return client.VolumeCreateOptions{Name: name, Driver: target.Driver, Labels: target.Labels}, nil
+	}
+	return ComposeVolumeCreateOptions(ComposeVolumeConfig(composeTypes.VolumeConfig{
+		Driver: target.Driver,
+		Labels: target.Labels,
+	}, target.Key, name, target.Project), nil)
+}
+
+func ComposeVolumeConfig(volumeConfig composeTypes.VolumeConfig, key, newName, newComposeName string) composeTypes.VolumeConfig {
 	newConfig := volumeConfig
 	newConfig.Name = newName
-	newConfig.CustomLabels = composetypes.Labels{
+	newConfig.CustomLabels = composeTypes.Labels{
 		api.VolumeLabel:  key,
 		api.ProjectLabel: newComposeName,
 		api.VersionLabel: api.ComposeVersion,
@@ -138,12 +253,12 @@ func ComposeVolumeConfig(volumeConfig composetypes.VolumeConfig, key, newName, n
 	return newConfig
 }
 
-func ComposeVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
-	labels := map[string]string{}
-	maps.Copy(labels, oldLabels)
-	maps.Copy(labels, config.Labels)
-	maps.Copy(labels, config.CustomLabels)
-	raw, err := json.Marshal(composetypes.VolumeConfig{
+func ComposeVolumeCreateOptions(config composeTypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
+	volumeLabels := map[string]string{}
+	maps.Copy(volumeLabels, oldLabels)
+	maps.Copy(volumeLabels, config.Labels)
+	maps.Copy(volumeLabels, config.CustomLabels)
+	raw, err := json.Marshal(composeTypes.VolumeConfig{
 		Name:       config.Name,
 		Driver:     cmp.Or(config.Driver, "local"),
 		DriverOpts: config.DriverOpts,
@@ -153,8 +268,8 @@ func ComposeVolumeCreateOptions(config composetypes.VolumeConfig, oldLabels map[
 	if err != nil {
 		return client.VolumeCreateOptions{}, fmt.Errorf("hash target volume %s: %w", config.Name, err)
 	}
-	labels[api.ConfigHashLabel] = digest.SHA256.FromBytes(raw).Encoded()
-	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: labels}, nil
+	volumeLabels[api.ConfigHashLabel] = digest.SHA256.FromBytes(raw).Encoded()
+	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: volumeLabels}, nil
 }
 
 func composeVolumeKeysWithExplicitName(ctx context.Context, composeFiles []string) (map[string]struct{}, error) {
@@ -330,7 +445,13 @@ func cleanupRenameJournalSources(ctx context.Context, operations types.ProjectRe
 		}
 	}
 
-	return volumes.RemoveSourceVolumes(ctx, dockerClient, journal.Volumes)
+	if removeErr := volumes.RemoveSourceVolumes(ctx, dockerClient, journal.Volumes); removeErr != nil {
+		return removeErr
+	}
+	if operations.InvalidateVolumeUsage != nil {
+		operations.InvalidateVolumeUsage(dockerClient)
+	}
+	return nil
 }
 
 func rollbackRenameJournal(ctx context.Context, operations types.ProjectRenameRecoveryOperations, journal *types.ProjectRenameJournal) error {
@@ -384,7 +505,11 @@ func rollbackRenameJournalVolumes(ctx context.Context, operations types.ProjectR
 		return err
 	}
 
-	return volumes.RollbackVolumes(ctx, dockerClient, journal.Volumes)
+	rollbackErr := volumes.RollbackVolumes(ctx, dockerClient, journal.Volumes)
+	if len(journal.Volumes) > 0 && operations.InvalidateVolumeUsage != nil {
+		operations.InvalidateVolumeUsage(dockerClient)
+	}
+	return rollbackErr
 }
 
 func RecoverRenameJournal(ctx context.Context, journal *types.ProjectRenameJournal, projectCommitted bool, operations types.ProjectRenameRecoveryOperations) error {
@@ -429,6 +554,8 @@ func CleanupRenameRollbackTargets(ctx context.Context, cleanup *types.ProjectRen
 		return cleanupRollbackTargetVolumesErr
 	}
 
-	docker.InvalidateVolumeUsageCache(dockerClient)
+	if operations.InvalidateVolumeUsage != nil {
+		operations.InvalidateVolumeUsage(dockerClient)
+	}
 	return operations.ClearRollbackCleanup(ctx, cleanup.ProjectID)
 }

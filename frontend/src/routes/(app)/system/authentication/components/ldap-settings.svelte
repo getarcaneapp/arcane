@@ -43,17 +43,14 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	import SettingsTextRows, { type SettingsTextField } from './settings-text-rows.svelte';
+
 	type TextFieldKey = Exclude<
 		keyof LdapSettingsFormValues,
 		'ldapBindPassword' | 'ldapClearBindPassword' | 'ldapSkipCertVerify' | 'ldapStartTls' | 'ldapSoftDeleteUsers'
 	>;
 
-	type TextField = {
-		key: TextFieldKey;
-		label: string;
-		description?: string;
-		placeholder: string;
-	};
+	type TextField = SettingsTextField<TextFieldKey>;
 
 	let {
 		formInputs,
@@ -182,29 +179,6 @@
 	}
 </script>
 
-{#snippet textRows(fields: TextField[])}
-	{#each fields as field (field.key)}
-		<SettingsRow
-			for={field.key}
-			label={field.label}
-			description={field.description}
-			error={formInputs[field.key].error}
-			lock={settingsStore.lock(field.key)}
-		>
-			{#snippet children({ describedBy, errorId })}
-				<Input
-					id={field.key}
-					placeholder={field.placeholder}
-					bind:value={formInputs[field.key].value}
-					aria-invalid={!!formInputs[field.key].error}
-					aria-describedby={describedBy}
-					aria-errormessage={errorId}
-				/>
-			{/snippet}
-		</SettingsRow>
-	{/each}
-{/snippet}
-
 <Tabs.Root bind:value={section}>
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<Tabs.List>
@@ -224,7 +198,7 @@
 
 	<Tabs.Content value="connection" class="mt-4">
 		<SettingsSection>
-			{@render textRows(connectionFields)}
+			<SettingsTextRows fields={connectionFields} {formInputs} />
 			<SettingsRow
 				for="ldapBindPassword"
 				label={m.bind_password()}
@@ -283,19 +257,19 @@
 
 	<Tabs.Content value="filters" class="mt-4">
 		<SettingsSection>
-			{@render textRows(filterFields)}
+			<SettingsTextRows fields={filterFields} {formInputs} />
 		</SettingsSection>
 	</Tabs.Content>
 
 	<Tabs.Content value="attributes" class="mt-4">
 		<SettingsSection>
-			{@render textRows(attributeFields)}
+			<SettingsTextRows fields={attributeFields} {formInputs} />
 		</SettingsSection>
 	</Tabs.Content>
 
 	<Tabs.Content value="sync" class="mt-4">
 		<SettingsSection>
-			{@render textRows(syncFields)}
+			<SettingsTextRows fields={syncFields} {formInputs} />
 			<SettingsRow
 				for="ldapSoftDeleteUsers"
 				label={m.keep_disabled_users()}

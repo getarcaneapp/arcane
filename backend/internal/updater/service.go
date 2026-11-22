@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/builtin/workflow"
@@ -2049,7 +2049,7 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 	return projectpkg.BuildConfiguredUpdateInfo(projectID, details.Services, nil, records), nil
 }
 
-func (s *UpdaterService) checkProjectService(ctx context.Context, projectID string, service composetypes.ServiceConfig) imageupdate.ImageUpdateRecord {
+func (s *UpdaterService) checkProjectService(ctx context.Context, projectID string, service composeTypes.ServiceConfig) imageupdate.ImageUpdateRecord {
 	checkTime := time.Now().UTC()
 	parsed, err := refs.NormalizeReference(service.Image)
 	if err != nil {

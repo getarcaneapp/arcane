@@ -12,7 +12,7 @@ import (
 	"time"
 	"uuid"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -250,10 +250,10 @@ func (f *fakeEnvironment) ImportProject(_ context.Context, request types.ImportP
 		ID:          request.ProjectID,
 		Name:        request.Name,
 		ComposeName: request.Name,
-		Volumes: composetypes.Volumes{"data": {
+		Volumes: composeTypes.Volumes{"data": {
 			Name:   request.Name + "_data",
 			Driver: "local",
-			Labels: composetypes.Labels{"tier": "db"},
+			Labels: composeTypes.Labels{"tier": "db"},
 		}},
 	}
 	return request.ProjectID, f.failImport
@@ -451,7 +451,7 @@ func TestProjectTransfer(t *testing.T) {
 		Name:         "app",
 		ComposeName:  "app",
 		RunningCount: 1,
-		Volumes:      composetypes.Volumes{"data": {Name: "app_data"}},
+		Volumes:      composeTypes.Volumes{"data": {Name: "app_data"}},
 	}
 	tests := []transferCase{
 		{
@@ -553,7 +553,7 @@ func TestProjectTransfer(t *testing.T) {
 				ID:          "imported",
 				Name:        "copy",
 				ComposeName: "copy",
-				Volumes:     composetypes.Volumes{"data": {Name: "copy_data"}},
+				Volumes:     composeTypes.Volumes{"data": {Name: "copy_data"}},
 			}},
 			resume: &checkpoint{
 				Volumes: []types.ProjectTransferVolume{{
@@ -595,7 +595,7 @@ func TestProjectTransfer(t *testing.T) {
 			targetProjects: []types.Project{{
 				ID:      "other",
 				Name:    "other",
-				Volumes: composetypes.Volumes{"data": {Name: "copy_data"}},
+				Volumes: composeTypes.Volumes{"data": {Name: "copy_data"}},
 			}},
 			verify: func(t *testing.T, _, target *fakeEnvironment, _ []types.ProjectWebhookRetarget) {
 				require.Equal(t, []string{"import:compose-archive", "deploy:imported", "destroy:imported"}, target.callList())
@@ -653,8 +653,8 @@ func TestProjectTransfer(t *testing.T) {
 			request: types.ProjectTransferRequest{Mode: types.ProjectTransferModeCopy, Name: "copy", IncludeVolumes: true},
 			source:  volumeProject,
 			targetProjects: []types.Project{
-				{ID: "imported", Name: "copy", ComposeName: "copy", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
-				{ID: "other", Name: "other", ComposeName: "other", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
+				{ID: "imported", Name: "copy", ComposeName: "copy", Volumes: composeTypes.Volumes{"data": {Name: "copy_data"}}},
+				{ID: "other", Name: "other", ComposeName: "other", Volumes: composeTypes.Volumes{"data": {Name: "copy_data"}}},
 			},
 			resume: &checkpoint{
 				Volumes:         []types.ProjectTransferVolume{{Key: "data", SourceName: "app_data", TargetName: "copy_data"}},
@@ -678,8 +678,8 @@ func TestProjectTransfer(t *testing.T) {
 			source:  plainProject,
 			denied:  []string{authz.PermProjectsCreate},
 			targetProjects: []types.Project{
-				{ID: "imported", Name: "copy", ComposeName: "copy", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
-				{ID: "other", Name: "other", ComposeName: "other", Volumes: composetypes.Volumes{"data": {Name: "copy_data"}}},
+				{ID: "imported", Name: "copy", ComposeName: "copy", Volumes: composeTypes.Volumes{"data": {Name: "copy_data"}}},
+				{ID: "other", Name: "other", ComposeName: "other", Volumes: composeTypes.Volumes{"data": {Name: "copy_data"}}},
 			},
 			resume: &checkpoint{
 				CreatedVolumes:  []string{"copy_data"},
@@ -712,13 +712,13 @@ func TestProjectTransfer(t *testing.T) {
 				Name:            "app",
 				ComposeName:     "app",
 				GitOpsManagedBy: new("sync-1"),
-				Volumes:         composetypes.Volumes{"data": {Name: "app_data"}},
-				Networks:        composetypes.Networks{"edge": {Name: "proxy", External: true}},
+				Volumes:         composeTypes.Volumes{"data": {Name: "app_data"}},
+				Networks:        composeTypes.Networks{"edge": {Name: "proxy", External: true}},
 			},
 			targetProjects: []types.Project{{
 				ID:      "other",
 				Name:    "Copy",
-				Volumes: composetypes.Volumes{"data": {Name: "copy_data"}},
+				Volumes: composeTypes.Volumes{"data": {Name: "copy_data"}},
 			}},
 			blockedCodes: []string{
 				types.ProjectTransferGitOpsMove,
@@ -854,11 +854,11 @@ func TestCreateTransferResource(t *testing.T) {
 		ID:          "app",
 		Name:        "app",
 		ComposeName: "app",
-		Volumes: composetypes.Volumes{
+		Volumes: composeTypes.Volumes{
 			"media": {Name: "media", External: true},
 			"data":  {Name: "app_data"},
 		},
-		Networks: composetypes.Networks{
+		Networks: composeTypes.Networks{
 			"vlan25": {Name: "vlan25", External: true},
 			"v6only": {Name: "v6only", External: true},
 			"ghost":  {Name: "ghost", External: true},

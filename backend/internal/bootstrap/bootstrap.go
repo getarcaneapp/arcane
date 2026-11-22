@@ -221,7 +221,7 @@ func applicationOptions(
 			func() context.Context { return appCtx },
 			func(settingsService *settings.SettingsService) *http.Client {
 				return httpx.NewHTTPClient(httpx.ClientConfig{
-					Timeout:             timeouts.GetDuration(settingsService.GetSettingsOrDefaults(appCtx).HTTPClientTimeout.AsInt(), timeouts.DefaultHTTPClient),
+					Timeout:             timeouts.GetDuration(settingsService.GetSettingsConfig().HTTPClientTimeout.AsInt(), timeouts.DefaultHTTPClient),
 					MaxIdleConnsPerHost: 32,
 				})
 			},
@@ -254,7 +254,7 @@ func applicationOptions(
 							Config:  buildAgentRuntimeConfig(cfg, cfg.AgentToken, agentHostInfo(appCtx, dockerService)),
 							Handler: router,
 							StreamWindowMiB: func() int {
-								return settingsService.GetSettingsOrDefaults(appCtx).AgentTunnelStreamWindowMb.AsInt()
+								return settingsService.GetSettingsConfig().AgentTunnelStreamWindowMb.AsInt()
 							},
 							ReadinessProbe: systemService.PingDocker,
 						}).Start(appCtx)

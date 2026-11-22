@@ -23,9 +23,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
-	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/image"
-	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/project"
@@ -38,7 +36,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/template"
 	"getarcane.dev/arcane/v3/internal/updater"
 	"getarcane.dev/arcane/v3/internal/volume"
-	"getarcane.dev/arcane/v3/internal/vulnerability"
 	"getarcane.dev/arcane/v3/internal/webhook"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/francis"
@@ -120,6 +117,10 @@ type (
 		LocalProject  *project.ProjectService
 		LocalTemplate *template.TemplateService
 		LocalSettings *settings.SettingsService
+	}
+
+	workflowRegistrar interface {
+		RegisterWorkflows(*flow.Engine) error
 	}
 )
 
@@ -270,28 +271,15 @@ func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClien
 	return service
 }
 
-func provideImageUpdateService(p imageupdate.ImageUpdateServiceParams, engine *flow.Engine) (*imageupdate.ImageUpdateService, error) {
-	service := imageupdate.NewImageUpdateService(p)
-	if err := service.RegisterWorkflows(engine); err != nil {
-		return nil, err
+func provideWithWorkflows[P any, S workflowRegistrar](ctor func(P) S) func(P, *flow.Engine) (S, error) {
+	return func(p P, engine *flow.Engine) (S, error) {
+		service := ctor(p)
+		if err := service.RegisterWorkflows(engine); err != nil {
+			var zero S
+			return zero, err
+		}
+		return service, nil
 	}
-	return service, nil
-}
-
-func provideImageService(p image.ImageServiceParams, engine *flow.Engine) (*image.ImageService, error) {
-	service := image.NewImageService(p)
-	if err := service.RegisterWorkflows(engine); err != nil {
-		return nil, err
-	}
-	return service, nil
-}
-
-func provideVulnerabilityService(p vulnerability.VulnerabilityServiceParams, engine *flow.Engine) (*vulnerability.VulnerabilityService, error) {
-	service := vulnerability.NewVulnerabilityService(p)
-	if err := service.RegisterWorkflows(engine); err != nil {
-		return nil, err
-	}
-	return service, nil
 }
 
 func provideUpdaterService(p updater.UpdaterServiceParams, engine *flow.Engine) (*updater.UpdaterService, error) {
@@ -345,14 +333,6 @@ func provideFilesystemWatcherJob(p filesystemWatcherJobParams) (
 		},
 	})
 	return job, nil
-}
-
-func provideGitOpsSyncService(p gitops.GitOpsSyncServiceParams, engine *flow.Engine) (*gitops.GitOpsSyncService, error) {
-	service := gitops.NewGitOpsSyncService(p)
-	if err := service.RegisterWorkflows(engine); err != nil {
-		return nil, err
-	}
-	return service, nil
 }
 
 func provideVolumeService(lc fx.Lifecycle, p volume.VolumeServiceParams, engine *flow.Engine) (*volume.VolumeService, error) {

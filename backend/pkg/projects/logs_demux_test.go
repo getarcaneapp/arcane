@@ -95,7 +95,10 @@ func TestLogsDemuxClientContainerLogsDecision(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body := &fakeResponseBody{Reader: bytes.NewReader(muxed)}
-			inner := &logsDemuxDockerClient{APIClient: &stubLogAPIClient{resp: body}}
+			inner := &logsDemuxDockerClient{
+				APIClient:    &stubLogAPIClient{resp: body},
+				containerTty: make(map[string]bool, 8),
+			}
 			if tt.containerKnown {
 				inner.recordContainerTTY(" CTR-1 ", tt.ttyRecorded)
 			}
