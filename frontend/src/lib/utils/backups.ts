@@ -32,6 +32,7 @@ export function backupStatusVariant(status: BackupStatus): 'green' | 'red' | 'bl
 export function backupTriggerLabel(trigger: BackupTrigger): string {
 	if (trigger === 'scheduled') return m.backups_trigger_scheduled();
 	if (trigger === 'safety') return m.backups_trigger_safety();
+	if (trigger === 'discovered') return m.discovered();
 	if (trigger === 'manager') return m.manager();
 	return m.backups_trigger_manual();
 }
@@ -144,12 +145,16 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	}
 }
 
-// Finds backups whose rows are missing, such as after Arcane's data volume was lost: always in local storage, and on
-// each S3 destination.
-export async function runAutomaticBackupDiscovery(destinations: { id: string }[]): Promise<boolean> {
+// Finds backups whose rows are missing on each S3 destination, and in local storage when `local` is set, such as after
+// a recovery key is imported following the loss of Arcane's data volume.
+export async function runAutomaticBackupDiscovery(
+	destinations: { id: string }[],
+	{ local }: { local: boolean }
+): Promise<boolean> {
 	const discover = (found: Promise<number>, failed: () => string) =>
 		found.catch((error: unknown) => {
-			// A running system backup holds the run lease; the next visit retries.
+			// A running system backup holds the run lease; the next visit retries the S3 passes, and importing or
+			// generating a key again, or `arcane backups discover --local`, retries the local one.
 			if (!(error instanceof APIError && error.status === 409)) {
 				toast.error(failed(), { description: extractApiErrorMessage(error) });
 			}
@@ -162,7 +167,7 @@ export async function runAutomaticBackupDiscovery(destinations: { id: string }[]
 		);
 	// System discoveries share one run lease, so they run one at a time.
 	const discoverSystem = async () => {
-		let found = await discover(systemBackupService.discover('', '', 'local'), m.system_backups_discover_failed);
+		let found = local ? await discover(systemBackupService.discover('', '', 'local'), m.system_backups_discover_failed) : 0;
 		for (const item of destinations) {
 			found += await discover(systemBackupService.discover(item.id, ''), m.system_backups_discover_failed);
 		}
@@ -170,7 +175,7 @@ export async function runAutomaticBackupDiscovery(destinations: { id: string }[]
 	};
 	const counts = await Promise.all([
 		discoverSystem(),
-		discoverVolumes('', 'local'),
+		...(local ? [discoverVolumes('', 'local')] : []),
 		...destinations.map((item) => discoverVolumes(item.id, 's3'))
 	]);
 	return counts.some((count) => count > 0);

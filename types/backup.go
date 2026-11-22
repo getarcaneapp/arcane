@@ -280,6 +280,8 @@ const (
 	VolumeBackupTriggerManual    = "manual"
 	VolumeBackupTriggerScheduled = "scheduled"
 	VolumeBackupTriggerSafety    = "safety"
+	// VolumeBackupTriggerDiscovered marks a local backup recorded from its snapshot after its record was lost.
+	VolumeBackupTriggerDiscovered = "discovered"
 )
 
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {

@@ -208,6 +208,7 @@ func TestDiscoveredLocalVolumeBackupKeepsItsBackupID(t *testing.T) {
 	entry := discoveredVolumeBackup("", "", tagged)
 	require.NotNil(t, entry)
 	require.Equal(t, "backup-1", entry.ID)
+	require.Equal(t, types.VolumeBackupTriggerDiscovered, entry.Trigger)
 	require.Equal(t, types.VolumeBackupDestinationLocal, entry.Destination)
 	require.Equal(t, "abc123", entry.LocalSnapshotID)
 	require.Empty(t, entry.RemoteSnapshotID)
@@ -269,6 +270,7 @@ func TestOrphanedVolumeBackupIDs(t *testing.T) {
 		{ID: "manual-deleted-system-policy", VolumeName: "app-data", PolicyID: systemSeries("weekly"), Trigger: manual},
 		{ID: "removed-volume", VolumeName: "old-data", Trigger: manual},
 		{ID: "removed-volume-with-policy", VolumeName: "old-data", PolicyID: systemSeries("nightly"), Trigger: scheduled},
+		{ID: "discovered-removed-volume", VolumeName: "old-data", Trigger: types.VolumeBackupTriggerDiscovered},
 	}
 
 	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1"}, []string{"manual", "nightly"})

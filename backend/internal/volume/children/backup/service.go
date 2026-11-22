@@ -796,10 +796,14 @@ func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.Unm
 	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs, sweep.SystemVolumePolicyIDs), sweep)
 }
 
-// Manual backups outlive their schedule, so only their volume decides.
+// Manual backups outlive their schedule, so only their volume decides. Discovered backups are never orphaned: their
+// volume may have been lost with the host, and the snapshot may be the only copy left.
 func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, policyIDs, systemPolicyIDs []string) []string {
 	var orphaned []string
 	for _, candidate := range candidates {
+		if candidate.Trigger == types.VolumeBackupTriggerDiscovered {
+			continue
+		}
 		managed := candidate.PolicyID == "" || candidate.Trigger == types.VolumeBackupTriggerManual || slices.Contains(policyIDs, candidate.PolicyID)
 		if series, ok := strings.CutPrefix(candidate.PolicyID, types.SystemVolumePolicyPrefix); ok && candidate.Trigger != types.VolumeBackupTriggerManual {
 			owner, _, _ := strings.Cut(series, ":")
@@ -1241,7 +1245,7 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 		return &types.VolumeBackup{
 			ID:         cmp.Or(snapshot.RunID(), "local-"+snapshot.ID),
 			VolumeName: volumeName, Size: snapshot.Summary.TotalBytesProcessed, CreatedAt: createdAt,
-			Status: types.VolumeBackupStatusSucceeded, Trigger: types.VolumeBackupTriggerManual,
+			Status: types.VolumeBackupStatusSucceeded, Trigger: types.VolumeBackupTriggerDiscovered,
 			Destination: types.VolumeBackupDestinationLocal, Format: types.VolumeBackupFormatRustic,
 			LocalSnapshotID: snapshot.ID,
 		}
