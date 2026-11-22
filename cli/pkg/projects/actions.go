@@ -382,6 +382,15 @@ func newExportCmd() *cobra.Command {
 		Args:         cobra.RangeArgs(1, 2),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.stop && !opts.allVolumes && len(opts.volumes) == 0 {
+				return errors.New("--stop requires --volume or --all-volumes")
+			}
+			if len(args) == 2 {
+				if info, statErr := os.Stat(args[1]); statErr == nil && info.IsDir() {
+					return fmt.Errorf("output path %s is a directory", args[1])
+				}
+			}
+
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
@@ -421,6 +430,10 @@ func newExportCmd() *cobra.Command {
 				outputFile = args[1]
 			}
 			info, statErr := os.Stat(outputFile)
+			if statErr == nil && info.IsDir() {
+				cmdutil.AbortUploadSession(cmd.Context(), c, exported.Data.Kind, exported.Data.ID)
+				return fmt.Errorf("output path %s is a directory", outputFile)
+			}
 			special := statErr == nil && !info.Mode().IsRegular()
 			written, err := cmdutil.DownloadUploadSession(cmd.Context(), c, exported.Data, cmdutil.DownloadOptions{
 				OutputPath:   outputFile,

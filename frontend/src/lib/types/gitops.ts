@@ -115,21 +115,6 @@ export interface GitOpsBrowseResponse {
 	files: FileTreeNode[];
 }
 
-export interface GitOpsSyncStatus {
-	id: string;
-	autoSync: boolean;
-	nextSyncAt?: string;
-	lastSyncAt?: string;
-	lastSyncStatus?: string;
-	lastSyncError?: string;
-	lastSyncCommit?: string;
-	mode: GitOpsSyncMode;
-	backupState?: GitOpsBackupState;
-	backupPending: boolean;
-	backupFailureReason?: GitOpsBackupFailureReason;
-	lastBackupAt?: string;
-}
-
 export type GitOpsBackupPreviewState = 'clean' | 'changes' | 'conflict' | 'destination_occupied';
 
 export interface GitOpsBackupFileChange {

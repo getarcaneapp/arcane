@@ -404,7 +404,7 @@ func (s *Service) DiscoveredUpdateRows(
 ) []types.Project {
 	containersByProject := make(map[string][]container.Summary)
 	for _, c := range composeContainers {
-		if !projects.IsServiceContainer(c.Labels) {
+		if docker.ComposeServiceLabel(c.Labels) == "" || c.Labels[api.HookLabel] != "" || c.Labels[projects.JobRunLabel] != "" || c.Labels[api.OneoffLabel] == "True" {
 			continue
 		}
 		projectName := docker.ComposeProjectLabel(c.Labels)

@@ -475,8 +475,15 @@ func TestCheckInPlaceRefusesRestoresThatReachBeyondTheProject(t *testing.T) {
 	sharedErr := common.Classify(common.ErrValidation, errors.New("project Web is the projects directory"))
 	containers := []container.Summary{{Names: []string{"/web-app-1"}, State: container.StateRunning}}
 	dockerService := newTestDockerService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/v1.41/containers/json", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
+		// Run inside a container, resolving the project folder's mounts inspects Arcane's own container first.
+		if r.URL.Path != "/v1.41/containers/json" {
+			assert.Regexp(t, `^/v1\.41/containers/[^/]+/json$`, r.URL.Path)
+			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+				Mounts: []container.MountPoint{{Type: mount.TypeBind, Source: "/srv/arcane", Destination: "/app/data"}},
+			}))
+			return
+		}
 		assert.NoError(t, json.MarshalWrite(w, containers))
 	}))
 	check := func(runsArcane, files bool) error {

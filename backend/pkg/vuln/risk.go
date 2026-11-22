@@ -6,9 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"golang.org/x/mod/semver"
-
 	"kit.getarcane.app"
+	"kit.getarcane.app/semver"
 
 	"getarcane.dev/types/v3"
 )
@@ -276,7 +275,7 @@ func isNewerFixedVersion(candidate, current string) bool {
 	if current == "" {
 		return true
 	}
-	a, b := kit.EnsurePrefix(candidate, "v"), kit.EnsurePrefix(current, "v")
+	a, b := strings.TrimSpace(candidate), strings.TrimSpace(current)
 	return semver.IsValid(a) && semver.IsValid(b) && semver.Compare(a, b) > 0
 }
 

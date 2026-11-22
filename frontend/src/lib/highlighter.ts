@@ -203,9 +203,3 @@ export async function loadHighlighter(language: string) {
 		}
 	};
 }
-
-export async function highlightCode(code: string, language: string) {
-	const highlighter = await loadHighlighter(language);
-
-	return highlighter ? highlighter.highlight(code).lines : null;
-}

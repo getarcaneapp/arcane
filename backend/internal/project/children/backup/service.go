@@ -381,7 +381,6 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 			Labels: volume.Labels,
 			// A restore recreates a missing external volume with its own labels, not Compose's.
 			DockerLabels: kit.Ternary(volume.Kind == types.ProjectVolumeExternal && volume.Included, dockerVolumes[volume.Name].Labels, nil),
-			DriverOpts:   volume.DriverOpts,
 			Key:          volume.Key,
 			Name:         volume.Name,
 			Kind:         volume.Kind,
@@ -832,7 +831,6 @@ func markInUse(planned []types.ProjectVolume, inUse map[string]bool) []types.Pro
 		marked = append(marked, types.ProjectVolume{
 			Labels:       volume.Labels,
 			DockerLabels: volume.DockerLabels,
-			DriverOpts:   volume.DriverOpts,
 			Key:          volume.Key,
 			Name:         volume.Name,
 			Kind:         volume.Kind,

@@ -49,17 +49,21 @@
 	};
 </script>
 
+{#snippet fieldRow(field: LabelField, widthClass: string)}
+	<div class="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-baseline sm:gap-6">
+		<dt class="shrink-0 text-xs break-all text-muted-foreground {widthClass}" title={field.rawKey}>
+			{field.label}
+		</dt>
+		<dd class="min-w-0 flex-1">
+			<LabelValue value={field.value} />
+		</dd>
+	</div>
+{/snippet}
+
 {#snippet fieldRows(fields: LabelField[])}
 	<dl class="divide-y divide-border/40">
 		{#each fields as field (field.rawKey)}
-			<div class="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-baseline sm:gap-6">
-				<dt class="shrink-0 text-xs break-all text-muted-foreground sm:w-56" title={field.rawKey}>
-					{field.label}
-				</dt>
-				<dd class="min-w-0 flex-1">
-					<LabelValue value={field.value} />
-				</dd>
-			</div>
+			{@render fieldRow(field, 'sm:w-56')}
 		{/each}
 	</dl>
 {/snippet}
@@ -114,14 +118,7 @@
 			{/if}
 
 			{#each resource.fields as field (field.rawKey)}
-				<div class="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-baseline sm:gap-6">
-					<dt class="shrink-0 text-xs break-all text-muted-foreground sm:w-52" title={field.rawKey}>
-						{field.label}
-					</dt>
-					<dd class="min-w-0 flex-1">
-						<LabelValue value={field.value} />
-					</dd>
-				</div>
+				{@render fieldRow(field, 'sm:w-52')}
 			{/each}
 		</dl>
 	</div>

@@ -372,11 +372,11 @@ func (s *UploadService) DownloadSession(ctx context.Context, kind, uploadID stri
 	if err != nil {
 		return nil, nil, err
 	}
-	done := func() {
+	done := sync.OnceFunc(func() {
 		if deleteErr := s.DeleteSession(context.WithoutCancel(ctx), kind, uploadID); deleteErr != nil {
 			slog.WarnContext(ctx, "failed to delete downloaded upload session", "uploadId", uploadID, "error", deleteErr)
 		}
-	}
+	})
 	return &downloadReader{
 		ReadCloser: file,
 		unlock:     unlock,

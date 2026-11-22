@@ -4154,6 +4154,8 @@ kernel.org/pub/linux/libs/security/libcap/psx v1.2.78 h1:PC3yNs51cX5LZ7U57a7xiel
 kernel.org/pub/linux/libs/security/libcap/psx v1.2.78/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=
 kit.getarcane.app v0.5.0 h1:iCKZtpH5Yk9lEiipR4Koc7+mPH6xvEPloyn7B/UldOs=
 kit.getarcane.app v0.5.0/go.mod h1:rlxQSAjpoJewTRTyKfVPXgL7lEihtqdywzNoGb1oP9E=
+kit.getarcane.app/updater v0.12.6 h1:MwWlwQWnt83/XTl5osIRNIieAHxM7d2aLeokFWt0azY=
+kit.getarcane.app/updater v0.12.6/go.mod h1:GQP2aGS6heX2BfADQj6PQmJXMzva7RVgv6q8icBRkT8=
 lukechampine.com/uint128 v1.3.0 h1:cDdUVfRwDUDovz610ABgFD17nXD4/uDgVHl2sC3+sbo=
 lukechampine.com/uint128 v1.3.0/go.mod h1:c4eWIwlEGaxC/+H1VguhU4PHXNWDCDMUlWdIWl2j1gk=
 modernc.org/b v1.0.0 h1:vpvqeyp17ddcQWF29Czawql4lDdABCDRbXRAS4+aF2o=

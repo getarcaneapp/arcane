@@ -292,10 +292,6 @@ class APIClient {
 		this.defaults = { baseURL: baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL };
 	}
 
-	setBaseURL(baseURL: string) {
-		this.defaults.baseURL = baseURL;
-	}
-
 	private async performRequest<T = unknown>(
 		method: string,
 		url: string,

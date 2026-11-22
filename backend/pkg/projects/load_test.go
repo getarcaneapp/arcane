@@ -271,7 +271,7 @@ func TestLoadComposeProject_DoesNotMergeOverrideForCustomBaseName(t *testing.T) 
 	assert.Equal(t, []string{basePath}, project.ComposeFiles)
 }
 
-func TestLoadComposeProjectFromDir_SupportsPodmanComposeNames(t *testing.T) {
+func TestLoadComposeProject_SupportsPodmanComposeNames(t *testing.T) {
 	composeContent := "services:\n  app:\n    image: nginx:alpine\n"
 
 	testCases := []struct {
@@ -290,7 +290,10 @@ func TestLoadComposeProjectFromDir_SupportsPodmanComposeNames(t *testing.T) {
 			expectedPath := filepath.Join(dir, tc.fileName)
 			require.NoError(t, os.WriteFile(expectedPath, []byte(composeContent), 0o600))
 
-			project, composePath, err := LoadComposeProjectFromDir(t.Context(), dir, LoadOptions{
+			composePath, err := DetectComposeFile(t.Context(), filepath.Dir(dir), dir)
+			require.NoError(t, err)
+			project, err := LoadComposeProject(t.Context(), LoadOptions{
+				ComposeFile:       composePath,
 				ProjectName:       "podman-project",
 				ProjectsDirectory: filepath.Dir(dir),
 			})
@@ -304,14 +307,17 @@ func TestLoadComposeProjectFromDir_SupportsPodmanComposeNames(t *testing.T) {
 	}
 }
 
-func TestLoadComposeProjectFromDir_SupportsCustomComposeNames(t *testing.T) {
+func TestLoadComposeProject_SupportsCustomComposeNames(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	expectedPath := filepath.Join(dir, "radarr.yaml")
 	require.NoError(t, os.WriteFile(expectedPath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
 
-	project, composePath, err := LoadComposeProjectFromDir(t.Context(), dir, LoadOptions{
+	composePath, err := DetectComposeFile(t.Context(), filepath.Dir(dir), dir)
+	require.NoError(t, err)
+	project, err := LoadComposeProject(t.Context(), LoadOptions{
+		ComposeFile:       composePath,
 		ProjectName:       "radarr",
 		ProjectsDirectory: filepath.Dir(dir),
 	})
@@ -321,19 +327,25 @@ func TestLoadComposeProjectFromDir_SupportsCustomComposeNames(t *testing.T) {
 	assert.Equal(t, []string{expectedPath}, project.ComposeFiles)
 }
 
-func TestLoadComposeProjectFromDir_EmptyProjectsDirectoryDoesNotCreateParentGlobalEnv(t *testing.T) {
+func TestLoadComposeProject_EmptyProjectsDirectoryDoesNotCreateParentGlobalEnv(t *testing.T) {
 	t.Parallel()
 
 	projectsRoot := t.TempDir()
 	projectDir := filepath.Join(projectsRoot, "nested", "services")
 	require.NoError(t, os.MkdirAll(projectDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	expectedPath := filepath.Join(projectDir, "compose.yaml")
+	require.NoError(t, os.WriteFile(expectedPath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
 
-	project, composePath, err := LoadComposeProjectFromDir(t.Context(), projectDir, LoadOptions{ProjectName: "nested-services"})
+	composePath, err := DetectComposeFile(t.Context(), "", projectDir)
+	require.NoError(t, err)
+	project, err := LoadComposeProject(t.Context(), LoadOptions{
+		ComposeFile: composePath,
+		ProjectName: "nested-services",
+	})
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
-	assert.Equal(t, filepath.Join(projectDir, "compose.yaml"), composePath)
+	assert.Equal(t, expectedPath, composePath)
 
 	_, statErr := os.Stat(filepath.Join(projectsRoot, "nested", GlobalEnvFileName))
 	assert.ErrorIs(t, statErr, os.ErrNotExist)

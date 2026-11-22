@@ -8,7 +8,6 @@ import type {
 	GitOpsSync,
 	GitOpsSyncCounts,
 	GitOpsSyncResult,
-	GitOpsSyncStatus,
 	ImportGitOpsSyncRequest,
 	ImportGitOpsSyncResponse
 } from '#lib/types/gitops.js';
@@ -56,10 +55,6 @@ class GitOpsSyncService extends BaseAPIService {
 		return this.handleResponse(
 			this.api.post(`/agents/${environmentId}/gitops/syncs/${syncId}`, undefined, { params: { action: 'sync' } })
 		);
-	}
-
-	async getSyncStatus(environmentId: string, syncId: string): Promise<GitOpsSyncStatus> {
-		return this.handleResponse(this.api.get(`/agents/${environmentId}/gitops/syncs/${syncId}/status`));
 	}
 
 	async browseFiles(environmentId: string, syncId: string, path?: string): Promise<GitOpsBrowseResponse> {

@@ -142,6 +142,37 @@
 	});
 </script>
 
+{#snippet codeEditorRow(opts: {
+	key: 'trivyConfig' | 'trivyIgnore';
+	label: string;
+	description: string;
+	language: 'yaml' | 'plaintext';
+	placeholder: string;
+})}
+	<SettingsRow label={opts.label} description={opts.description} layout="wide" mixed={mixed(opts.key)}>
+		{#snippet children({ describedBy })}
+			<div class="overflow-hidden rounded-md border border-border/60">
+				{#await import('#lib/components/code-editor/editor.svelte')}
+					<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+				{:then { default: CodeEditor }}
+					<CodeEditor
+						bind:value={formInputs[opts.key].value}
+						aria-describedby={describedBy}
+						language={opts.language}
+						validationMode="none"
+						autoHeight={true}
+						statusBar={false}
+						fontSize="13px"
+						placeholder={opts.placeholder}
+					/>
+				{:catch}
+					<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+				{/await}
+			</div>
+		{/snippet}
+	</SettingsRow>
+{/snippet}
+
 {#if vulnerabilityManagementEnabled}
 	<div class="space-y-8">
 		<SettingsSection title={m.security_vulnerability_scanning_heading()}>
@@ -207,61 +238,21 @@
 				{/snippet}
 			</SettingsRow>
 
-			<SettingsRow
-				label={m.security_trivy_config_label()}
-				description={m.security_trivy_config_description()}
-				layout="wide"
-				mixed={mixed('trivyConfig')}
-			>
-				{#snippet children({ describedBy })}
-					<div class="overflow-hidden rounded-md border border-border/60">
-						{#await import('#lib/components/code-editor/editor.svelte')}
-							<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-						{:then { default: CodeEditor }}
-							<CodeEditor
-								bind:value={formInputs.trivyConfig.value}
-								aria-describedby={describedBy}
-								language="yaml"
-								validationMode="none"
-								autoHeight={true}
-								statusBar={false}
-								fontSize="13px"
-								placeholder={m.security_trivy_config_placeholder()}
-							/>
-						{:catch}
-							<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-						{/await}
-					</div>
-				{/snippet}
-			</SettingsRow>
+			{@render codeEditorRow({
+				key: 'trivyConfig',
+				label: m.security_trivy_config_label(),
+				description: m.security_trivy_config_description(),
+				language: 'yaml',
+				placeholder: m.security_trivy_config_placeholder()
+			})}
 
-			<SettingsRow
-				label={m.security_trivy_ignore_label()}
-				description={m.security_trivy_ignore_description()}
-				layout="wide"
-				mixed={mixed('trivyIgnore')}
-			>
-				{#snippet children({ describedBy })}
-					<div class="overflow-hidden rounded-md border border-border/60">
-						{#await import('#lib/components/code-editor/editor.svelte')}
-							<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-						{:then { default: CodeEditor }}
-							<CodeEditor
-								bind:value={formInputs.trivyIgnore.value}
-								aria-describedby={describedBy}
-								language="plaintext"
-								validationMode="none"
-								autoHeight={true}
-								statusBar={false}
-								fontSize="13px"
-								placeholder={m.security_trivy_ignore_placeholder()}
-							/>
-						{:catch}
-							<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-						{/await}
-					</div>
-				{/snippet}
-			</SettingsRow>
+			{@render codeEditorRow({
+				key: 'trivyIgnore',
+				label: m.security_trivy_ignore_label(),
+				description: m.security_trivy_ignore_description(),
+				language: 'plaintext',
+				placeholder: m.security_trivy_ignore_placeholder()
+			})}
 
 			<SettingsRow
 				for="trivyNetwork"

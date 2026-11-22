@@ -12,7 +12,6 @@
 	import type { ContainerStats, ContainerStatsHistorySample } from '#lib/types/container.js';
 	import { calculateCPUPercent, calculateMemoryUsage } from '#lib/utils/docker.js';
 	import { bytes } from '#lib/utils/formatting.js';
-	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ContainerLogStatMonitor from './container-log-stat-monitor.svelte';
@@ -107,15 +106,15 @@
 	}
 
 	function handleStart() {
-		startLogViewerStream(viewer);
+		viewer?.startLogStream();
 	}
 
 	function handleStop() {
-		stopLogViewerStream(viewer);
+		viewer?.stopLogStream();
 	}
 
 	async function handleRefresh() {
-		await refreshLogViewerStream(viewer);
+		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
 	async function handleDownload() {

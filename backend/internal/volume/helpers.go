@@ -16,12 +16,12 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"golang.org/x/mod/semver"
 
 	"kit.getarcane.app"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
+	"kit.getarcane.app/semver"
 
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/arcane/v3/pkg/volumes"
@@ -60,7 +60,7 @@ func (s *VolumeService) requireVolumeHelperACFS(ctx context.Context, volumeName,
 	if response.Protocol < acfstypes.ProtocolVersion {
 		return false, fmt.Errorf("volume workspace requires ACFS protocol %d, tools image provides protocol %d", acfstypes.ProtocolVersion, response.Protocol)
 	}
-	listLimit := semver.Compare(kit.EnsurePrefix(strings.TrimSpace(response.Version), "v"), "v0.9.0") >= 0
+	listLimit := semver.Compare(strings.TrimSpace(response.Version), "0.9.0") >= 0
 
 	s.helperMu.Lock()
 	if helper = s.helperByVolume[volumeName]; helper != nil && helper.id == containerID {

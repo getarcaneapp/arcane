@@ -1,11 +1,5 @@
 import type { MessageResponse } from '#lib/types/base.js';
-import type {
-	NetworkUsageCounts,
-	NetworkCreateOptions,
-	NetworkCreateResponse,
-	NetworkInspect,
-	NetworkTopology
-} from '#lib/types/network.js';
+import type { NetworkCreateOptions, NetworkCreateResponse, NetworkInspect, NetworkTopology } from '#lib/types/network.js';
 import type { NetworkCreate, NetworksPaginatedResponse } from '#lib/types/ui/network.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
@@ -21,11 +15,6 @@ class NetworkService extends BaseAPIService {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get<NetworksPaginatedResponse>(`/agents/${environmentId}/networks`, { ...config, params });
 		return res.data;
-	}
-
-	async getNetworkUsageCounts(environmentId: string, config?: APIRequestConfig): Promise<NetworkUsageCounts> {
-		const res = await this.api.get<{ data: NetworkUsageCounts }>(`/agents/${environmentId}/networks/counts`, config);
-		return res.data.data;
 	}
 
 	async getNetworkForEnvironment(
