@@ -38,7 +38,6 @@
 		showTimestamps?: boolean;
 		height?: string;
 		tailLines?: number;
-		onToggleAutoScroll?: () => void;
 		onStart?: () => void;
 		onStop?: () => void;
 		showParsedJson?: boolean;
@@ -59,7 +58,6 @@
 		showTimestamps = false,
 		height = '400px',
 		tailLines = 100,
-		onToggleAutoScroll,
 		onStart,
 		onStop,
 		showParsedJson = $bindable(false),
@@ -162,10 +160,6 @@
 			await stopLogStream();
 			startLogStream();
 		}
-	}
-
-	export function hardClearLogs(restart = false) {
-		clearLogs({ hard: true, restart });
 	}
 
 	let logContainer: HTMLElement | undefined = $state();
@@ -378,19 +372,6 @@
 		cancelFlush();
 		stopLogStream(false);
 	});
-
-	export function toggleAutoScroll() {
-		autoScroll = !autoScroll;
-		onToggleAutoScroll?.();
-	}
-
-	export function getIsStreaming() {
-		return isStreaming;
-	}
-
-	export function getLogCount() {
-		return logs.length;
-	}
 
 	const VIRTUALIZE_THRESHOLD = 100;
 	const shouldVirtualize = $derived(displayLogs.length > VIRTUALIZE_THRESHOLD);

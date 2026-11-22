@@ -345,6 +345,9 @@
 	let envExists = $derived(!!project?.envFileExists);
 	let envActive = $derived(envExists || envEditorRequested);
 	let canRemoveEnv = $derived(canEditEnv && !gitOwnsFiles);
+	const creatableManagedRootNames = $derived(
+		new Set([...(canEditEnv && !envActive ? ['.env'] : []), ...(canEditOverride && !overrideActive ? [overrideFileName] : [])])
+	);
 
 	const overrideWorkspaceRows = $derived.by(() => {
 		if (overrideActive) {
@@ -728,17 +731,9 @@
 		};
 	}
 
-	async function syncProjectQueries(updatedProject: Project) {
-		const currentEnvId = envId;
-
-		// The save response is slim (no directory walks), so merge it into the
-		// cached detail instead of replacing it wholesale.
-		queryClient.setQueryData(
-			queryKeys.projects.detail(currentEnvId, updatedProject.id),
-			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
-		);
-		await Promise.all(
-			listScopes([currentEnvId]).flatMap((scope) => [
+	function invalidateProjectListQueries(targetEnvId: string) {
+		return Promise.all(
+			listScopes([targetEnvId]).flatMap((scope) => [
 				queryClient.invalidateQueries({
 					queryKey: queryKeys.projects.listPrefix(scope)
 				}),
@@ -749,23 +744,25 @@
 		);
 	}
 
+	async function syncProjectQueries(updatedProject: Project) {
+		const currentEnvId = envId;
+
+		// The save response is slim (no directory walks), so merge it into the
+		// cached detail instead of replacing it wholesale.
+		queryClient.setQueryData(
+			queryKeys.projects.detail(currentEnvId, updatedProject.id),
+			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
+		);
+		await invalidateProjectListQueries(currentEnvId);
+	}
+
 	const checkProjectUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.projects.detailCheckUpdates(envId, projectId),
 		mutationFn: () => projectService.checkUpdates(projectId, envId),
 		onSuccess: async (result) => {
 			const currentEnvId = envId;
 			summarizeUpdateCheckResult(result);
-			await Promise.all([
-				refreshProjectDetails(),
-				...listScopes([currentEnvId]).flatMap((scope) => [
-					queryClient.invalidateQueries({
-						queryKey: queryKeys.projects.listPrefix(scope)
-					}),
-					queryClient.invalidateQueries({
-						queryKey: queryKeys.projects.statusCounts(scope)
-					})
-				])
-			]);
+			await Promise.all([refreshProjectDetails(), invalidateProjectListQueries(currentEnvId)]);
 		},
 		onError: () => {
 			toast.error(m.containers_check_updates_failed());
@@ -957,17 +954,7 @@
 				onSuccess: async () => {
 					toast.success(archiving ? m.compose_archive_success() : m.compose_unarchive_success());
 					await refreshProjectDetails();
-					const currentEnvId = envId;
-					await Promise.all(
-						listScopes([currentEnvId]).flatMap((scope) => [
-							queryClient.invalidateQueries({
-								queryKey: queryKeys.projects.listPrefix(scope)
-							}),
-							queryClient.invalidateQueries({
-								queryKey: queryKeys.projects.statusCounts(scope)
-							})
-						])
-					);
+					await invalidateProjectListQueries(envId);
 				}
 			});
 		} finally {
@@ -1398,6 +1385,14 @@
 	}
 
 	async function createProjectWorkspaceFile(parentPath: string, name: string, content = '', stagedFile?: File) {
+		if (!parentPath && name === '.env' && canEditEnv && !envActive) {
+			handleAddEnv();
+			return;
+		}
+		if (!parentPath && name === overrideFileName && canEditOverride && !overrideActive) {
+			handleAddOverride();
+			return;
+		}
 		if (!(await projectWorkspaceFolders.load(parentPath))) return;
 		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
@@ -1828,7 +1823,13 @@
 										onCreateFolder={createProjectWorkspaceFolder}
 										onUpload={uploadProjectWorkspaceFiles}
 										onDownload={downloadProjectWorkspaceFile}
-										validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath, composeFileName)}
+										validateName={(name, parentPath, mode) =>
+											validateProjectWorkspaceFileName(
+												name,
+												parentPath,
+												composeFileName,
+												mode === 'create_file' ? creatableManagedRootNames : undefined
+											)}
 										onRename={renameProjectWorkspaceFile}
 										onMove={moveProjectWorkspaceFile}
 										onDelete={deleteProjectWorkspaceFile}

@@ -1,68 +1,47 @@
 import { jobNameLabel, jobStatusLabel } from '#lib/components/job-card/job-status.js';
-import type { IconType } from '#lib/icons/index.js';
-import {
-	ActivityIcon,
-	BroomIcon,
-	DownloadIcon,
-	EditIcon,
-	HammerIcon,
-	JobsIcon,
-	PauseIcon,
-	PlayIcon,
-	RedeployIcon,
-	RefreshIcon,
-	RestartIcon,
-	SearchIcon,
-	ShieldCheckIcon,
-	StopIcon,
-	TrashIcon,
-	ZapIcon
-} from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import type { Activity, ActivityStatus, ActivityType } from '#lib/types/activity.js';
 import { parseInstant } from '#lib/utils/formatting.js';
 
-export type ActivityBadgeVariant = 'red' | 'green' | 'blue' | 'gray' | 'amber' | 'purple';
-
 const statusDisplay = new Map(
 	Object.entries({
-		queued: { label: m.activity_status_queued, variant: 'amber', accentClass: 'bg-warning' },
-		running: { label: m.common_running, variant: 'blue', accentClass: 'bg-info' },
-		success: { label: m.common_success, variant: 'green', accentClass: 'bg-success' },
-		failed: { label: m.common_failed, variant: 'red', accentClass: 'bg-destructive' },
-		cancelled: { label: m.activity_status_cancelled, variant: 'gray', accentClass: 'bg-muted-foreground/40' }
-	} satisfies Record<ActivityStatus, { label: () => string; variant: ActivityBadgeVariant; accentClass: string }>)
+		queued: { label: m.activity_status_queued, accentClass: 'bg-warning' },
+		running: { label: m.common_running, accentClass: 'bg-info' },
+		success: { label: m.common_success, accentClass: 'bg-success' },
+		failed: { label: m.common_failed, accentClass: 'bg-destructive' },
+		cancelled: { label: m.activity_status_cancelled, accentClass: 'bg-muted-foreground/40' }
+	} satisfies Record<ActivityStatus, { label: () => string; accentClass: string }>)
 );
 
 const typeDisplay = new Map(
 	Object.entries({
-		job_run: { label: m.activity_type_job_run, icon: ActivityIcon },
-		image_pull: { label: m.activity_type_image_pull, icon: DownloadIcon },
-		image_build: { label: m.activity_type_image_build, icon: HammerIcon },
-		image_update_check: { label: m.activity_type_image_update_check, icon: RefreshIcon },
-		image_patch: { label: m.activity_type_image_patch, icon: ShieldCheckIcon },
-		project_pull: { label: m.activity_type_project_pull, icon: DownloadIcon },
-		project_build: { label: m.activity_type_project_build, icon: HammerIcon },
-		project_deploy: { label: m.activity_type_project_deploy, icon: ActivityIcon },
-		project_redeploy: { label: m.activity_type_project_redeploy, icon: RedeployIcon },
-		project_down: { label: m.activity_type_project_down, icon: StopIcon },
-		project_restart: { label: m.activity_type_project_restart, icon: RestartIcon },
-		project_destroy: { label: m.activity_type_project_destroy, icon: TrashIcon },
-		project_job_run: { label: m.activity_type_project_job_run, icon: JobsIcon },
-		container_start: { label: m.activity_type_container_start, icon: PlayIcon },
-		container_stop: { label: m.activity_type_container_stop, icon: StopIcon },
-		container_restart: { label: m.activity_type_container_restart, icon: RestartIcon },
-		container_redeploy: { label: m.activity_type_container_redeploy, icon: RedeployIcon },
-		container_edit: { label: m.activity_type_container_edit, icon: EditIcon },
-		container_delete: { label: m.activity_type_container_delete, icon: TrashIcon },
-		container_kill: { label: m.activity_type_container_kill, icon: ZapIcon },
-		container_pause: { label: m.activity_type_container_pause, icon: PauseIcon },
-		container_unpause: { label: m.activity_type_container_unpause, icon: PlayIcon },
-		vulnerability_scan: { label: m.activity_type_vulnerability_scan, icon: SearchIcon },
-		auto_update: { label: m.auto_update, icon: RefreshIcon },
-		system_prune: { label: m.activity_type_system_prune, icon: BroomIcon },
-		resource_action: { label: m.activity_type_resource_action, icon: ActivityIcon }
-	} satisfies Record<ActivityType, { label: () => string; icon: IconType }>)
+		job_run: m.activity_type_job_run,
+		image_pull: m.activity_type_image_pull,
+		image_build: m.activity_type_image_build,
+		image_update_check: m.activity_type_image_update_check,
+		image_patch: m.activity_type_image_patch,
+		project_pull: m.activity_type_project_pull,
+		project_build: m.activity_type_project_build,
+		project_deploy: m.activity_type_project_deploy,
+		project_redeploy: m.activity_type_project_redeploy,
+		project_down: m.activity_type_project_down,
+		project_restart: m.activity_type_project_restart,
+		project_destroy: m.activity_type_project_destroy,
+		project_job_run: m.activity_type_project_job_run,
+		container_start: m.activity_type_container_start,
+		container_stop: m.activity_type_container_stop,
+		container_restart: m.activity_type_container_restart,
+		container_redeploy: m.activity_type_container_redeploy,
+		container_edit: m.activity_type_container_edit,
+		container_delete: m.activity_type_container_delete,
+		container_kill: m.activity_type_container_kill,
+		container_pause: m.activity_type_container_pause,
+		container_unpause: m.activity_type_container_unpause,
+		vulnerability_scan: m.activity_type_vulnerability_scan,
+		auto_update: m.auto_update,
+		system_prune: m.activity_type_system_prune,
+		resource_action: m.activity_type_resource_action
+	} satisfies Record<ActivityType, () => string>)
 );
 
 const resourceActionDisplay = new Map<string, () => string>(
@@ -127,16 +106,8 @@ export function activityStatusLabel(status: ActivityStatus): string {
 	return statusDisplay.get(status)?.label() as string;
 }
 
-export function activityStatusVariant(status: ActivityStatus): ActivityBadgeVariant {
-	return statusDisplay.get(status)?.variant as ActivityBadgeVariant;
-}
-
 export function activityTypeLabel(type: ActivityType): string {
-	return typeDisplay.get(type)?.label() as string;
-}
-
-export function activityTypeIcon(type: ActivityType): IconType {
-	return typeDisplay.get(type)?.icon ?? ActivityIcon;
+	return typeDisplay.get(type)?.() as string;
 }
 
 export function activityStatusAccentClass(status: ActivityStatus): string {

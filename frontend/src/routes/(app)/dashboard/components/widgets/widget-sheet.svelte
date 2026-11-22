@@ -34,16 +34,16 @@
 			})
 			.check((ctx) => {
 				const value = ctx.value;
-				const require = (path: string, field: string) =>
+				const requireField = (path: string, field: string) =>
 					ctx.issues.push({ code: 'custom', message: m.common_field_required({ field }), path: [path], input: value });
 				if (value.type !== 'resourceQuery' && !value.environmentIds[0]) {
-					require('environmentIds', m.resource_environment_cap());
+					requireField('environmentIds', m.resource_environment_cap());
 				}
 				if (value.type !== 'environment' && !value.resourceKind) {
-					require('resourceKind', m.resource_type());
+					requireField('resourceKind', m.resource_type());
 				}
 				if (value.type !== 'resourceQuery' && value.type !== 'environment' && !value.resourceId) {
-					require('resourceId', m.resource());
+					requireField('resourceId', m.resource());
 				}
 			});
 	}

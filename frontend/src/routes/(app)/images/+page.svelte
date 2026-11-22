@@ -41,7 +41,7 @@
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ImageTable from './components/image-table.svelte';
@@ -65,14 +65,12 @@
 		totalImageSize: 0
 	};
 
-	const imagesQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...imageListQuery(scope, readableEnvironments('images:list'), pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const imagesQuery = createQuery(() =>
+		scopedQueryOptions(
+			pageState.scope,
+			imageListQuery(pageState.scope, readableEnvironments('images:list'), pageState.requestOptions)
+		)
+	);
 
 	const usageCountsQuery = createQuery(() => {
 		const scope = pageState.scope;

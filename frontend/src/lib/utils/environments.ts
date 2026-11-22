@@ -102,6 +102,10 @@ export function destinationEnvironmentId(
 	return permitted[0] ?? (picked || LOCAL_DOCKER_ENVIRONMENT_ID);
 }
 
+export function environmentScope(environments: EnvironmentRef[]): string {
+	return environments.map((env) => env.id).join(',');
+}
+
 export function listScopes(environmentIds: string[]): string[] {
 	return [...new Set([...environmentIds, environmentIds.join(','), environmentStore.shownKey])];
 }
@@ -112,7 +116,7 @@ export function acrossEnvironmentsNote(environments: EnvironmentRef[]): string {
 	return m.all_environments_confirm_note({ count: environments.length });
 }
 
-export async function collectAcrossEnvironments<T>(
+async function collectAcrossEnvironments<T>(
 	environments: EnvironmentRef[],
 	run: (environmentId: string, config: APIRequestConfig) => Promise<T>,
 	reportInline = true
@@ -169,7 +173,7 @@ export async function readAcrossEnvironments<T>(
 	const { included, excluded } = limitEnvironments(environments);
 	let reported: EnvironmentFailure[] = [];
 	const result = await tryCatch(
-		run(included.map((env) => env.id).join(','), {
+		run(environmentScope(included), {
 			suppressAccessDeniedToast: reportInline,
 			onFailedEnvironments: (failures) => {
 				reported = failures;

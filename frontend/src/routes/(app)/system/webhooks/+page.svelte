@@ -17,7 +17,7 @@
 	import type { WebhookCreated } from '#lib/types/webhook.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import WebhookTable from './components/webhook-table.svelte';
@@ -27,14 +27,12 @@
 
 	const pageState = new ResourceListPageState(untrack(() => data.webhookRequestOptions));
 
-	const webhooksQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...webhookListQuery(scope, readableEnvironments('webhooks:list'), pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const webhooksQuery = createQuery(() =>
+		scopedQueryOptions(
+			pageState.scope,
+			webhookListQuery(pageState.scope, readableEnvironments('webhooks:list'), pageState.requestOptions)
+		)
+	);
 
 	const resourcesReady = $derived(webhooksQuery.data?.envId === pageState.scope);
 	const webhooks = $derived(webhooksQuery.data?.value ?? data.webhooks);

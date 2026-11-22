@@ -117,8 +117,9 @@ func (c *composeNameCache) replace(byName map[string]string) {
 
 // knownServices drops services the Compose files no longer name: Compose rejects the whole command for one, and an empty list would mean every service.
 func knownServices(model *composeTypes.Project, services []string) []string {
+	all := model.AllServices()
 	return slices.DeleteFunc(slices.Clone(services), func(name string) bool {
-		_, ok := model.Services[name]
+		_, ok := all[name]
 		return !ok
 	})
 }

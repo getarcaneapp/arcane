@@ -20,7 +20,7 @@ const brandImagePaths: Record<BrandImageSlot, string> = {
 	pwa: '/app/images/pwa'
 };
 
-export function parseSettingValue(type: string, value: string): string | number | boolean | ProjectsDirectoryEntry[] {
+function parseSettingValue(type: string, value: string): string | number | boolean | ProjectsDirectoryEntry[] {
 	switch (type) {
 		case 'json':
 			return JSON.parse(value) as ProjectsDirectoryEntry[];

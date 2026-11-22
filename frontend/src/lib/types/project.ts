@@ -253,7 +253,6 @@ export interface ProjectVolume {
 	kind: ProjectVolumeKind;
 	driver?: string;
 	labels?: Record<string, string>;
-	driverOpts?: Record<string, string>;
 	archive?: string;
 	included: boolean;
 	missing?: boolean;

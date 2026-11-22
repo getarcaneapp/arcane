@@ -18,7 +18,7 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import { hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 
 	import VolumeTable from './components/volume-table.svelte';
 
@@ -28,14 +28,12 @@
 	const pageState = new ResourceListPageState(untrack(() => data.volumeRequestOptions));
 	const countsFallback: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
-	const volumesQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...volumeListQuery(scope, readableEnvironments('volumes:list'), pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const volumesQuery = createQuery(() =>
+		scopedQueryOptions(
+			pageState.scope,
+			volumeListQuery(pageState.scope, readableEnvironments('volumes:list'), pageState.requestOptions)
+		)
+	);
 
 	const resourcesReady = $derived(volumesQuery.data?.envId === pageState.scope);
 	const volumes = $derived(volumesQuery.data?.value ?? data.volumes);

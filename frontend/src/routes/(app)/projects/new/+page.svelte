@@ -286,6 +286,14 @@
 		workspaceDraft.closeTab('env');
 	}
 
+	function handleCreateWorkspaceFile(parentPath: string, name: string) {
+		if (!parentPath && name === '.env' && !envRequested) {
+			handleAddEnv();
+			return;
+		}
+		workspaceDraft.createFile(parentPath, name);
+	}
+
 	const { composeHandlers, handleCreateTemplate } = createComposeTemplateDialogFlow({
 		getInputs: () => inputs,
 		setInputValue: (key, value) => {
@@ -512,10 +520,16 @@
 									selectedFile={workspaceDraft.selectedKey}
 									disabled={ui.saving || ui.isLoadingTemplateContent}
 									onSelect={workspaceDraft.openTab}
-									onCreateFile={workspaceDraft.createFile}
+									onCreateFile={handleCreateWorkspaceFile}
 									onCreateFolder={workspaceDraft.createFolder}
 									onUpload={(parentPath, files) => workspaceDraft.uploadFile(parentPath, files, projectWorkspaceMaxFileSizeMb)}
-									validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath)}
+									validateName={(name, parentPath, mode) =>
+										validateProjectWorkspaceFileName(
+											name,
+											parentPath,
+											'compose.yaml',
+											mode === 'create_file' && !envRequested ? new Set(['.env']) : undefined
+										)}
 									onRename={workspaceDraft.rename}
 									onMove={workspaceDraft.move}
 									onDelete={workspaceDraft.remove}

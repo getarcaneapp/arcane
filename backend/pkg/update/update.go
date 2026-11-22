@@ -2,7 +2,6 @@ package update
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/samber/mo"
 
@@ -12,16 +11,6 @@ import (
 func ApplyChanged[T comparable](target *T, value mo.Option[T]) bool {
 	next, ok := value.Get()
 	if !ok || *target == next {
-		return false
-	}
-
-	*target = next
-	return true
-}
-
-func ApplySliceChanged[S ~[]E, E comparable](target *S, value mo.Option[S]) bool {
-	next, ok := value.Get()
-	if !ok || slices.Equal(*target, next) {
 		return false
 	}
 

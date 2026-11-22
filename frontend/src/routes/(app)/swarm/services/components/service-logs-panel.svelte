@@ -5,7 +5,6 @@
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
 	import { UseLogPreferences } from '#lib/hooks/use-log-preferences.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';
 
 	let {
 		environmentId,
@@ -23,23 +22,15 @@
 	let hasAutoStarted = false;
 
 	function handleStart() {
-		startLogViewerStream(viewer);
+		viewer?.startLogStream();
 	}
 
 	function handleStop() {
-		stopLogViewerStream(viewer);
+		viewer?.stopLogStream();
 	}
 
 	async function handleRefresh() {
-		await refreshLogViewerStream(viewer);
-	}
-
-	function handleStreamStart() {
-		isStreaming = true;
-	}
-
-	function handleStreamStop() {
-		isStreaming = false;
+		await viewer?.clearLogs({ hard: true, restart: true });
 	}
 
 	$effect(() => {
@@ -79,7 +70,7 @@
 		maxLines={500}
 		showTimestamps={preferences.showTimestamps}
 		height="calc(100vh - 320px)"
-		onStart={handleStreamStart}
-		onStop={handleStreamStop}
+		onStart={() => (isStreaming = true)}
+		onStop={() => (isStreaming = false)}
 	/>
 </div>

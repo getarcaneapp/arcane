@@ -1,19 +1,21 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { CodeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PodInspect } from '#lib/types/podman.js';
 
 	interface Props {
-		pod: PodInspect;
+		description: string;
+		json: string;
+		actions?: Snippet;
 	}
 
-	let { pod }: Props = $props();
+	let { description, json, actions }: Props = $props();
 
-	const json = $derived(JSON.stringify(pod, null, 2));
 	const jsonLines = useHighlightedCode(
 		() => json,
 		() => 'json'
@@ -26,9 +28,10 @@
 			<Card.Title>
 				<h2>{m.containers_inspect_title()}</h2>
 			</Card.Title>
-			<Card.Description>{m.podman_pod_inspect_description()}</Card.Description>
+			<Card.Description>{description}</Card.Description>
 		</div>
-		<div class="ml-auto">
+		<div class="ml-auto flex gap-2">
+			{@render actions?.()}
 			<CopyButton text={json} variant="outline" size="default">
 				{m.common_copy_json()}
 			</CopyButton>
