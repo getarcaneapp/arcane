@@ -76,6 +76,11 @@ func ParseValidationEnvFile(ctx context.Context, path string, contextEnv EnvMap)
 	return ParseProjectEnvContent(string(content), contextEnv)
 }
 
+// ParseEnvContent lists the variables declared in Compose env content.
+//
+// Each variable carries the name and the value Compose reads from its line: the
+// `export` prefix is not part of the name, and an unquoted value ends at the
+// comment Compose would drop there.
 func ParseEnvContent(content string) []types.EnvVariable {
 	if content == "" {
 		return nil
@@ -91,29 +96,53 @@ func ParseEnvContent(content string) []types.EnvVariable {
 			continue
 		}
 
-		rawKey, rawValue, ok := strings.Cut(line, "=")
-		if !ok {
+		match := envKeyLineRegex.FindStringSubmatch(line)
+		if match == nil {
 			continue
 		}
 
-		key := strings.TrimSpace(rawKey)
-		value := strings.TrimSpace(rawValue)
-
-		if len(value) >= 2 {
-			if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
-				value = strings.ReplaceAll(value[1:len(value)-1], `\"`, `"`)
-			} else if strings.HasPrefix(value, `'`) && strings.HasSuffix(value, `'`) {
-				value = strings.ReplaceAll(value[1:len(value)-1], `\'`, `'`)
-			}
-		}
-
-		if key != "" {
-			vars = append(vars, types.EnvVariable{
-				Key:   key,
-				Value: value,
-			})
-		}
+		vars = append(vars, types.EnvVariable{
+			Key:   match[2],
+			Value: parseEnvContentValue(match[4]),
+		})
 	}
 
 	return vars
+}
+
+// parseEnvContentValue reads one value the way Compose reads it: a quoted value
+// ends at its closing quote, and an unquoted value ends at the comment a space
+// followed by "#" starts.
+func parseEnvContentValue(raw string) string {
+	value := strings.TrimSpace(raw)
+	if quote, quoted := envContentQuotePrefix(value); quoted {
+		escaped := false
+		for i := 1; i < len(value); i++ {
+			switch {
+			case escaped:
+				escaped = false
+			case value[i] == '\\':
+				escaped = true
+			case value[i] == quote:
+				return strings.ReplaceAll(value[1:i], `\`+string(quote), string(quote))
+			}
+		}
+		// An unterminated quote is not a value Compose would accept.
+		return ""
+	}
+
+	value, _, _ = strings.Cut(value, " #")
+	return strings.TrimSpace(value)
+}
+
+func envContentQuotePrefix(value string) (byte, bool) {
+	if value == "" {
+		return 0, false
+	}
+	switch value[0] {
+	case '"', '\'':
+		return value[0], true
+	default:
+		return 0, false
+	}
 }
