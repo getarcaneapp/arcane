@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"slices"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,7 +21,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/notification"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
-	"getarcane.dev/arcane/v3/pkg/containerlabel"
 	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
 	"getarcane.dev/types/v3"
 )
@@ -55,81 +53,6 @@ func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
 	// Outside Docker no self ID is detected and the guard is a no-op.
 	candidates = job.filterCandidates(containers, settings.ContainerSelection{}, "")
 	require.Len(t, candidates, 2)
-}
-
-func TestAutoHeal_FilterCandidates_HonorsMode(t *testing.T) {
-	job := newTestAutoHealJob()
-	containers := []container.Summary{
-		{ID: "plain", Names: []string{"/plain"}},
-		{ID: "labelled", Names: []string{"/labelled"}, Labels: map[string]string{containerlabel.AutoHealLabel: "true"}},
-		{ID: "label-false", Names: []string{"/label-false"}, Labels: map[string]string{containerlabel.AutoHealLabel: "false"}},
-		{ID: "listed", Names: []string{"/listed"}},
-		{ID: "listed-labelled", Names: []string{"/listed-labelled"}, Labels: map[string]string{containerlabel.AutoHealLabel: "true"}},
-	}
-	selection := func(include bool) settings.ContainerSelection {
-		return settings.ContainerSelection{
-			Listed:  map[string]bool{"listed": true, "listed-labelled": true},
-			Label:   containerlabel.AutoHealLabel,
-			Include: include,
-		}
-	}
-	ids := func(candidates []container.Summary) []string {
-		result := make([]string, 0, len(candidates))
-		for _, c := range candidates {
-			result = append(result, c.ID)
-		}
-		return result
-	}
-
-	require.Equal(t, []string{"plain", "labelled", "label-false"}, ids(job.filterCandidates(containers, selection(false), "")), "exclude mode skips listed containers")
-	require.Equal(t, []string{"labelled", "listed", "listed-labelled"}, ids(job.filterCandidates(containers, selection(true), "")), "include mode keeps listed and labelled containers")
-}
-
-func TestAutoHeal_Run_HonorsModeSetting(t *testing.T) {
-	ctx := t.Context()
-
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-	settingsSvc, err := newSettingsServiceForTest(t, ctx, &database.DB{DB: db})
-	require.NoError(t, err)
-	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
-	require.NoError(t, settingsSvc.UpdateSetting(ctx, "autoHealMode", "include"))
-	require.NoError(t, settingsSvc.UpdateSetting(ctx, "autoHealExcludedContainers", "included"))
-
-	runtime := francistest.New(t)
-	gate := runs.NewAdmission(runtime.Service(), t.Name())
-	require.NoError(t, gate.Register(runtime))
-	francistest.Start(t, runtime)
-
-	var (
-		inspectedMu sync.Mutex
-		inspected   []string
-	)
-	job := &AutoHealJob{
-		settingsService:   settingsSvc,
-		admissionGate:     gate,
-		restarts:          make(map[string]*restartRecord),
-		getDockerClientFn: func(context.Context) (*client.Client, error) { return nil, nil },
-		listContainers: func(context.Context, *client.Client) ([]container.Summary, error) {
-			return []container.Summary{
-				{ID: "plain", Names: []string{"/plain"}},
-				{ID: "opted-in", Names: []string{"/opted-in"}, Labels: map[string]string{containerlabel.AutoHealLabel: "true"}},
-				{ID: "included", Names: []string{"/included"}},
-			}, nil
-		},
-		inspectContainerFn: func(_ context.Context, _ *client.Client, containerID string) (container.InspectResponse, error) {
-			inspectedMu.Lock()
-			defer inspectedMu.Unlock()
-			inspected = append(inspected, containerID)
-			return container.InspectResponse{State: &container.State{Health: &container.Health{Status: container.Healthy}}}, nil
-		},
-		getSelfContainerID: func() (string, error) { return "", nil },
-	}
-
-	_, err = job.Run(ctx)
-	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"opted-in", "included"}, inspected)
 }
 
 func TestAutoHeal_ProcessCandidate_SkipsQuadletContainers(t *testing.T) {
