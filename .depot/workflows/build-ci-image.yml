@@ -82,6 +82,7 @@ jobs:
           version="$(vp -C tests exec node -p 'require("playwright/package.json").version')"
           docker pull public.ecr.aws/nginx/nginx:stable-alpine
           docker pull public.ecr.aws/docker/library/busybox:1.37
+          docker pull ghcr.io/getarcaneapp/tools:latest
           docker pull "g7r5wqb57k.registry.depot.dev/mirrors/playwright:v$version-noble"
 
       - name: Snapshot CI image
