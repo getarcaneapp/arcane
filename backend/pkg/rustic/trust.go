@@ -16,8 +16,8 @@ import (
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/fs"
-	"kit.getarcane.app/sys/cgroup"
 
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 )
 
@@ -111,7 +111,7 @@ func TrustMounts(ctx context.Context, dockerClient *client.Client, directory str
 			return nil, fmt.Errorf("failed to write CA certificates for Rustic container: %w", err)
 		}
 	}
-	if _, containerErr := cgroup.CurrentContainerID(); containerErr != nil {
+	if !selfcontainer.RunningInContainer() {
 		return []mount.Mount{{
 			Type:     mount.TypeBind,
 			Source:   bundlePath,
