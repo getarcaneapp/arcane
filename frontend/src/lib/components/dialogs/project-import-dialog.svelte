@@ -95,8 +95,11 @@
 				reset();
 				await onImported(requestedEnvironmentId);
 			},
-			onError: () => {
+			onError: async () => {
 				progress = null;
+				if (start && canStart) {
+					await onImported(requestedEnvironmentId);
+				}
 			}
 		});
 	}

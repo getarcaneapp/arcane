@@ -10,6 +10,10 @@ export function capitalizeFirstLetter(string: string): string {
 	return string.charAt(0).toUpperCase() + string.slice(1);
 }
 
+export function firstLine(value: string | undefined): string {
+	return value?.split('\n')[0]?.trim() ?? '';
+}
+
 export function truncateString(str: string | undefined, maxLength: number): string {
 	if (!str) return '';
 	if (str.length <= maxLength) {

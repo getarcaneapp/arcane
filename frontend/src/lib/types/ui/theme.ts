@@ -36,8 +36,6 @@ export const THEME_TOKENS = [
 	'syntax-operator'
 ] as const satisfies readonly (keyof ThemePalette)[];
 
-export type ThemeToken = (typeof THEME_TOKENS)[number];
-
 export type ThemeDefinition = Omit<CustomTheme, 'name'> & {
 	name?: string;
 };

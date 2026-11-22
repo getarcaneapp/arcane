@@ -30,6 +30,7 @@ type (
 		Resolve EnvironmentResolver
 		Path    string
 		IDs     []string
+		Timeout time.Duration // optional per-environment timeout; defaults to environmentRequestTimeout
 	}
 
 	EnvironmentResult[R any] struct {
@@ -87,7 +88,7 @@ func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (Envi
 		return EnvironmentCollection[R]{}, errors.New("request has no environment scope")
 	}
 
-	collectCtx, cancel := context.WithTimeout(ctx, environmentRequestTimeout)
+	collectCtx, cancel := context.WithTimeout(ctx, cmp.Or(scope.Timeout, environmentRequestTimeout))
 	defer cancel()
 	outcomes := make([]environmentOutcome[R], len(scope.IDs))
 	var group errgroup.Group

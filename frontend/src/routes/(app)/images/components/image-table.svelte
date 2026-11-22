@@ -337,7 +337,7 @@
 		},
 		{ accessorKey: 'created', title: m.common_created(), hidden: true, sortable: true, cellComponent: UnixCreatedCell },
 		{
-			id: 'usedBy',
+			accessorKey: 'usedBy',
 			title: m.images_used_by(),
 			hidden: true,
 			cell: UsedByCell

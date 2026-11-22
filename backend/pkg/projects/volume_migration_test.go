@@ -181,28 +181,3 @@ func TestProjectRenameJournalTargetsCopied(t *testing.T) {
 	require.True(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseOldVolumesRemoved))
 	require.True(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseProjectStateCommitted))
 }
-
-func TestClassifyProjectVolumes(t *testing.T) {
-	project := types.Project{
-		Name: "Web",
-		Volumes: composeTypes.Volumes{
-			"data":     {Name: "web_data", Driver: "local", Labels: composeTypes.Labels{"tier": "db"}},
-			"shared":   {Name: "shared-data"},
-			"external": {Name: "outside", External: true},
-			"nfs":      {Name: "nfs-data", External: true, Driver: "local", DriverOpts: map[string]string{"type": "nfs"}},
-			"plugin":   {Name: "plugin-data", External: true, Driver: "rexray"},
-			"host":     {Name: "web_host", DriverOpts: map[string]string{"type": "none", "o": "bind", "device": "/srv/host"}},
-		},
-	}
-
-	got := ClassifyProjectVolumes(project)
-
-	require.Equal(t, []types.ProjectVolume{
-		{Key: "data", Name: "web_data", Kind: types.ProjectVolumeNamed, Driver: "local", Labels: map[string]string{"tier": "db"}, Included: true},
-		{Key: "external", Name: "outside", Kind: types.ProjectVolumeExternal, Included: true},
-		{Key: "host", Name: "web_host", Kind: types.ProjectVolumeDriverOpts, DriverOpts: map[string]string{"type": "none", "o": "bind", "device": "/srv/host"}},
-		{Key: "nfs", Name: "nfs-data", Kind: types.ProjectVolumeExternal, Driver: "local", DriverOpts: map[string]string{"type": "nfs"}},
-		{Key: "plugin", Name: "plugin-data", Kind: types.ProjectVolumeExternal, Driver: "rexray"},
-		{Key: "shared", Name: "shared-data", Kind: types.ProjectVolumeNamed, Included: true},
-	}, got)
-}

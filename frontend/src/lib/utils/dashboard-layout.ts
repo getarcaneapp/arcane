@@ -179,7 +179,7 @@ export function resolveDashboardLayout(saved: DashboardWidgetLayout[] | undefine
 		);
 }
 
-export function pinDashboardWidget(instance: DashboardWidgetInput): boolean {
+function pinDashboardWidget(instance: DashboardWidgetInput): boolean {
 	const saved = userStore.current?.preferences?.dashboardLayout ?? [];
 	const layout = [
 		...resolveDashboardLayout(saved, environmentStore.available.filter((environment) => environment.enabled).length),

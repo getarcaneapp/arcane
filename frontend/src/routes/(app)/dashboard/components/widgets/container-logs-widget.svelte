@@ -1,14 +1,13 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import LogViewer from '#lib/components/logs/log-viewer.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerDetailQuery } from '#lib/query/containers.js';
 	import type { DashboardWidget } from '#lib/utils/dashboard-layout.js';
-	import { startLogViewerStream } from '#lib/utils/log-viewer.js';
 
 	import DashboardPanel from '../dashboard-panel.svelte';
+	import ContainerWidgetLink from './container-widget-link.svelte';
 	import WidgetStatus from './widget-status.svelte';
 	import { resolveWidgetTarget } from './widget-target';
 
@@ -31,22 +30,13 @@
 	$effect(() => {
 		if (viewer && viewer !== startedViewer) {
 			startedViewer = viewer;
-			startLogViewerStream(viewer);
+			viewer.startLogStream();
 		}
 	});
 </script>
 
 {#snippet containerLink()}
-	{#if containerQuery.data}
-		<a
-			href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(environmentId)}`, {
-				containerId: containerQuery.data.id
-			})}
-			class="min-w-0 truncate text-xs text-muted-foreground hover:underline"
-		>
-			{containerQuery.data.name}
-		</a>
-	{/if}
+	<ContainerWidgetLink container={containerQuery.data} {environmentId} />
 {/snippet}
 
 <DashboardPanel title={widget.title || m.containers_logs_title()} actions={containerLink}>

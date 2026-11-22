@@ -7,7 +7,7 @@ export function isDevelopmentBuild(): boolean {
 }
 
 // Development builds serve a square tile mark, which needs a larger box than the stable glyph.
-export function usesDevelopmentBranding(): boolean {
+function usesDevelopmentBranding(): boolean {
 	return isDevelopmentBuild() && settingsStore.current?.developmentBrandingEnabled !== false;
 }
 

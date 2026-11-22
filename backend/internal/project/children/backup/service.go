@@ -250,7 +250,6 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 		}
 		inspected = append(inspected, types.ProjectVolume{
 			Labels:      volume.Labels,
-			DriverOpts:  volume.DriverOpts,
 			Key:         volume.Key,
 			Name:        volume.Name,
 			Kind:        volume.Kind,
@@ -665,7 +664,6 @@ func markInUse(planned []types.ProjectVolume, inUse map[string]bool) []types.Pro
 		marked = append(marked, types.ProjectVolume{
 			Labels:       volume.Labels,
 			DockerLabels: volume.DockerLabels,
-			DriverOpts:   volume.DriverOpts,
 			Key:          volume.Key,
 			Name:         volume.Name,
 			Kind:         volume.Kind,

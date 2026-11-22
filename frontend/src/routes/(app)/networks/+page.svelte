@@ -16,7 +16,7 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import { hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import NetworkTable from './components/network-table.svelte';
@@ -27,14 +27,12 @@
 	const pageState = new ResourceListPageState(untrack(() => data.networkRequestOptions));
 	const countsFallback: NetworkUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
-	const networksQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...networkListQuery(scope, readableEnvironments('networks:list'), pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const networksQuery = createQuery(() =>
+		scopedQueryOptions(
+			pageState.scope,
+			networkListQuery(pageState.scope, readableEnvironments('networks:list'), pageState.requestOptions)
+		)
+	);
 	const resourcesReady = $derived(networksQuery.data?.envId === pageState.scope);
 	const networks = $derived(networksQuery.data?.value ?? data.networks);
 

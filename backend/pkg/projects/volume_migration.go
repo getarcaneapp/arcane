@@ -155,21 +155,26 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 	classified := make([]types.ProjectVolume, 0, len(project.Volumes))
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
 		config := project.Volumes[key]
+		local := cmp.Or(config.Driver, "local") == "local" && len(config.DriverOpts) == 0
 		kind := types.ProjectVolumeNamed
 		switch {
 		case bool(config.External):
 			kind = types.ProjectVolumeExternal
-		case len(config.DriverOpts) > 0:
+		case !local:
 			kind = types.ProjectVolumeDriverOpts
 		}
-		classified = append(classified, types.ProjectVolume{
-			Labels:     config.Labels,
-			DriverOpts: config.DriverOpts,
-			Key:        key,
-			Name:       config.Name,
-			Kind:       kind,
-			Driver:     config.Driver,
-			Included:   kind == types.ProjectVolumeNamed || (kind == types.ProjectVolumeExternal && cmp.Or(config.Driver, "local") == "local" && len(config.DriverOpts) == 0),
+		classified = append(classified, types.ProjectVolume{ //exhaustruct:enforce
+			Labels:       config.Labels,
+			DockerLabels: nil,
+			Key:          key,
+			Name:         config.Name,
+			Kind:         kind,
+			Driver:       config.Driver,
+			Archive:      "",
+			Included:     local,
+			Missing:      false,
+			InUse:        false,
+			BackupStore:  false,
 		})
 	}
 	return classified
@@ -183,7 +188,6 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 		if opts.BackupStore != "" && volume.Name == opts.BackupStore {
 			resolved = append(resolved, types.ProjectVolume{
 				Labels:      volume.Labels,
-				DriverOpts:  volume.DriverOpts,
 				Key:         volume.Key,
 				Name:        volume.Name,
 				Kind:        volume.Kind,
@@ -200,18 +204,24 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 		if err != nil {
 			return nil, nil, fmt.Errorf("inspect volume %s: %w", volume.Name, err)
 		}
-		included := exists && (volume.Kind == types.ProjectVolumeNamed || cmp.Or(existing.Driver, "local") == "local" && len(existing.Options) == 0)
+		included := exists && cmp.Or(existing.Driver, "local") == "local" && len(existing.Options) == 0
+		kind := volume.Kind
+		if exists && !included && kind == types.ProjectVolumeNamed {
+			kind = types.ProjectVolumeDriverOpts
+		}
 		inspected[volume.Name] = existing
-		resolved = append(resolved, types.ProjectVolume{
-			Labels:     volume.Labels,
-			DriverOpts: volume.DriverOpts,
-			Key:        volume.Key,
-			Name:       volume.Name,
-			Kind:       volume.Kind,
-			Driver:     volume.Driver,
-			Included:   included,
-			Missing:    !exists,
-			InUse:      included && opts.InUse[volume.Name],
+		resolved = append(resolved, types.ProjectVolume{ //exhaustruct:enforce
+			Labels:       volume.Labels,
+			DockerLabels: nil,
+			Key:          volume.Key,
+			Name:         volume.Name,
+			Kind:         kind,
+			Driver:       volume.Driver,
+			Archive:      "",
+			Included:     included,
+			Missing:      !exists,
+			InUse:        included && opts.InUse[volume.Name],
+			BackupStore:  false,
 		})
 	}
 	return resolved, inspected, nil

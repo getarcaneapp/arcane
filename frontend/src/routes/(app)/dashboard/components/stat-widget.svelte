@@ -14,6 +14,7 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { BuiltinDashboardWidgetType } from '#lib/types/ui/user.js';
+	import type { EnvironmentFailure } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	let {
@@ -29,7 +30,7 @@
 		attention: { count: number; critical: number; loading: boolean };
 		updates: { pending: number; upToDate: number; checking: boolean };
 		risk: { score: number | null; delta?: number; knownExploited: number; loading: boolean };
-		reclaimable: { bytes: number | null; environments: number; loading: boolean };
+		reclaimable: { bytes: number | null; environments: number; loading: boolean; failedEnvironments?: EnvironmentFailure[] };
 	} = $props();
 
 	const updatesContext = $derived.by(() => {
@@ -111,7 +112,16 @@
 				icon={TrashIcon}
 				loading={reclaimable.loading}
 			>
-				{#if reclaimable.environments > 1}
+				{#if reclaimable.bytes === null && !reclaimable.loading}
+					{m.common_unavailable()}
+				{:else if reclaimable.failedEnvironments && reclaimable.failedEnvironments.length > 0}
+					{@const note = m.all_environments_unavailable({
+						environments: reclaimable.failedEnvironments
+							.map(({ environment, message }) => `${environment.name} (${message})`)
+							.join(', ')
+					})}
+					<span class="line-clamp-1" title={note}>{note}</span>
+				{:else if reclaimable.environments > 1}
 					{m.across_count_environments({ count: reclaimable.environments })}
 				{/if}
 			</StatStrip.Item>

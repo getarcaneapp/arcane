@@ -14,7 +14,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import type { EnvironmentRow } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SecretsTable from './components/secrets-table.svelte';
@@ -29,14 +29,9 @@
 	let sheetSession = $state(0);
 	let secretToEdit = $state<EnvironmentRow<PodmanSecret> | null>(null);
 
-	const secretsQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...podmanSecretListQuery(scope, podmanEnvironments, pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const secretsQuery = createQuery(() =>
+		scopedQueryOptions(pageState.scope, podmanSecretListQuery(pageState.scope, podmanEnvironments, pageState.requestOptions))
+	);
 
 	const resourcesReady = $derived(secretsQuery.data?.envId === pageState.scope);
 	const secrets = $derived(secretsQuery.data?.value ?? data.secrets);

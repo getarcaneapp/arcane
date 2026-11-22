@@ -27,9 +27,12 @@
 	const stackName = $derived(labels?.[SWARM_STACK_LABEL] || '');
 	const nodes = $derived((service?.nodes as string[]) || []);
 	const versionIndex = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
-	const updateStatus = $derived(service?.updateStatus as Record<string, any> | null | undefined);
+	const updateStatus = $derived(service?.updateStatus);
+	const updateState = $derived(typeof updateStatus?.['State'] === 'string' ? updateStatus['State'] : '');
+	const updateMessage = $derived(typeof updateStatus?.['Message'] === 'string' ? updateStatus['Message'] : '');
+	const updateCompletedAt = $derived(typeof updateStatus?.['CompletedAt'] === 'string' ? updateStatus['CompletedAt'] : '');
 	const updateStatusVariant = $derived.by(() => {
-		switch (updateStatus?.['State']) {
+		switch (updateState) {
 			case 'completed':
 				return 'green';
 			case 'updating':
@@ -135,17 +138,17 @@
 				{/if}</KeyValueCard
 			>
 
-			{#if updateStatus?.['State']}
+			{#if updateState}
 				<KeyValueCard label={m.common_status()} valueFormat="custom" stacked class="lg:col-span-2 2xl:col-span-3">
 					<div class="flex items-center gap-2">
-						<Badge variant={updateStatusVariant} minWidth="20">{updateStatus['State']}</Badge>
-						{#if updateStatus['Message']}
-							<span class="text-sm text-muted-foreground">{updateStatus['Message']}</span>
+						<Badge variant={updateStatusVariant} minWidth="20">{updateState}</Badge>
+						{#if updateMessage}
+							<span class="text-sm text-muted-foreground">{updateMessage}</span>
 						{/if}
 					</div>
-					{#if updateStatus['CompletedAt']}
+					{#if updateCompletedAt}
 						<div class="text-xs text-muted-foreground">
-							{formatRelativeTime(String(updateStatus['CompletedAt'])) || m.common_na()}
+							{formatRelativeTime(updateCompletedAt) || m.common_na()}
 						</div>
 					{/if}
 				</KeyValueCard>

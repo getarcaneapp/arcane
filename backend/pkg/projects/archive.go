@@ -346,16 +346,16 @@ func (w *ProjectBundleWriter) Close() error {
 	return nil
 }
 
-func IsProjectBundle(r io.Reader) bool {
+func ReadProjectBundleManifest(r io.Reader) (types.ProjectManifest, bool) {
 	gzipReader, err := gzip.NewReader(r)
 	if err != nil {
-		return false
+		return types.ProjectManifest{}, false
 	}
 	defer func() {
 		_ = gzipReader.Close()
 	}()
-	_, bundled, _ := readProjectBundleManifest(tar.NewReader(gzipReader))
-	return bundled
+	manifest, bundled, _ := readProjectBundleManifest(tar.NewReader(gzipReader))
+	return manifest, bundled
 }
 
 func readProjectBundleManifest(tarReader *tar.Reader) (types.ProjectManifest, bool, error) {

@@ -501,8 +501,8 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Code:     types.ProjectTransferVolumeDataExternal,
 			Severity: types.ProjectTransferSeverityWarning,
 			Message: fmt.Sprintf(
-				"These volumes of project %s keep their data outside Docker through driver options, "+
-					"so their data is not copied and they are created from the same options on the target environment: %s.",
+				"These volumes of project %s keep their data outside Docker through another driver or driver options, "+
+					"so their data is not copied and they are created from the same configuration on the target environment: %s.",
 				project.Name, strings.Join(hostVolumes, ", "),
 			),
 		})
@@ -823,7 +823,7 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 			return ctxErr
 		}
 		config, ok := targetProject.Volumes[volume.Key]
-		if !ok || bool(config.External) || len(config.DriverOpts) > 0 {
+		if !ok || bool(config.External) || len(config.DriverOpts) > 0 || cmp.Or(config.Driver, "local") != "local" {
 			return fmt.Errorf("volume %s is not a Docker-managed named volume of the imported project on the target environment", volume.Key)
 		}
 		if copyErr := s.copyVolume(ctx, r, volume, config, targetProject.ComposeName); copyErr != nil {
