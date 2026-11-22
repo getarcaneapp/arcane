@@ -17,7 +17,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { acrossEnvironmentsNote, settleAcrossEnvironments } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import PodsTable from './components/pods-table.svelte';
@@ -30,14 +30,9 @@
 	const createEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman-pods:create', env.id)));
 	const pruneEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman-pods:prune', env.id)));
 
-	const podsQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...podmanPodListQuery(scope, podmanEnvironments, pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const podsQuery = createQuery(() =>
+		scopedQueryOptions(pageState.scope, podmanPodListQuery(pageState.scope, podmanEnvironments, pageState.requestOptions))
+	);
 
 	const resourcesReady = $derived(podsQuery.data?.envId === pageState.scope);
 	const pods = $derived(podsQuery.data?.value ?? data.pods);

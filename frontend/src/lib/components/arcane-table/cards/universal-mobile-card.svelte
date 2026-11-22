@@ -38,7 +38,7 @@
 		icon?: IconType;
 		iconVariant?: IconVariant;
 		badgeVariant?: BadgeVariant;
-		component?: Snippet<[value: any]>;
+		component?: Snippet<[value: never]>;
 		layout?: 'inline' | 'stacked';
 		show?: boolean;
 	}
@@ -114,7 +114,7 @@
 	{:else if field.type === 'mono'}
 		<span class="truncate font-mono text-xs">{value}</span>
 	{:else if field.type === 'component' && field.component}
-		{@render field.component(value)}
+		{@render field.component(value as never)}
 	{:else}
 		<span class="min-w-0 truncate">{value}</span>
 	{/if}

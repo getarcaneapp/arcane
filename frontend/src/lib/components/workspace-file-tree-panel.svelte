@@ -98,7 +98,7 @@
 		onRestore?: (relativePath: string) => void;
 		multipleUploads?: boolean;
 		allowUploadOverwrite?: boolean;
-		validateName?: (name: string, parentPath: string) => string | null;
+		validateName?: (name: string, parentPath: string, mode: DialogMode) => string | null;
 		emptyMessage?: string;
 		uploadDescription?: string;
 		rootDestinationLabel?: string;
@@ -159,6 +159,7 @@
 	let treeScrollElement = $state<HTMLElement | null>(null);
 
 	const entryByPath = $derived.by(() => new Map(entries.map((entry) => [entry.relativePath, entry])));
+	const leadingRowLabels = $derived.by(() => new Set(leadingRows.map((row) => row.label)));
 	const selectedWorkspacePath = $derived(selectedFile.startsWith('file:') ? selectedFile.slice(5) : '');
 	const selectedWorkspaceEntry = $derived(selectedWorkspacePath ? entryByPath.get(selectedWorkspacePath) : undefined);
 	const selectedParentPath = $derived.by(() => {
@@ -335,7 +336,7 @@
 				reason = m.workspace_move_current_location();
 			} else if (entry.isDirectory && candidate.relativePath && workspaceFilePathMatches(candidate.relativePath, relativePath)) {
 				reason = m.workspace_move_descendant_blocked();
-			} else if (entryByPath.has(targetPath)) {
+			} else if (hasExistingPath(targetPath)) {
 				reason = m.workspace_move_duplicate_destination();
 			}
 
@@ -415,8 +416,30 @@
 		dialogError = null;
 	}
 
+	function hasExistingPath(targetPath: string): boolean {
+		return entryByPath.has(targetPath) || (!targetPath.includes('/') && leadingRowLabels.has(targetPath));
+	}
+
 	function normalizeDialogName(name: string, parentPath: string): string | null {
-		return validateName ? validateName(name, parentPath) : validateWorkspaceFileName(name);
+		return validateName ? validateName(name, parentPath, dialogMode) : validateWorkspaceFileName(name);
+	}
+
+	function validateDialogEntryName(
+		rawName: string,
+		parentPath: string,
+		currentPath = '',
+		allowDuplicate = false
+	): { name?: string; error?: string } {
+		const basicName = validateWorkspaceFileName(rawName);
+		if (!basicName) return { error: m.workspace_file_invalid_name() };
+
+		const targetPath = joinWorkspaceFilePath(parentPath, basicName);
+		if (!allowDuplicate && targetPath !== currentPath && hasExistingPath(targetPath)) {
+			return { error: m.workspace_file_duplicate_name() };
+		}
+
+		const name = normalizeDialogName(basicName, parentPath);
+		return name ? { name } : { error: m.workspace_file_invalid_name() };
 	}
 
 	function submitMove() {
@@ -438,15 +461,9 @@
 	}
 
 	function submitRename() {
-		const name = normalizeDialogName(dialogName, dialogParentPath);
+		const { name, error } = validateDialogEntryName(dialogName, dialogParentPath, dialogTargetPath);
 		if (!name) {
-			dialogError = m.workspace_file_invalid_name();
-			return;
-		}
-
-		const targetPath = joinWorkspaceFilePath(dialogParentPath, name);
-		if (targetPath !== dialogTargetPath && entryByPath.has(targetPath)) {
-			dialogError = m.workspace_file_duplicate_name();
+			dialogError = error ?? m.workspace_file_invalid_name();
 			return;
 		}
 
@@ -460,21 +477,14 @@
 			dialogError = m.workspace_upload_file_required();
 			return;
 		}
-		let normalizedNames = [normalizeDialogName(dialogName, dialogDestinationPath)];
-		if (multipleUploads) {
-			normalizedNames = uploadFiles.map((file) => normalizeDialogName(file.name, dialogDestinationPath));
-		}
-		if (normalizedNames.some((name) => !name)) {
-			dialogError = m.workspace_file_invalid_name();
+		const rawNames = multipleUploads ? uploadFiles.map((file) => file.name) : [dialogName];
+		const results = rawNames.map((rawName) => validateDialogEntryName(rawName, dialogDestinationPath, '', allowUploadOverwrite));
+		const firstError = results.find((result) => result.error)?.error;
+		if (firstError) {
+			dialogError = firstError;
 			return;
 		}
-		if (
-			!allowUploadOverwrite &&
-			normalizedNames.some((name) => name && entryByPath.has(joinWorkspaceFilePath(dialogDestinationPath, name)))
-		) {
-			dialogError = m.workspace_file_duplicate_name();
-			return;
-		}
+		const normalizedNames = results.map((result) => result.name!);
 
 		dialogSubmitting = true;
 		try {
@@ -507,26 +517,18 @@
 		if (dialogMode === 'rename') return submitRename();
 		if (dialogMode === 'upload') return submitUpload();
 
-		const name = normalizeDialogName(dialogName, dialogDestinationPath);
+		const { name, error } = validateDialogEntryName(dialogName, dialogDestinationPath);
 		if (!name) {
-			dialogError = m.workspace_file_invalid_name();
-			return;
-		}
-
-		const targetPath = joinWorkspaceFilePath(dialogDestinationPath, name);
-		if (entryByPath.has(targetPath)) {
-			dialogError = m.workspace_file_duplicate_name();
+			dialogError = error ?? m.workspace_file_invalid_name();
 			return;
 		}
 
 		if (dialogMode === 'create_folder') {
 			onCreateFolder?.(dialogDestinationPath, name);
-			openFolders = {
-				...openFolders,
-				[dialogDestinationPath]: true
-			};
 		} else {
 			onCreateFile?.(dialogDestinationPath, name);
+		}
+		if (dialogDestinationPath) {
 			openFolders = {
 				...openFolders,
 				[dialogDestinationPath]: true

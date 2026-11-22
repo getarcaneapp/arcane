@@ -29,6 +29,8 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { FormInputs } from '#lib/types/ui/form.js';
 
+	import SettingsTextRows, { type SettingsTextField } from './settings-text-rows.svelte';
+
 	type TextFieldKey =
 		| 'oidcClientId'
 		| 'oidcIssuerUrl'
@@ -37,13 +39,7 @@
 		| 'oidcScopes'
 		| 'oidcGroupsClaim';
 
-	type TextField = {
-		key: TextFieldKey;
-		label: string;
-		description?: string;
-		helpText?: string;
-		placeholder: string;
-	};
+	type TextField = SettingsTextField<TextFieldKey>;
 
 	let {
 		formInputs,
@@ -118,32 +114,8 @@
 	}
 </script>
 
-{#snippet textRows(fields: TextField[])}
-	{#each fields as field (field.key)}
-		<SettingsRow
-			for={field.key}
-			label={field.label}
-			description={field.description}
-			helpText={field.helpText}
-			error={formInputs[field.key].error}
-			lock={settingsStore.lock(field.key)}
-		>
-			{#snippet children({ describedBy, errorId })}
-				<Input
-					id={field.key}
-					placeholder={field.placeholder}
-					bind:value={formInputs[field.key].value}
-					aria-invalid={!!formInputs[field.key].error}
-					aria-describedby={describedBy}
-					aria-errormessage={errorId}
-				/>
-			{/snippet}
-		</SettingsRow>
-	{/each}
-{/snippet}
-
 <SettingsSection title={m.common_configuration()}>
-	{@render textRows(clientFields)}
+	<SettingsTextRows fields={clientFields} {formInputs} />
 	<SettingsRow
 		for="oidcClientSecret"
 		label={m.oidc_client_secret_label()}
@@ -171,7 +143,7 @@
 			{/snippet}
 		</SettingsRow>
 	{/if}
-	{@render textRows(providerFields)}
+	<SettingsTextRows fields={providerFields} {formInputs} />
 	<SettingsRow
 		for="oidcMergeAccountsSwitch"
 		label={m.security_oidc_merge_accounts_label()}

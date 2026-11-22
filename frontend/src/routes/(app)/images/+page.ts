@@ -27,5 +27,5 @@ export const load: PageLoad = async ({ parent }) => {
 	if (result.error !== null) throwPageLoadError(result.error, 'Failed to load images');
 	const [images] = result.data;
 
-	return { scope, images, imageRequestOptions };
+	return { images, imageRequestOptions };
 };

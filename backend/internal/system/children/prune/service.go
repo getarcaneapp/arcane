@@ -623,6 +623,16 @@ func (s *Service) GetDiskUsage(ctx context.Context) (types.SystemDiskUsage, erro
 }
 
 func (s *Service) AggregateDiskUsage(ctx context.Context) (types.ApiResponse[types.SystemDiskUsage], error) {
+	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok && scope.Timeout == 0 {
+		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{
+			Handler: scope.Handler,
+			Request: scope.Request,
+			Resolve: scope.Resolve,
+			Path:    scope.Path,
+			IDs:     scope.IDs,
+			Timeout: timeouts.DefaultDockerDiskUsage,
+		})
+	}
 	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.SystemDiskUsage]) types.SystemDiskUsage {
 		var usage types.SystemDiskUsage
 		for _, environment := range environments {
@@ -683,7 +693,7 @@ func (s *Service) pruneDiskUsage(ctx context.Context, options client.DiskUsageOp
 	}
 	usageCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerDiskUsage)
 	defer cancel()
-	usage, err := cli.DiskUsage(usageCtx, options)
+	usage, err := dockerInternal.FetchDiskUsage(usageCtx, cli, options)
 	if err != nil {
 		return client.DiskUsageResult{}, fmt.Errorf("%w: %w", errDiskUsageUnavailable, err)
 	}

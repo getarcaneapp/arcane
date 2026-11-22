@@ -14,18 +14,6 @@ class SystemService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/agents/${environmentId}/system/prune`, options));
 	}
 
-	async startAllStoppedContainers(environmentId: string) {
-		return this.handleResponse(
-			this.api.post(`/agents/${environmentId}/system/containers`, undefined, { params: { action: 'startstopped' } })
-		);
-	}
-
-	async stopAllContainers(environmentId: string) {
-		return this.handleResponse(
-			this.api.post(`/agents/${environmentId}/system/containers`, undefined, { params: { action: 'stopall' } })
-		);
-	}
-
 	async getDockerInfoForEnvironment(environmentId: string): Promise<DockerInfo> {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/system/docker/info`));
 	}

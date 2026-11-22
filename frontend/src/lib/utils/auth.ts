@@ -77,15 +77,10 @@ const PROTECTED_PREFIXES = [
 const UNAUTHENTICATED_ONLY_PREFIXES = ['/login', '/oidc/login', '/img', '/favicon.ico'];
 const AUTH_CALLBACK_PREFIXES = ['/oidc/callback', '/auth/oidc/callback'];
 
-function isUserGlobalAdmin(user: User): boolean {
-	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
-	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
-	if (global?.includes(SUDO_PERMISSION)) return true;
-	return false;
-}
-
 export function userIsGlobalAdmin(user: User | null | undefined): boolean {
-	return !!user && isUserGlobalAdmin(user);
+	if (!user) return false;
+	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
+	return user.permissionsByEnv?.[GLOBAL_SCOPE]?.includes(SUDO_PERMISSION) ?? false;
 }
 
 export function userHasPermission(user: User | null | undefined, permission: string, envId?: string): boolean {

@@ -38,7 +38,7 @@ export const backdropPresets: BackdropPreset[] = [
 	}
 ];
 
-export function backdropPresetImage(id: string): string {
+function backdropPresetImage(id: string): string {
 	return `/backdrops/${id}.avif`;
 }
 
