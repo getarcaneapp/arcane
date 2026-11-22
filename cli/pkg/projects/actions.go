@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -366,4 +368,159 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newExportCmd() *cobra.Command {
+	var opts struct {
+		volumes    []string
+		allVolumes bool
+		stop       bool
+	}
+	cmd := &cobra.Command{
+		Use:          "export <project-id|name> [output-file]",
+		Short:        "Download a project, optionally with the data of its Docker-managed volumes, as a tar.gz archive",
+		Args:         cobra.RangeArgs(1, 2),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.stop && !opts.allVolumes && len(opts.volumes) == 0 {
+				return errors.New("--stop requires --volume or --all-volumes")
+			}
+			if len(args) == 2 {
+				if info, statErr := os.Stat(args[1]); statErr == nil && info.IsDir() {
+					return fmt.Errorf("output path %s is a directory", args[1])
+				}
+			}
+
+			c, err := cmdutil.ClientFromCommand(cmd)
+			if err != nil {
+				return err
+			}
+			c.SetTimeout(30 * time.Minute)
+
+			resolved, _, err := ProjectRef.Resolve(cmd.Context(), c, args[0], cmdutil.AllowPrompt(cmd))
+			if err != nil {
+				return err
+			}
+			volumes := opts.volumes
+			if opts.allVolumes {
+				options, optionsErr := c.GetJSON[types.ProjectExportOptions](cmd.Context(), clitypes.ProjectExport(c.EnvID(), resolved.ID))
+				if optionsErr != nil {
+					return fmt.Errorf("failed to list project volumes: %w", optionsErr)
+				}
+				for _, volume := range options.Data.Volumes {
+					if volume.Included && !slices.Contains(volumes, volume.Key) {
+						volumes = append(volumes, volume.Key)
+					}
+				}
+			}
+			exported, err := c.PostJSON[types.UploadSession](cmd.Context(), clitypes.ProjectExport(c.EnvID(), resolved.ID), types.ExportProjectArchive{
+				Volumes:     volumes,
+				StopProject: opts.stop,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to export project: %w", err)
+			}
+			if len(volumes) > 0 && !strings.HasSuffix(exported.Data.Filename, types.ProjectBundleExtension) {
+				cmdutil.AbortUploadSession(cmd.Context(), c, exported.Data.Kind, exported.Data.ID)
+				return errors.New("the server does not support exporting volumes; upgrade Arcane")
+			}
+
+			outputFile := filepath.Base(exported.Data.Filename)
+			if len(args) == 2 {
+				outputFile = args[1]
+			}
+			info, statErr := os.Stat(outputFile)
+			if statErr == nil && info.IsDir() {
+				cmdutil.AbortUploadSession(cmd.Context(), c, exported.Data.Kind, exported.Data.ID)
+				return fmt.Errorf("output path %s is a directory", outputFile)
+			}
+			special := statErr == nil && !info.Mode().IsRegular()
+			written, err := cmdutil.DownloadUploadSession(cmd.Context(), c, exported.Data, cmdutil.DownloadOptions{
+				OutputPath:   outputFile,
+				Special:      special,
+				ShowProgress: !cmdutil.JSONOutputEnabled(cmd),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to download project archive: %w", err)
+			}
+			if special {
+				return nil
+			}
+
+			if cmdutil.JSONOutputEnabled(cmd) {
+				return cmdutil.PrintJSON(struct {
+					Path    string   `json:"path"`
+					Volumes []string `json:"volumes"`
+					Bytes   int64    `json:"bytes"`
+				}{
+					Path:    outputFile,
+					Volumes: volumes,
+					Bytes:   written,
+				})
+			}
+			output.Success("Saved %s (%s)", outputFile, output.Bytes(written))
+			return nil
+		},
+	}
+	cmd.Flags().StringArrayVar(&opts.volumes, "volume", nil, "Compose key of a named or local external volume whose data to include (repeatable)")
+	cmd.Flags().BoolVar(&opts.allVolumes, "all-volumes", false, "Include the data of every volume the export includes by default")
+	cmd.Flags().BoolVar(&opts.stop, "stop", false, "Stop a running project while its volumes are exported, then start it again")
+	return cmd
+}
+
+func newImportCmd() *cobra.Command {
+	var opts struct {
+		name  string
+		start bool
+	}
+	cmd := &cobra.Command{
+		Use:          "import <file>",
+		Short:        "Create a project from an exported archive, restoring the volume data it holds",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := cmdutil.ClientFromCommand(cmd)
+			if err != nil {
+				return err
+			}
+			c.SetTimeout(30 * time.Minute)
+
+			name := filepath.Base(args[0])
+			for _, suffix := range []string{types.ProjectBundleExtension, ".tar.gz", ".tgz"} {
+				if trimmed, ok := strings.CutSuffix(name, suffix); ok {
+					name = trimmed
+					break
+				}
+			}
+			name = cmp.Or(opts.name, name)
+
+			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, types.UploadKindProjectArchive, args[0], !cmdutil.JSONOutputEnabled(cmd))
+			if err != nil {
+				return err
+			}
+			importErr := cmdutil.Run(cmd, c, cmdutil.Spec[types.CreateProjectResponse]{
+				Method: http.MethodPost,
+				Path:   clitypes.ProjectImport(c.EnvID()),
+				Body: types.ImportProjectArchive{
+					UploadID: sessionID,
+					Name:     name,
+					Start:    opts.start,
+				},
+				FailureMessage: "failed to import project",
+				Render: func(data types.CreateProjectResponse) error {
+					output.Success("Project %s imported%s", data.Name, kit.Ternary(opts.start, " and started", ""))
+					output.KeyValue("ID", data.ID)
+					return nil
+				},
+			})
+			if importErr != nil {
+				cmdutil.AbortUploadSession(cmd.Context(), c, types.UploadKindProjectArchive, sessionID)
+			}
+			return importErr
+		},
+	}
+	cmd.Flags().StringVar(&opts.name, "name", "", "Name of the new project (default: the archive's file name)")
+	cmd.Flags().BoolVar(&opts.start, "start", false, "Deploy the project after the import")
+	cmdutil.SetScope(cmdutil.ScopeDestination, cmd)
+	return cmd
 }

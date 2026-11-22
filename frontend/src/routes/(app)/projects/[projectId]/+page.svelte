@@ -15,6 +15,7 @@
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectExportDialog from '#lib/components/dialogs/project-export-dialog.svelte';
 	import ProjectTransferDialog, { projectTransferTargets } from '#lib/components/dialogs/project-transfer-dialog.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
@@ -51,7 +52,8 @@
 		SearchIcon,
 		ResetIcon,
 		GitBranchIcon,
-		FolderMoveIcon
+		FolderMoveIcon,
+		DownloadIcon
 	} from '#lib/icons/index.js';
 	import { RefreshIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
@@ -141,6 +143,7 @@
 	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
 	let transferOpen = $state(false);
+	let exportOpen = $state(false);
 
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
@@ -1694,6 +1697,16 @@
 				onclick: () => (transferOpen = true)
 			});
 		}
+		if (!project?.isDiscovered && hasPermission('projects:export', envId)) {
+			list.push({
+				id: 'export',
+				action: 'base',
+				label: m.images_export(),
+				icon: DownloadIcon,
+				group: 'manage',
+				onclick: () => (exportOpen = true)
+			});
+		}
 		list.push(
 			pinDashboardAction('pin-dashboard', m.pin_to_dashboard(), () =>
 				createDashboardWidget('resource', {
@@ -2609,3 +2622,4 @@
 {/if}
 
 <ProjectTransferDialog bind:open={transferOpen} {project} environmentId={envId} />
+<ProjectExportDialog bind:open={exportOpen} {project} environmentId={envId} />

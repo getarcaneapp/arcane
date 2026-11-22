@@ -242,3 +242,32 @@ export interface ProjectTransferPreflight {
 export interface ProjectTransferStarted {
 	activityId: string;
 }
+
+export type ProjectVolumeKind = 'named' | 'external' | 'driverOpts';
+
+export interface ProjectVolume {
+	key: string;
+	name: string;
+	kind: ProjectVolumeKind;
+	driver?: string;
+	labels?: Record<string, string>;
+	archive?: string;
+	included: boolean;
+	missing?: boolean;
+	inUse?: boolean;
+}
+
+export interface ProjectExportOptions {
+	volumes: ProjectVolume[];
+	running: boolean;
+}
+
+export interface ExportProjectArchiveRequest {
+	volumes?: string[];
+	stopProject?: boolean;
+}
+
+export interface ImportProjectArchiveRequest {
+	name: string;
+	start?: boolean;
+}

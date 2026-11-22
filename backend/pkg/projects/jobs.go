@@ -6,9 +6,12 @@ import (
 	"slices"
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
+	"github.com/moby/moby/api/types/container"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/types/v3"
@@ -17,6 +20,21 @@ import (
 const (
 	JobRunLabel = "com.docker.job.id"
 )
+
+// ContainerServices returns the Compose service names of the service containers, de-duplicated in first-seen order.
+func ContainerServices(containers []container.Summary) []string {
+	var services []string
+	for _, c := range containers {
+		service := docker.ComposeServiceLabel(c.Labels)
+		if service == "" || c.Labels[api.HookLabel] != "" || c.Labels[JobRunLabel] != "" || c.Labels[api.OneoffLabel] == "True" {
+			continue
+		}
+		if !slices.Contains(services, service) {
+			services = append(services, service)
+		}
+	}
+	return services
+}
 
 func ProjectJobs(project *composeTypes.Project) []types.ProjectJob {
 	if project == nil {
