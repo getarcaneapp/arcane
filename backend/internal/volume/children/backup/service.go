@@ -60,6 +60,7 @@ type (
 		Latest            func(ctx context.Context, policyID string) (*types.VolumeBackup, error)
 		List              func(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error)
 		RemoteSnapshotIDs func(ctx context.Context, destinationID string) ([]string, error)
+		LocalSnapshotIDs  func(ctx context.Context) ([]string, error)
 		CountLocal        func(ctx context.Context) (int64, error)
 	}
 
@@ -799,6 +800,9 @@ func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.Unm
 func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, policyIDs, systemPolicyIDs []string) []string {
 	var orphaned []string
 	for _, candidate := range candidates {
+		if candidate.Trigger == types.VolumeBackupTriggerDiscovered {
+			continue
+		}
 		managed := candidate.PolicyID == "" || candidate.Trigger == types.VolumeBackupTriggerManual || slices.Contains(policyIDs, candidate.PolicyID)
 		if series, ok := strings.CutPrefix(candidate.PolicyID, types.SystemVolumePolicyPrefix); ok && candidate.Trigger != types.VolumeBackupTriggerManual {
 			owner, _, _ := strings.Cut(series, ":")
@@ -1083,8 +1087,62 @@ func (s *Service) RestoreFile(ctx context.Context, opts types.VolumeBackupFileRe
 	return "", nil
 }
 
-// DiscoverRemoteBackups imports snapshots from every instance root on the destination; per-root failures are returned without blocking the others.
-func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID string) (int, []string, error) {
+func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverVolumeBackupsRequest) (int, []string, error) {
+	if request.Destination == types.VolumeBackupDestinationLocal {
+		created, err := s.discoverLocalBackups(ctx)
+		return created, nil, err
+	}
+	return s.discoverRemoteBackups(ctx, request.S3DestinationID)
+}
+
+func (s *Service) discoverLocalBackups(ctx context.Context) (int, error) {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if !s.localRusticRepositoryInitialized(ctx, dockerClient) {
+		return 0, nil
+	}
+	repository, err := s.localRusticRepository(ctx, dockerClient, true)
+	if err != nil {
+		return 0, err
+	}
+	password, err := s.volumeBackupPassword(ctx, dockerClient, repository)
+	if err != nil {
+		return 0, err
+	}
+	snapshots, err := s.deps.Engine.ListSnapshots(ctx, dockerClient, repository, password)
+	if errors.Is(err, backup.ErrRepositoryMissing) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to list local volume backups: %w", err)
+	}
+	knownIDs, err := s.deps.Store.LocalSnapshotIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var entries []*types.VolumeBackup
+	for _, snapshot := range snapshots {
+		if slices.Contains(knownIDs, snapshot.ID) {
+			continue
+		}
+		if entry := discoveredVolumeBackup("", "", snapshot); entry != nil {
+			entries = append(entries, entry)
+		}
+	}
+	return backup.RecordDiscovered(ctx, backup.DiscoveredRecords[*types.VolumeBackup]{
+		Entries: entries,
+		ID: func(entry *types.VolumeBackup) string {
+			return entry.ID
+		},
+		Existing: s.deps.Store.Runs,
+		Create:   s.deps.Store.Create,
+	})
+}
+
+// discoverRemoteBackups imports snapshots from every instance root on the destination; per-root failures are returned without blocking the others.
+func (s *Service) discoverRemoteBackups(ctx context.Context, destinationID string) (int, []string, error) {
 	key, err := s.deps.RecoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return 0, nil, errors.New("configure a recovery key in system backups before discovering volume backups")
@@ -1112,7 +1170,7 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID strin
 	if err != nil {
 		return 0, nil, err
 	}
-	created := 0
+	var entries []*types.VolumeBackup
 	var failures []string
 	for _, root := range roots {
 		repository, repoErr := s.remoteRusticRepository(ctx, destinationID, root)
@@ -1134,16 +1192,21 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID strin
 				continue
 			}
 			known[snapshot.ID] = struct{}{}
-			if createDiscoveredBackupErr := s.deps.Store.Create(ctx, entry); createDiscoveredBackupErr != nil {
-				return created, failures, fmt.Errorf("failed to save discovered volume backup: %w", createDiscoveredBackupErr)
-			}
-			created++
+			entries = append(entries, entry)
 		}
 	}
+	created, err := backup.RecordDiscovered(ctx, backup.DiscoveredRecords[*types.VolumeBackup]{
+		Entries: entries,
+		ID: func(entry *types.VolumeBackup) string {
+			return entry.ID
+		},
+		Existing: s.deps.Store.Runs,
+		Create:   s.deps.Store.Create,
+	})
 	if len(failures) > 0 {
 		slog.WarnContext(ctx, "volume backup discovery completed with failures", "destination", destinationID, "created", created, "failedRoots", len(failures))
 	}
-	return created, failures, nil
+	return created, failures, err
 }
 
 // discoveredVolumeBackup maps a snapshot to a backup record via its volume label; unlabeled and system snapshots map to nil.
@@ -1155,6 +1218,19 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 	createdAt := snapshot.Time
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
+	}
+	if destinationID == "" {
+		return &types.VolumeBackup{
+			ID:              snapshot.LocalRunID(),
+			VolumeName:      volumeName,
+			Size:            snapshot.Summary.TotalBytesProcessed,
+			CreatedAt:       createdAt,
+			Status:          types.VolumeBackupStatusSucceeded,
+			Trigger:         types.VolumeBackupTriggerDiscovered,
+			Destination:     types.VolumeBackupDestinationLocal,
+			Format:          types.VolumeBackupFormatRustic,
+			LocalSnapshotID: snapshot.ID,
+		}
 	}
 	return &types.VolumeBackup{
 		ID:         fmt.Sprintf("remote-%s-%s-%s", destinationID, root, snapshot.ID),
