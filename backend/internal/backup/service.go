@@ -109,10 +109,10 @@ type (
 	}
 
 	DiscoveredRecords[T any] struct {
-		Entries  []T
 		ID       func(entry T) string
 		Existing func(ctx context.Context, ids []string) ([]T, error)
 		Create   func(ctx context.Context, entry T) error
+		Entries  []T
 	}
 
 	RecoveryKeyStore struct {
