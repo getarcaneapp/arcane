@@ -51,8 +51,14 @@ class VolumeBackupService extends BaseAPIService {
 		return res.data;
 	}
 
-	async discoverBackups(s3DestinationId: string, environmentId: string): Promise<DiscoverVolumeBackupsResponse> {
-		return this.handleResponse(this.api.post(`/agents/${environmentId}/volumes/backups/discover`, { s3DestinationId }));
+	async discoverBackups(
+		s3DestinationId: string,
+		environmentId: string,
+		destination: 'local' | 's3' = 's3'
+	): Promise<DiscoverVolumeBackupsResponse> {
+		return this.handleResponse(
+			this.api.post(`/agents/${environmentId}/volumes/backups/discover`, { destination, s3DestinationId })
+		);
 	}
 
 	async restoreBackup(volumeName: string, backupId: string, environmentId: string): Promise<MessageResponse> {

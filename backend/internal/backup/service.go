@@ -160,6 +160,8 @@ var (
 	RecoveryKeyFormat           = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
+	// ErrRepositoryMissing reports a Rustic repository that was never initialized.
+	ErrRepositoryMissing = errors.New("the backup repository does not exist")
 )
 
 func RootSnapshotInput(source mount.Mount, tags ...string) CreateSnapshotInput {
@@ -383,6 +385,16 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
+// RunID returns the backup run the snapshot is tagged for, or "" when it has no run tag.
+func (s DiscoveredSnapshot) RunID() string {
+	for _, tag := range s.Tags {
+		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok {
+			return runID
+		}
+	}
+	return ""
+}
+
 func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, error) {
 	if !fullSnapshotID(snapshotID) {
 		return Snapshot{}, errors.New("a full snapshot ID is required")
@@ -425,6 +437,9 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 
 func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string) ([]DiscoveredSnapshot, error) {
 	output, err := e.run(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
+	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+		return nil, fmt.Errorf("%w: %w", ErrRepositoryMissing, err)
+	}
 	if err != nil {
 		return nil, err
 	}

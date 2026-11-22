@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"cmp"
 	"context"
 	"errors"
 
@@ -234,15 +235,19 @@ func (h *Handler) Discover(ctx context.Context, input *DiscoverSystemBackupsInpu
 		return nil, err
 	}
 	count := 0
+	destination := cmp.Or(input.Body.Destination, types.SystemBackupDestinationS3)
 	_, err = activitylib.RunHandlerActivity(activitylib.ActivityRuntimeContext(ctx, h.appCtx), h.activity, activitylib.HandlerOptions{
-		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: "s3", ResourceName: "Arcane", User: user,
-		Step: "Discovering system backups", Message: "Discovering Arcane system backups in S3", SuccessMessage: "Arcane system backup discovery completed",
-		Metadata: database.JSON{"action": "discover_system_backups", "s3DestinationId": input.Body.S3DestinationID},
+		EnvironmentID: "0", Type: types.ActivityTypeResourceAction, ResourceType: "system_backup", ResourceID: string(destination), ResourceName: "Arcane", User: user,
+		Step: "Discovering system backups", Message: "Discovering Arcane system backups", SuccessMessage: "Arcane system backup discovery completed",
+		Metadata: database.JSON{"action": "discover_system_backups", "destination": destination, "s3DestinationId": input.Body.S3DestinationID},
 	}, func(activityCtx context.Context) error {
 		var discoverErr error
-		count, discoverErr = h.service.DiscoverRemoteBackups(activityCtx, input.Body)
+		count, discoverErr = h.service.DiscoverBackups(activityCtx, input.Body)
 		return discoverErr
 	})
+	if errors.Is(err, common.ErrConflict) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

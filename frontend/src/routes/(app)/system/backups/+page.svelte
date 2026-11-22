@@ -392,7 +392,7 @@
 	let autoDiscovered = false;
 	let mounted = false;
 	async function discoverStoredBackups() {
-		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
+		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored) return;
 		if (!canDiscoverBackups) return;
 		autoDiscovered = true;
 		const found = await runAutomaticBackupDiscovery(data.destinations);

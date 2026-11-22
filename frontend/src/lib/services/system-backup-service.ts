@@ -128,8 +128,8 @@ class SystemBackupService extends BaseAPIService {
 		await this.handleResponse(this.api.delete(`/agents/${environmentId}/backups/${id}`, { data: { recoveryKey } }));
 	}
 
-	async discover(s3DestinationId: string, recoveryKey: string): Promise<number> {
-		return this.handleResponse(this.api.post('/backups/discover', { s3DestinationId, recoveryKey }));
+	async discover(s3DestinationId: string, recoveryKey: string, destination: 'local' | 's3' = 's3'): Promise<number> {
+		return this.handleResponse(this.api.post('/backups/discover', { destination, s3DestinationId, recoveryKey }));
 	}
 }
 

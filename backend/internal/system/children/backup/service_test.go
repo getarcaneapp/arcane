@@ -293,3 +293,26 @@ func TestBackUpRemoteEnvironments(t *testing.T) {
 	agentService.backUpRemoteEnvironments(t.Context(), run, "")
 	require.Empty(t, agentTransport.calls)
 }
+
+// A local snapshot found after the database is lost must come back as a local run under its original ID, while S3
+// snapshots keep their destination-scoped IDs so both copies of one backup can be listed.
+func TestDiscoveredRunKeepsLocalRunIDs(t *testing.T) {
+	snapshot := backupengine.DiscoveredSnapshot{ID: "abc123", Tags: []string{backupengine.RunSnapshotTag("run-1")}}
+
+	local := discoveredRun("", snapshot)
+	require.Equal(t, "run-1", local.ID)
+	require.Equal(t, types.SystemBackupDestinationLocal, local.Destination)
+	require.Equal(t, "abc123", local.LocalSnapshotID)
+	require.Empty(t, local.RemoteSnapshotID)
+	require.Equal(t, types.SystemBackupStatusSucceeded, local.Status)
+	require.False(t, local.CreatedAt.IsZero())
+
+	require.Equal(t, "local-def456", discoveredRun("", backupengine.DiscoveredSnapshot{ID: "def456"}).ID)
+
+	remote := discoveredRun("destination-1", snapshot)
+	require.Equal(t, "remote-destination-1-abc123", remote.ID)
+	require.Equal(t, types.SystemBackupDestinationS3, remote.Destination)
+	require.Equal(t, "abc123", remote.RemoteSnapshotID)
+	require.Equal(t, "destination-1", remote.S3DestinationID)
+	require.Empty(t, remote.LocalSnapshotID)
+}

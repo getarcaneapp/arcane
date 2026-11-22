@@ -1,6 +1,7 @@
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
+import { APIError } from '#lib/services/api-service.js';
 import { systemBackupService } from '#lib/services/system-backup-service.js';
 import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
@@ -143,20 +144,34 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	}
 }
 
+// Finds backups whose rows are missing, such as after Arcane's data volume was lost: always in local storage, and on
+// each S3 destination.
 export async function runAutomaticBackupDiscovery(destinations: { id: string }[]): Promise<boolean> {
-	const results = await Promise.allSettled([
-		...destinations.map((item) => systemBackupService.discover(item.id, '')),
-		...destinations.map((item) => volumeBackupService.discoverBackups(item.id, LOCAL_DOCKER_ENVIRONMENT_ID))
-	]);
-	let discovered = 0;
-	for (const [index, result] of results.entries()) {
-		if (result.status === 'rejected') {
-			toast.error(index < destinations.length ? m.system_backups_discover_failed() : m.volume_backups_discover_failed(), {
-				description: extractApiErrorMessage(result.reason)
-			});
-			continue;
+	const discover = (found: Promise<number>, failed: () => string) =>
+		found.catch((error: unknown) => {
+			// A running system backup holds the run lease; the next visit retries.
+			if (!(error instanceof APIError && error.status === 409)) {
+				toast.error(failed(), { description: extractApiErrorMessage(error) });
+			}
+			return 0;
+		});
+	const discoverVolumes = (destinationId: string, destination: 'local' | 's3') =>
+		discover(
+			volumeBackupService.discoverBackups(destinationId, LOCAL_DOCKER_ENVIRONMENT_ID, destination).then((result) => result.count),
+			m.volume_backups_discover_failed
+		);
+	// System discoveries share one run lease, so they run one at a time.
+	const discoverSystem = async () => {
+		let found = await discover(systemBackupService.discover('', '', 'local'), m.system_backups_discover_failed);
+		for (const item of destinations) {
+			found += await discover(systemBackupService.discover(item.id, ''), m.system_backups_discover_failed);
 		}
-		discovered += typeof result.value === 'number' ? result.value : result.value.count;
-	}
-	return discovered > 0;
+		return found;
+	};
+	const counts = await Promise.all([
+		discoverSystem(),
+		discoverVolumes('', 'local'),
+		...destinations.map((item) => discoverVolumes(item.id, 's3'))
+	]);
+	return counts.some((count) => count > 0);
 }

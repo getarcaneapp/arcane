@@ -201,6 +201,45 @@ func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	require.False(t, fallback.CreatedAt.IsZero())
 }
 
+// A local snapshot found after the database is lost must come back as a local backup under its original ID, or its
+// restore and delete paths would look in the wrong repository.
+func TestDiscoveredLocalVolumeBackupKeepsItsBackupID(t *testing.T) {
+	tagged := backup.DiscoveredSnapshot{ID: "abc123", Label: "app-data", Tags: []string{"daily", backup.RunSnapshotTag("backup-1")}}
+	entry := discoveredVolumeBackup("", "", tagged)
+	require.NotNil(t, entry)
+	require.Equal(t, "backup-1", entry.ID)
+	require.Equal(t, types.VolumeBackupDestinationLocal, entry.Destination)
+	require.Equal(t, "abc123", entry.LocalSnapshotID)
+	require.Empty(t, entry.RemoteSnapshotID)
+	require.Empty(t, entry.S3DestinationID)
+
+	untagged := discoveredVolumeBackup("", "", backup.DiscoveredSnapshot{ID: "def456", Label: "app-data"})
+	require.NotNil(t, untagged)
+	require.Equal(t, "local-def456", untagged.ID)
+	require.Nil(t, discoveredVolumeBackup("", "", backup.DiscoveredSnapshot{ID: "x", Label: "arcane-system-recovery"}))
+}
+
+// Discovery must never duplicate a recorded backup, such as one still running whose snapshot exists before its row
+// records it, nor save two rows for snapshots that share a backup tag.
+func TestRecordDiscoveredBackupsSkipsRecordedBackups(t *testing.T) {
+	var created []string
+	service := NewService(Dependencies{Store: Store{
+		Runs: func(_ context.Context, ids []string) ([]*types.VolumeBackup, error) {
+			require.ElementsMatch(t, []string{"running", "new", "new"}, ids)
+			return []*types.VolumeBackup{{ID: "running"}}, nil
+		},
+		Create: func(_ context.Context, entry *types.VolumeBackup) error {
+			created = append(created, entry.ID)
+			return nil
+		},
+	}})
+
+	count, err := service.recordDiscoveredBackups(t.Context(), []*types.VolumeBackup{{ID: "running"}, {ID: "new"}, {ID: "new"}})
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	require.Equal(t, []string{"new"}, created)
+}
+
 func TestDiscoveredSnapshotDecodesRusticLabel(t *testing.T) {
 	// Rustic snapshot JSON carries the volume name in the label field written
 	// by CreateSnapshot; discovery maps it back to the volume.

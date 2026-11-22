@@ -325,6 +325,11 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 				Pluck("remote_snapshot_id", &knownIDs).Error
 			return knownIDs, err
 		},
+		LocalSnapshotIDs: func(ctx context.Context) ([]string, error) {
+			var knownIDs []string
+			err := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("local_snapshot_id <> ''").Pluck("local_snapshot_id", &knownIDs).Error
+			return knownIDs, err
+		},
 		CountLocal: func(ctx context.Context) (int64, error) {
 			var count int64
 			err := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("local_snapshot_id <> ''").Count(&count).Error
