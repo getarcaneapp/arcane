@@ -394,7 +394,7 @@ func (s *Service) prepareBackup(
 		CreatedAt:       time.Now(),
 		Status:          types.VolumeBackupStatusRunning,
 		Trigger:         trigger,
-		Destination:     backup.Destination(plan.LocalEnabled, plan.S3Enabled),
+		Destination:     backup.Destination(backup.DestinationOptions{Local: plan.LocalEnabled, Remote: plan.S3Enabled}),
 		Format:          types.VolumeBackupFormatRustic,
 		S3DestinationID: plan.S3DestinationID,
 		PolicyID:        policyID,
@@ -873,7 +873,7 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.Volu
 			s.logBackupEvent(ctx, event.EventTypeVolumeBackupDelete, entry.VolumeName, user, database.JSON{"action": "backup_delete", "backup_id": entry.ID})
 			continue
 		}
-		entry.Destination = backup.Destination(entry.LocalSnapshotID != "", entry.RemoteSnapshotID != "")
+		entry.Destination = backup.Destination(backup.DestinationOptions{Local: entry.LocalSnapshotID != "", Remote: entry.RemoteSnapshotID != ""})
 		if saveErr := s.deps.Store.Save(ctx, entry); saveErr != nil {
 			deleteErr = errors.Join(deleteErr, saveErr)
 		}

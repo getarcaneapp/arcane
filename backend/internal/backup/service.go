@@ -94,6 +94,12 @@ type (
 		ReadOnly bool
 	}
 
+	// DestinationOptions describes which backup destinations hold snapshots.
+	DestinationOptions struct {
+		Local  bool
+		Remote bool
+	}
+
 	CreateSnapshotInput struct {
 		Mounts  []mount.Mount
 		Sources []string
@@ -1096,11 +1102,11 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 }
 
 // Destination names where a backup's snapshots are kept.
-func Destination(local, remote bool) types.VolumeBackupDestination {
+func Destination(opts DestinationOptions) types.VolumeBackupDestination {
 	switch {
-	case local && remote:
+	case opts.Local && opts.Remote:
 		return types.VolumeBackupDestinationLocalS3
-	case remote:
+	case opts.Remote:
 		return types.VolumeBackupDestinationS3
 	default:
 		return types.VolumeBackupDestinationLocal

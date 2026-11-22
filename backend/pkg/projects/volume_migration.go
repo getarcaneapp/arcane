@@ -186,13 +186,18 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 	inspected := map[string]types.Volume{}
 	for _, volume := range classified {
 		if opts.BackupStore != "" && volume.Name == opts.BackupStore {
-			resolved = append(resolved, types.ProjectVolume{
-				Labels:      volume.Labels,
-				Key:         volume.Key,
-				Name:        volume.Name,
-				Kind:        volume.Kind,
-				Driver:      volume.Driver,
-				BackupStore: true,
+			resolved = append(resolved, types.ProjectVolume{ //exhaustruct:enforce
+				Labels:       volume.Labels,
+				DockerLabels: volume.DockerLabels,
+				Key:          volume.Key,
+				Name:         volume.Name,
+				Kind:         volume.Kind,
+				Driver:       volume.Driver,
+				Archive:      volume.Archive,
+				Included:     false,
+				Missing:      false,
+				InUse:        false,
+				BackupStore:  true,
 			})
 			continue
 		}
