@@ -58,7 +58,14 @@
 		selected: boolean;
 	};
 
-	let { formInputs = $bindable(), mixed, lock, environments, containerModesSupported }: AutomationsTabProps = $props();
+	let {
+		formInputs = $bindable(),
+		mixed,
+		lock,
+		environments,
+		containerModesSupported,
+		containerModesKnown
+	}: AutomationsTabProps = $props();
 
 	const queryClient = useQueryClient();
 	const vulnerabilityManagementEnabled = $derived(
@@ -107,8 +114,8 @@
 	const autoUpdateIncludeMode = $derived(autoUpdateMode?.value === 'include');
 	const autoHealIncludeMode = $derived(autoHealMode?.value === 'include');
 	// Older agents read a shared list as an exclusion list, so the mode is only offered when every
-	// selected environment supports it, and a list that is not in exclude mode stays read-only then.
-	const modesPartlySupported = $derived(!containerModesSupported && !!autoUpdateMode);
+	// selected environment supports it, and a list that is not known to be in exclude mode stays read-only then.
+	const modesPartlySupported = $derived(!containerModesSupported && containerModesKnown);
 	const autoUpdateListLocked = $derived(modesPartlySupported && autoUpdateMode?.value !== 'exclude');
 	const autoHealListLocked = $derived(modesPartlySupported && autoHealMode?.value !== 'exclude');
 	const containerModeOptions = [
@@ -142,8 +149,9 @@
 	}
 
 	function autoUpdateLabelState(container: ContainerSummary): LabelState | undefined {
+		// updater=false keeps a container out, so it counts as listed in exclude mode and as unlisted in include mode.
 		if (allNamed(container, (labels) => isContainerLabelDisabled(labels, AUTO_UPDATE_LABEL)))
-			return { hint: m.jobs_container_label_excluded(), selected: false };
+			return { hint: m.jobs_container_label_excluded(), selected: !autoUpdateIncludeMode };
 		if (autoUpdateIncludeMode && allNamed(container, (labels) => isContainerLabelEnabled(labels, AUTO_UPDATE_LABEL)))
 			return { hint: m.included_by_label(), selected: true };
 		return undefined;

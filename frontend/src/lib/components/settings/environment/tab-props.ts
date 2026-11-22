@@ -31,8 +31,10 @@ export interface DockerTabProps extends FormTabProps {
 
 export interface AutomationsTabProps extends LockableFormTabProps {
 	environments: EnvironmentRef[];
-	/** False when a selected environment runs a version without the include/exclude container modes. */
+	/** True when every selected environment supports the include/exclude container modes. */
 	containerModesSupported: boolean;
+	/** True when at least one selected environment supports the include/exclude container modes. */
+	containerModesKnown: boolean;
 }
 
 export interface EnvironmentSettingsContent extends LockableFormTabProps {

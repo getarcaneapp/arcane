@@ -26,12 +26,14 @@
 	]}
 >
 	{#snippet content({ formInputs, mixed, lock }, scope)}
+		{@const modeSupport = scope.entries.map(({ settings }) => 'autoUpdateMode' in settings.values)}
 		<AutomationsTab
 			{formInputs}
 			{mixed}
 			{lock}
 			environments={scope.entries.map(({ environment }) => environment)}
-			containerModesSupported={scope.entries.every(({ settings }) => 'autoUpdateMode' in settings.values)}
+			containerModesSupported={modeSupport.every(Boolean)}
+			containerModesKnown={modeSupport.some(Boolean)}
 		/>
 	{/snippet}
 </EnvironmentSettingsPage>
