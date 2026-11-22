@@ -28,6 +28,7 @@
 
 	import * as Command from '#lib/components/ui/command/index.js';
 	import * as ContextMenu from '#lib/components/ui/context-menu/index.js';
+	import { isTouchDevice } from '#lib/hooks/is-touch-device.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 
@@ -814,6 +815,32 @@
 		}
 	});
 
+	function getEditorTriggerProps(props: Record<string, unknown>): Record<string, unknown> {
+		// Drop bits-ui's touch long-press handlers so mobile text selection and native callouts are not obstructed.
+		const {
+			onpointerdown: _onpointerdown,
+			onpointermove: _onpointermove,
+			onpointercancel: _onpointercancel,
+			onpointerup: _onpointerup,
+			disabled: _disabled,
+			oncontextmenu,
+			...rest
+		} = props;
+
+		return {
+			...rest,
+			oncontextmenu: (event: MouseEvent) => {
+				const pointerType = 'pointerType' in event ? event.pointerType : '';
+				if (isTouchDevice.current || pointerType === 'touch' || pointerType === 'pen') {
+					return;
+				}
+				if (typeof oncontextmenu === 'function') {
+					oncontextmenu(event);
+				}
+			}
+		};
+	}
+
 	function wireNormalView(view: EditorView) {
 		if (!isDiffActive) {
 			activeView = view;
@@ -849,9 +876,9 @@
 
 <div class="arcane-code-editor {autoHeight ? 'auto-height' : 'full-height'}">
 	<ContextMenu.Root>
-		<ContextMenu.Trigger>
+		<ContextMenu.Trigger disabled={isTouchDevice.current}>
 			{#snippet child({ props })}
-				<div {...props} class="editor-main">
+				<div {...getEditorTriggerProps(props)} class="editor-main">
 					{#if isDiffActive}
 						<div class="merge-shell">
 							<div class="merge-pane-header">
