@@ -4758,7 +4758,7 @@
   "export_project": "Export Project",
   "export_project_description": "Download the project's files, and the data of the volumes you select, as a .tar.gz archive that can be imported on any environment.",
   "volume_kind_external": "External volume that keeps its data outside Docker through another driver or driver options, so its data is not exported.",
-  "volume_kind_driver_opts": "Uses driver options that keep its data outside Docker, so its data is not exported.",
+  "volume_kind_driver_opts": "Uses another driver or driver options that keep its data outside Docker, so its data is not exported.",
   "export_no_volumes": "This project has no volumes, so only its files are exported.",
   "export_volumes_permission_required": "Including volume data requires the volumes:backup permission.",
   "stop_project_during_export": "Stop project during export for a consistent copy",

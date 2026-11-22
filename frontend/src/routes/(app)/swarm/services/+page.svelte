@@ -17,7 +17,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmServicesTable from './components/services-table.svelte';
@@ -32,14 +32,9 @@
 	let showCreateDialog = $state(false);
 	let createEnvironmentId = $state('');
 
-	const servicesQuery = createQuery(() => {
-		const scope = swarm.scope;
-		return {
-			...swarmServiceListQuery(swarm, pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const servicesQuery = createQuery(() =>
+		scopedQueryOptions(swarm.scope, swarmServiceListQuery(swarm, pageState.requestOptions))
+	);
 	const services = $derived(servicesQuery.data?.value ?? data.services);
 	const isRefreshing = $derived(servicesQuery.isFetching && !servicesQuery.isPending);
 

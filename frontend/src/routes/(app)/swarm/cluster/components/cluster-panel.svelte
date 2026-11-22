@@ -17,6 +17,7 @@
 	import type { SwarmInitRequest, SwarmJoinRequest, SwarmUpdateRequest } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { parseList } from '#lib/utils/form-parsers.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let { environmentId, onChanged }: { environmentId: string; onChanged?: () => void | Promise<void> } = $props();
@@ -103,13 +104,6 @@
 		}
 	}
 
-	function splitCsv(input: string): string[] {
-		return input
-			.split(',')
-			.map((value) => value.trim())
-			.filter(Boolean);
-	}
-
 	function loadCurrentSpec() {
 		const currentSpec = swarmInfo?.spec ?? {};
 		specDraft = JSON.stringify(currentSpec, null, 2);
@@ -153,7 +147,7 @@
 	}
 
 	async function handleJoin() {
-		const remoteAddrs = splitCsv(joinForm.remoteAddrs);
+		const remoteAddrs = parseList(joinForm.remoteAddrs);
 		if (remoteAddrs.length === 0 || !joinForm.joinToken.trim()) {
 			toast.error(m.swarm_cluster_join_required_error());
 			return;

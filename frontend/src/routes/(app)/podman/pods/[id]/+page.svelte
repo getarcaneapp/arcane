@@ -6,6 +6,7 @@
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
+	import { InspectJsonCard } from '#lib/components/resource-detail/index.js';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -31,7 +32,6 @@
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 
 	import PodContainers from '../components/pod-containers.svelte';
-	import PodInspect from '../components/pod-inspect.svelte';
 	import PodNetwork from '../components/pod-network.svelte';
 	import PodOverview from '../components/pod-overview.svelte';
 	import PodProcesses from '../components/pod-processes.svelte';
@@ -175,7 +175,7 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="inspect" class="h-full">
-				<PodInspect {pod} />
+				<InspectJsonCard description={m.podman_pod_inspect_description()} json={JSON.stringify(pod, null, 2)} />
 			</Tabs.Content>
 		{/snippet}
 	</TabbedPageLayout>

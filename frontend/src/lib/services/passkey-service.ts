@@ -7,7 +7,6 @@ import type {
 
 import type {
 	AuthenticationResponse,
-	MFAChallenge,
 	MFAStatus,
 	MobilePasskeyCompletion,
 	Passkey,
@@ -50,10 +49,6 @@ class PasskeyService extends BaseAPIService {
 				codeChallenge
 			})
 		);
-	}
-
-	async beginMFA(transactionId: string): Promise<MFAChallenge> {
-		return this.handleResponse(this.api.post('/auth/mfa/passkey/begin', { transactionId }));
 	}
 
 	async finishMFA(transactionId: string, credential: AuthenticationResponseJSON): Promise<AuthenticationResponse> {

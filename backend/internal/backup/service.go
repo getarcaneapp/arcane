@@ -33,7 +33,6 @@ import (
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
-	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -1418,8 +1417,7 @@ func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []co
 
 // CurrentMounts returns Arcane's own mounts when it runs in a container.
 func CurrentMounts(ctx context.Context, dockerClient *client.Client) (mounts []container.MountPoint, inContainer bool, err error) {
-	_, containerErr := cgroup.CurrentContainerID()
-	if inContainer = containerErr == nil; !inContainer {
+	if !selfcontainer.RunningInContainer() {
 		return nil, false, nil
 	}
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)

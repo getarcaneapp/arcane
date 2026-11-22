@@ -340,7 +340,7 @@ export function applyFontSize(px?: number | null): void {
 export type FontSlot = 'interface' | 'monospace' | 'code';
 export type FontFamilies = Partial<Record<FontSlot, string | null>>;
 
-export const FONT_NAME_PATTERN = /^[\p{L}\p{N} _'",-]*$/u;
+const FONT_NAME_PATTERN = /^[\p{L}\p{N} _'",-]*$/u;
 
 const FONT_VARIABLES: Record<FontSlot, string> = {
 	interface: '--font-sans-user',

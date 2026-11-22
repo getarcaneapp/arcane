@@ -2,7 +2,6 @@ import type { BackupFileEntry, BackupRestoreSelection, UpdateBackupPolicy } from
 import type { Paginated, MessageResponse } from '#lib/types/base.js';
 import type { BackupFileBrowseRequest } from '#lib/types/ui/backup.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
-import type { UploadProgressCallback } from '#lib/types/ui/upload.js';
 import type { VolumeBackupListResponse } from '#lib/types/ui/volume.js';
 import type {
 	VolumeBackupEntry,
@@ -14,7 +13,6 @@ import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
-import { uploadService } from './upload-service';
 
 class VolumeBackupService extends BaseAPIService {
 	async getPolicies(volumeName: string, environmentId: string): Promise<VolumeBackupPolicyCollection> {
@@ -104,11 +102,6 @@ class VolumeBackupService extends BaseAPIService {
 		return !!res.data.data?.exists;
 	}
 
-	async listBackupFiles(backupId: string, environmentId: string): Promise<string[]> {
-		const res = await this.api.get<{ data?: string[] }>(`/agents/${environmentId}/volumes/backups/${backupId}/files`);
-		return res.data.data ?? [];
-	}
-
 	downloadBackup(backupId: string, environmentId: string): void {
 		downloadFromUrl(`${this.api.defaults.baseURL}/agents/${environmentId}/volumes/backups/${backupId}/download`);
 	}
@@ -119,16 +112,6 @@ class VolumeBackupService extends BaseAPIService {
 
 	async uploadBackup(backupId: string, s3DestinationId: string, environmentId: string): Promise<VolumeBackupEntry> {
 		return this.handleResponse(this.api.post(`/agents/${environmentId}/volumes/backups/${backupId}/upload`, { s3DestinationId }));
-	}
-
-	async uploadAndRestore(
-		volumeName: string,
-		file: File,
-		environmentId: string,
-		onProgress?: UploadProgressCallback
-	): Promise<MessageResponse> {
-		const uploadId = await uploadService.uploadFile(environmentId, 'volume-backup', file, onProgress);
-		return this.handleResponse(this.api.post(`/agents/${environmentId}/volumes/${volumeName}/backups/upload`, { uploadId }));
 	}
 }
 

@@ -13,10 +13,6 @@ class GitRepositoryService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getRepository(id: string): Promise<GitRepository> {
-		return this.handleResponse(this.api.get(`/gitops/repositories/${id}`));
-	}
-
 	async createRepository(repository: GitRepositoryCreate): Promise<GitRepository> {
 		return this.handleResponse(this.api.post(`/gitops/repositories`, repository));
 	}

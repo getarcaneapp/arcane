@@ -696,7 +696,7 @@ func (s *ProjectService) startProject(ctx context.Context, projectID string, ser
 		"projectName": proj.Name,
 		"services":    services,
 	}, "could not log project start action")
-	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning))
+	return s.updateRuntimeProjectStatus(context.WithoutCancel(ctx), projectID, ProjectStatusRunning)
 }
 
 func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) (func(), error) {
@@ -2268,17 +2268,27 @@ func (s *ProjectService) updateProjectStatusAndCounts(ctx context.Context, proje
 	return nil
 }
 
-func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projectID string) {
-	restoreCtx := context.WithoutCancel(ctx)
-	services, err := s.projectServices(restoreCtx, projectID)
-	if err == nil {
-		if err = s.updateProjectStatusAndCounts(restoreCtx, projectID, mo.Some(ProjectStatus(listing.ProjectStatus(services)))); err == nil {
-			return
-		}
+func (s *ProjectService) updateRuntimeProjectStatus(ctx context.Context, projectID string, fallback ProjectStatus) error {
+	services, err := s.projectServices(ctx, projectID)
+	if err != nil {
+		slog.ErrorContext(ctx, "loading project services failed during status update", "projectId", projectID, "error", err)
+		return s.updateProjectStatus(ctx, projectID, fallback)
 	}
-	slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectId", projectID, "error", err)
-	if updateErr := s.updateProjectStatus(restoreCtx, projectID, ProjectStatusStopped); updateErr != nil {
-		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectId", projectID, "error", updateErr)
+	serviceCount, runningCount := listing.ServiceCounts(services)
+	if updateErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
+		"service_count": serviceCount,
+		"running_count": runningCount,
+		"status":        ProjectStatus(listing.ProjectStatus(services)),
+		"updated_at":    time.Now(),
+	}).Error; updateErr != nil {
+		return fmt.Errorf("failed to update project status and counts: %w", updateErr)
+	}
+	return nil
+}
+
+func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projectID string) {
+	if err := s.updateRuntimeProjectStatus(context.WithoutCancel(ctx), projectID, ProjectStatusStopped); err != nil {
+		slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectId", projectID, "error", err)
 	}
 }
 
