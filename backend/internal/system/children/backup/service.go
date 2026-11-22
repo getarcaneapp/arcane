@@ -36,8 +36,6 @@ import (
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
-	"kit.getarcane.app/docker/compat"
-	"kit.getarcane.app/sys/cgroup"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -63,6 +61,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/types/v3"
 )
 
@@ -1096,17 +1095,13 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 	if err != nil {
 		return err
 	}
-	containerID, err := cgroup.CurrentContainerID()
-	if err != nil {
+	if !selfcontainer.RunningInContainer() {
 		return errors.New("arcane system restore requires Arcane to run in Docker")
 	}
-	inspectResult, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, cli, containerID, client.ContainerInspectOptions{})
-	})
+	current, err := s.dockerService.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if err != nil {
 		return fmt.Errorf("inspect Arcane container: %w", err)
 	}
-	current := inspectResult.Container
 	// The helper reads the restored manifest and database through /app/data.
 	appDataMount := docker.MountForDestination(current.Mounts, "/app/data", "/app/data")
 	if appDataMount == nil {
@@ -1180,14 +1175,11 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), requestFile)
 		}
 	}()
-	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(ctx, s.dockerService.DockerHost(), &current,
+	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(ctx, s.dockerService.DockerHost(), current,
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
-		func() bool {
-			_, currentContainerIDErr := cgroup.CurrentContainerID()
-			return currentContainerIDErr == nil
-		},
+		selfcontainer.RunningInContainer,
 		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
 			return docker.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
 		},

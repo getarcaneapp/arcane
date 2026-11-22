@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater/labels"
@@ -22,7 +23,100 @@ const (
 	InternalResourceLabel = "com.getarcaneapp.internal.resource"
 	HiddenResourceLabel   = "com.getarcaneapp.arcane.hidden"
 	LabelArcaneUpgrader   = "com.getarcaneapp.arcane.upgrader"
+	mountInfoPath         = "/proc/self/mountinfo"
 )
+
+func CurrentContainerID() (string, error) {
+	return currentContainerID(cgroup.CurrentContainerID, func() (string, error) {
+		data, err := os.ReadFile(mountInfoPath)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	})
+}
+
+func RunningInContainer() bool {
+	return runningInContainer(os.Getenv, func(path string) bool {
+		_, err := os.Stat(path)
+		return err == nil
+	}, CurrentContainerID)
+}
+
+func currentContainerID(detectCgroup, readMountInfo func() (string, error)) (string, error) {
+	var cgroupErr error
+	if detectCgroup != nil {
+		if id, err := detectCgroup(); err == nil {
+			if id = strings.TrimSpace(id); id != "" {
+				return id, nil
+			}
+		} else {
+			cgroupErr = err
+		}
+	}
+	if readMountInfo != nil {
+		if data, err := readMountInfo(); err == nil {
+			if id := containerIDFromMountInfo(data); id != "" {
+				return id, nil
+			}
+		}
+	}
+	if cgroupErr != nil {
+		return "", cgroupErr
+	}
+	return "", errors.New("no container ID found")
+}
+
+func runningInContainer(getenv func(string) string, pathExists func(string) bool, detectID func() (string, error)) bool {
+	if inContainer, ok := kit.ParseBool(getenv("ARCANE_IN_CONTAINER")); ok && inContainer {
+		return true
+	}
+	if strings.TrimSpace(getenv("container")) != "" {
+		return true
+	}
+	for _, marker := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if pathExists(marker) {
+			return true
+		}
+	}
+	if detectID != nil {
+		if id, err := detectID(); err == nil && strings.TrimSpace(id) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func containerIDFromMountInfo(data string) string {
+	for line := range strings.SplitSeq(data, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		// TrueNAS SCALE mounts Docker's data-root on its own ZFS dataset, so the
+		// mountinfo root field is /containers/<64-hex>/... without a /docker/ prefix.
+		if _, after, ok := strings.Cut(fields[3], "/containers/"); ok {
+			candidate, _, _ := strings.Cut(after, "/")
+			if isHexContainerID(candidate) {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+func isHexContainerID(id string) bool {
+	if len(id) != 64 {
+		return false
+	}
+	for i := range len(id) {
+		c := id[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
 
 func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *client.Client) string {
 	filters := make(client.Filters)
@@ -52,7 +146,7 @@ func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *client.Clie
 func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Client) (*container.InspectResponse, error) {
 	// Behind a network_mode sidecar, hostname and cgroup resolve the sidecar, so only a labeled hit is trusted (#3544, #3693).
 	var unlabeled *container.InspectResponse
-	if target, err := CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname); err == nil && target != "" {
+	if target, err := CurrentContainerInspectTarget(CurrentContainerID, os.Hostname); err == nil && target != "" {
 		if inspect, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, target, client.ContainerInspectOptions{}); inspectErr == nil {
 			if inspect.Container.Config != nil && strings.EqualFold(strings.TrimSpace(inspect.Container.Config.Labels[labels.LabelArcane]), "true") {
 				return &inspect.Container, nil

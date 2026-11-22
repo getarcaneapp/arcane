@@ -34,7 +34,6 @@ import (
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/mapping"
 	"kit.getarcane.app/semver"
-	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/labels"
 	"kit.getarcane.app/updater/refs"
@@ -468,10 +467,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
-		func() bool {
-			_, currentContainerIDErr := cgroup.CurrentContainerID()
-			return currentContainerIDErr == nil
-		},
+		selfcontainer.RunningInContainer,
 		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
 			return docker.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
 		},
