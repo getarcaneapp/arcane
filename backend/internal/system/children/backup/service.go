@@ -967,8 +967,23 @@ func (s *Service) pruneDeletedLocalRuns(ctx context.Context) error {
 	return s.engine.ForgetSnapshots(ctx, dockerClient, repository, key, nil)
 }
 
-// DiscoverBackups records the system backups whose snapshots are in the requested repository but have no run; it never
-// deletes anything. A missing repository holds nothing to discover.
+func (s *Service) discoverySource(ctx context.Context, dockerClient *client.Client, request types.DiscoverSystemBackupsRequest) (backup.Repository, []string, error) {
+	if request.Destination == types.SystemBackupDestinationLocal {
+		repository, err := s.localRepository(ctx, dockerClient, true)
+		if err != nil {
+			return backup.Repository{}, nil, err
+		}
+		knownIDs, err := s.store.LocalSnapshotIDs(ctx)
+		return repository, knownIDs, err
+	}
+	repository, err := s.remoteRepository(ctx, request.S3DestinationID)
+	if err != nil {
+		return backup.Repository{}, nil, err
+	}
+	knownIDs, err := s.store.RemoteSnapshotIDs(ctx, request.S3DestinationID)
+	return repository, knownIDs, err
+}
+
 func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverSystemBackupsRequest) (int, error) {
 	lease, err := s.acquireRun(ctx)
 	if err != nil {
@@ -983,22 +998,7 @@ func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverSys
 	if err != nil {
 		return 0, err
 	}
-	local := request.Destination == types.SystemBackupDestinationLocal
-	var repository backup.Repository
-	var knownIDs []string
-	if local {
-		repository, err = s.localRepository(ctx, dockerClient, true)
-	} else {
-		repository, err = s.remoteRepository(ctx, request.S3DestinationID)
-	}
-	if err != nil {
-		return 0, err
-	}
-	if local {
-		knownIDs, err = s.store.LocalSnapshotIDs(ctx)
-	} else {
-		knownIDs, err = s.store.RemoteSnapshotIDs(ctx, request.S3DestinationID)
-	}
+	repository, knownIDs, err := s.discoverySource(ctx, dockerClient, request)
 	if err != nil {
 		return 0, err
 	}
@@ -1010,54 +1010,43 @@ func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverSys
 		return 0, fmt.Errorf("failed to open system recovery repository: %w", err)
 	}
 	var candidates []*types.SystemBackupRun
-	var candidateIDs []string
 	for _, snapshot := range listedSnapshots {
 		if strings.TrimSpace(snapshot.ID) == "" || slices.Contains(knownIDs, snapshot.ID) {
 			continue
 		}
-		run := discoveredRun(kit.Ternary(local, "", request.S3DestinationID), snapshot)
-		candidates, candidateIDs = append(candidates, run), append(candidateIDs, run.ID)
+		candidates = append(candidates, discoveredRun(kit.Ternary(request.Destination == types.SystemBackupDestinationLocal, "", request.S3DestinationID), snapshot))
 	}
-	if len(candidates) == 0 {
-		return 0, nil
-	}
-	existing, err := s.store.RunsByID(ctx, candidateIDs)
-	if err != nil {
-		return 0, err
-	}
-	recorded := make(map[string]bool, len(existing))
-	for _, run := range existing {
-		recorded[run.ID] = true
-	}
-	created := 0
-	for _, run := range candidates {
-		if recorded[run.ID] {
-			continue
-		}
-		if createDiscoveredBackupErr := s.store.CreateRun(ctx, run); createDiscoveredBackupErr != nil {
-			return created, fmt.Errorf("failed to save discovered system backup: %w", createDiscoveredBackupErr)
-		}
-		recorded[run.ID] = true
-		created++
-	}
-	return created, nil
+	return backup.RecordDiscovered(ctx, backup.DiscoveredRecords[*types.SystemBackupRun]{
+		Entries: candidates,
+		ID: func(run *types.SystemBackupRun) string {
+			return run.ID
+		},
+		Existing: s.store.RunsByID,
+		Create:   s.store.CreateRun,
+	})
 }
 
-// discoveredRun maps a snapshot to a succeeded run; an empty destinationID records a local snapshot under the run ID
-// its tag keeps, so a recovered backup returns with its original ID.
 func discoveredRun(destinationID string, snapshot backup.DiscoveredSnapshot) *types.SystemBackupRun {
-	createdAt := kit.Ternary(snapshot.Time.IsZero(), time.Now().UTC(), snapshot.Time)
 	if destinationID == "" {
 		return &types.SystemBackupRun{
-			ID: cmp.Or(snapshot.RunID(), "local-"+snapshot.ID), Size: snapshot.Summary.TotalBytesProcessed, CreatedAt: createdAt,
-			Status: types.SystemBackupStatusSucceeded, Trigger: types.SystemBackupTriggerManual,
-			Destination: types.SystemBackupDestinationLocal, LocalSnapshotID: snapshot.ID,
+			ID:              snapshot.LocalRunID(),
+			Size:            snapshot.Summary.TotalBytesProcessed,
+			CreatedAt:       kit.Ternary(snapshot.Time.IsZero(), time.Now().UTC(), snapshot.Time),
+			Status:          types.SystemBackupStatusSucceeded,
+			Trigger:         types.SystemBackupTriggerManual,
+			Destination:     types.SystemBackupDestinationLocal,
+			LocalSnapshotID: snapshot.ID,
 		}
 	}
 	return &types.SystemBackupRun{
-		ID: fmt.Sprintf("remote-%s-%s", destinationID, snapshot.ID), Size: snapshot.Summary.TotalBytesProcessed, CreatedAt: createdAt,
-		Status: types.SystemBackupStatusSucceeded, Trigger: types.SystemBackupTriggerManual, Destination: types.SystemBackupDestinationS3,
-		RemoteSnapshotID: snapshot.ID, S3DestinationID: destinationID,
+		ID:               fmt.Sprintf("remote-%s-%s", destinationID, snapshot.ID),
+		Size:             snapshot.Summary.TotalBytesProcessed,
+		CreatedAt:        kit.Ternary(snapshot.Time.IsZero(), time.Now().UTC(), snapshot.Time),
+		Status:           types.SystemBackupStatusSucceeded,
+		Trigger:          types.SystemBackupTriggerManual,
+		Destination:      types.SystemBackupDestinationS3,
+		RemoteSnapshotID: snapshot.ID,
+		S3DestinationID:  destinationID,
 	}
 }
 

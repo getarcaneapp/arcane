@@ -14,6 +14,7 @@ import type {
 	S3Destination
 } from '#lib/types/backup.js';
 import type { BackupPolicy, BackupRun } from '#lib/types/ui/backup.js';
+import type { VolumeBackupDestination } from '#lib/types/volume.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -145,27 +146,22 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	}
 }
 
-// Finds backups whose rows are missing on each S3 destination, and in local storage when `local` is set, such as after
-// a recovery key is imported following the loss of Arcane's data volume.
 export async function runAutomaticBackupDiscovery(
 	destinations: { id: string }[],
 	{ local }: { local: boolean }
 ): Promise<boolean> {
 	const discover = (found: Promise<number>, failed: () => string) =>
 		found.catch((error: unknown) => {
-			// A running system backup holds the run lease; the next visit retries the S3 passes, and importing or
-			// generating a key again, or `arcane backups discover --local`, retries the local one.
 			if (!(error instanceof APIError && error.status === 409)) {
 				toast.error(failed(), { description: extractApiErrorMessage(error) });
 			}
 			return 0;
 		});
-	const discoverVolumes = (destinationId: string, destination: 'local' | 's3') =>
+	const discoverVolumes = (destinationId: string, destination: Exclude<VolumeBackupDestination, 'local_s3'>) =>
 		discover(
 			volumeBackupService.discoverBackups(destinationId, LOCAL_DOCKER_ENVIRONMENT_ID, destination).then((result) => result.count),
 			m.volume_backups_discover_failed
 		);
-	// System discoveries share one run lease, so they run one at a time.
 	const discoverSystem = async () => {
 		let found = local ? await discover(systemBackupService.discover('', '', 'local'), m.system_backups_discover_failed) : 0;
 		for (const item of destinations) {

@@ -274,13 +274,12 @@ const (
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
 	SystemVolumeSelectionBlocklist SystemVolumeSelectionMode = "blocklist"
 
-	VolumeBackupStatusRunning    = "running"
-	VolumeBackupStatusSucceeded  = "succeeded"
-	VolumeBackupStatusFailed     = "failed"
-	VolumeBackupTriggerManual    = "manual"
-	VolumeBackupTriggerScheduled = "scheduled"
-	VolumeBackupTriggerSafety    = "safety"
-	// VolumeBackupTriggerDiscovered marks a local backup recorded from its snapshot after its record was lost.
+	VolumeBackupStatusRunning     = "running"
+	VolumeBackupStatusSucceeded   = "succeeded"
+	VolumeBackupStatusFailed      = "failed"
+	VolumeBackupTriggerManual     = "manual"
+	VolumeBackupTriggerScheduled  = "scheduled"
+	VolumeBackupTriggerSafety     = "safety"
 	VolumeBackupTriggerDiscovered = "discovered"
 )
 

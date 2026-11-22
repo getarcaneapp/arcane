@@ -391,7 +391,6 @@
 
 	let autoDiscovered = false;
 	let mounted = false;
-	// Page loads scan S3 destinations; a new or imported recovery key also scans local storage, which a reinstall leaves unrecorded.
 	async function discoverStoredBackups({ local = false } = {}) {
 		if (!mounted || !policyCollection.recoveryKeyStored || !canDiscoverBackups) return;
 		if (!local && (autoDiscovered || !data.destinations.length)) return;

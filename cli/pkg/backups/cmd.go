@@ -339,20 +339,20 @@ func newDiscoverCmd() *cobra.Command {
 				return err
 			}
 
-			destination := types.SystemBackupDestinationLocal
-			s3DestinationID := ""
+			req := types.DiscoverSystemBackupsRequest{
+				Destination: types.SystemBackupDestinationLocal,
+				RecoveryKey: opts.recoveryKey,
+			}
 			if !opts.local {
 				resolved, _, resolveErr := s3DestinationRef.Resolve(cmd.Context(), c, opts.s3Destination, cmdutil.AllowPrompt(cmd))
 				if resolveErr != nil {
 					return resolveErr
 				}
-				destination, s3DestinationID = types.SystemBackupDestinationS3, resolved.ID
-			}
-
-			req := types.DiscoverSystemBackupsRequest{
-				Destination:     destination,
-				S3DestinationID: s3DestinationID,
-				RecoveryKey:     opts.recoveryKey,
+				req = types.DiscoverSystemBackupsRequest{
+					Destination:     types.SystemBackupDestinationS3,
+					S3DestinationID: resolved.ID,
+					RecoveryKey:     opts.recoveryKey,
+				}
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[int]{

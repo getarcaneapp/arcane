@@ -7,6 +7,7 @@ import type {
 	VolumeBackupEntry,
 	CreateVolumeBackupRequest,
 	DiscoverVolumeBackupsResponse,
+	VolumeBackupDestination,
 	VolumeBackupPolicyCollection
 } from '#lib/types/volume.js';
 import { downloadFromUrl } from '#lib/utils/browser-download.js';
@@ -54,7 +55,7 @@ class VolumeBackupService extends BaseAPIService {
 	async discoverBackups(
 		s3DestinationId: string,
 		environmentId: string,
-		destination: 'local' | 's3' = 's3'
+		destination: Exclude<VolumeBackupDestination, 'local_s3'> = 's3'
 	): Promise<DiscoverVolumeBackupsResponse> {
 		return this.handleResponse(
 			this.api.post(`/agents/${environmentId}/volumes/backups/discover`, { destination, s3DestinationId })
