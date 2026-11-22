@@ -915,7 +915,7 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 		wantLevel   types.ActivityMessageLevel
 		wantMessage string
 		result      updater.ResourceResult
-		optIn       bool
+		include     bool
 	}{
 		{
 			name: "failed with reason",
@@ -965,8 +965,8 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 			wantMessage: "arcane-id: skipped (container excluded by settings)",
 		},
 		{
-			name:  "skipped in opt-in mode names the missing opt-in",
-			optIn: true,
+			name:    "skipped in include mode says the container is not included",
+			include: true,
 			result: updater.ResourceResult{
 				ResourceID:   "plain-id",
 				ResourceName: "plain",
@@ -975,11 +975,11 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 				Error:        "container excluded by settings",
 			},
 			wantLevel:   types.ActivityMessageLevelInfo,
-			wantMessage: "plain: skipped (not opted in to automatic updates)",
+			wantMessage: "plain: skipped (not included in automatic updates)",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			require.NoError(t, settingsService.SetBoolSetting(ctx, "autoUpdateOptIn", tt.optIn))
+			require.NoError(t, settingsService.UpdateSetting(ctx, "autoUpdateMode", kit.Ternary(tt.include, "include", "exclude")))
 			started, err := activityService.StartActivity(ctx, activitylib.StartRequest{EnvironmentID: "0", Type: types.ActivityTypeAutoUpdate})
 			require.NoError(t, err)
 
@@ -1523,7 +1523,7 @@ func TestUpdateLabelPolicyMarksQuadletContainersUnmanaged(t *testing.T) {
 	}
 }
 
-func TestUpdaterService_CollectUsedImagesHonorsAutoUpdateOptIn(t *testing.T) {
+func TestUpdaterService_CollectUsedImagesHonorsAutoUpdateMode(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1550,8 +1550,7 @@ func TestUpdaterService_CollectUsedImagesHonorsAutoUpdateOptIn(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	require.NoError(t, settingsService.UpdateSettings(ctx, types.SettingsUpdate{
-		"autoUpdateExcludedContainers": "excluded",
-		"autoUpdateIncludedContainers": "included,opted-out",
+		"autoUpdateExcludedContainers": "excluded,included,opted-out",
 	}))
 	harness := flowtest.New(t, activity.NewActivityService(db, settingsService))
 	admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
@@ -1578,18 +1577,18 @@ func TestUpdaterService_CollectUsedImagesHonorsAutoUpdateOptIn(t *testing.T) {
 		return slices.Sorted(slices.Values(ids))
 	}
 
-	assert.Equal(t, []string{ref("included"), ref("opted-in"), ref("plain")}, collect(ctx), "without opt-in only opt-outs and exclusions are skipped")
-	assert.Equal(t, []string{"excluded"}, excluded(), "without opt-in the engine gets the exclusion list")
+	assert.Equal(t, []string{ref("opted-in"), ref("plain")}, collect(ctx), "exclude mode skips listed containers and opt-outs")
+	assert.Equal(t, []string{"excluded", "included", "opted-out"}, excluded(), "in exclude mode the engine gets the list")
 	assert.Equal(t, engineExcludedReason, svc.skipReason(ctx, engineExcludedReason))
 
-	require.NoError(t, settingsService.SetBoolSetting(ctx, "autoUpdateOptIn", true))
-	assert.Equal(t, []string{ref("excluded"), ref("included"), ref("opted-in")}, collect(ctx), "opt-in keeps labelled and included containers and ignores the exclusion list")
-	assert.Equal(t, []string{"plain"}, excluded(), "the engine skips containers that are not opted in and checks updater=false on its own")
-	assert.Equal(t, "not opted in to automatic updates", svc.skipReason(ctx, engineExcludedReason))
+	require.NoError(t, settingsService.UpdateSetting(ctx, "autoUpdateMode", "include"))
+	assert.Equal(t, []string{ref("excluded"), ref("included"), ref("opted-in")}, collect(ctx), "include mode keeps listed and labelled containers")
+	assert.Equal(t, []string{"plain"}, excluded(), "the engine skips containers that are not included and checks updater=false on its own")
+	assert.Equal(t, "not included in automatic updates", svc.skipReason(ctx, engineExcludedReason))
 	assert.Equal(t, "updates disabled by label", svc.skipReason(ctx, "updates disabled by label"))
 
 	manual := context.WithValue(ctx, ignoreSettingsExclusionsKey{}, true)
-	assert.Equal(t, []string{ref("excluded"), ref("included"), ref("opted-in"), ref("opted-out"), ref("plain")}, collect(manual), "manual runs ignore opt-in like other exclusions")
+	assert.Equal(t, []string{ref("excluded"), ref("included"), ref("opted-in"), ref("opted-out"), ref("plain")}, collect(manual), "manual runs ignore the auto-update mode and list")
 }
 
 func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, token string) {

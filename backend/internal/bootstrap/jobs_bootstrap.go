@@ -380,7 +380,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 	rescheduleOn([]string{types.FeatureVulnerabilityManagementSettingKey}, params.VulnerabilityRisk)
 	rescheduleOn([]string{types.FeatureVulnerabilityManagementSettingKey, "imageAutoPatchEnabled", "imageAutoPatchInterval"}, params.AutoPatch)
 	rescheduleOn([]string{
-		"autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealOptIn", "autoHealIncludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow",
+		"autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMode", "autoHealMaxRestarts", "autoHealRestartWindow",
 	}, params.AutoHeal)
 
 	params.Lifecycle.Append(fx.Hook{

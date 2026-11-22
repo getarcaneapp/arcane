@@ -1590,7 +1590,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 			CurrentContainerID: currentContainerID,
 		}),
 		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) && autoUpdatePolicy.Allows(details.Labels, []string{details.Name}),
-		AutoUpdateOptIn:   autoUpdatePolicy.OptIn,
+		AutoUpdateInclude: autoUpdatePolicy.Include,
 		UpdateInfo:        updates[details.ID],
 		Hardened:          dhi.Info(kit.FromPtr(imageInspect.Config).Labels, time.Now()),
 		ActivityID:        details.ActivityID,
@@ -1626,8 +1626,8 @@ func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref 
 	return strings.TrimPrefix(info.Name, "/"), nil
 }
 
-// SetAutoUpdate turns automatic updates on or off for a container. In opt-in mode it edits the
-// include list, otherwise the exclusion list. Containers whose updater label decides are rejected.
+// SetAutoUpdate turns automatic updates on or off for a container by editing the auto-update
+// container list. Containers whose updater label decides are rejected.
 func (s *ContainerService) SetAutoUpdate(ctx context.Context, opts SetAutoUpdateOptions) error {
 	info, err := s.GetContainerByReference(ctx, opts.Reference)
 	if err != nil {
@@ -1635,14 +1635,19 @@ func (s *ContainerService) SetAutoUpdate(ctx context.Context, opts SetAutoUpdate
 	}
 	containerLabels := kit.FromPtr(info.Config).Labels
 	policy := s.settingsService.AutoUpdatePolicy(ctx)
-	if labels.IsUpdateDisabled(containerLabels) || (policy.OptIn && containerlabel.IsEnabled(containerLabels, labels.LabelUpdater)) {
+	if labels.IsUpdateDisabled(containerLabels) || (policy.Include && containerlabel.IsEnabled(containerLabels, labels.LabelUpdater)) {
 		return common.ErrContainerAutoUpdateLabelControlled
 	}
-	name := strings.TrimPrefix(info.Name, "/")
-	if policy.OptIn {
-		return s.settingsService.SetContainerListed(ctx, settings.ContainerListChange{Key: "autoUpdateIncludedContainers", ContainerName: name, Listed: opts.Enabled})
+	// The list holds the updated containers in include mode and the skipped ones in exclude mode.
+	listed := !opts.Enabled
+	if policy.Include {
+		listed = opts.Enabled
 	}
-	return s.settingsService.SetContainerListed(ctx, settings.ContainerListChange{Key: "autoUpdateExcludedContainers", ContainerName: name, Listed: !opts.Enabled})
+	return s.settingsService.SetContainerListed(ctx, settings.ContainerListChange{
+		Key:           "autoUpdateExcludedContainers",
+		ContainerName: strings.TrimPrefix(info.Name, "/"),
+		Listed:        listed,
+	})
 }
 
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, opts DeleteContainerOptions, user types.Actor) error {
@@ -2004,7 +2009,7 @@ func (s *ContainerService) ListContainersPaginated(
 				UpdateInfo:        item.UpdateInfo,
 				RedeployDisabled:  item.RedeployDisabled,
 				AutoUpdateEnabled: item.AutoUpdateEnabled,
-				AutoUpdateOptIn:   item.AutoUpdateOptIn,
+				AutoUpdateInclude: item.AutoUpdateInclude,
 				Hidden:            item.Hidden,
 				ResourceSample:    samples[item.ID],
 			})
@@ -2301,7 +2306,7 @@ func (s *ContainerService) BuildSummaries(
 				CurrentContainerID: currentContainerID,
 			}),
 			AutoUpdateEnabled: !labels.IsUpdateDisabled(dc.Labels) && autoUpdatePolicy.Allows(dc.Labels, dc.Names),
-			AutoUpdateOptIn:   autoUpdatePolicy.OptIn,
+			AutoUpdateInclude: autoUpdatePolicy.Include,
 			Hidden:            hidden,
 			ResourceSample:    summary.ResourceSample,
 		})

@@ -11,14 +11,14 @@ export type AutoUpdateLabelControl = 'disabled' | 'enabled';
 
 /**
  * Reports whether the updater label decides auto-update for a container. updater=false always does,
- * updater=true only in opt-in mode, which older agents do not report.
+ * updater=true only in include mode, which older agents do not report.
  */
 export function autoUpdateLabelControl(container: {
 	labels?: Record<string, string>;
-	autoUpdateOptIn?: boolean;
+	autoUpdateInclude?: boolean;
 }): AutoUpdateLabelControl | undefined {
 	if (isContainerLabelDisabled(container.labels, AUTO_UPDATE_LABEL)) return 'disabled';
-	if (container.autoUpdateOptIn && isContainerLabelEnabled(container.labels, AUTO_UPDATE_LABEL)) return 'enabled';
+	if (container.autoUpdateInclude && isContainerLabelEnabled(container.labels, AUTO_UPDATE_LABEL)) return 'enabled';
 	return undefined;
 }
 

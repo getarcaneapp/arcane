@@ -1256,18 +1256,18 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 	return query.Where("id = ? AND container_id = ?", record.ID, "").Updates(clearedImageUpdate).Error
 }
 
-// ExcludedContainers lists the containers the updater engine must skip. In opt-in mode these are the
-// IDs of all containers that are neither labelled updater=true nor on the include list.
+// ExcludedContainers lists the containers the updater engine must skip. In include mode these are the
+// IDs of all containers that are neither listed nor labelled updater=true.
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
 	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
-	if !policy.OptIn {
+	if !policy.Include {
 		return kit.Unique(kit.TrimNonEmpty(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ","))), nil
 	}
 	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list containers for auto-update opt-in: %w", err)
+		return nil, fmt.Errorf("list containers for auto-update include mode: %w", err)
 	}
 	var excluded []string
 	for _, summary := range listResult.Items {
@@ -1278,11 +1278,11 @@ func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, erro
 	return excluded, nil
 }
 
-// skipReason rewords the engine's exclusion reason in opt-in mode, where ExcludedContainers
-// holds the containers that are not opted in.
+// skipReason rewords the engine's exclusion reason in include mode, where ExcludedContainers
+// holds the containers that are not included.
 func (s *UpdaterService) skipReason(ctx context.Context, reason string) string {
-	if reason == engineExcludedReason && s.deps.Settings.GetBoolSetting(ctx, "autoUpdateOptIn") {
-		return "not opted in to automatic updates"
+	if reason == engineExcludedReason && s.deps.Settings.AutoUpdatePolicy(ctx).Include {
+		return "not included in automatic updates"
 	}
 	return reason
 }
@@ -1721,7 +1721,7 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 		}
 
 		if !ignoreOptOuts && !policy.Allows(summary.Labels, summary.Names) {
-			slog.DebugContext(ctx, "collectUsedImagesFromContainers: skipping container excluded or not opted in", "containerId", summary.ID, "names", summary.Names)
+			slog.DebugContext(ctx, "collectUsedImagesFromContainers: skipping container that is excluded or not included", "containerId", summary.ID, "names", summary.Names)
 			continue
 		}
 
@@ -1795,8 +1795,8 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
 	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
 	for _, summary := range composeContainers {
-		// The exclusion list has never covered Compose services here; opt-in mode does.
-		skipped := labels.IsUpdateDisabled(summary.Labels) || (policy.OptIn && !policy.Allows(summary.Labels, summary.Names))
+		// The list has never excluded Compose services here, but include mode limits them.
+		skipped := labels.IsUpdateDisabled(summary.Labels) || (policy.Include && !policy.Allows(summary.Labels, summary.Names))
 		if _, isActive := activeProjectNames[docker.ComposeProjectLabel(summary.Labels)]; !isActive || (!ignoreOptOuts && skipped) {
 			continue
 		}

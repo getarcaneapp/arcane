@@ -56,12 +56,12 @@ type (
 		Listed        bool
 	}
 
-	// ContainerOptInPolicy decides which containers an automation acts on.
-	ContainerOptInPolicy struct {
-		Excluded map[string]bool
-		Included map[string]bool
-		Label    string
-		OptIn    bool
+	// ContainerSelection decides which containers an automation acts on. Listed holds the names from
+	// the automation's container list, which excludes them or, with Include, is the list to act on.
+	ContainerSelection struct {
+		Listed  map[string]bool
+		Label   string
+		Include bool
 	}
 
 	snapshot struct {
@@ -102,6 +102,10 @@ const (
 	browserSessionSigningKeySize  = 64
 	minCiphertextBytes            = 28
 	sensitiveSettingsEncryptedKey = "sensitiveSettingsEncrypted"
+
+	// ContainerModeInclude makes an automation act only on listed or labelled containers. Any other
+	// mode value, including the default "exclude", skips the listed containers instead.
+	ContainerModeInclude = "include"
 
 	SourceDefault Source = "default"
 	SourceDB      Source = "db"
@@ -864,34 +868,33 @@ func (s *SettingsService) SetContainerListed(ctx context.Context, change Contain
 }
 
 // AutoUpdatePolicy returns which containers auto-update may install updates for. The
-// updater=false label is checked separately because it also applies outside opt-in mode.
-func (s *SettingsService) AutoUpdatePolicy(ctx context.Context) ContainerOptInPolicy {
-	return ContainerOptInPolicy{
-		Excluded: docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoUpdateExcludedContainers")),
-		Included: docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoUpdateIncludedContainers")),
-		Label:    labels.LabelUpdater,
-		OptIn:    s.GetBoolSetting(ctx, "autoUpdateOptIn"),
+// updater=false label is checked separately because it also applies in exclude mode.
+func (s *SettingsService) AutoUpdatePolicy(ctx context.Context) ContainerSelection {
+	return ContainerSelection{
+		Listed:  docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoUpdateExcludedContainers")),
+		Label:   labels.LabelUpdater,
+		Include: s.GetStringSetting(ctx, "autoUpdateMode") == ContainerModeInclude,
 	}
 }
 
 // AutoHealPolicy returns which containers auto-heal may restart.
-func (s *SettingsService) AutoHealPolicy(ctx context.Context) ContainerOptInPolicy {
-	return ContainerOptInPolicy{
-		Excluded: docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoHealExcludedContainers")),
-		Included: docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoHealIncludedContainers")),
-		Label:    containerlabel.AutoHealLabel,
-		OptIn:    s.GetBoolSetting(ctx, "autoHealOptIn"),
+func (s *SettingsService) AutoHealPolicy(ctx context.Context) ContainerSelection {
+	return ContainerSelection{
+		Listed:  docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoHealExcludedContainers")),
+		Label:   containerlabel.AutoHealLabel,
+		Include: s.GetStringSetting(ctx, "autoHealMode") == ContainerModeInclude,
 	}
 }
 
-// Allows reports whether the policy covers a container. In opt-in mode the container must carry
-// Label=true or be listed in Included. Otherwise every container not listed in Excluded qualifies.
-func (p ContainerOptInPolicy) Allows(containerLabels map[string]string, names []string) bool {
-	// The kit helpers are generic name-set lookups despite their exclusion-oriented names.
-	if p.OptIn {
-		return containerlabel.IsEnabled(containerLabels, p.Label) || docker.ContainerNameExcluded(names, p.Included)
+// Allows reports whether the selection covers a container. In include mode the container must carry
+// Label=true or be listed. In exclude mode every container that is not listed qualifies.
+func (p ContainerSelection) Allows(containerLabels map[string]string, names []string) bool {
+	// ContainerNameExcluded is a generic name-set lookup despite its name.
+	listed := docker.ContainerNameExcluded(names, p.Listed)
+	if p.Include {
+		return listed || containerlabel.IsEnabled(containerLabels, p.Label)
 	}
-	return !docker.ContainerNameExcluded(names, p.Excluded)
+	return !listed
 }
 
 func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {

@@ -1082,7 +1082,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 	}
 }
 
-func TestSetAutoUpdateEditsTheActiveList(t *testing.T) {
+func TestSetAutoUpdateEditsTheContainerList(t *testing.T) {
 	containerLabels := map[string]map[string]string{
 		"plain":     {},
 		"opted-in":  {"com.getarcaneapp.arcane.updater": "true"},
@@ -1109,25 +1109,27 @@ func TestSetAutoUpdateEditsTheActiveList(t *testing.T) {
 		SettingsService: settingsService,
 		DockerService:   newSettingsDockerService(t, newTestDockerClient(t, server)),
 	})
-	list := func(key string) string { return settingsService.GetStringSetting(t.Context(), key) }
+	list := func() string { return settingsService.GetStringSetting(t.Context(), "autoUpdateExcludedContainers") }
+	set := func(ref string, enabled bool) error {
+		return service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: ref, Enabled: enabled})
+	}
 
-	require.NoError(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "plain", Enabled: false}))
-	require.NoError(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "opted-in", Enabled: false}))
-	require.Equal(t, "plain,opted-in", list("autoUpdateExcludedContainers"), "outside opt-in mode the toggle edits the exclusion list")
-	require.ErrorIs(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "opted-out", Enabled: true}), common.ErrConflict, "updater=false decides on its own")
+	require.NoError(t, set("plain", false))
+	require.NoError(t, set("opted-in", false))
+	require.Equal(t, "plain,opted-in", list(), "in exclude mode turning auto-update off lists the container")
+	require.ErrorIs(t, set("opted-out", true), common.ErrConflict, "updater=false decides on its own")
 
-	require.NoError(t, settingsService.SetBoolSetting(t.Context(), "autoUpdateOptIn", true))
-	require.NoError(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "plain", Enabled: true}))
-	require.Equal(t, "plain", list("autoUpdateIncludedContainers"), "in opt-in mode the toggle edits the include list")
-	require.Equal(t, "plain,opted-in", list("autoUpdateExcludedContainers"), "the exclusion list stays untouched in opt-in mode")
-	require.ErrorIs(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "opted-in", Enabled: false}), common.ErrConflict, "updater=true decides in opt-in mode")
-	require.ErrorIs(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "opted-out", Enabled: true}), common.ErrConflict)
-	require.NoError(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "plain", Enabled: false}))
-	require.Empty(t, list("autoUpdateIncludedContainers"))
-	require.Error(t, service.SetAutoUpdate(t.Context(), SetAutoUpdateOptions{Reference: "missing", Enabled: true}))
+	require.NoError(t, settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"autoUpdateMode": "include", "autoUpdateExcludedContainers": ""}))
+	require.NoError(t, set("plain", true))
+	require.Equal(t, "plain", list(), "in include mode turning auto-update on lists the container")
+	require.ErrorIs(t, set("opted-in", false), common.ErrConflict, "updater=true decides in include mode")
+	require.ErrorIs(t, set("opted-out", true), common.ErrConflict)
+	require.NoError(t, set("plain", false))
+	require.Empty(t, list())
+	require.Error(t, set("missing", true))
 }
 
-func TestBuildSummariesHonorsAutoUpdateOptIn(t *testing.T) {
+func TestBuildSummariesHonorsAutoUpdateMode(t *testing.T) {
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    t.Context(),
 		DB:     setupProjectTestDB(t),
@@ -1135,10 +1137,7 @@ func TestBuildSummariesHonorsAutoUpdateOptIn(t *testing.T) {
 		Env:    settings.Env{},
 	})
 	require.NoError(t, err)
-	require.NoError(t, settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{
-		"autoUpdateExcludedContainers": "excluded",
-		"autoUpdateIncludedContainers": "included,opted-out",
-	}))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "autoUpdateExcludedContainers", "listed,opted-out"))
 	service := NewContainerService(ContainerServiceParams{
 		SettingsService: settingsService,
 	})
@@ -1146,26 +1145,25 @@ func TestBuildSummariesHonorsAutoUpdateOptIn(t *testing.T) {
 		{ID: "plain", Names: []string{"/plain"}, Image: "app:1"},
 		{ID: "opted-in", Names: []string{"/opted-in"}, Image: "app:1", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "true"}},
 		{ID: "opted-out", Names: []string{"/opted-out"}, Image: "app:1", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "false"}},
-		{ID: "excluded", Names: []string{"/excluded"}, Image: "app:1", Labels: map[string]string{"com.getarcaneapp.arcane.updater": "true"}},
-		{ID: "included", Names: []string{"/included"}, Image: "app:1"},
+		{ID: "listed", Names: []string{"/listed"}, Image: "app:1"},
 	}
-	enabled := func() map[string]bool {
+	enabled := func(include bool) map[string]bool {
 		result := map[string]bool{}
 		for _, item := range service.BuildSummaries(t.Context(), containers, nil, "", nil) {
 			result[item.ID] = item.AutoUpdateEnabled
-			require.Equal(t, settingsService.GetBoolSetting(t.Context(), "autoUpdateOptIn"), item.AutoUpdateOptIn)
+			require.Equal(t, include, item.AutoUpdateInclude)
 		}
 		return result
 	}
 
-	require.Equal(t, map[string]bool{"plain": true, "opted-in": true, "opted-out": false, "excluded": false, "included": true}, enabled(), "outside opt-in mode the exclusion list applies")
+	require.Equal(t, map[string]bool{"plain": true, "opted-in": true, "opted-out": false, "listed": false}, enabled(false), "exclude mode skips listed containers")
 
-	require.NoError(t, settingsService.SetBoolSetting(t.Context(), "autoUpdateOptIn", true))
+	require.NoError(t, settingsService.UpdateSetting(t.Context(), "autoUpdateMode", "include"))
 	require.Equal(
 		t,
-		map[string]bool{"plain": false, "opted-in": true, "opted-out": false, "excluded": true, "included": true},
-		enabled(),
-		"opt-in mode keeps labelled and included containers, ignores the exclusion list, and updater=false still wins",
+		map[string]bool{"plain": false, "opted-in": true, "opted-out": false, "listed": true},
+		enabled(true),
+		"include mode keeps listed and labelled containers, and updater=false still wins",
 	)
 }
 

@@ -4777,14 +4777,17 @@
   "volume_in_use_elsewhere": "Mounted by a running container that is not stopped during the export, so the copy may be inconsistent.",
   "file_too_large": "The file is too large",
   "too_many_files": "Too many files",
-  "auto_update_opt_in_label": "Only Update Selected Containers",
-  "auto_update_opt_in_description": "Arcane only updates the containers you include below or that have the label {label}. All other containers are still checked for updates, and you still get notified about them.",
-  "auto_heal_opt_in_label": "Only Heal Selected Containers",
-  "auto_heal_opt_in_description": "Arcane only restarts unhealthy containers that you include below or that have the label {label}.",
   "included_containers": "Included Containers",
   "auto_update_include_description": "Choose the containers Arcane should update automatically.",
   "auto_heal_include_description": "Choose the containers Arcane should restart automatically when they become unhealthy.",
   "included_by_label": "Included by label",
   "auto_update_enabled_by_label": "Turned on by the label {label}. Change the label to turn it off.",
-  "auto_update_include_dependents_hint": "Containers started with network_mode: container:... are only restarted after the container they depend on is updated when they are included too. Compose services that use network_mode: service:... are recreated with the updated service either way."
+  "auto_update_include_dependents_hint": "Containers started with network_mode: container:... are only restarted after the container they depend on is updated when they are included too. Compose services that use network_mode: service:... are recreated with the updated service either way.",
+  "auto_update_mode_label": "Containers to Update",
+  "auto_update_mode_description": "Choose whether the list below names the containers to skip or the only containers to update. In include mode, containers with the label {label} are updated as well. All containers are still checked for updates either way.",
+  "auto_heal_mode_label": "Containers to Heal",
+  "auto_heal_mode_description": "Choose whether the list below names the containers to skip or the only containers to restart. In include mode, containers with the label {label} are restarted as well.",
+  "container_mode_exclude": "All except the listed ones",
+  "container_mode_include": "Only the listed ones",
+  "container_list_cleared_hint": "The list was cleared because the new mode gives it the opposite meaning. Switch back to restore it."
 }

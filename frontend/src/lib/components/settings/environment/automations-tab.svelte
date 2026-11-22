@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import JobScheduleDialog from '#lib/components/job-card/job-schedule-dialog.svelte';
 	import MixedValuesPopover from '#lib/components/settings/mixed-values-popover.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
@@ -40,11 +41,9 @@
 		'pollingInterval' | 'autoUpdateInterval' | 'scheduledPruneInterval' | 'vulnerabilityScanInterval' | 'autoHealInterval'
 	>;
 
-	type ContainerListKey =
-		| 'autoUpdateExcludedContainers'
-		| 'autoUpdateIncludedContainers'
-		| 'autoHealExcludedContainers'
-		| 'autoHealIncludedContainers';
+	type ContainerListKey = 'autoUpdateExcludedContainers' | 'autoHealExcludedContainers';
+	type ContainerModeKey = 'autoUpdateMode' | 'autoHealMode';
+	type ContainerMode = 'exclude' | 'include';
 
 	type LabelState = {
 		hint: string;
@@ -102,29 +101,32 @@
 	let scheduleTarget = $state<{ key: ScheduleKey; name: string; value?: string } | null>(null);
 	let scheduleOpen = $state(false);
 
-	// Agents that predate the opt-in settings do not report them, so their inputs can be missing.
-	const autoUpdateOptIn = $derived<FormInput<boolean> | undefined>(formInputs.autoUpdateOptIn);
-	const autoHealOptIn = $derived<FormInput<boolean> | undefined>(formInputs.autoHealOptIn);
-	const autoUpdateIncludeMode = $derived(!!autoUpdateOptIn?.value && 'autoUpdateIncludedContainers' in formInputs);
-	const autoHealIncludeMode = $derived(!!autoHealOptIn?.value && 'autoHealIncludedContainers' in formInputs);
-	// Opt-in mode turns the exclusion list into an include list.
-	const autoUpdateListKey = $derived<ContainerListKey>(
-		autoUpdateIncludeMode ? 'autoUpdateIncludedContainers' : 'autoUpdateExcludedContainers'
-	);
-	const autoHealListKey = $derived<ContainerListKey>(
-		autoHealIncludeMode ? 'autoHealIncludedContainers' : 'autoHealExcludedContainers'
-	);
+	// Agents that predate the mode settings do not report them, so their inputs can be missing.
+	const autoUpdateMode = $derived<FormInput<ContainerMode | null> | undefined>(formInputs.autoUpdateMode);
+	const autoHealMode = $derived<FormInput<ContainerMode | null> | undefined>(formInputs.autoHealMode);
+	const autoUpdateIncludeMode = $derived(autoUpdateMode?.value === 'include');
+	const autoHealIncludeMode = $derived(autoHealMode?.value === 'include');
+	const containerModeOptions = [
+		{ value: 'exclude', label: m.container_mode_exclude() },
+		{ value: 'include', label: m.container_mode_include() }
+	];
+	// Switching the mode gives a list the opposite meaning, so it is cleared and restored if the switch is undone.
+	let clearedLists = $state<Partial<Record<ContainerListKey, string>>>({});
 	// Standalone containers that are not included are not restarted when a container they depend on is updated.
 	const autoUpdateListHelp = $derived(
 		[
 			m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` }),
-			autoUpdateIncludeMode ? m.auto_update_include_dependents_hint() : ''
+			autoUpdateIncludeMode ? m.auto_update_include_dependents_hint() : '',
+			clearedLists.autoUpdateExcludedContainers === undefined ? '' : m.container_list_cleared_hint()
 		]
 			.filter(Boolean)
 			.join(' ')
 	);
-	const autoUpdateListed = $derived(parseExcludedContainerSet(formInputs[autoUpdateListKey].value));
-	const autoHealListed = $derived(parseExcludedContainerSet(formInputs[autoHealListKey].value));
+	const autoHealListHelp = $derived(
+		clearedLists.autoHealExcludedContainers === undefined ? undefined : m.container_list_cleared_hint()
+	);
+	const autoUpdateListed = $derived(parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers.value));
+	const autoHealListed = $derived(parseExcludedContainerSet(formInputs.autoHealExcludedContainers.value));
 
 	function containerName(container: ContainerSummary): string {
 		return container.names[0] || container.id.substring(0, 12);
@@ -158,6 +160,21 @@
 			hint: labelState?.hint,
 			selected: listed.has(name) || !!labelState?.selected
 		};
+	}
+
+	function changeMode(modeKey: ContainerModeKey, listKey: ContainerListKey, mode: ContainerMode) {
+		const modeInput = formInputs[modeKey];
+		const listInput = formInputs[listKey];
+		if (modeInput.value === mode) return;
+		modeInput.value = mode;
+		const cleared = clearedLists[listKey];
+		if (cleared !== undefined) {
+			listInput.value = cleared;
+			clearedLists = { ...clearedLists, [listKey]: undefined };
+		} else if (listInput.value.trim()) {
+			clearedLists = { ...clearedLists, [listKey]: listInput.value };
+			listInput.value = '';
+		}
 	}
 
 	function toggleListed(key: ContainerListKey, current: ReadonlySet<string>, name: string) {
@@ -307,21 +324,25 @@
 {/snippet}
 
 {#snippet autoUpdateOptions()}
-	{#if autoUpdateOptIn}
+	{#if autoUpdateMode}
 		<SettingsRow
-			for="auto-update-opt-in"
-			label={m.auto_update_opt_in_label()}
-			description={m.auto_update_opt_in_description({ label: `${AUTO_UPDATE_LABEL}=true` })}
-			layout="switch"
+			for="auto-update-mode"
+			label={m.auto_update_mode_label()}
+			description={m.auto_update_mode_description({ label: `${AUTO_UPDATE_LABEL}=true` })}
 			class="p-0"
-			lock={lock('autoUpdateOptIn')}
-			mixed={mixed('autoUpdateOptIn')}
+			lock={lock('autoUpdateMode')}
+			mixed={mixed('autoUpdateMode')}
 		>
 			{#snippet children({ describedBy })}
-				<Switch
-					id="auto-update-opt-in"
-					bind:checked={autoUpdateOptIn.value}
-					data-mixed={!!mixed('autoUpdateOptIn') || undefined}
+				<SelectWithLabel
+					id="auto-update-mode"
+					name="autoUpdateMode"
+					hideLabel
+					value={autoUpdateMode.value ?? ''}
+					label={m.auto_update_mode_label()}
+					options={containerModeOptions}
+					onValueChange={(v) => changeMode('autoUpdateMode', 'autoUpdateExcludedContainers', v as ContainerMode)}
+					placeholder={mixed('autoUpdateMode') ? m.mixed() : undefined}
 					aria-describedby={describedBy}
 				/>
 			{/snippet}
@@ -357,8 +378,8 @@
 		helpText={autoUpdateListHelp}
 		layout="wide"
 		class="p-0"
-		lock={lock(autoUpdateListKey)}
-		mixed={mixed(autoUpdateListKey)}
+		lock={lock('autoUpdateExcludedContainers')}
+		mixed={mixed('autoUpdateExcludedContainers')}
 	>
 		{#snippet children({ describedBy })}
 			<div class="space-y-2">
@@ -373,7 +394,7 @@
 					term: updateSearchTerm,
 					idPrefix: 'container-',
 					item: (container) => containerItem(container, autoUpdateListed, autoUpdateLabelState(container)),
-					onToggle: (name) => toggleListed(autoUpdateListKey, autoUpdateListed, name)
+					onToggle: (name) => toggleListed('autoUpdateExcludedContainers', autoUpdateListed, name)
 				})}
 			</div>
 		{/snippet}
@@ -381,21 +402,25 @@
 {/snippet}
 
 {#snippet autoHealOptions()}
-	{#if autoHealOptIn}
+	{#if autoHealMode}
 		<SettingsRow
-			for="auto-heal-opt-in"
-			label={m.auto_heal_opt_in_label()}
-			description={m.auto_heal_opt_in_description({ label: `${AUTO_HEAL_LABEL}=true` })}
-			layout="switch"
+			for="auto-heal-mode"
+			label={m.auto_heal_mode_label()}
+			description={m.auto_heal_mode_description({ label: `${AUTO_HEAL_LABEL}=true` })}
 			class="p-0"
-			lock={lock('autoHealOptIn')}
-			mixed={mixed('autoHealOptIn')}
+			lock={lock('autoHealMode')}
+			mixed={mixed('autoHealMode')}
 		>
 			{#snippet children({ describedBy })}
-				<Switch
-					id="auto-heal-opt-in"
-					bind:checked={autoHealOptIn.value}
-					data-mixed={!!mixed('autoHealOptIn') || undefined}
+				<SelectWithLabel
+					id="auto-heal-mode"
+					name="autoHealMode"
+					hideLabel
+					value={autoHealMode.value ?? ''}
+					label={m.auto_heal_mode_label()}
+					options={containerModeOptions}
+					onValueChange={(v) => changeMode('autoHealMode', 'autoHealExcludedContainers', v as ContainerMode)}
+					placeholder={mixed('autoHealMode') ? m.mixed() : undefined}
 					aria-describedby={describedBy}
 				/>
 			{/snippet}
@@ -449,10 +474,11 @@
 		for="auto-heal-container-search"
 		label={autoHealIncludeMode ? m.included_containers() : m.excluded_containers()}
 		description={autoHealIncludeMode ? m.auto_heal_include_description() : m.auto_heal_exclude_description()}
+		helpText={autoHealListHelp}
 		layout="wide"
 		class="p-0"
-		lock={lock(autoHealListKey)}
-		mixed={mixed(autoHealListKey)}
+		lock={lock('autoHealExcludedContainers')}
+		mixed={mixed('autoHealExcludedContainers')}
 	>
 		{#snippet children({ describedBy })}
 			<div class="space-y-2">
@@ -467,7 +493,7 @@
 					term: autoHealSearchTerm,
 					idPrefix: 'auto-heal-container-',
 					item: (container) => containerItem(container, autoHealListed, autoHealLabelState(container)),
-					onToggle: (name) => toggleListed(autoHealListKey, autoHealListed, name)
+					onToggle: (name) => toggleListed('autoHealExcludedContainers', autoHealListed, name)
 				})}
 			</div>
 		{/snippet}

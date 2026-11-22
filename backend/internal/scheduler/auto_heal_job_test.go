@@ -43,35 +43,34 @@ func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
 	}
 
 	// Hostname-based detection yields the short 12-char ID.
-	candidates := job.filterCandidates(containers, settings.ContainerOptInPolicy{}, selfFullID[:12])
+	candidates := job.filterCandidates(containers, settings.ContainerSelection{}, selfFullID[:12])
 	require.Len(t, candidates, 1)
 	require.Equal(t, "/other", candidates[0].Names[0])
 
 	// cgroup/mountinfo-based detection yields the full ID.
-	candidates = job.filterCandidates(containers, settings.ContainerOptInPolicy{}, selfFullID)
+	candidates = job.filterCandidates(containers, settings.ContainerSelection{}, selfFullID)
 	require.Len(t, candidates, 1)
 	require.Equal(t, "/other", candidates[0].Names[0])
 
 	// Outside Docker no self ID is detected and the guard is a no-op.
-	candidates = job.filterCandidates(containers, settings.ContainerOptInPolicy{}, "")
+	candidates = job.filterCandidates(containers, settings.ContainerSelection{}, "")
 	require.Len(t, candidates, 2)
 }
 
-func TestAutoHeal_FilterCandidates_HonorsOptIn(t *testing.T) {
+func TestAutoHeal_FilterCandidates_HonorsMode(t *testing.T) {
 	job := newTestAutoHealJob()
 	containers := []container.Summary{
 		{ID: "plain", Names: []string{"/plain"}},
-		{ID: "opted-in", Names: []string{"/opted-in"}, Labels: map[string]string{containerlabel.AutoHealLabel: "true"}},
-		{ID: "opted-out", Names: []string{"/opted-out"}, Labels: map[string]string{containerlabel.AutoHealLabel: "false"}},
-		{ID: "excluded", Names: []string{"/excluded"}, Labels: map[string]string{containerlabel.AutoHealLabel: "true"}},
-		{ID: "included", Names: []string{"/included"}},
+		{ID: "labelled", Names: []string{"/labelled"}, Labels: map[string]string{containerlabel.AutoHealLabel: "true"}},
+		{ID: "label-false", Names: []string{"/label-false"}, Labels: map[string]string{containerlabel.AutoHealLabel: "false"}},
+		{ID: "listed", Names: []string{"/listed"}},
+		{ID: "listed-labelled", Names: []string{"/listed-labelled"}, Labels: map[string]string{containerlabel.AutoHealLabel: "true"}},
 	}
-	policy := func(optIn bool) settings.ContainerOptInPolicy {
-		return settings.ContainerOptInPolicy{
-			Excluded: map[string]bool{"excluded": true},
-			Included: map[string]bool{"included": true},
-			Label:    containerlabel.AutoHealLabel,
-			OptIn:    optIn,
+	selection := func(include bool) settings.ContainerSelection {
+		return settings.ContainerSelection{
+			Listed:  map[string]bool{"listed": true, "listed-labelled": true},
+			Label:   containerlabel.AutoHealLabel,
+			Include: include,
 		}
 	}
 	ids := func(candidates []container.Summary) []string {
@@ -82,16 +81,11 @@ func TestAutoHeal_FilterCandidates_HonorsOptIn(t *testing.T) {
 		return result
 	}
 
-	require.Equal(t, []string{"plain", "opted-in", "opted-out", "included"}, ids(job.filterCandidates(containers, policy(false), "")), "without opt-in mode only the exclusion list applies")
-	require.Equal(
-		t,
-		[]string{"opted-in", "excluded", "included"},
-		ids(job.filterCandidates(containers, policy(true), "")),
-		"opt-in mode keeps labelled and included containers and ignores the exclusion list",
-	)
+	require.Equal(t, []string{"plain", "labelled", "label-false"}, ids(job.filterCandidates(containers, selection(false), "")), "exclude mode skips listed containers")
+	require.Equal(t, []string{"labelled", "listed", "listed-labelled"}, ids(job.filterCandidates(containers, selection(true), "")), "include mode keeps listed and labelled containers")
 }
 
-func TestAutoHeal_Run_HonorsOptInSetting(t *testing.T) {
+func TestAutoHeal_Run_HonorsModeSetting(t *testing.T) {
 	ctx := t.Context()
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -100,8 +94,8 @@ func TestAutoHeal_Run_HonorsOptInSetting(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, &database.DB{DB: db})
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
-	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealOptIn", true))
-	require.NoError(t, settingsSvc.UpdateSetting(ctx, "autoHealIncludedContainers", "included"))
+	require.NoError(t, settingsSvc.UpdateSetting(ctx, "autoHealMode", "include"))
+	require.NoError(t, settingsSvc.UpdateSetting(ctx, "autoHealExcludedContainers", "included"))
 
 	runtime := francistest.New(t)
 	gate := runs.NewAdmission(runtime.Service(), t.Name())

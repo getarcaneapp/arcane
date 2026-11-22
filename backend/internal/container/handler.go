@@ -590,7 +590,7 @@ func (h *ContainerHandler) recreatedContainerOutput(ctx context.Context, contain
 				IconDarkURL:       details.IconDarkURL,
 				RedeployDisabled:  details.RedeployDisabled,
 				AutoUpdateEnabled: details.AutoUpdateEnabled,
-				AutoUpdateOptIn:   details.AutoUpdateOptIn,
+				AutoUpdateInclude: details.AutoUpdateInclude,
 				UpdateInfo:        details.UpdateInfo,
 				Hardened:          details.Hardened,
 				ActivityID:        trimmedActivityID,

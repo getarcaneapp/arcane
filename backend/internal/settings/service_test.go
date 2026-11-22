@@ -845,46 +845,41 @@ func TestSettingsServiceActorSerializesContainerExclusionUpdates(t *testing.T) {
 	require.Equal(t, "worker", svc.GetStringSetting(ctx, "autoUpdateExcludedContainers"))
 }
 
-func TestSettingsServiceContainerOptInPolicies(t *testing.T) {
+func TestSettingsServiceContainerSelections(t *testing.T) {
 	ctx := t.Context()
 	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{
-		"autoUpdateExcludedContainers": "excluded",
-		"autoUpdateIncludedContainers": "included",
-		"autoHealExcludedContainers":   "excluded",
-		"autoHealIncludedContainers":   "included",
+		"autoUpdateExcludedContainers": "listed",
+		"autoHealExcludedContainers":   "listed",
 	}))
 	updaterLabel := map[string]string{"com.getarcaneapp.arcane.updater": "true"}
 	healLabel := map[string]string{"com.getarcaneapp.arcane.auto-heal": "true"}
 
-	for name, policy := range map[string]func() ContainerOptInPolicy{
-		"auto-update": func() ContainerOptInPolicy { return svc.AutoUpdatePolicy(ctx) },
-		"auto-heal":   func() ContainerOptInPolicy { return svc.AutoHealPolicy(ctx) },
+	for name, selection := range map[string]func() ContainerSelection{
+		"auto-update": func() ContainerSelection { return svc.AutoUpdatePolicy(ctx) },
+		"auto-heal":   func() ContainerSelection { return svc.AutoHealPolicy(ctx) },
 	} {
-		off := policy()
-		require.False(t, off.OptIn, name)
-		require.True(t, off.Allows(nil, []string{"/plain"}), "%s: without opt-in every container qualifies", name)
-		require.True(t, off.Allows(nil, []string{"/included"}), name)
-		require.False(t, off.Allows(updaterLabel, []string{"/excluded"}), "%s: the exclusion list wins outside opt-in mode", name)
+		exclude := selection()
+		require.False(t, exclude.Include, "%s: exclude mode is the default", name)
+		require.True(t, exclude.Allows(nil, []string{"/plain"}), "%s: exclude mode keeps unlisted containers", name)
+		require.False(t, exclude.Allows(updaterLabel, []string{"/listed"}), "%s: exclude mode skips listed containers despite labels", name)
 	}
 
-	require.NoError(t, svc.SetBoolSetting(ctx, "autoUpdateOptIn", true))
-	require.NoError(t, svc.SetBoolSetting(ctx, "autoHealOptIn", true))
+	require.NoError(t, svc.UpdateSettings(ctx, types.SettingsUpdate{"autoUpdateMode": ContainerModeInclude, "autoHealMode": ContainerModeInclude}))
 	for name, tc := range map[string]struct {
-		label  map[string]string
-		other  map[string]string
-		policy ContainerOptInPolicy
+		label     map[string]string
+		other     map[string]string
+		selection ContainerSelection
 	}{
-		"auto-update": {policy: svc.AutoUpdatePolicy(ctx), label: updaterLabel, other: healLabel},
-		"auto-heal":   {policy: svc.AutoHealPolicy(ctx), label: healLabel, other: updaterLabel},
+		"auto-update": {selection: svc.AutoUpdatePolicy(ctx), label: updaterLabel, other: healLabel},
+		"auto-heal":   {selection: svc.AutoHealPolicy(ctx), label: healLabel, other: updaterLabel},
 	} {
-		require.True(t, tc.policy.OptIn, name)
-		require.False(t, tc.policy.Allows(nil, []string{"/plain"}), "%s: opt-in mode skips unlisted containers", name)
-		require.True(t, tc.policy.Allows(nil, []string{"/included"}), "%s: the include list opts a container in", name)
-		require.True(t, tc.policy.Allows(tc.label, []string{"/plain"}), "%s: the label opts a container in", name)
-		require.True(t, tc.policy.Allows(tc.label, []string{"/excluded"}), "%s: the exclusion list is ignored in opt-in mode", name)
-		require.False(t, tc.policy.Allows(tc.other, []string{"/plain"}), "%s: the other automation's label does not opt in", name)
+		require.True(t, tc.selection.Include, name)
+		require.False(t, tc.selection.Allows(nil, []string{"/plain"}), "%s: include mode skips unlisted containers", name)
+		require.True(t, tc.selection.Allows(nil, []string{"/listed"}), "%s: include mode keeps listed containers", name)
+		require.True(t, tc.selection.Allows(tc.label, []string{"/plain"}), "%s: the label includes a container", name)
+		require.False(t, tc.selection.Allows(tc.other, []string{"/plain"}), "%s: the other automation's label does not include", name)
 	}
 }
 

@@ -203,7 +203,7 @@ func (j *AutoHealJob) selfContainerID(ctx context.Context) string {
 }
 
 // filterCandidates keeps the containers auto-heal may restart under policy.
-func (j *AutoHealJob) filterCandidates(containers []container.Summary, policy settings.ContainerOptInPolicy, selfID string) []container.Summary {
+func (j *AutoHealJob) filterCandidates(containers []container.Summary, policy settings.ContainerSelection, selfID string) []container.Summary {
 	candidates := make([]container.Summary, 0, len(containers))
 	for _, c := range containers {
 		if selfID != "" && strings.HasPrefix(strings.ToLower(c.ID), selfID) {

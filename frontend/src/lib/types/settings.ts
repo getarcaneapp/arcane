@@ -15,9 +15,8 @@ export type Settings = {
 	autoUpdate: boolean;
 	autoUpdateInterval: number;
 	autoUpdateDelay?: number;
-	autoUpdateOptIn: boolean;
+	autoUpdateMode?: 'exclude' | 'include';
 	autoUpdateExcludedContainers?: string;
-	autoUpdateIncludedContainers?: string;
 	pollingEnabled: boolean;
 	imageEventWatcherEnabled: boolean;
 	pollingInterval: number;
@@ -51,9 +50,8 @@ export type Settings = {
 	featureSwarmEnabled?: boolean;
 	vulnerabilityScanInterval?: number;
 	autoHealEnabled?: boolean;
-	autoHealOptIn?: boolean;
+	autoHealMode?: 'exclude' | 'include';
 	autoHealExcludedContainers?: string;
-	autoHealIncludedContainers?: string;
 	autoHealMaxRestarts?: number;
 	autoHealRestartWindow?: number;
 	volumeHelperIdleTimeout?: number;
