@@ -42,13 +42,20 @@ type (
 
 	// tagRegistry shares listings and digests per scan so replicas cost one request and scan credentials skip service caches.
 	tagRegistry struct {
-		service     *registryInternal.ContainerRegistryService
-		docker      *docker.DockerClientService
-		settings    *settings.SettingsService
-		limiter     *registry.RegistryRateLimiter
-		tags        *scanRegistryMemo[[]string]
-		digests     *scanRegistryMemo[string]
-		credentials []types.ContainerRegistryCredential
+		service      *registryInternal.ContainerRegistryService
+		docker       *docker.DockerClientService
+		dockerClient *scanDockerClient
+		settings     *settings.SettingsService
+		limiter      *registry.RegistryRateLimiter
+		tags         *scanRegistryMemo[[]string]
+		digests      *scanRegistryMemo[string]
+		credentials  []types.ContainerRegistryCredential
+	}
+
+	// scanDockerClient shares one timeout-bounded Docker client across a tag scan.
+	scanDockerClient struct {
+		client *client.Client
+		mu     sync.Mutex
 	}
 
 	// scanRegistryMemo memoizes successful lookups for one scan and coalesces concurrent misses per key.
@@ -90,11 +97,12 @@ func (s *Service) Check(
 ) (map[string]*types.ImageUpdateResponse, error) {
 	// Read-only: only the update-check label opts a container out, so no Settings provider is wired.
 	adapter := tagRegistry{
-		service:     s.registry,
-		credentials: credentials,
-		docker:      s.docker,
-		settings:    s.settings,
-		limiter:     s.limiter,
+		service:      s.registry,
+		credentials:  credentials,
+		docker:       s.docker,
+		dockerClient: &scanDockerClient{},
+		settings:     s.settings,
+		limiter:      s.limiter,
 		tags: &scanRegistryMemo[[]string]{
 			values:      map[string][]string{},
 			failures:    map[string]error{},
@@ -106,6 +114,7 @@ func (s *Service) Check(
 			keepFailure: func(error) bool { return false },
 		},
 	}
+	defer adapter.dockerClient.close(ctx)
 	engine, err := updater.New(updater.Config{
 		RegistryTagLister:      adapter,
 		RegistryDigestResolver: adapter,
@@ -309,7 +318,42 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 }
 
 func (r tagRegistry) DockerClient(ctx context.Context) (*client.Client, error) {
-	return r.docker.GetClient(ctx)
+	r.dockerClient.mu.Lock()
+	defer r.dockerClient.mu.Unlock()
+	if r.dockerClient.client != nil {
+		return r.dockerClient.client, nil
+	}
+	base, err := r.docker.GetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	timeout := timeouts.GetDuration(r.settings.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	opts := []client.Opt{
+		client.WithHost(base.DaemonHost()),
+		client.WithTimeout(timeout),
+	}
+	if version := base.ClientVersion(); version != "" {
+		opts = append(opts, client.WithAPIVersion(version))
+	}
+	cli, err := client.New(opts...)
+	if err != nil {
+		return nil, err
+	}
+	r.dockerClient.client = cli
+	return cli, nil
+}
+
+func (c *scanDockerClient) close(ctx context.Context) {
+	c.mu.Lock()
+	cli := c.client
+	c.client = nil
+	c.mu.Unlock()
+	if cli == nil {
+		return
+	}
+	if err := cli.Close(); err != nil {
+		slog.WarnContext(ctx, "close tag check docker client", "error", err)
+	}
 }
 
 // AttachContainerUpdates binds container results to image results by normalized reference, snapshotting the image result first.
