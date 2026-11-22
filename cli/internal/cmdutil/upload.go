@@ -111,7 +111,11 @@ func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID s
 }
 
 func DownloadUploadSession(ctx context.Context, c *client.Client, session types.UploadSession, opts DownloadOptions) (written int64, err error) {
-	defer AbortUploadSession(ctx, c, session.Kind, session.ID)
+	defer func() {
+		if err != nil {
+			AbortUploadSession(ctx, c, session.Kind, session.ID)
+		}
+	}()
 
 	resp, err := c.Request(ctx, http.MethodGet, clitypes.UploadSessionDownload(c.EnvID(), session.Kind, session.ID), nil)
 	if err != nil {

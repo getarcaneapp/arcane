@@ -21,16 +21,15 @@ const (
 	JobRunLabel = "com.docker.job.id"
 )
 
-// IsServiceContainer reports whether a container runs a Compose service, not a hook, job run or one-off.
-func IsServiceContainer(labels map[string]string) bool {
-	return docker.ComposeServiceLabel(labels) != "" && labels[api.HookLabel] == "" && labels[JobRunLabel] == "" && labels[api.OneoffLabel] != "True"
-}
-
 // ContainerServices returns the Compose service names of the service containers, de-duplicated in first-seen order.
 func ContainerServices(containers []container.Summary) []string {
 	var services []string
 	for _, c := range containers {
-		if service := docker.ComposeServiceLabel(c.Labels); IsServiceContainer(c.Labels) && !slices.Contains(services, service) {
+		service := docker.ComposeServiceLabel(c.Labels)
+		if service == "" || c.Labels[api.HookLabel] != "" || c.Labels[JobRunLabel] != "" || c.Labels[api.OneoffLabel] == "True" {
+			continue
+		}
+		if !slices.Contains(services, service) {
 			services = append(services, service)
 		}
 	}

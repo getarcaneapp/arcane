@@ -10,7 +10,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmTasksTable from './components/tasks-table.svelte';
@@ -22,14 +22,9 @@
 	const swarmQuery = createQuery(() => ({ ...swarmEnvironmentsQuery('swarm:read'), enabled: !nodeId }));
 	const swarm = $derived(nodeId ? data.swarm : (swarmQuery.data ?? data.swarm));
 
-	const tasksQuery = createQuery(() => {
-		const scope = swarm.scope;
-		return {
-			...swarmTaskListQuery(swarm, nodeId, pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const tasksQuery = createQuery(() =>
+		scopedQueryOptions(swarm.scope, swarmTaskListQuery(swarm, nodeId, pageState.requestOptions))
+	);
 	const tasks = $derived(tasksQuery.data?.value ?? data.tasks);
 	const isRefreshing = $derived(tasksQuery.isFetching && !tasksQuery.isPending);
 

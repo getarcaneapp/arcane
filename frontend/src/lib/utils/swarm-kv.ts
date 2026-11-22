@@ -1,6 +1,13 @@
+import type { QueryClient } from '@tanstack/svelte-query';
+
 import { LockIcon, TemplateIcon, type IconType } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
+import { swarmEnvironmentsQuery, swarmKvListQuery } from '#lib/query/swarm.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SwarmKvKind } from '#lib/types/ui/swarm.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
+import { resolveInitialListPageRequest } from '#lib/utils/tables.js';
+import { tryCatch } from '#lib/utils/try-catch.js';
 
 export type SwarmKvResource = {
 	kind: SwarmKvKind;
@@ -95,4 +102,28 @@ export function encodeTextToBase64(value: string): string {
 		binary += String.fromCharCode(byte);
 	}
 	return btoa(binary);
+}
+
+export async function loadSwarmKvPage(parent: () => Promise<{ queryClient: QueryClient }>, kind: SwarmKvKind) {
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready]);
+	const resource = swarmKvResources[kind];
+	const requestOptions = resolveInitialListPageRequest(resource.persistKey, {
+		column: 'name',
+		direction: 'asc'
+	});
+
+	const swarm = await tryCatch(queryClient.query(swarmEnvironmentsQuery(resource.permissions.list)));
+	if (swarm.error !== null) {
+		throwPageLoadError(swarm.error, m.common_load_failed({ resource: resource.title() }));
+	}
+	const items = await tryCatch(queryClient.query(swarmKvListQuery(swarm.data, resource.kind, requestOptions)));
+	if (items.error !== null) {
+		throwPageLoadError(items.error, m.common_load_failed({ resource: resource.title() }));
+	}
+
+	return {
+		swarm: swarm.data,
+		items: items.data,
+		requestOptions
+	};
 }

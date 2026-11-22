@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	v118SQLiteUp = `
+	v119SQLiteUp = `
 UPDATE roles
 SET permissions = json_insert(roles.permissions, '$[#]', 'projects:export')
 WHERE EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value = 'projects:create')
@@ -27,7 +27,7 @@ WHERE source.permission = 'projects:create'
             AND COALESCE(existing.environment_id, '') = COALESCE(source.environment_id, '')
     );
 `
-	v118PostgresUp = `
+	v119PostgresUp = `
 UPDATE roles SET permissions = permissions || '["projects:export"]'::jsonb
 WHERE permissions @> '["projects:create"]'::jsonb AND NOT permissions @> '["projects:export"]'::jsonb;
 INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, created_at)
@@ -41,7 +41,7 @@ WHERE source.permission = 'projects:create'
             AND COALESCE(existing.environment_id, '') = COALESCE(source.environment_id, '')
     );
 `
-	v118SQLiteDown = `
+	v119SQLiteDown = `
 UPDATE roles
 SET permissions = (
     SELECT json_group_array(value) FROM json_each(roles.permissions) WHERE value <> 'projects:export'
@@ -49,12 +49,12 @@ SET permissions = (
 WHERE EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value = 'projects:export');
 DELETE FROM api_key_permissions WHERE permission = 'projects:export';
 `
-	v118PostgresDown = `
+	v119PostgresDown = `
 UPDATE roles SET permissions = permissions - 'projects:export' WHERE permissions @> '["projects:export"]'::jsonb;
 DELETE FROM api_key_permissions WHERE permission = 'projects:export';
 `
 )
 
 func init() {
-	goose.AddMigrationContext(run(v118SQLiteUp, v118PostgresUp), run(v118SQLiteDown, v118PostgresDown))
+	goose.AddMigrationContext(run(v119SQLiteUp, v119PostgresUp), run(v119SQLiteDown, v119PostgresDown))
 }

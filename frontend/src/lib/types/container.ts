@@ -213,10 +213,6 @@ export interface ContainerResourceSample {
 	pids: number;
 }
 
-export interface ContainerResourceSampleSubscription {
-	containerIds: string[];
-}
-
 export interface ContainerResourceSampleBatch {
 	samples: Record<string, ContainerResourceSample>;
 	error?: string;

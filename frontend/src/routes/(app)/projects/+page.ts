@@ -42,5 +42,5 @@ export const load: PageLoad = async ({ parent, url }) => {
 		throwPageLoadError(projects.error, 'Failed to load projects');
 	}
 
-	return { scope, projects: projects.data, projectRequestOptions, showArchived };
+	return { projectRequestOptions, showArchived };
 };

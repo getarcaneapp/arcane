@@ -404,24 +404,6 @@ export interface SwarmStackInspect {
 	updatedAt: string;
 }
 
-export interface SwarmStackRenderConfigRequest {
-	name: string;
-	composeContent: string;
-	overrideContent?: string;
-	envContent?: string;
-}
-
-export interface SwarmStackRenderConfigResponse {
-	name: string;
-	renderedCompose: string;
-	services: string[];
-	networks: string[];
-	volumes: string[];
-	configs: string[];
-	secrets: string[];
-	warnings?: string[];
-}
-
 export interface SwarmStackSource {
 	name: string;
 	composeContent: string;

@@ -38,5 +38,8 @@
 	},
 	"[jsonc]": {
 		"editor.defaultFormatter": "oxc.oxc-vscode"
+	},
+	"[go.mod]": {
+		"editor.defaultFormatter": "golang.go"
 	}
 }

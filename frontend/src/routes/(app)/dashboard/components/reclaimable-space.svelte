@@ -5,6 +5,7 @@
 	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { SystemDiskUsage } from '#lib/types/system.js';
+	import type { EnvironmentFailure } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
 	import { totalReclaimableBytes } from '../overview.helpers';
@@ -16,11 +17,13 @@
 		usage,
 		loading,
 		failed,
+		failedEnvironments = [],
 		onPrune
 	}: {
 		usage: { environment: EnvironmentRef; data: SystemDiskUsage }[];
 		loading: boolean;
 		failed: boolean;
+		failedEnvironments?: EnvironmentFailure[];
 		onPrune?: () => void;
 	} = $props();
 
@@ -59,6 +62,16 @@
 	}
 </script>
 
+{#snippet failedNote()}
+	{#if failedEnvironments.length > 0}
+		<p class="text-xs text-muted-foreground">
+			{m.all_environments_unavailable({
+				environments: failedEnvironments.map(({ environment, message }) => `${environment.name} (${message})`).join(', ')
+			})}
+		</p>
+	{/if}
+{/snippet}
+
 <DashboardPanel title={m.reclaimable_space()}>
 	{#snippet actions()}
 		{#if onPrune}
@@ -71,7 +84,12 @@
 			<Skeleton class="h-2 w-full" />
 		</div>
 	{:else if total === 0}
-		<p class="py-2 text-sm text-muted-foreground">{failed ? m.common_unavailable() : m.nothing_to_reclaim()}</p>
+		<div class="space-y-1 py-2">
+			<p class="text-sm text-muted-foreground">
+				{failed || (usage.length === 0 && failedEnvironments.length > 0) ? m.common_unavailable() : m.nothing_to_reclaim()}
+			</p>
+			{@render failedNote()}
+		</div>
 	{:else}
 		<div class="space-y-4">
 			<p class="text-2xl font-semibold tabular-nums">{formatBytes(total)}</p>
@@ -117,6 +135,7 @@
 					{/each}
 				</ul>
 			{/if}
+			{@render failedNote()}
 		</div>
 	{/if}
 </DashboardPanel>

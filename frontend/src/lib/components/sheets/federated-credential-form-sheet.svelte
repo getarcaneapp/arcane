@@ -20,7 +20,13 @@
 		FederatedCredentialUpdate,
 		FederatedCredentialWritable
 	} from '#lib/types/ui/federated.js';
+	import { parseList } from '#lib/utils/form-parsers.js';
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
+	import {
+		buildGlobalEnvironmentOptions,
+		createRoleEnvironmentLabelers,
+		GLOBAL_ENVIRONMENT_OPTION_ID
+	} from '#lib/utils/options.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -39,7 +45,6 @@
 
 	let { open = $bindable(false), credentialToEdit, roles, environments, isLoading, onSubmit }: Props = $props();
 
-	const GLOBAL_OPTION_ID = 'global';
 	const MATCH_TYPES: { value: FederatedCredentialMatchType; label: string }[] = [
 		{ value: 'exact', label: m.federated_credential_match_exact() },
 		{ value: 'glob', label: m.federated_credential_match_glob() }
@@ -47,10 +52,8 @@
 
 	const isEditMode = $derived(!!credentialToEdit);
 
-	const envOptions = $derived([
-		{ id: GLOBAL_OPTION_ID, name: m.global() },
-		...environments.map((env) => ({ id: env.id, name: env.name }))
-	]);
+	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.global()));
+	const selectedLabel = $derived(createRoleEnvironmentLabelers(roles, envOptions, m.common_select_option()));
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
@@ -82,7 +85,7 @@
 			subjectMatch: credentialToEdit?.subjectMatch ?? '',
 			matchType: credentialToEdit?.matchType ?? ('exact' as FederatedCredentialMatchType),
 			roleId: credentialToEdit?.roleId ?? roles[0]?.id ?? '',
-			environmentId: credentialToEdit?.environmentId ?? GLOBAL_OPTION_ID,
+			environmentId: credentialToEdit?.environmentId ?? GLOBAL_ENVIRONMENT_OPTION_ID,
 			tokenTtlSeconds: credentialToEdit?.tokenTtlSeconds ?? 900,
 			expiresAt: plainDateFromInstant(credentialToEdit?.expiresAt)
 		};
@@ -97,23 +100,8 @@
 			.some((part) => part === '*' || part.endsWith('/*'))
 	);
 
-	function envSelectedLabel(value: string): string {
-		return envOptions.find((o) => o.id === value)?.name ?? m.common_select_option();
-	}
-
-	function roleSelectedLabel(value: string): string {
-		return roles.find((r) => r.id === value)?.name ?? m.common_select_option();
-	}
-
 	function matchTypeLabel(value: string): string {
 		return MATCH_TYPES.find((option) => option.value === value)?.label ?? m.common_select_option();
-	}
-
-	function parseAudiences(value: string): string[] {
-		return value
-			.split(/[\n,]/)
-			.map((entry) => entry.trim())
-			.filter(Boolean);
 	}
 
 	function handleSubmit() {
@@ -125,12 +113,12 @@
 			description: data.description || null,
 			enabled: data.enabled,
 			issuerUrl: data.issuerUrl,
-			audiences: parseAudiences(data.audience),
+			audiences: parseList(data.audience),
 			subjectClaim: data.subjectClaim || 'sub',
 			subjectMatch: data.subjectMatch,
 			matchType: data.matchType,
 			roleId: data.roleId,
-			environmentId: data.environmentId === GLOBAL_OPTION_ID ? null : data.environmentId,
+			environmentId: data.environmentId === GLOBAL_ENVIRONMENT_OPTION_ID ? null : data.environmentId,
 			tokenTtlSeconds: data.tokenTtlSeconds,
 			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : null
 		};
@@ -264,8 +252,8 @@
 			bind:roleValue={form.inputs.roleId.value}
 			bind:environmentValue={form.inputs.environmentId.value}
 			roleError={form.inputs.roleId.error}
-			{roleSelectedLabel}
-			{envSelectedLabel}
+			roleSelectedLabel={selectedLabel.role}
+			envSelectedLabel={selectedLabel.environment}
 			disabled={isLoading}
 			class="grid grid-cols-1 gap-4 sm:grid-cols-2"
 		/>

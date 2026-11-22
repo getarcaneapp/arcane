@@ -246,8 +246,7 @@ func TestIsOrgLevelAndEnvScoped(t *testing.T) {
 
 func TestIsKnownPermissionRejectsSyntheticPrefixMatches(t *testing.T) {
 	// Synthetic permissions whose prefix matches a known env-scoped family
-	// must not be accepted — otherwise an admin could inflate ps.Global past
-	// TotalPermissionsCount() with bogus entries and trip IsGlobalAdmin().
+	// must not be accepted as known or env-scoped permissions.
 	for _, p := range []string{"containers:fake1", "projects:bogus", "images:made-up"} {
 
 		assert.False(t, IsKnownPermission(p),
@@ -497,10 +496,8 @@ func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 		"permission catalog must not be empty")
 
 	all := AllPermissions()
-	if len(all) != TotalPermissionsCount() {
-		require.Len(t, all, TotalPermissionsCount(),
-			"AllPermissions length = %d, TotalPermissionsCount = %d", len(all), TotalPermissionsCount())
-	}
+	require.Len(t, all, len(allPermissionsSet),
+		"AllPermissions length = %d, allPermissionsSet length = %d", len(all), len(allPermissionsSet))
 
 	seen := make(map[string]struct{}, len(all))
 	var catalogCount int

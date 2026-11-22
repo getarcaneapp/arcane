@@ -169,8 +169,11 @@ func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSes
 }
 
 func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSessionInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
-		return nil, err
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	if input.Kind != types.UploadKindProjectArchive || !ps.Allows(authz.PermProjectsExport, input.EnvironmentID) {
+		if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
+			return nil, err
+		}
 	}
 	if err := h.uploadService.DeleteSession(ctx, input.Kind, input.UploadID); err != nil {
 		if httpErr := SessionHTTPError(err); httpErr != nil {

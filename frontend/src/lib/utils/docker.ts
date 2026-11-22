@@ -28,19 +28,6 @@ export function calculateCPUPercent(stats: ContainerStats | null): number {
 	return 0;
 }
 
-export function calculateMemoryPercent(stats: ContainerStats | null): number {
-	if (!stats?.memory_stats) return 0;
-
-	const usage = calculateMemoryUsage(stats);
-	const limit = stats.memory_stats.limit || 0;
-
-	if (limit > 0) {
-		const percent = (usage / limit) * 100;
-		return Math.min(Math.max(percent, 0), 100);
-	}
-	return 0;
-}
-
 export function calculateMemoryUsage(stats: ContainerStats | null): number {
 	if (!stats?.memory_stats) return 0;
 
@@ -227,7 +214,7 @@ export function isVulnerabilityScanInProgress(status?: string | null): boolean {
 	return SCAN_IN_PROGRESS_STATUSES.has(status);
 }
 
-export function isLikelyStaleFailedSummary(
+function isLikelyStaleFailedSummary(
 	summary: VulnerabilityScanSummary,
 	scanRequestedAt?: string | number | Temporal.Instant | null,
 	staleFailureGraceMs = 1500

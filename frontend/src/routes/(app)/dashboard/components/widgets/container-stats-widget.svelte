@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
 
@@ -17,6 +16,7 @@
 	import ContainerStatsSync from '../../../containers/components/container-stats-sync.svelte';
 	import { getContainerStatusLabel, getStateBadgeVariant, getUsageTone } from '../../../containers/container-table.helpers';
 	import DashboardPanel from '../dashboard-panel.svelte';
+	import ContainerWidgetLink from './container-widget-link.svelte';
 	import WidgetStatus from './widget-status.svelte';
 	import { resolveWidgetTarget } from './widget-target';
 
@@ -88,16 +88,7 @@
 </script>
 
 {#snippet containerLink()}
-	{#if containerQuery.data}
-		<a
-			href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(environmentId)}`, {
-				containerId: containerQuery.data.id
-			})}
-			class="min-w-0 truncate text-xs text-muted-foreground hover:underline"
-		>
-			{containerQuery.data.name}
-		</a>
-	{/if}
+	<ContainerWidgetLink container={containerQuery.data} {environmentId} />
 {/snippet}
 
 {#snippet sparkline(series: { values: number[]; class: string }[], max: number)}
