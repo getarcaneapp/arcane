@@ -95,7 +95,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		OperationID: "discover-project-backups",
 		Method:      http.MethodPost,
 		Path:        "/backups/projects/discover",
-		Summary:     "Discover project backups on an S3 destination",
+		Summary:     "Discover project backups in local storage or on an S3 destination",
 		Description: "Record the project backups this instance stored on the destination whose rows are missing, as after a system restore; nothing is deleted",
 		Tags:        []string{"Project Backup"},
 	}, authz.PermSystemBackupsUpdate, h.Discover)

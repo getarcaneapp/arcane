@@ -181,10 +181,15 @@ func (h *Handler) Discover(ctx context.Context, input *DiscoverInput) (*handleru
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(input.Body.S3DestinationID) == "" {
+	local := input.Body.Destination == types.VolumeBackupDestinationLocal
+	if !local && strings.TrimSpace(input.Body.S3DestinationID) == "" {
 		return nil, huma.Error400BadRequest("select an S3 destination to discover")
 	}
-	count, err := h.service.DiscoverBackups(ctx, DiscoverOptions{S3DestinationIDs: []string{input.Body.S3DestinationID}, Local: false})
+	var destinationIDs []string
+	if !local {
+		destinationIDs = []string{input.Body.S3DestinationID}
+	}
+	count, err := h.service.DiscoverBackups(ctx, DiscoverOptions{S3DestinationIDs: destinationIDs, Local: local})
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}

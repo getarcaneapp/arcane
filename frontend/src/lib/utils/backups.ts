@@ -153,14 +153,20 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	}
 }
 
-export async function runAutomaticBackupDiscovery(destinations: { id: string }[]): Promise<boolean> {
+// Finds backups whose rows are missing on each S3 destination, and in local storage when `local` is set, such as after
+// a recovery key is imported following the loss of Arcane's data volume.
+export async function runAutomaticBackupDiscovery(
+	destinations: { id: string }[],
+	{ local }: { local: boolean }
+): Promise<boolean> {
 	const discover = (found: Promise<number>, failed: () => string) =>
 		found.catch((error: unknown) => {
 			toast.error(failed(), { description: extractApiErrorMessage(error) });
 			return 0;
 		});
-	const counts = await Promise.all(
-		destinations.flatMap((item) => [
+	const counts = await Promise.all([
+		...(local ? [discover(systemBackupService.discoverProjectBackups('', 'local'), m.failed_to_discover_project_backups)] : []),
+		...destinations.flatMap((item) => [
 			discover(systemBackupService.discover(item.id, ''), m.system_backups_discover_failed),
 			discover(systemBackupService.discoverProjectBackups(item.id), m.failed_to_discover_project_backups),
 			discover(
@@ -168,6 +174,6 @@ export async function runAutomaticBackupDiscovery(destinations: { id: string }[]
 				m.volume_backups_discover_failed
 			)
 		])
-	);
+	]);
 	return counts.some((count) => count > 0);
 }
