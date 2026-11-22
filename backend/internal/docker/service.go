@@ -395,7 +395,7 @@ func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsag
 	return s.ListCoalesced(ctx, &s.diskUsageFlight, "", func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
 		usageCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerDiskUsage)
 		defer cancel()
-		return dockerClient.DiskUsage(usageCtx, client.DiskUsageOptions{
+		return FetchDiskUsage(usageCtx, dockerClient, client.DiskUsageOptions{
 			Containers: true,
 			Images:     true,
 			Volumes:    true,
@@ -403,6 +403,58 @@ func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsag
 			Verbose:    true,
 		})
 	})
+}
+
+// FetchDiskUsage queries Docker disk usage without computing sizes for running containers.
+func FetchDiskUsage(ctx context.Context, dockerClient *client.Client, options client.DiskUsageOptions) (client.DiskUsageResult, error) {
+	dfOptions := client.DiskUsageOptions{
+		Images:     options.Images,
+		Volumes:    options.Volumes,
+		BuildCache: options.BuildCache,
+		Verbose:    options.Verbose,
+	}
+
+	var usage client.DiskUsageResult
+	var containers client.ContainerListResult
+	g, groupCtx := errgroup.WithContext(ctx)
+	if dfOptions.Images || dfOptions.Volumes || dfOptions.BuildCache {
+		g.Go(func() (workerErr error) {
+			defer concurrency.RecoverToError(&workerErr, "docker disk usage worker")
+
+			var err error
+			usage, err = dockerClient.DiskUsage(groupCtx, dfOptions)
+			return err
+		})
+	}
+	if options.Containers {
+		g.Go(func() (workerErr error) {
+			defer concurrency.RecoverToError(&workerErr, "docker stopped container size worker")
+
+			var err error
+			containers, err = dockerClient.ContainerList(groupCtx, client.ContainerListOptions{
+				All:  true,
+				Size: true,
+				Filters: make(client.Filters).Add(
+					"status",
+					string(container.StateCreated),
+					string(container.StateRemoving),
+					string(container.StateExited),
+					string(container.StateDead),
+				),
+			})
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return client.DiskUsageResult{}, err
+	}
+
+	return client.DiskUsageResult{
+		Containers: kit.Ternary(options.Containers, client.ContainersDiskUsage{Items: containers.Items}, usage.Containers),
+		Images:     usage.Images,
+		BuildCache: usage.BuildCache,
+		Volumes:    usage.Volumes,
+	}, nil
 }
 
 func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*types.DashboardDockerSnapshot, error) {
