@@ -82,7 +82,9 @@ type (
 		Result *types.ImageUpdateResponse `json:"result,omitempty"`
 		// Failure is a reported check's error, which keeps its Result instead of failing the slot.
 		Failure string `json:"failure,omitempty"`
-		Local   bool   `json:"local,omitempty"`
+		// Digest is the remote digest resolved during the check step for tag-policy reuse.
+		Digest string `json:"digest,omitempty"`
+		Local  bool   `json:"local,omitempty"`
 	}
 
 	// imageCheckInput is an image-check payload; Report keeps every ref's result in the output for the caller.
@@ -322,7 +324,13 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		}
 		return s.checkSingleImageInBatch(ctx, nil, parts, composeBuildRefs, activityID, startTime)
 	}()
-	containerUpdates, tagErr := s.checkContainerTagUpdates(ctx, kit.Ternary(digestResult.UpdateType == UpdateTypeLocal, nil, []string{imageRef}), nil)
+	seedDigests := func() map[string]string {
+		if err != nil || digestResult == nil || digestResult.UpdateType == UpdateTypeLocal || digestResult.LatestDigest == "" {
+			return nil
+		}
+		return map[string]string{imageRef: digestResult.LatestDigest}
+	}()
+	containerUpdates, tagErr := s.checkContainerTagUpdates(ctx, kit.Ternary(digestResult.UpdateType == UpdateTypeLocal, nil, []string{imageRef}), nil, seedDigests)
 	if tagErr != nil {
 		if err == nil {
 			if saveErr := s.saveUpdateResultWithSnapshot(ctx, imageRef, digestResult, snapshot); saveErr != nil {
@@ -1618,7 +1626,11 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	if checkErr != nil {
 		return nil, checkErr
 	}
-	return imageCheckResult{Local: res.UpdateType == UpdateTypeLocal, Result: kit.Ternary(input.Report, res, nil)}, nil
+	return imageCheckResult{
+		Local:  res.UpdateType == UpdateTypeLocal,
+		Digest: kit.Ternary(res.UpdateType != UpdateTypeLocal, res.LatestDigest, ""),
+		Result: kit.Ternary(input.Report, res, nil),
+	}, nil
 }
 
 func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) (any, error) {
@@ -1627,9 +1639,15 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 		return nil, err
 	}
 	var tagRefs []string
+	seedDigests := map[string]string{}
 	for index, group := range groups {
-		if !results[index].Value.Local {
-			tagRefs = append(tagRefs, group...)
+		if results[index].Value.Local {
+			continue
+		}
+		tagRefs = append(tagRefs, group...)
+		resolvedDigest := cmp.Or(results[index].Value.Digest, kit.FromPtr(results[index].Value.Result).LatestDigest)
+		if len(group) > 0 && resolvedDigest != "" && results[index].Err == "" {
+			seedDigests[group[0]] = resolvedDigest
 		}
 	}
 	var input imageCheckInput
@@ -1639,7 +1657,7 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 	if input.Report && t.Recovered() {
 		return tagCheckOutput{Failures: []types.TargetOutcome{}}, nil
 	}
-	containerUpdates, err := s.checkContainerTagUpdates(ctx, tagRefs, s.resolveBatchCredentials(ctx, t, input))
+	containerUpdates, err := s.checkContainerTagUpdates(ctx, tagRefs, s.resolveBatchCredentials(ctx, t, input), seedDigests)
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
@@ -1935,7 +1953,12 @@ func (s *ImageUpdateService) getUpdateSummaryForImageIDs(ctx context.Context, im
 	}, nil
 }
 
-func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, imageRefs []string, credentials []types.ContainerRegistryCredential) (map[string]*types.ImageUpdateResponse, error) {
+func (s *ImageUpdateService) checkContainerTagUpdates(
+	ctx context.Context,
+	imageRefs []string,
+	credentials []types.ContainerRegistryCredential,
+	seedDigests map[string]string,
+) (map[string]*types.ImageUpdateResponse, error) {
 	wanted := map[string]bool{}
 	for _, imageRef := range imageRefs {
 		if normalized := refs.NormalizeImageUpdateRef(imageRef); normalized != "" {
@@ -1949,15 +1972,22 @@ func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, image
 	if err != nil {
 		return map[string]*types.ImageUpdateResponse{}, fmt.Errorf("list containers for tag update checks: %w", err)
 	}
-	return s.tags.Check(ctx, listed, wanted, credentials, func(deleteCtx context.Context, containerIDs []string) error {
-		// Clear the stored results of containers whose policy no longer tracks tags, in bounded IN-list chunks.
-		for chunk := range slices.Chunk(containerIDs, staleDigestRecordDeleteChunk) {
-			if deleteErr := s.db.WithContext(deleteCtx).Where("container_id IN ?", chunk).Delete(&ImageUpdateRecord{}).Error; deleteErr != nil {
-				return deleteErr
+	return s.tags.Check(ctx, tags.CheckRequest{
+		Listed:      listed,
+		Wanted:      wanted,
+		Credentials: credentials,
+		SeedDigests: seedDigests,
+		ClearDigestTracked: func(deleteCtx context.Context, containerIDs []string) error {
+			// Clear the stored results of containers whose policy no longer tracks tags, in bounded IN-list chunks.
+			for chunk := range slices.Chunk(containerIDs, staleDigestRecordDeleteChunk) {
+				if deleteErr := s.db.WithContext(deleteCtx).Where("container_id IN ?", chunk).Delete(&ImageUpdateRecord{}).Error; deleteErr != nil {
+					return deleteErr
+				}
 			}
-		}
-		return nil
-	}, s.saveContainerTagResult)
+			return nil
+		},
+		Save: s.saveContainerTagResult,
+	})
 }
 
 func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt container.Summary, result *types.ImageUpdateResponse) error {
