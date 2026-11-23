@@ -22,13 +22,14 @@ type CreateMergeHostAttachmentOptions = {
 	loadLanguageExtension: (lang: CodeLanguage) => Promise<Extension[]>;
 	onValueChange: (nextValue: string) => void;
 	onPrimaryViewReady: (view: EditorView) => void;
+	onLoadError: (error: unknown) => void;
 };
 
 export function createMergeHostAttachment(
 	options: CreateMergeHostAttachmentOptions,
 	getParams: () => MergeAttachmentParams
 ): Attachment<HTMLDivElement> {
-	const { getTheme, getLanguageExtension, loadLanguageExtension, onValueChange, onPrimaryViewReady } = options;
+	const { getTheme, getLanguageExtension, loadLanguageExtension, onValueChange, onPrimaryViewReady, onLoadError } = options;
 
 	return (node) => {
 		let currentParams = untrack(getParams);
@@ -76,10 +77,18 @@ export function createMergeHostAttachment(
 			const generation = ++createGeneration;
 			const language = currentParams.language;
 
-			const [{ MergeView: MergeViewCtor }, languageExtensions] = await Promise.all([
-				import('@codemirror/merge'),
-				loadLanguageExtension(language)
-			]);
+			let MergeViewCtor: typeof MergeView;
+			let languageExtensions: Extension[];
+			try {
+				const [mergeModule, loadedLanguage] = await Promise.all([import('@codemirror/merge'), loadLanguageExtension(language)]);
+				MergeViewCtor = mergeModule.MergeView;
+				languageExtensions = loadedLanguage;
+			} catch (error) {
+				if (!destroyed && generation === createGeneration && currentParams.diffActive) {
+					onLoadError(error);
+				}
+				return;
+			}
 			if (destroyed || generation !== createGeneration || !currentParams.diffActive || currentMergeView) return;
 
 			const theme = untrack(getTheme);

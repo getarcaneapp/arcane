@@ -1,6 +1,7 @@
 <script lang="ts" module>
 	import { StreamLanguage } from '@codemirror/language';
 	import type { Extension } from '@codemirror/state';
+	import { SvelteMap } from 'svelte/reactivity';
 
 	import type { CodeLanguage, CodeValidationMode } from './analysis/types';
 
@@ -32,7 +33,7 @@
 		plaintext: () => Promise.resolve([])
 	};
 
-	const loadedLanguageExtensions = new Map<CodeLanguage, Extension[]>([['plaintext', []]]);
+	const loadedLanguageExtensions = new SvelteMap<CodeLanguage, Extension[]>([['plaintext', []]]);
 	const languageExtensionPromises = new Map<CodeLanguage, Promise<Extension[]>>();
 
 	function loadLanguageExtension(lang: CodeLanguage): Promise<Extension[]> {
@@ -71,7 +72,7 @@
 	import { EditorState } from '@codemirror/state';
 	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { mode } from 'mode-watcher';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import CodeMirror from 'svelte-codemirror-editor';
 	import { toast } from 'svelte-sonner';
 
@@ -753,20 +754,17 @@
 		plaintext: createEnterIndentKeymap('plaintext')
 	};
 
-	let activeLanguageExtensions = $state.raw<Extension[]>([]);
+	const activeLanguageExtensions = $derived(loadedLanguageExtensions.get(language) ?? []);
 
 	$effect(() => {
 		const lang = language;
-		const cached = loadedLanguageExtensions.get(lang);
-		if (cached) {
-			activeLanguageExtensions = cached;
-			return;
-		}
-		activeLanguageExtensions = [];
+		if (untrack(() => loadedLanguageExtensions.has(lang))) return;
 		let cancelled = false;
-		void loadLanguageExtension(lang).then((loaded) => {
+		void loadLanguageExtension(lang).catch((error: unknown) => {
 			if (!cancelled) {
-				activeLanguageExtensions = loaded;
+				toast.error(m.failed_to_load_syntax_highlighting(), {
+					description: error instanceof Error ? error.message : undefined
+				});
 			}
 		});
 		return () => {
@@ -838,6 +836,12 @@
 				updateCursorSummary(view);
 				markReadOnlyReady();
 				markValidationNotRequiredReady();
+			},
+			onLoadError: (error) => {
+				diffOpen = false;
+				toast.error(m.failed_to_load_diff_view(), {
+					description: error instanceof Error ? error.message : undefined
+				});
 			}
 		},
 		() => mergeAttachmentParams
