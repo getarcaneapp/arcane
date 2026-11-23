@@ -1,5 +1,5 @@
 export type BackupStatus = 'running' | 'succeeded' | 'failed';
-export type BackupTrigger = 'manual' | 'scheduled' | 'safety' | 'manager';
+export type BackupTrigger = 'manual' | 'scheduled' | 'safety' | 'manager' | 'discovered';
 
 export type BackupFileEntry = {
 	path: string;

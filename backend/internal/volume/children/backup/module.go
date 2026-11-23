@@ -66,7 +66,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		OperationID: "discover-volume-backups",
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/volumes/backups/discover",
-		Summary:     "Discover volume backups on an S3 destination",
+		Summary:     "Discover volume backups in local storage or on an S3 destination",
 		Description: "Import existing volume backups stored on the destination by this or other Arcane instances",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),

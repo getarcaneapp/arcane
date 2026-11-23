@@ -21,6 +21,8 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
@@ -44,7 +46,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/notification"
 	projectpkg "getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
@@ -58,18 +60,20 @@ import (
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/notifications"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	UpdaterService struct {
-		admission  *runs.Admission
-		engine     *updater.Service
-		execution  *execution.Service
-		recovery   *recovery.Service
-		autoUpdate *flow.Workflow
-		deps       updaterDependencies
+		admission       *runs.Admission
+		engine          *updater.Service
+		execution       *execution.Service
+		recovery        *recovery.Service
+		autoUpdate      *flow.Workflow
+		registryLimiter *registry.RegistryRateLimiter
+		deps            updaterDependencies
 	}
 
 	updaterDependencies struct {
@@ -79,7 +83,7 @@ type (
 		Projects               *projectpkg.ProjectService
 		ImagePuller            *image.ImageService
 		ImageUpdates           *imageupdate.ImageUpdateService
-		RegistryDigestResolver *registry.ContainerRegistryService
+		RegistryDigestResolver *registryInternal.ContainerRegistryService
 		Events                 *event.EventService
 		Notifications          *notification.NotificationService
 		SelfUpgrade            SelfUpgrader
@@ -140,7 +144,7 @@ type (
 		DockerService        *dockerInternal.DockerClientService
 		ProjectService       *projectpkg.ProjectService
 		ImageUpdateService   *imageupdate.ImageUpdateService
-		RegistryService      *registry.ContainerRegistryService
+		RegistryService      *registryInternal.ContainerRegistryService
 		EventService         *event.EventService
 		ImageService         *image.ImageService
 		NotificationService  *notification.NotificationService
@@ -151,6 +155,10 @@ type (
 		RoleService          *role.RoleService
 		VulnerabilityService VulnerabilityScanner
 	}
+)
+
+const (
+	projectCheckConcurrency = 24
 )
 
 var (
@@ -179,7 +187,8 @@ var (
 
 func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 	service := &UpdaterService{
-		admission: p.Admission,
+		admission:       p.Admission,
+		registryLimiter: registry.NewRegistryRateLimiter(),
 		deps: updaterDependencies{
 			DB:                     p.DB,
 			Docker:                 p.DockerService,
@@ -2031,12 +2040,63 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 	if len(details.Services) == 0 {
 		return nil, errors.New("project has no resolved Compose services to check")
 	}
-	records := make([]imageupdate.ImageUpdateRecord, 0, len(details.Services))
+	services := make([]composeTypes.ServiceConfig, 0, len(details.Services))
 	for _, service := range details.Services {
-		if strings.TrimSpace(service.Image) == "" {
-			continue
+		if strings.TrimSpace(service.Image) != "" {
+			services = append(services, service)
 		}
-		records = append(records, s.checkProjectService(ctx, projectID, service))
+	}
+
+	type cachedCheck struct {
+		err    error
+		result updatertypes.CheckResult
+	}
+	var (
+		flight singleflight.Group
+		mu     sync.Mutex
+		memo   = make(map[string]cachedCheck)
+	)
+	checkImage := func(checkCtx context.Context, registryHost, cacheKey string, req updatertypes.CheckRequest) (updatertypes.CheckResult, error) {
+		mu.Lock()
+		cached, ok := memo[cacheKey]
+		mu.Unlock()
+		if ok {
+			return cached.result, cached.err
+		}
+		shared, _, _ := flight.Do(cacheKey, func() (any, error) {
+			mu.Lock()
+			existing, hit := memo[cacheKey]
+			mu.Unlock()
+			if hit {
+				return existing, nil
+			}
+			if acquireErr := s.registryLimiter.Acquire(checkCtx, registryHost); acquireErr != nil {
+				return cachedCheck{err: acquireErr}, nil
+			}
+			defer s.registryLimiter.Release(registryHost)
+			res, resErr := s.engine.CheckImageUpdate(checkCtx, req)
+			outcome := cachedCheck{result: res, err: resErr}
+			mu.Lock()
+			memo[cacheKey] = outcome
+			mu.Unlock()
+			return outcome, nil
+		})
+		outcome := shared.(cachedCheck)
+		return outcome.result, outcome.err
+	}
+
+	records := make([]imageupdate.ImageUpdateRecord, len(services))
+	var g errgroup.Group
+	g.SetLimit(projectCheckConcurrency)
+	for i, service := range services {
+		g.Go(func() (workerErr error) {
+			defer concurrency.RecoverToError(&workerErr, "project service update check", "projectId", projectID, "service", service.Name)
+			records[i] = s.checkProjectService(ctx, projectID, service, checkImage)
+			return nil
+		})
+	}
+	if waitErr := g.Wait(); waitErr != nil {
+		return nil, fmt.Errorf("check project updates: %w", waitErr)
 	}
 	if transactionErr := s.deps.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var pending []imageupdate.ImageUpdateRecord
@@ -2080,7 +2140,12 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 	return projectpkg.BuildConfiguredUpdateInfo(projectID, details.Services, nil, records), nil
 }
 
-func (s *UpdaterService) checkProjectService(ctx context.Context, projectID string, service composeTypes.ServiceConfig) imageupdate.ImageUpdateRecord {
+func (s *UpdaterService) checkProjectService(
+	ctx context.Context,
+	projectID string,
+	service composeTypes.ServiceConfig,
+	checkImage func(context.Context, string, string, updatertypes.CheckRequest) (updatertypes.CheckResult, error),
+) imageupdate.ImageUpdateRecord {
 	checkTime := time.Now().UTC()
 	parsed, err := refs.NormalizeReference(service.Image)
 	if err != nil {
@@ -2099,10 +2164,15 @@ func (s *UpdaterService) checkProjectService(ctx context.Context, projectID stri
 		if service.Build != nil || parsed.RegistryHost == imageref.PodmanLocalRegistry || imageref.IsUpdateCheckDisabled(service.Labels) {
 			return updatertypes.CheckResult{}, nil
 		}
-		result, resultErr := s.engine.CheckImageUpdate(ctx, updatertypes.CheckRequest{
+		policy := updater.DefaultLabelPolicy().TagPolicy(service.Labels)
+		req := updatertypes.CheckRequest{
 			ImageRef: service.Image,
-			Policy:   updater.DefaultLabelPolicy().TagPolicy(service.Labels),
-		})
+			Policy:   policy,
+		}
+		if checkImage != nil {
+			return checkImage(ctx, parsed.RegistryHost, parsed.NormalizedRef+"\x00"+imageref.UpdatePolicyKey(service.Image, service.Labels), req)
+		}
+		result, resultErr := s.engine.CheckImageUpdate(ctx, req)
 		if resultErr != nil {
 			return updatertypes.CheckResult{}, resultErr
 		}
@@ -2155,8 +2225,8 @@ func (s *UpdaterService) checkProjectService(ctx context.Context, projectID stri
 func (s *UpdaterService) RegisterWorkflows(engine *flow.Engine) error {
 	autoUpdate, err := engine.Define(flow.Definition{
 		Name:        "auto-update",
-		Version:     5,
-		Fingerprint: "91e27dc48df6737110ec334dfa9c2e2e032a6cc4285e8f1dd08dc40741e6d5b9",
+		Version:     6,
+		Fingerprint: "d8d498483b96e0c4ae07c5b84f00961e28c8f27e0f10b999bb8d30d0ad7bf7a8",
 		Concurrency: 1,
 		Timeout:     2 * time.Hour,
 		Activity: activitylib.StartRequest{
