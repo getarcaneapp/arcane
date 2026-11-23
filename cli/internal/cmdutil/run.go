@@ -138,12 +138,12 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 			name := fmt.Sprintf("%s (%s)", cmp.Or(merged.names[environment.Environment.ID], environment.Environment.Name), environment.Environment.ID)
 			var data T
 			environmentErr := json.Unmarshal(environment.Data, &data)
-			if environmentErr == nil && spec.Check != nil {
-				environmentErr = spec.Check(data)
-			}
 			if environmentErr == nil && !jsonMode {
 				output.Header("%s", name)
 				environmentErr = spec.Render(data)
+			}
+			if environmentErr == nil && spec.Check != nil {
+				environmentErr = spec.Check(data)
 			}
 			if environmentErr != nil {
 				failures = append(failures, fmt.Errorf("%s: %w", name, environmentErr))
