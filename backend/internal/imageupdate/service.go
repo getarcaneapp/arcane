@@ -1646,10 +1646,8 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 		}
 		tagRefs = append(tagRefs, group...)
 		resolvedDigest := cmp.Or(results[index].Value.Digest, kit.FromPtr(results[index].Value.Result).LatestDigest)
-		if resolvedDigest != "" && results[index].Err == "" {
-			for _, ref := range group {
-				seedDigests[ref] = resolvedDigest
-			}
+		if len(group) > 0 && resolvedDigest != "" && results[index].Err == "" {
+			seedDigests[group[0]] = resolvedDigest
 		}
 	}
 	var input imageCheckInput

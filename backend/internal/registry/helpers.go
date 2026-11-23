@@ -46,10 +46,7 @@ var (
 		"not implemented",
 		"status: 501",
 		"status 501",
-		"unsupported",
 		"distribution disabled",
-		"distribution api",
-		"page not found",
 	}
 )
 

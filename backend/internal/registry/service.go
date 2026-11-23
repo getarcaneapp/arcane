@@ -512,13 +512,16 @@ func (s *ContainerRegistryService) loadEnabledRegistryEntries(ctx context.Contex
 		}
 		cached := make([]cachedEnabledRegistry, len(registries))
 		for i := range registries {
-			entry := cachedEnabledRegistry{
-				registry: registries[i],
-			}
+			var credential *resolvedRegistryCredential
+			var credErr error
 			if registries[i].RegistryType != RegistryTypeECR {
-				entry.credential, entry.credErr = decryptGenericRegistryCredential(&registries[i])
+				credential, credErr = decryptGenericRegistryCredential(&registries[i])
 			}
-			cached[i] = entry
+			cached[i] = cachedEnabledRegistry{ //exhaustruct:enforce
+				credErr:    credErr,
+				credential: credential,
+				registry:   registries[i],
+			}
 		}
 		return cached, true, nil
 	})
@@ -558,8 +561,24 @@ func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]
 	registries := make([]ContainerRegistry, len(entries))
 	for i := range entries {
 		reg := entries[i].registry
-		reg.RepositoryNames = slices.Clone(reg.RepositoryNames)
-		registries[i] = reg
+		registries[i] = ContainerRegistry{ //exhaustruct:enforce
+			BaseModel:           reg.BaseModel,
+			URL:                 reg.URL,
+			Username:            reg.Username,
+			Token:               reg.Token,
+			Description:         reg.Description,
+			Insecure:            reg.Insecure,
+			Enabled:             reg.Enabled,
+			RegistryType:        reg.RegistryType,
+			RepositoryNames:     slices.Clone(reg.RepositoryNames),
+			AWSAccessKeyID:      reg.AWSAccessKeyID,
+			AWSSecretAccessKey:  reg.AWSSecretAccessKey,
+			AWSRegion:           reg.AWSRegion,
+			ECRToken:            reg.ECRToken,
+			ECRTokenGeneratedAt: reg.ECRTokenGeneratedAt,
+			CreatedAt:           reg.CreatedAt,
+			UpdatedAt:           reg.UpdatedAt,
+		}
 	}
 	return registries, nil
 }
@@ -1154,14 +1173,19 @@ func (s *ContainerRegistryService) authorizedTransport(
 		if exchangeErr != nil {
 			return nil, false, exchangeErr
 		}
-		tok.Token = cmp.Or(tok.Token, tok.AccessToken)
+		normalizedToken := &transport.Token{ //exhaustruct:enforce
+			Token:        cmp.Or(tok.Token, tok.AccessToken),
+			AccessToken:  tok.AccessToken,
+			RefreshToken: tok.RefreshToken,
+			ExpiresIn:    tok.ExpiresIn,
+		}
 		if tok.ExpiresIn > 0 {
 			ttl := max(time.Duration(tok.ExpiresIn)*time.Second-registryAuthTokenExpiryBuffer, registryAuthMinTTL)
 			if ttl < registryAuthTransportTTL {
 				tokenTTL = ttl
 			}
 		}
-		wrapped, fromTokenErr := transport.FromToken(repo.Registry, auth, schemeTransport, pr, tok)
+		wrapped, fromTokenErr := transport.FromToken(repo.Registry, auth, schemeTransport, pr, normalizedToken)
 		if fromTokenErr != nil {
 			return nil, false, fromTokenErr
 		}
