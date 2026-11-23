@@ -13,17 +13,31 @@
 		'imageEventWatcherEnabled',
 		'autoUpdate',
 		'autoUpdateDelay',
+		'autoUpdateMode',
 		'autoUpdateExcludedContainers',
 		'githubToken',
 		'scheduledPruneEnabled',
 		'vulnerabilityScanEnabled',
 		'autoHealEnabled',
+		'autoHealMode',
 		'autoHealExcludedContainers',
 		'autoHealMaxRestarts',
 		'autoHealRestartWindow'
 	]}
 >
 	{#snippet content({ formInputs, mixed, lock }, scope)}
-		<AutomationsTab {formInputs} {mixed} {lock} environments={scope.entries.map(({ environment }) => environment)} />
+		{@const values = scope.entries.map(({ settings }) => settings.values)}
+		<AutomationsTab
+			{formInputs}
+			{mixed}
+			{lock}
+			environments={scope.entries.map(({ environment }) => environment)}
+			containerModes={{
+				every: values.every((value) => 'autoUpdateMode' in value),
+				some: values.some((value) => 'autoUpdateMode' in value),
+				autoUpdateInclude: values.some((value) => value.autoUpdateMode === 'include'),
+				autoHealInclude: values.some((value) => value.autoHealMode === 'include')
+			}}
+		/>
 	{/snippet}
 </EnvironmentSettingsPage>

@@ -42,7 +42,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
 			Project:   project.New(project.ModuleParams{Service: &project.ProjectService{}}),
-			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil),
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
 			System:    system.New(&system.SystemService{}, nil, nil),
 			Health:    health.New(&health.Service{}),
@@ -146,7 +146,7 @@ func TestNewRouter_StrictTransportSecurity(t *testing.T) {
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
 			Project:   project.New(project.ModuleParams{Service: &project.ProjectService{}}),
-			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil),
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
 			System:    system.New(&system.SystemService{}, nil, nil),
 			Health:    health.New(&health.Service{}),
@@ -215,7 +215,7 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
 			Project:   project.New(project.ModuleParams{Service: &project.ProjectService{}}),
-			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil),
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
 			System:    system.New(&system.SystemService{}, nil, nil),
 			Health:    health.New(&health.Service{}),
@@ -258,7 +258,7 @@ func TestEveryAPIRouteIsInPermissionExport(t *testing.T) {
 		Config:    cfg,
 		HandlerDeps: api.HandlerDeps{
 			Project:   project.New(project.ModuleParams{Service: &project.ProjectService{}}),
-			Container: container.New(&container.ContainerService{}, nil, nil, nil),
+			Container: container.New(&container.ContainerService{}, nil, nil),
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
 			System:    system.New(&system.SystemService{}, nil, nil),
 			Health:    health.New(&health.Service{}),

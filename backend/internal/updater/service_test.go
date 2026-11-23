@@ -894,8 +894,17 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&AutoUpdateRecord{}, &activity.Activity{}, &activity.ActivityMessage{}))
 	activityService := activity.NewActivityService(db, nil)
+	settingsService, settingsErr := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, settingsErr)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 		DB:              db,
+		SettingsService: settingsService,
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activityService,
 	})

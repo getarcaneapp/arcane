@@ -50,6 +50,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/containerlabel"
 	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -132,6 +133,12 @@ type (
 		ProjectService  *project.ProjectService
 		KVService       *kv.KVService
 		PodmanService   *podman.Service
+	}
+
+	// SetAutoUpdateOptions names the container to change and whether auto-update should be on.
+	SetAutoUpdateOptions struct {
+		Reference string
+		Enabled   bool
 	}
 
 	DeleteContainerOptions struct {
@@ -1558,6 +1565,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 		slog.WarnContext(ctx, "Failed to inspect container image", "imageId", details.ImageID, "error", err)
 	}
 	resolvedIcon := s.resolveContainerIcon(ctx, details.Labels, map[string]projects.ArcaneComposeMetadata{})
+	autoUpdatePolicy := s.settingsService.AutoUpdatePolicy(ctx)
 
 	return types.ContainerDetails{ //exhaustruct:enforce
 		ID:              details.ID,
@@ -1581,11 +1589,11 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 			ContainerID:        details.ID,
 			CurrentContainerID: currentContainerID,
 		}),
-		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) &&
-			!docker.ContainerNameExcluded([]string{details.Name}, docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))),
-		UpdateInfo: updates[details.ID],
-		Hardened:   dhi.Info(kit.FromPtr(imageInspect.Config).Labels, time.Now()),
-		ActivityID: details.ActivityID,
+		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) && autoUpdatePolicy.Allows(details.Labels, []string{details.Name}),
+		AutoUpdateInclude: autoUpdatePolicy.Include,
+		UpdateInfo:        updates[details.ID],
+		Hardened:          dhi.Info(kit.FromPtr(imageInspect.Config).Labels, time.Now()),
+		ActivityID:        details.ActivityID,
 	}, nil
 }
 
@@ -1626,6 +1634,26 @@ func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref 
 		return "", err
 	}
 	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
+// SetAutoUpdate turns automatic updates on or off for a container by editing the auto-update
+// container list. Containers whose updater label decides are rejected.
+func (s *ContainerService) SetAutoUpdate(ctx context.Context, opts SetAutoUpdateOptions) error {
+	info, err := s.GetContainerByReference(ctx, opts.Reference)
+	if err != nil {
+		return err
+	}
+	containerLabels := kit.FromPtr(info.Config).Labels
+	policy := s.settingsService.AutoUpdatePolicy(ctx)
+	if labels.IsUpdateDisabled(containerLabels) || (policy.Include && containerlabel.IsEnabled(containerLabels, labels.LabelUpdater)) {
+		return common.ErrContainerAutoUpdateLabelControlled
+	}
+	return s.settingsService.SetContainerListed(ctx, settings.ContainerListChange{
+		ListKey:       "autoUpdateExcludedContainers",
+		ModeKey:       "autoUpdateMode",
+		ContainerName: strings.TrimPrefix(info.Name, "/"),
+		Enabled:       opts.Enabled,
+	})
 }
 
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, opts DeleteContainerOptions, user types.Actor) error {
@@ -1987,6 +2015,7 @@ func (s *ContainerService) ListContainersPaginated(
 				UpdateInfo:        item.UpdateInfo,
 				RedeployDisabled:  item.RedeployDisabled,
 				AutoUpdateEnabled: item.AutoUpdateEnabled,
+				AutoUpdateInclude: item.AutoUpdateInclude,
 				Hidden:            item.Hidden,
 				ResourceSample:    samples[item.ID],
 			})
@@ -2251,7 +2280,7 @@ func (s *ContainerService) BuildSummaries(
 	currentContainerErr error,
 ) []types.ContainerSummary {
 	items := make([]types.ContainerSummary, 0, len(containers))
-	excluded := docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))
+	autoUpdatePolicy := s.settingsService.AutoUpdatePolicy(ctx)
 	for _, dc := range containers {
 		summary := types.NewContainerSummary(dc)
 		policy := updater.DefaultLabelPolicy().TagPolicy(dc.Labels)
@@ -2282,7 +2311,8 @@ func (s *ContainerService) BuildSummaries(
 				ContainerID:        summary.ID,
 				CurrentContainerID: currentContainerID,
 			}),
-			AutoUpdateEnabled: !labels.IsUpdateDisabled(dc.Labels) && !docker.ContainerNameExcluded(dc.Names, excluded),
+			AutoUpdateEnabled: !labels.IsUpdateDisabled(dc.Labels) && autoUpdatePolicy.Allows(dc.Labels, dc.Names),
+			AutoUpdateInclude: autoUpdatePolicy.Include,
 			Hidden:            hidden,
 			ResourceSample:    summary.ResourceSample,
 		})

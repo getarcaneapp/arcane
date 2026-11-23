@@ -1295,8 +1295,39 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 	return query.Where("id = ? AND container_id = ?", record.ID, "").Updates(clearedImageUpdate).Error
 }
 
+// ExcludedContainers lists the containers the updater engine must skip. In include mode these are the
+// IDs and names of all containers that are neither listed nor labelled updater=true. The names keep a
+// container excluded when it is recreated with a new ID while the engine runs.
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
-	return kit.Unique(kit.TrimNonEmpty(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ","))), nil
+	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
+	if !policy.Include {
+		return slices.Sorted(maps.Keys(policy.Listed)), nil
+	}
+	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list containers for auto-update include mode: %w", err)
+	}
+	var excluded []string
+	for _, summary := range listResult.Items {
+		if !policy.Allows(summary.Labels, summary.Names) {
+			excluded = append(excluded, summary.ID)
+			for _, name := range summary.Names {
+				excluded = append(excluded, strings.TrimPrefix(name, "/"))
+			}
+		}
+	}
+	return excluded, nil
+}
+
+// skipReason rewords the engine's exclusion reason in include mode, where ExcludedContainers
+// holds the containers that are not included.
+func (s *UpdaterService) skipReason(ctx context.Context, reason string) string {
+	if reason == engineExcludedReason && s.deps.Settings.AutoUpdatePolicy(ctx).Include {
+		return "not included in automatic updates"
+	}
+	return reason
 }
 
 func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName string) (updater.ComposeProject, error) {
@@ -1680,7 +1711,7 @@ func (s *UpdaterService) logResultItems(ctx context.Context, result *types.Updat
 			"resourceId":   item.ResourceID,
 			"resourceName": item.ResourceName,
 			"status":       item.Status,
-			"error":        item.Error,
+			"error":        s.skipReason(ctx, item.Error),
 			"oldImages":    item.OldImages,
 			"newImages":    item.NewImages,
 		})
@@ -1715,7 +1746,7 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 }
 
 func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, out map[string]struct{}) error {
-	excludedContainers := docker.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"))
+	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
 	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
 	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
@@ -1732,8 +1763,8 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 			continue
 		}
 
-		if !ignoreOptOuts && docker.ContainerNameExcluded(summary.Names, excludedContainers) {
-			slog.DebugContext(ctx, "collectUsedImagesFromContainers: skipping excluded container", "containerId", summary.ID, "names", summary.Names)
+		if !ignoreOptOuts && !policy.Allows(summary.Labels, summary.Names) {
+			slog.DebugContext(ctx, "collectUsedImagesFromContainers: skipping container that is excluded or not included", "containerId", summary.ID, "names", summary.Names)
 			continue
 		}
 
@@ -1751,7 +1782,7 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect failed", "containerId", summary.ID, "error", inspectErr)
 			continue
 		}
-		if !ignoreOptOuts && labels.IsUpdateDisabled(kit.FromPtr(inspectResult.Container.Config).Labels) {
+		if inspectLabels := kit.FromPtr(inspectResult.Container.Config).Labels; !ignoreOptOuts && (labels.IsUpdateDisabled(inspectLabels) || !policy.Allows(inspectLabels, summary.Names)) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect labels opted out", "containerId", summary.ID)
 			continue
 		}
@@ -1805,8 +1836,11 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 	}
 
 	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
+	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
 	for _, summary := range composeContainers {
-		if _, isActive := activeProjectNames[docker.ComposeProjectLabel(summary.Labels)]; !isActive || (!ignoreOptOuts && labels.IsUpdateDisabled(summary.Labels)) {
+		// The list has never excluded Compose services here, but include mode limits them.
+		skipped := labels.IsUpdateDisabled(summary.Labels) || (policy.Include && !policy.Allows(summary.Labels, summary.Names))
+		if _, isActive := activeProjectNames[docker.ComposeProjectLabel(summary.Labels)]; !isActive || (!ignoreOptOuts && skipped) {
 			continue
 		}
 		imageRef := strings.TrimSpace(summary.Image)
@@ -1841,6 +1875,7 @@ func (s *UpdaterService) PruneHistory(ctx context.Context, retentionDays int) (i
 
 func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.ResourceResult) error {
 	now := time.Now()
+	errorText := s.skipReason(ctx, result.Error)
 	_, blockedReason, blocked := strings.Cut(kit.Ternary(result.Status == updater.StatusFailed, result.Error, ""), vulnerabilityGateBlockedPrefix)
 	recordErr := s.deps.DB.WithContext(ctx).Create(&AutoUpdateRecord{
 		ResourceID:       result.ResourceID,
@@ -1853,7 +1888,7 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 		UpdateApplied:    result.UpdateApplied,
 		OldImageVersions: kit.Ternary(result.OldImage != "", database.JSON{"main": result.OldImage}, nil),
 		NewImageVersions: kit.Ternary(result.NewImage != "", database.JSON{"main": result.NewImage}, nil),
-		Error:            mo.EmptyableToOption(result.Error).ToPointer(),
+		Error:            mo.EmptyableToOption(errorText).ToPointer(),
 		Details:          kit.Ternary(len(result.Details) > 0, maps.Clone(result.Details), nil),
 	}).Error
 	name := cmp.Or(strings.TrimSpace(result.ResourceName), result.ResourceID)
@@ -1877,7 +1912,7 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 				return types.ActivityMessageLevelInfo
 			}(),
 			Message: func() string {
-				reason := strings.TrimSpace(result.Error)
+				reason := strings.TrimSpace(errorText)
 				if blocked {
 					return name + ": " + types.UpdaterStatusBlocked + " (" + blockedReason + ")"
 				}
