@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"uuid"
 
@@ -22,10 +23,12 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/cache"
+	"kit.getarcane.app/concurrency"
 	kitregistry "kit.getarcane.app/registry"
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/digest"
@@ -67,8 +70,22 @@ type (
 		credentials         *cache.Cache[string, []types.ContainerRegistryCredential]
 		// requestCredentials keeps caller credentials out of the workflow journal; they expire with the check's timeout.
 		requestCredentials *cache.Cache[string, []types.ContainerRegistryCredential]
+		composeBuildRefs   *cache.Cache[string, map[string]struct{}]
+		releaseLinks       *cache.Cache[string, string]
+		activityBatches    map[string][]activity.AppendActivityMessageRequest
+		activityTimers     map[string]*time.Timer
+		activityFlushLocks concurrency.KeyedMutex
+		activityFlushWG    sync.WaitGroup
+		notifyWG           sync.WaitGroup
+		notifyStopMu       sync.RWMutex
 		notifyMu           sync.Mutex
+		activityBatchMu    sync.Mutex
+		changePending      atomic.Bool
+		activityStopped    bool
+		notifyStopped      bool
 	}
+
+	batchChangeCoalesceKey struct{}
 
 	ImageParts struct {
 		Registry   string
@@ -146,6 +163,13 @@ const (
 	imageCheckConcurrency        = 24
 	imageCheckAttempts           = 3
 	staleDigestRecordDeleteChunk = 500
+	releaseLinkConcurrency       = 8
+	releaseLinkCacheCapacity     = 512
+	releaseLinkCacheTTL          = 10 * time.Minute
+	activityMessageBatchSize     = 16
+	activityMessageFlushInterval = 250 * time.Millisecond
+	activityMessageWriteTimeout  = 30 * time.Second
+	imageUpdateChangeInterval    = time.Second
 )
 
 var (
@@ -177,7 +201,43 @@ func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 			Capacity: 64,
 			TTL:      timeouts.DefaultActivitySlotWait + timeouts.DefaultImageUpdateScan,
 		},
+		composeBuildRefs: &cache.Cache[string, map[string]struct{}]{
+			Capacity: 8,
+			TTL:      timeouts.DefaultImageUpdateScan,
+		},
+		releaseLinks: &cache.Cache[string, string]{
+			Capacity: releaseLinkCacheCapacity,
+			TTL:      releaseLinkCacheTTL,
+		},
+		activityBatches: map[string][]activity.AppendActivityMessageRequest{},
+		activityTimers:  map[string]*time.Timer{},
 	}
+}
+
+func (s *ImageUpdateService) Stop(ctx context.Context) error {
+	s.activityBatchMu.Lock()
+	s.activityStopped = true
+	activityIDs := slices.Collect(maps.Keys(s.activityBatches))
+	for id, timer := range s.activityTimers {
+		if timer.Stop() {
+			s.activityFlushWG.Done()
+		}
+		delete(s.activityTimers, id)
+	}
+	s.activityBatchMu.Unlock()
+	for _, activityID := range activityIDs {
+		s.flushActivityMessages(ctx, activityID)
+	}
+	flushErr := concurrency.WaitGroup(ctx, &s.activityFlushWG)
+
+	if s.changePending.Swap(false) {
+		s.eventService.PublishChange("0", "image_update")
+	}
+
+	s.notifyStopMu.Lock()
+	s.notifyStopped = true
+	s.notifyStopMu.Unlock()
+	return errors.Join(flushErr, concurrency.WaitGroup(ctx, &s.notifyWG))
 }
 
 func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[string]struct{}, error) {
@@ -217,17 +277,109 @@ func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[str
 }
 
 // appendImageUpdateActivityMessage leaves progress to the activity's owner when progress is nil.
-func (s *ImageUpdateService) appendImageUpdateActivityMessage(ctx context.Context, activityID string, level types.ActivityMessageLevel, message string, progress *int, step string) {
+func (s *ImageUpdateService) appendImageUpdateActivityMessage(ctx context.Context, activityID, message string, progress *int, step string) {
 	if activityID == "" || strings.TrimSpace(message) == "" {
 		return
 	}
 	if _, err := s.activityService.AppendMessage(ctx, activityID, activity.AppendActivityMessageRequest{
-		Level:    cmp.Or(level, types.ActivityMessageLevelInfo),
+		Level:    types.ActivityMessageLevelInfo,
 		Message:  message,
 		Progress: progress,
 		Step:     step,
 	}); err != nil {
 		slog.DebugContext(ctx, "failed to append image update activity message", "activityId", activityID, "error", err)
+	}
+}
+
+func (s *ImageUpdateService) queueActivityMessage(ctx context.Context, activityID string, level types.ActivityMessageLevel, message string) {
+	if activityID == "" {
+		return
+	}
+	req := activity.AppendActivityMessageRequest{
+		Level:   level,
+		Message: message,
+	}
+
+	s.activityBatchMu.Lock()
+	if s.activityStopped {
+		s.activityBatchMu.Unlock()
+		s.writeActivityMessageBatch(ctx, activityID, []activity.AppendActivityMessageRequest{req})
+		return
+	}
+	s.activityBatches[activityID] = append(s.activityBatches[activityID], req)
+	shouldFlush := len(s.activityBatches[activityID]) >= activityMessageBatchSize
+	if shouldFlush {
+		if timer := s.activityTimers[activityID]; timer != nil {
+			if timer.Stop() {
+				s.activityFlushWG.Done()
+			}
+			delete(s.activityTimers, activityID)
+		}
+	} else if s.activityTimers[activityID] == nil {
+		writeCtx := context.WithoutCancel(ctx)
+		s.activityFlushWG.Add(1)
+		s.activityTimers[activityID] = time.AfterFunc(activityMessageFlushInterval, func() {
+			defer s.activityFlushWG.Done()
+			s.flushActivityMessages(writeCtx, activityID)
+		})
+	}
+	s.activityBatchMu.Unlock()
+
+	if shouldFlush {
+		s.flushActivityMessages(ctx, activityID)
+	}
+}
+
+func (s *ImageUpdateService) flushActivityMessages(ctx context.Context, activityID string) {
+	if activityID == "" {
+		return
+	}
+	defer s.activityFlushLocks.Lock(activityID)()
+
+	for {
+		s.activityBatchMu.Lock()
+		if timer := s.activityTimers[activityID]; timer != nil {
+			if timer.Stop() {
+				s.activityFlushWG.Done()
+			}
+			delete(s.activityTimers, activityID)
+		}
+		batch := s.activityBatches[activityID]
+		delete(s.activityBatches, activityID)
+		tracked := len(batch) > 0 && !s.activityStopped
+		if tracked {
+			s.activityFlushWG.Add(1)
+		}
+		s.activityBatchMu.Unlock()
+		if len(batch) == 0 {
+			return
+		}
+		s.writeActivityMessageBatch(ctx, activityID, batch)
+		if tracked {
+			s.activityFlushWG.Done()
+		}
+	}
+}
+
+func (s *ImageUpdateService) writeActivityMessageBatch(ctx context.Context, activityID string, batch []activity.AppendActivityMessageRequest) {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), activityMessageWriteTimeout)
+	defer cancel()
+	if _, err := s.activityService.AppendMessages(writeCtx, activityID, batch); err != nil {
+		slog.DebugContext(writeCtx, "failed to append image update activity message batch", "activityId", activityID, "count", len(batch), "error", err)
+	}
+}
+
+func (s *ImageUpdateService) publishImageUpdateChange(ctx context.Context) {
+	if batch, _ := ctx.Value(batchChangeCoalesceKey{}).(bool); !batch {
+		s.eventService.PublishChange("0", "image_update")
+		return
+	}
+	if s.changePending.CompareAndSwap(false, true) {
+		time.AfterFunc(imageUpdateChangeInterval, func() {
+			if s.changePending.Swap(false) {
+				s.eventService.PublishChange("0", "image_update")
+			}
+		})
 	}
 }
 
@@ -303,7 +455,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		return result, nil
 	}
 
-	s.appendImageUpdateActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, "Checking "+imageRef, new(20), "Checking remote digest")
+	s.appendImageUpdateActivityMessage(ctx, activityID, "Checking "+imageRef, new(20), "Checking remote digest")
 
 	parts := s.parseImageReference(imageRef)
 	if parts == nil {
@@ -377,7 +529,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	}
 
 	if digestResult.UpdateType == UpdateTypeLocal {
-		s.appendImageUpdateActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, imageRef+" — local build, registry check skipped", new(100), "Skipping image update check")
+		s.appendImageUpdateActivityMessage(ctx, activityID, imageRef+" — local build, registry check skipped", new(100), "Skipping image update check")
 	}
 	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
 		Type:          event.EventTypeImageScan,
@@ -678,6 +830,13 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 		slog.DebugContext(ctx, "Local image has no valid created timestamp", "imageRef", imageRef, "error", createdErr)
 	}
 
+	if inspectResponse.ID != "" {
+		s.releaseLinks.Set(cache.Entry[string, string]{
+			Key:   inspectResponse.ID,
+			Value: releasenotes.ReleaseLinkFromLabels(kit.FromPtr(inspectResponse.Config).Labels),
+		})
+	}
+
 	return &localImageSnapshot{
 		ImageID:           inspectResponse.ID,
 		Repository:        repo,
@@ -767,6 +926,12 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 			return nil, inspectErr
 		}
 		repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse, parts)
+		if inspectResponse.ID != "" {
+			s.releaseLinks.Set(cache.Entry[string, string]{
+				Key:   inspectResponse.ID,
+				Value: releasenotes.ReleaseLinkFromLabels(kit.FromPtr(inspectResponse.Config).Labels),
+			})
+		}
 		return &localImageSnapshot{
 			ImageID:    inspectResponse.ID,
 			Repository: repo,
@@ -815,7 +980,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 	}); transactionErr != nil {
 		return transactionErr
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.publishImageUpdateChange(ctx)
 	return nil
 }
 
@@ -964,7 +1129,7 @@ func (s *ImageUpdateService) savePreparedUpdateResult(ctx context.Context, image
 	}); err != nil {
 		return err
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.publishImageUpdateChange(ctx)
 	return nil
 }
 
@@ -1076,7 +1241,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 	}); transactionErr != nil {
 		return transactionErr
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.publishImageUpdateChange(ctx)
 	return nil
 }
 
@@ -1095,7 +1260,7 @@ func (s *ImageUpdateService) MarkImageRefBlocked(ctx context.Context, imageRef s
 		}).Error; err != nil {
 		return fmt.Errorf("mark image updates blocked: %w", err)
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.publishImageUpdateChange(ctx)
 	return nil
 }
 
@@ -1393,7 +1558,11 @@ func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow
 }
 
 func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activityID, imageRef string, result *types.ImageUpdateResponse, progress *int) {
-	s.appendImageUpdateActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", progress, kit.Ternary(progress != nil, "Skipping image update check", ""))
+	if progress == nil {
+		s.queueActivityMessage(ctx, activityID, types.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped")
+	} else {
+		s.appendImageUpdateActivityMessage(ctx, activityID, imageRef+" — digest pinned, skipped", progress, "Skipping image update check")
+	}
 	if err := s.saveUpdateResultWithSnapshot(ctx, imageRef, result, nil); err != nil {
 		slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", err.Error())
 	}
@@ -1533,12 +1702,38 @@ func (s *ImageUpdateService) MonitoredImageRefs(ctx context.Context, imageRefs [
 }
 
 // prepareImageCheck loads the compose build refs every check task needs, once per scan.
-func (s *ImageUpdateService) prepareImageCheck(ctx context.Context, _ flow.Task) (any, error) {
+func (s *ImageUpdateService) prepareImageCheck(ctx context.Context, t flow.Task) (any, error) {
 	buildRefs, err := s.composeBuildImageRefs(ctx)
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
+	if t.ActivityID() != "" {
+		s.composeBuildRefs.Set(cache.Entry[string, map[string]struct{}]{
+			Key:   t.ActivityID(),
+			Value: buildRefs,
+		})
+	}
 	return slices.Sorted(maps.Keys(buildRefs)), nil
+}
+
+func (s *ImageUpdateService) resolveComposeBuildRefs(t flow.Task) (map[string]struct{}, error) {
+	load := func(string) (map[string]struct{}, bool, error) {
+		var buildRefs []string
+		if err := t.DecodeOutput("prepare", &buildRefs); err != nil {
+			return nil, false, err
+		}
+		resolved := make(map[string]struct{}, len(buildRefs))
+		for _, buildRef := range buildRefs {
+			resolved[buildRef] = struct{}{}
+		}
+		return resolved, true, nil
+	}
+	if t.ActivityID() == "" {
+		resolved, _, err := load("")
+		return resolved, err
+	}
+	resolved, _, err := s.composeBuildRefs.GetOrLoad(t.ActivityID(), load)
+	return resolved, err
 }
 
 func (s *ImageUpdateService) discoverImages(ctx context.Context, t flow.Task) (any, error) {
@@ -1555,7 +1750,7 @@ func (s *ImageUpdateService) discoverImages(ctx context.Context, t flow.Task) (a
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, fmt.Errorf("list image references: %w", err))
 	}
-	s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), types.ActivityMessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), nil, "")
+	s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), fmt.Sprintf("Checking %d image references", len(imageRefs)), nil, "")
 	return s.groupImageRefs(imageRefs), nil
 }
 
@@ -1573,23 +1768,20 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	if input.Report && t.Recovered() {
 		return nil, errCheckInterrupted
 	}
+	saveCtx := context.WithValue(ctx, batchChangeCoalesceKey{}, true)
 	if result, ok := digestPinnedImageUpdateResult(group[0], t.ActivityID(), 0).Get(); ok {
-		s.recordDigestPinnedSkip(ctx, t.ActivityID(), group[0], result, nil)
+		s.recordDigestPinnedSkip(saveCtx, t.ActivityID(), group[0], result, nil)
 		return imageCheckResult{Result: kit.Ternary(input.Report, result, nil)}, nil
 	}
 	parts := s.parseImageReference(group[0])
 	if parts == nil {
 		err := common.Classify(common.ErrValidation, errors.New("invalid image reference format"))
-		s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), types.ActivityMessageLevelError, group[0]+": "+err.Error(), nil, "")
+		s.queueActivityMessage(ctx, t.ActivityID(), types.ActivityMessageLevelError, group[0]+": "+err.Error())
 		return nil, err
 	}
-	var buildRefs []string
-	if err := t.DecodeOutput("prepare", &buildRefs); err != nil {
+	composeBuildRefs, err := s.resolveComposeBuildRefs(t)
+	if err != nil {
 		return nil, err
-	}
-	composeBuildRefs := make(map[string]struct{}, len(buildRefs))
-	for _, buildRef := range buildRefs {
-		composeBuildRefs[buildRef] = struct{}{}
 	}
 	res, snapshot, checkErr := s.checkSingleImageInBatch(ctx, s.resolveBatchCredentials(ctx, t, input), parts, composeBuildRefs, t.ActivityID(), time.Now())
 	// Shutdown hands the task back for redelivery rather than recording it as a failed check.
@@ -1615,9 +1807,9 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 			return types.ActivityMessageLevelInfo, group[0] + " — up to date"
 		}
 	}()
-	s.appendImageUpdateActivityMessage(ctx, t.ActivityID(), level, message, nil, "")
-	if err := s.saveUpdateResultWithSnapshot(ctx, group[0], res, snapshot); err != nil {
-		slog.WarnContext(ctx, "Failed to save update result", "imageRef", group[0], "error", err.Error())
+	s.queueActivityMessage(ctx, t.ActivityID(), level, message)
+	if saveErr := s.saveUpdateResultWithSnapshot(saveCtx, group[0], res, snapshot); saveErr != nil {
+		slog.WarnContext(ctx, "Failed to save update result", "imageRef", group[0], "error", saveErr.Error())
 	}
 	if checkErr != nil && input.Report {
 		// The waiting caller gets the failed response, auth details included, alongside its error.
@@ -1634,6 +1826,7 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 }
 
 func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) (any, error) {
+	s.flushActivityMessages(ctx, t.ActivityID())
 	groups, results, err := imageCheckResults(t)
 	if err != nil {
 		return nil, err
@@ -1657,7 +1850,7 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 	if input.Report && t.Recovered() {
 		return tagCheckOutput{Failures: []types.TargetOutcome{}}, nil
 	}
-	containerUpdates, err := s.checkContainerTagUpdates(ctx, tagRefs, s.resolveBatchCredentials(ctx, t, input), seedDigests)
+	containerUpdates, err := s.checkContainerTagUpdates(context.WithValue(ctx, batchChangeCoalesceKey{}, true), tagRefs, s.resolveBatchCredentials(ctx, t, input), seedDigests)
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
@@ -1679,12 +1872,17 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 }
 
 func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task) (any, error) {
+	s.flushActivityMessages(ctx, t.ActivityID())
 	var request imageCheckInput
 	if err := t.Payload(&request); err != nil {
 		return nil, err
 	}
 	// Every check task has run, so the caller's credentials are no longer needed.
 	s.requestCredentials.Delete(request.CredentialsKey)
+	if t.ActivityID() != "" {
+		s.composeBuildRefs.Delete(t.ActivityID())
+		s.credentials.Delete(t.ActivityID())
+	}
 	groups, results, err := imageCheckResults(t)
 	if err != nil {
 		return nil, err
@@ -1711,12 +1909,24 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 		}
 	}
 	targets = append(targets, tagged.Failures...)
-	// A failed flush is already logged; the records stay pending for the next one.
-	_ = s.SendBatchUpdateNotifications(ctx)
 	if request.All && (!request.Report || !t.Recovered()) {
 		if cleanupErr := s.CleanupOrphanedRecords(ctx); cleanupErr != nil {
 			slog.WarnContext(ctx, "failed to cleanup orphaned image update records after check-all", "error", cleanupErr.Error())
 		}
+	}
+	s.changePending.Store(false)
+	s.eventService.PublishChange("0", "image_update")
+	s.notifyStopMu.RLock()
+	if s.notifyStopped {
+		s.notifyStopMu.RUnlock()
+		_ = s.SendBatchUpdateNotifications(ctx)
+	} else {
+		notifyCtx := context.WithoutCancel(ctx)
+		s.notifyWG.Go(func() {
+			defer concurrency.RecoverToError(nil, "image update notification dispatch")
+			_ = s.SendBatchUpdateNotifications(notifyCtx)
+		})
+		s.notifyStopMu.RUnlock()
 	}
 	outcome := types.SchedulerOutcome{
 		Status: kit.Ternary(len(targets) > 0, types.RunStatusPartial, types.RunStatusSucceeded),
@@ -1804,16 +2014,13 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		slog.WarnContext(ctx, "Failed to get unnotified updates", "error", err.Error())
 		return fmt.Errorf("flush pending update notifications: %w", err)
 	case len(unnotifiedUpdates) > 0:
-		updatesToNotify := make(map[string]*types.ImageUpdateResponse)
-		links := map[string]string{}
+		updatesToNotify := make(map[string]*types.ImageUpdateResponse, len(unnotifiedUpdates))
 		linkCtx, cancelLinks := context.WithTimeout(notifCtx, 5*time.Second)
 		defer cancelLinks()
+		links := s.resolveReleaseLinks(linkCtx, unnotifiedUpdates)
 
 		for _, record := range unnotifiedUpdates {
 			ref := record.Repository + ":" + record.Tag
-			if _, ok := links[ref]; !ok {
-				links[ref] = s.releaseNotes.ReleaseLink(linkCtx, ref)
-			}
 			updatesToNotify[ref+kit.Ternary(record.ContainerID != "", " (container "+record.ContainerID+")", "")] = &types.ImageUpdateResponse{
 				HasUpdate:      record.HasUpdate,
 				UpdateType:     record.UpdateType,
@@ -1852,6 +2059,51 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		slog.DebugContext(ctx, "No new updates to notify")
 	}
 	return nil
+}
+
+func (s *ImageUpdateService) resolveReleaseLinks(ctx context.Context, records map[string]*ImageUpdateRecord) map[string]string {
+	links := make(map[string]string, len(records))
+	var missingRefs []string
+	seen := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		ref := record.Repository + ":" + record.Tag
+		if _, resolved := links[ref]; resolved {
+			continue
+		}
+		imageID := cmp.Or(record.ImageID, kit.Ternary(strings.HasPrefix(record.ID, "sha256:"), record.ID, ""))
+		if imageID != "" {
+			if cached, ok, _ := s.releaseLinks.Get(imageID); ok {
+				links[ref] = cached
+				continue
+			}
+		}
+		if _, queued := seen[ref]; !queued {
+			seen[ref] = struct{}{}
+			missingRefs = append(missingRefs, ref)
+		}
+	}
+	missingRefs = slices.DeleteFunc(missingRefs, func(ref string) bool {
+		_, resolved := links[ref]
+		return resolved
+	})
+	if len(missingRefs) == 0 {
+		return links
+	}
+
+	resolved := make([]string, len(missingRefs))
+	var g errgroup.Group
+	g.SetLimit(releaseLinkConcurrency)
+	for i, ref := range missingRefs {
+		g.Go(func() error {
+			resolved[i] = s.releaseNotes.ReleaseLink(ctx, ref)
+			return nil
+		})
+	}
+	_ = g.Wait()
+	for i, ref := range missingRefs {
+		links[ref] = resolved[i]
+	}
+	return links
 }
 
 // DeleteRecordsForImages removes rows keyed by id or image_id for the given images.
@@ -2018,6 +2270,6 @@ func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt con
 	}); transactionErr != nil {
 		return transactionErr
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.publishImageUpdateChange(ctx)
 	return nil
 }

@@ -24,6 +24,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/project"
@@ -333,6 +334,15 @@ func provideFilesystemWatcherJob(p filesystemWatcherJobParams) (
 		},
 	})
 	return job, nil
+}
+
+func provideImageUpdateService(lc fx.Lifecycle, p imageupdate.ImageUpdateServiceParams, engine *flow.Engine) (*imageupdate.ImageUpdateService, error) {
+	service := imageupdate.NewImageUpdateService(p)
+	if err := service.RegisterWorkflows(engine); err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{OnStop: service.Stop})
+	return service, nil
 }
 
 func provideVolumeService(lc fx.Lifecycle, p volume.VolumeServiceParams, engine *flow.Engine) (*volume.VolumeService, error) {
