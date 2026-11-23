@@ -998,7 +998,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 	if syncRecord.Mode == types.GitOpsSyncModeBackup {
 		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.Resolve == types.GitOpsBackupConflictUseArcane})
 	}
-	if syncRecord.Mode == types.GitOpsSyncModeBidirectional {
+	if syncRecord.Mode == types.GitOpsSyncModeBidirectional && kit.FromPtr(syncRecord.ProjectID) != "" {
 		return s.performBidirectional(ctx, syncCtx, syncRecord, req, result)
 	}
 
