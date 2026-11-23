@@ -75,11 +75,12 @@ type (
 		activityBatches    map[string][]activity.AppendActivityMessageRequest
 		activityTimers     map[string]*time.Timer
 		activityFlushLocks concurrency.KeyedMutex
-		lastChangePublish  atomic.Int64
+		activityFlushWG    sync.WaitGroup
 		notifyWG           sync.WaitGroup
 		notifyStopMu       sync.RWMutex
 		notifyMu           sync.Mutex
 		activityBatchMu    sync.Mutex
+		changePending      atomic.Bool
 		activityStopped    bool
 		notifyStopped      bool
 	}
@@ -218,18 +219,25 @@ func (s *ImageUpdateService) Stop(ctx context.Context) error {
 	s.activityStopped = true
 	activityIDs := slices.Collect(maps.Keys(s.activityBatches))
 	for id, timer := range s.activityTimers {
-		timer.Stop()
+		if timer.Stop() {
+			s.activityFlushWG.Done()
+		}
 		delete(s.activityTimers, id)
 	}
 	s.activityBatchMu.Unlock()
 	for _, activityID := range activityIDs {
 		s.flushActivityMessages(ctx, activityID)
 	}
+	flushErr := concurrency.WaitGroup(ctx, &s.activityFlushWG)
+
+	if s.changePending.Swap(false) {
+		s.eventService.PublishChange("0", "image_update")
+	}
 
 	s.notifyStopMu.Lock()
 	s.notifyStopped = true
 	s.notifyStopMu.Unlock()
-	return concurrency.WaitGroup(ctx, &s.notifyWG)
+	return errors.Join(flushErr, concurrency.WaitGroup(ctx, &s.notifyWG))
 }
 
 func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[string]struct{}, error) {
@@ -302,12 +310,16 @@ func (s *ImageUpdateService) queueActivityMessage(ctx context.Context, activityI
 	shouldFlush := len(s.activityBatches[activityID]) >= activityMessageBatchSize
 	if shouldFlush {
 		if timer := s.activityTimers[activityID]; timer != nil {
-			timer.Stop()
+			if timer.Stop() {
+				s.activityFlushWG.Done()
+			}
 			delete(s.activityTimers, activityID)
 		}
 	} else if s.activityTimers[activityID] == nil {
 		writeCtx := context.WithoutCancel(ctx)
+		s.activityFlushWG.Add(1)
 		s.activityTimers[activityID] = time.AfterFunc(activityMessageFlushInterval, func() {
+			defer s.activityFlushWG.Done()
 			s.flushActivityMessages(writeCtx, activityID)
 		})
 	}
@@ -327,16 +339,25 @@ func (s *ImageUpdateService) flushActivityMessages(ctx context.Context, activity
 	for {
 		s.activityBatchMu.Lock()
 		if timer := s.activityTimers[activityID]; timer != nil {
-			timer.Stop()
+			if timer.Stop() {
+				s.activityFlushWG.Done()
+			}
 			delete(s.activityTimers, activityID)
 		}
 		batch := s.activityBatches[activityID]
 		delete(s.activityBatches, activityID)
+		tracked := len(batch) > 0 && !s.activityStopped
+		if tracked {
+			s.activityFlushWG.Add(1)
+		}
 		s.activityBatchMu.Unlock()
 		if len(batch) == 0 {
 			return
 		}
 		s.writeActivityMessageBatch(ctx, activityID, batch)
+		if tracked {
+			s.activityFlushWG.Done()
+		}
 	}
 }
 
@@ -349,14 +370,17 @@ func (s *ImageUpdateService) writeActivityMessageBatch(ctx context.Context, acti
 }
 
 func (s *ImageUpdateService) publishImageUpdateChange(ctx context.Context) {
-	if batch, _ := ctx.Value(batchChangeCoalesceKey{}).(bool); batch {
-		now := time.Now().UnixNano()
-		last := s.lastChangePublish.Load()
-		if now-last < imageUpdateChangeInterval.Nanoseconds() || !s.lastChangePublish.CompareAndSwap(last, now) {
-			return
-		}
+	if batch, _ := ctx.Value(batchChangeCoalesceKey{}).(bool); !batch {
+		s.eventService.PublishChange("0", "image_update")
+		return
 	}
-	s.eventService.PublishChange("0", "image_update")
+	if s.changePending.CompareAndSwap(false, true) {
+		time.AfterFunc(imageUpdateChangeInterval, func() {
+			if s.changePending.Swap(false) {
+				s.eventService.PublishChange("0", "image_update")
+			}
+		})
+	}
 }
 
 func (s *ImageUpdateService) completeImageUpdateActivity(ctx context.Context, activityID string, success bool, message string) {
@@ -1890,6 +1914,7 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 			slog.WarnContext(ctx, "failed to cleanup orphaned image update records after check-all", "error", cleanupErr.Error())
 		}
 	}
+	s.changePending.Store(false)
 	s.eventService.PublishChange("0", "image_update")
 	s.notifyStopMu.RLock()
 	if s.notifyStopped {

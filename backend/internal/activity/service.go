@@ -330,7 +330,9 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 
 	// The Writer drain cannot replay a lost batch, so retry like CompleteActivity.
 	var current Activity
+	updatedActive := false
 	if err := s.retryWrite(ctx, activityID, "message batch", func(tx *gorm.DB) error {
+		updatedActive = false
 		if err := tx.First(&current, "id = ?", activityID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("activity not found")
@@ -341,15 +343,17 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 			return fmt.Errorf("failed to append activity message: %w", err)
 		}
 		if !slices.Contains(terminalActivityStatuses, current.Status) {
-			result := tx.Model(&Activity{}).Where("id = ?", activityID).Updates(updates)
+			result := tx.Model(&Activity{}).
+				Where("id = ? AND status NOT IN ?", activityID, terminalActivityStatuses).
+				Updates(updates)
 			if result.Error != nil {
 				return fmt.Errorf("failed to update activity latest message: %w", result.Error)
 			}
-			if result.RowsAffected == 0 {
-				return errors.New("activity not found")
-			}
-			if err := tx.First(&current, "id = ?", activityID).Error; err != nil {
-				return fmt.Errorf("failed to load updated activity: %w", err)
+			if result.RowsAffected > 0 {
+				if err := tx.First(&current, "id = ?", activityID).Error; err != nil {
+					return fmt.Errorf("failed to load updated activity: %w", err)
+				}
+				updatedActive = true
 			}
 		}
 		return nil
@@ -370,7 +374,7 @@ func (s *ActivityService) AppendMessages(ctx context.Context, activityID string,
 		s.pubsub.PublishMessage(current.EnvironmentID, current.Type, dto)
 		out = append(out, dto)
 	}
-	if !slices.Contains(terminalActivityStatuses, current.Status) {
+	if updatedActive {
 		s.pubsub.PublishActivity(activityToDTO(&current))
 	}
 	return out, nil
