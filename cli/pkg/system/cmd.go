@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -331,9 +332,19 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 	if confirmationErr != nil || !confirmed {
 		return confirmationErr
 	}
+	environments, err := app.Environments(cmd.Context())
+	if err != nil {
+		return err
+	}
+	environmentIDs := make([]string, 0, len(environments))
+	for _, environment := range environments {
+		if environment.Enabled {
+			environmentIDs = append(environmentIDs, environment.ID)
+		}
+	}
 	return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpgradeJob]{
 		Method:         http.MethodPost,
-		Path:           clitypes.SystemUpgradeJobs(c.EnvID()),
+		Path:           clitypes.SystemUpgradeJobs(strings.Join(environmentIDs, ",")),
 		FailureMessage: "failed to start upgrade job",
 		Render: func(data types.UpgradeJob) error {
 			output.Success("Upgrade job started")

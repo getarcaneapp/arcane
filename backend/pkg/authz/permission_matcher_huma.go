@@ -41,7 +41,7 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 			if op == nil {
 				continue
 			}
-			if aggregate, _ := op.Metadata[MetaEnvironmentAggregate].(bool); aggregate && method == http.MethodGet {
+			if aggregate, _ := op.Metadata[MetaEnvironmentAggregate].(bool); aggregate {
 				m.aggregates[method+" "+suffix] = struct{}{}
 			}
 			param, hasParam := op.Metadata[MetaActionParam].(string)
