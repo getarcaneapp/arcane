@@ -1602,6 +1602,16 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 		return result, err
 	})
 	if err != nil {
+		// Podman's Docker-compatible top fails with HTTP 500 when the image has no ps.
+		if errdefs.IsInternal(err) && ctx.Err() == nil {
+			podmanProcesses, podmanErr := s.podmanService.ContainerTop(ctx, containerID)
+			if podmanErr == nil {
+				return podmanProcesses, nil
+			}
+			if !errors.Is(podmanErr, common.ErrPodmanNotDetected) {
+				slog.DebugContext(ctx, "Podman container top fallback failed", "containerId", containerID, "error", podmanErr)
+			}
+		}
 		return types.ContainerProcesses{}, common.ClassifyDockerError(fmt.Errorf("failed to list container processes: %w", err))
 	}
 	return types.ContainerProcesses{
