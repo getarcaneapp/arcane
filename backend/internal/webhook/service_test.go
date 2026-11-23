@@ -715,6 +715,8 @@ func TestRemoteWebhookRequest(t *testing.T) {
 		actionType string
 		wantMethod string
 		wantPath   string
+		wantBody   string
+		wantBefore []string
 		wh         Webhook
 		wantResult bool
 	}{
@@ -734,11 +736,14 @@ func TestRemoteWebhookRequest(t *testing.T) {
 			wantPath:   "/api/agents/0/containers/abc123?action=start",
 		},
 		{
-			name:       "project update maps to updateservices action",
+			name:       "project update checks then runs the scoped updater",
 			wh:         Webhook{TargetType: WebhookTargetTypeProject, TargetID: "p1"},
 			actionType: WebhookActionTypeUpdate,
+			wantBefore: []string{"POST /api/agents/0/updater/projects/p1/check"},
 			wantMethod: "POST",
-			wantPath:   "/api/agents/0/projects/p1?action=updateservices",
+			wantPath:   "/api/agents/0/updater/run",
+			wantBody:   `{"type":"project","resourceIds":["p1"],"forceUpdate":false,"dryRun":false}`,
+			wantResult: true,
 		},
 		{
 			name:       "gitops sync",
@@ -765,15 +770,21 @@ func TestRemoteWebhookRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			method, path, wantResult, err := remoteWebhookRequest(&tt.wh, tt.actionType)
+			calls, err := remoteWebhookRequest(&tt.wh, tt.actionType)
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantMethod, method)
-			assert.Equal(t, tt.wantPath, path)
-			assert.Equal(t, tt.wantResult, wantResult)
+			require.Len(t, calls, len(tt.wantBefore)+1)
+			for i, before := range tt.wantBefore {
+				assert.Equal(t, before, calls[i].Method+" "+calls[i].Path)
+			}
+			call := calls[len(calls)-1]
+			assert.Equal(t, tt.wantMethod, call.Method)
+			assert.Equal(t, tt.wantPath, call.Path)
+			assert.Equal(t, tt.wantBody, string(call.Body))
+			assert.Equal(t, tt.wantResult, call.WantResult)
 		})
 	}
 }
