@@ -158,10 +158,15 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 		return PrintJSON(result)
 	}
 	if jsonMode {
+		var printErr error
 		if len(result.Data) == 0 {
-			return PrintJSON(nil)
+			printErr = PrintJSON(nil)
+		} else {
+			printErr = PrintRawJSON(result.Data)
 		}
-		return PrintRawJSON(result.Data)
+		if printErr != nil || spec.Check == nil {
+			return printErr
+		}
 	}
 	var data T
 	if len(result.Data) > 0 {
@@ -169,7 +174,15 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 			return fmt.Errorf("%s: failed to decode response: %w", spec.FailureMessage, decodeErr)
 		}
 	}
-	return spec.Render(data)
+	if !jsonMode {
+		if renderErr := spec.Render(data); renderErr != nil {
+			return renderErr
+		}
+	}
+	if spec.Check != nil {
+		return spec.Check(data)
+	}
+	return nil
 }
 
 func RunDelete(cmd *cobra.Command, c *client.Client, spec DeleteSpec) error {

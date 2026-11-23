@@ -18,9 +18,11 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 
+	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
 	clitypes "getarcane.dev/cli/v3/internal/types"
+	"getarcane.dev/cli/v3/pkg/updater"
 	"getarcane.dev/types/v3"
 )
 
@@ -224,7 +226,7 @@ func newRunJobCmd() *cobra.Command {
 func newUpdateServicesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:          "upgrade <project-id|name> [services...]",
-		Short:        "Pull latest images and recreate services (all services when none are given)",
+		Short:        "Update services that have a newer image (all services when none are given)",
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -239,18 +241,54 @@ func newUpdateServicesCmd() *cobra.Command {
 			}
 
 			c.SetTimeout(30 * time.Minute)
+			options, err := upgradeOptions(cmd, c, resolved.ID, args[1:])
+			if err != nil {
+				return err
+			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpdaterResult]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ProjectAction(c.EnvID(), resolved.ID, "updateservices", args[1:]),
+				Path:           clitypes.UpdaterRun(c.EnvID()),
+				Body:           options,
 				FailureMessage: "failed to update project services",
-				Render: func(types.MessageResponse) error {
-					output.Success("Services updated successfully for project %s", resolved.Name)
-					return nil
-				},
+				Timeout:        30 * time.Minute,
+				Render:         updater.RenderResult,
+				Check:          updater.CheckResult,
 			})
 		},
 	}
+}
+
+// upgradeOptions scopes the updater run like the UI: a project update runs after the project's update check,
+// and named services are updated through their containers.
+func upgradeOptions(cmd *cobra.Command, c *client.Client, projectID string, services []string) (types.UpdaterOptions, error) {
+	if len(services) == 0 {
+		check, err := c.PostJSON[types.ProjectUpdateInfo](cmd.Context(), clitypes.UpdaterProjectCheck(c.EnvID(), projectID), struct{}{})
+		if err != nil {
+			return types.UpdaterOptions{}, fmt.Errorf("failed to check project updates: %w", err)
+		}
+		if check.Data.ErrorCount > 0 && !cmdutil.JSONOutputEnabled(cmd) {
+			output.Warning("Update check failed for %d image(s): %s", check.Data.ErrorCount, kit.FromPtr(check.Data.ErrorMessage))
+		}
+		return types.UpdaterOptions{Type: "project", ResourceIds: []string{projectID}}, nil
+	}
+
+	runtime, err := c.GetJSON[types.Project](cmd.Context(), clitypes.ProjectRuntime(c.EnvID(), projectID))
+	if err != nil {
+		return types.UpdaterOptions{}, fmt.Errorf("failed to load project services: %w", err)
+	}
+	containerIDs := make([]string, 0, len(services))
+	for _, name := range kit.Unique(services) {
+		// One container per service: updating it recreates every replica of the service.
+		index := slices.IndexFunc(runtime.Data.RuntimeServices, func(service types.ProjectRuntimeService) bool {
+			return service.Name == name && service.ContainerID != ""
+		})
+		if index < 0 {
+			return types.UpdaterOptions{}, fmt.Errorf("service %s has no container in project %s", name, runtime.Data.Name)
+		}
+		containerIDs = append(containerIDs, runtime.Data.RuntimeServices[index].ContainerID)
+	}
+	return types.UpdaterOptions{Type: "container", ResourceIds: containerIDs}, nil
 }
 
 func newWorkspaceCmd() *cobra.Command {
