@@ -59,9 +59,10 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, proxyRemoteJSON hand
 		Method:      http.MethodPatch,
 		Path:        "/agents/{id}/jobs/schedules",
 		Summary:     "Update job schedules",
-		Description: "Update background job cron schedules and reschedule running jobs",
+		Description: "Update background job cron schedules and reschedule running jobs; a comma-separated environment list requires jobs:update in every one",
 		Tags:        []string{"JobSchedules"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermJobsUpdate, h.Update)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

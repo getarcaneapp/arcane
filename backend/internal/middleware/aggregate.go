@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -37,8 +39,20 @@ func NewEnvironmentScopeMiddleware(resolve httpx.EnvironmentResolver, matcher *a
 				return writeProxyError(c, http.StatusBadRequest, "This operation does not support multiple environments")
 			}
 
-			scope := &httpx.EnvironmentScope{IDs: unique, Request: req.Clone(req.Context()), Handler: c.Echo(), Resolve: resolve}
-			c.SetRequest(req.WithContext(httpx.WithEnvironmentScope(req.Context(), scope)))
+			body, err := io.ReadAll(http.MaxBytesReader(c.Response(), req.Body, 1<<20))
+			if err != nil {
+				return writeProxyError(c, http.StatusBadRequest, "Could not read the request body")
+			}
+			scope := &httpx.EnvironmentScope{
+				Handler: c.Echo(),
+				Request: req.Clone(req.Context()),
+				Resolve: resolve,
+				IDs:     unique,
+				Body:    body,
+			}
+			scoped := req.WithContext(httpx.WithEnvironmentScope(req.Context(), scope))
+			scoped.Body = io.NopCloser(bytes.NewReader(body))
+			c.SetRequest(scoped)
 			return next(c)
 		}
 	}

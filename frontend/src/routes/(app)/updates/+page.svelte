@@ -21,11 +21,11 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
 	import {
+		actAcrossEnvironments,
 		actionEnvironments,
 		hasShownPermission,
 		listScopes,
-		readableEnvironments,
-		settleAcrossEnvironments
+		readableEnvironments
 	} from '#lib/utils/environments.js';
 	import { scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
@@ -81,7 +81,7 @@
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['updates', 'check-all', scope],
 		mutationFn: (environments: EnvironmentRef[]) =>
-			settleAcrossEnvironments(environments, (id) => imageService.checkAllImages(id)),
+			actAcrossEnvironments(environments, (scope, config) => imageService.checkAllImages(scope, config)),
 		onSuccess: async (_result, environments) => {
 			toast.success(m.images_update_check_completed());
 			await Promise.all([
