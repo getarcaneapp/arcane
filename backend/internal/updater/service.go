@@ -1301,7 +1301,7 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
 	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
 	if !policy.Include {
-		return kit.Unique(kit.TrimNonEmpty(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ","))), nil
+		return slices.Sorted(maps.Keys(policy.Listed)), nil
 	}
 	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})

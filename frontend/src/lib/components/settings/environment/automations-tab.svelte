@@ -116,8 +116,8 @@
 	const autoUpdateListLocked = $derived(autoUpdateModeMixed || (modesPartlySupported && containerModes.autoUpdateInclude));
 	const autoHealListLocked = $derived(autoHealModeMixed || (modesPartlySupported && containerModes.autoHealInclude));
 	const containerModeOptions = [
-		{ value: 'exclude', label: m.container_mode_exclude() },
-		{ value: 'include', label: m.container_mode_include() }
+		{ value: 'exclude', label: m.all_except_the_listed_ones() },
+		{ value: 'include', label: m.only_the_listed_ones() }
 	];
 	// Switching the mode gives a list the opposite meaning, so it is cleared and restored if the switch is undone.
 	let clearedLists = $state<Partial<Record<ContainerListKey, ClearedList>>>({});
@@ -129,15 +129,15 @@
 	const autoUpdateListHelp = $derived(
 		[
 			m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` }),
-			autoUpdateIncludeMode ? m.auto_update_include_dependents_hint() : '',
+			autoUpdateIncludeMode ? m.dependent_containers_restart_hint() : '',
 			clearedHint('autoUpdateExcludedContainers', autoUpdateMode?.value),
-			autoUpdateModeMixed ? m.container_mode_mixed_hint() : ''
+			autoUpdateModeMixed ? m.mixed_modes_list_hint() : ''
 		]
 			.filter(Boolean)
 			.join(' ')
 	);
 	const autoHealListHelp = $derived(
-		[clearedHint('autoHealExcludedContainers', autoHealMode?.value), autoHealModeMixed ? m.container_mode_mixed_hint() : '']
+		[clearedHint('autoHealExcludedContainers', autoHealMode?.value), autoHealModeMixed ? m.mixed_modes_list_hint() : '']
 			.filter(Boolean)
 			.join(' ') || undefined
 	);
@@ -192,7 +192,7 @@
 	function clearedHint(listKey: ContainerListKey, mode: ContainerMode | null | undefined): string {
 		const cleared = clearedLists[listKey];
 		if (!cleared || cleared.mode === mode || formInputs[listKey].value.trim()) return '';
-		return cleared.mode === null ? m.container_list_cleared_mixed_hint() : m.container_list_cleared_hint();
+		return cleared.mode === null ? m.list_cleared_mixed_modes_hint() : m.list_cleared_hint();
 	}
 
 	// The mixed popover sets one environment's mode directly, so it is routed through changeMode to clear the list.
@@ -377,14 +377,14 @@
 
 {#snippet autoUpdateOptions()}
 	{#if modesPartlySupported}
-		<p class="text-xs text-muted-foreground">{m.container_mode_unsupported_hint()}</p>
+		<p class="text-xs text-muted-foreground">{m.include_mode_unsupported_hint()}</p>
 	{:else if autoUpdateMode}
 		<SettingsRow
 			for="auto-update-mode"
-			label={m.auto_update_mode_label()}
-			description={m.auto_update_mode_description({ label: `${AUTO_UPDATE_LABEL}=true` })}
+			label={m.containers_to_update()}
+			description={m.containers_to_update_description({ label: `${AUTO_UPDATE_LABEL}=true` })}
 			class="p-0"
-			helpText={autoUpdateModeBlocked ? m.container_mode_blocked_hint() : undefined}
+			helpText={autoUpdateModeBlocked ? m.mode_change_blocked_hint() : undefined}
 			lock={lock('autoUpdateMode')}
 			mixed={modeMixed('autoUpdateMode', 'autoUpdateExcludedContainers')}
 		>
@@ -394,7 +394,7 @@
 					name="autoUpdateMode"
 					hideLabel
 					value={autoUpdateMode.value ?? ''}
-					label={m.auto_update_mode_label()}
+					label={m.containers_to_update()}
 					options={containerModeOptions}
 					onValueChange={(v) => changeMode('autoUpdateMode', 'autoUpdateExcludedContainers', v as ContainerMode)}
 					placeholder={mixed('autoUpdateMode') ? m.mixed() : undefined}
@@ -430,7 +430,7 @@
 	<SettingsRow
 		for="auto-update-container-search"
 		label={autoUpdateIncludeMode ? m.included_containers() : m.excluded_containers()}
-		description={autoUpdateIncludeMode ? m.auto_update_include_description() : m.auto_update_exclude_description()}
+		description={autoUpdateIncludeMode ? m.choose_containers_to_update() : m.auto_update_exclude_description()}
 		helpText={autoUpdateListHelp}
 		layout="wide"
 		class="p-0"
@@ -459,14 +459,14 @@
 
 {#snippet autoHealOptions()}
 	{#if modesPartlySupported}
-		<p class="text-xs text-muted-foreground">{m.container_mode_unsupported_hint()}</p>
+		<p class="text-xs text-muted-foreground">{m.include_mode_unsupported_hint()}</p>
 	{:else if autoHealMode}
 		<SettingsRow
 			for="auto-heal-mode"
-			label={m.auto_heal_mode_label()}
-			description={m.auto_heal_mode_description({ label: `${AUTO_HEAL_LABEL}=true` })}
+			label={m.containers_to_heal()}
+			description={m.containers_to_heal_description({ label: `${AUTO_HEAL_LABEL}=true` })}
 			class="p-0"
-			helpText={autoHealModeBlocked ? m.container_mode_blocked_hint() : undefined}
+			helpText={autoHealModeBlocked ? m.mode_change_blocked_hint() : undefined}
 			lock={lock('autoHealMode')}
 			mixed={modeMixed('autoHealMode', 'autoHealExcludedContainers')}
 		>
@@ -476,7 +476,7 @@
 					name="autoHealMode"
 					hideLabel
 					value={autoHealMode.value ?? ''}
-					label={m.auto_heal_mode_label()}
+					label={m.containers_to_heal()}
 					options={containerModeOptions}
 					onValueChange={(v) => changeMode('autoHealMode', 'autoHealExcludedContainers', v as ContainerMode)}
 					placeholder={mixed('autoHealMode') ? m.mixed() : undefined}
@@ -533,7 +533,7 @@
 	<SettingsRow
 		for="auto-heal-container-search"
 		label={autoHealIncludeMode ? m.included_containers() : m.excluded_containers()}
-		description={autoHealIncludeMode ? m.auto_heal_include_description() : m.auto_heal_exclude_description()}
+		description={autoHealIncludeMode ? m.choose_containers_to_heal() : m.auto_heal_exclude_description()}
 		helpText={autoHealListHelp}
 		layout="wide"
 		class="p-0"

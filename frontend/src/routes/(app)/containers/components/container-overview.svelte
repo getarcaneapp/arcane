@@ -191,9 +191,7 @@
 					<span class="text-xs text-muted-foreground">{m.auto_update_status_unavailable()}</span>
 				{:else}
 					{#if autoUpdateLabelControlled === 'enabled'}
-						<span class="text-xs text-muted-foreground"
-							>{m.auto_update_enabled_by_label({ label: `${AUTO_UPDATE_LABEL}=true` })}</span
-						>
+						<span class="text-xs text-muted-foreground">{m.turned_on_by_label({ label: `${AUTO_UPDATE_LABEL}=true` })}</span>
 					{:else if autoUpdateLabelControlled}
 						<span class="text-xs text-muted-foreground">{m.auto_update_controlled_by_label()}</span>
 					{/if}

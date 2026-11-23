@@ -874,19 +874,22 @@ func (s *SettingsService) SetContainerListed(ctx context.Context, change Contain
 // AutoUpdatePolicy returns which containers auto-update may install updates for. The
 // updater=false label is checked separately because it also applies in exclude mode.
 func (s *SettingsService) AutoUpdatePolicy(ctx context.Context) ContainerSelection {
+	// One snapshot keeps the list and the mode from the same saved configuration.
+	cfg := s.GetSettingsConfig()
 	return ContainerSelection{
-		Listed:  docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoUpdateExcludedContainers")),
+		Listed:  docker.ExcludedContainerNameSet(cfg.AutoUpdateExcludedContainers.Value),
 		Label:   labels.LabelUpdater,
-		Include: s.GetStringSetting(ctx, "autoUpdateMode") == ContainerModeInclude,
+		Include: cfg.AutoUpdateMode.Value == ContainerModeInclude,
 	}
 }
 
 // AutoHealPolicy returns which containers auto-heal may restart.
 func (s *SettingsService) AutoHealPolicy(ctx context.Context) ContainerSelection {
+	cfg := s.GetSettingsConfig()
 	return ContainerSelection{
-		Listed:  docker.ExcludedContainerNameSet(s.GetStringSetting(ctx, "autoHealExcludedContainers")),
+		Listed:  docker.ExcludedContainerNameSet(cfg.AutoHealExcludedContainers.Value),
 		Label:   containerlabel.AutoHealLabel,
-		Include: s.GetStringSetting(ctx, "autoHealMode") == ContainerModeInclude,
+		Include: cfg.AutoHealMode.Value == ContainerModeInclude,
 	}
 }
 

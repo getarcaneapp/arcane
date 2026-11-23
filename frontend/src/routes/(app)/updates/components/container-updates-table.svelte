@@ -123,7 +123,7 @@
 		if (labelControl === 'disabled') {
 			labelTitle = m.auto_update_controlled_by_label_checks_continue({ label: `${UPDATE_CHECK_LABEL}=false` });
 		} else if (labelControl === 'enabled') {
-			labelTitle = m.auto_update_enabled_by_label({ label: `${AUTO_UPDATE_LABEL}=true` });
+			labelTitle = m.turned_on_by_label({ label: `${AUTO_UPDATE_LABEL}=true` });
 		}
 		const quadletHref = quadletUnitHref(container.labels, container.environmentId);
 		const statusAvailable = typeof container.autoUpdateEnabled === 'boolean';
