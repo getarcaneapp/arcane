@@ -37,8 +37,11 @@
 			.check((ctx) => {
 				const value = ctx.value;
 				if (syncMode() !== 'deploy') {
-					if (!value.projectId.trim()) {
+					if (syncMode() === 'backup' && !value.projectId.trim()) {
 						ctx.issues.push({ code: 'custom', message: m.project_required(), path: ['projectId'], input: value });
+					}
+					if (syncMode() === 'bidirectional' && !value.projectId.trim() && !value.name.trim()) {
+						ctx.issues.push({ code: 'custom', message: m.common_name_required(), path: ['name'], input: value });
 					}
 					if (!value.backupDirectory.trim()) {
 						ctx.issues.push({
@@ -330,10 +333,10 @@
 		const value = inputs.projectId.value;
 		if (!pushesToGit || isEditMode || backupProjectOptions.some((option) => option.value === value)) return value;
 		if (value) return '';
-		return backupProjectOptions.length === 1 ? (backupProjectOptions[0]?.value ?? '') : '';
+		return backupProjectOptions.length === 1 && !isBidirectionalMode ? (backupProjectOptions[0]?.value ?? '') : '';
 	});
 	const selectedProject = $derived(projects.find((project) => project.id === selectedProjectId));
-	const suggestedBackupDirectory = $derived(selectedProject?.name ?? '');
+	const suggestedBackupDirectory = $derived(selectedProject?.name ?? inputs.composePath.value.split('/').slice(0, -1).join('/'));
 	const effectiveBackupDirectory = $derived(inputs.backupDirectory.value.trim() || suggestedBackupDirectory);
 	const hookBrowseRoot = $derived.by(() => {
 		if (isBidirectionalMode) return effectiveBackupDirectory;
@@ -424,6 +427,7 @@
 		);
 	});
 	const backupNamePlaceholder = $derived.by(() => {
+		if (isBidirectionalMode && !selectedProject) return m.common_name_placeholder();
 		if (isBidirectionalMode) return m.project_git_sync_name({ name: selectedProject?.name ?? '' });
 		return m.project_backup_name({ name: selectedProject?.name ?? '' });
 	});
@@ -504,6 +508,7 @@
 				mode: 'bidirectional',
 				targetType: 'project',
 				projectId: data.projectId,
+				composePath: data.composePath,
 				backupDirectory: data.backupDirectory.trim()
 			};
 		}

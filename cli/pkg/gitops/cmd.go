@@ -136,7 +136,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.autoSync, "auto-sync", false, "Enable automatic sync")
 	cmd.Flags().IntVar(&opts.interval, "interval", 0, "Sync interval in minutes")
 	cmd.Flags().StringVar(&opts.projectName, "project-name", "", "Project name for the sync")
-	cmd.Flags().StringVar(&opts.project, "project", "", "Existing project ID or name to link (required for backup and bidirectional modes)")
+	cmd.Flags().StringVar(&opts.project, "project", "", "Existing project ID or name to link (required for backup mode; bidirectional mode creates a new project when omitted)")
 	cmd.Flags().StringVar(&opts.backupDirectory, "backup-directory", "", "Repository directory that project files are pushed to (backup and bidirectional modes)")
 	cmd.Flags().StringArrayVar(&opts.backupPaths, "backup-path", nil, "Extra project path to push besides the compose files (repeatable; backup and bidirectional modes)")
 	cmd.Flags().BoolVar(&opts.backupOnSave, "backup-on-save", true, "Push to Git whenever project files are saved in Arcane (backup and bidirectional modes)")
