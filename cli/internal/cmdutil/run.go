@@ -136,16 +136,10 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 		var failures []error
 		for _, environment := range environments {
 			name := fmt.Sprintf("%s (%s)", cmp.Or(merged.names[environment.Environment.ID], environment.Environment.Name), environment.Environment.ID)
-			var data T
-			environmentErr := json.Unmarshal(environment.Data, &data)
-			if environmentErr == nil && !jsonMode {
+			if !jsonMode {
 				output.Header("%s", name)
-				environmentErr = spec.Render(data)
 			}
-			if environmentErr == nil && spec.Check != nil {
-				environmentErr = spec.Check(data)
-			}
-			if environmentErr != nil {
+			if environmentErr := handleData(spec, environment.Data, jsonMode); environmentErr != nil {
 				failures = append(failures, fmt.Errorf("%s: %w", name, environmentErr))
 			}
 		}
@@ -168,9 +162,14 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 			return printErr
 		}
 	}
+	return handleData(spec, result.Data, jsonMode)
+}
+
+// handleData decodes one environment's response data, renders it outside JSON mode, and applies the spec's Check.
+func handleData[T any](spec Spec[T], raw jsontext.Value, jsonMode bool) error {
 	var data T
-	if len(result.Data) > 0 {
-		if decodeErr := json.Unmarshal(result.Data, &data); decodeErr != nil {
+	if len(raw) > 0 {
+		if decodeErr := json.Unmarshal(raw, &data); decodeErr != nil {
 			return fmt.Errorf("%s: failed to decode response: %w", spec.FailureMessage, decodeErr)
 		}
 	}

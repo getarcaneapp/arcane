@@ -267,20 +267,28 @@ func upgradeOptions(cmd *cobra.Command, c *client.Client, projectID string, serv
 		if err != nil {
 			return types.UpdaterOptions{}, fmt.Errorf("failed to check project updates: %w", err)
 		}
-		if check.Data.ErrorCount > 0 && !cmdutil.JSONOutputEnabled(cmd) {
+		if check.Data.ErrorCount > 0 {
 			output.Warning("Update check failed for %d image(s): %s", check.Data.ErrorCount, kit.FromPtr(check.Data.ErrorMessage))
 		}
 		return types.UpdaterOptions{Type: "project", ResourceIds: []string{projectID}}, nil
 	}
 
-	runtime, err := c.GetJSON[types.Project](cmd.Context(), clitypes.ProjectRuntime(c.EnvID(), projectID))
+	type runtimeService struct {
+		Name        string `json:"name"`
+		ContainerID string `json:"containerId"`
+	}
+	// Decode only the service containers: compose service configs in this payload do not decode back into their types.
+	runtime, err := c.GetJSON[struct {
+		Name            string           `json:"name"`
+		RuntimeServices []runtimeService `json:"runtimeServices"`
+	}](cmd.Context(), clitypes.ProjectRuntime(c.EnvID(), projectID))
 	if err != nil {
 		return types.UpdaterOptions{}, fmt.Errorf("failed to load project services: %w", err)
 	}
 	containerIDs := make([]string, 0, len(services))
 	for _, name := range kit.Unique(services) {
 		// One container per service: updating it recreates every replica of the service.
-		index := slices.IndexFunc(runtime.Data.RuntimeServices, func(service types.ProjectRuntimeService) bool {
+		index := slices.IndexFunc(runtime.Data.RuntimeServices, func(service runtimeService) bool {
 			return service.Name == name && service.ContainerID != ""
 		})
 		if index < 0 {
