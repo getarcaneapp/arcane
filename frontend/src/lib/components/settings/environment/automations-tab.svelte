@@ -59,14 +59,7 @@
 		selected: boolean;
 	};
 
-	let {
-		formInputs = $bindable(),
-		mixed,
-		lock,
-		environments,
-		containerModesSupported,
-		containerModesKnown
-	}: AutomationsTabProps = $props();
+	let { formInputs = $bindable(), mixed, lock, environments, containerModes }: AutomationsTabProps = $props();
 
 	const queryClient = useQueryClient();
 	const vulnerabilityManagementEnabled = $derived(
@@ -114,11 +107,14 @@
 	const autoHealMode = $derived<FormInput<ContainerMode | null> | undefined>(formInputs.autoHealMode);
 	const autoUpdateIncludeMode = $derived(autoUpdateMode?.value === 'include');
 	const autoHealIncludeMode = $derived(autoHealMode?.value === 'include');
-	// Older agents read a shared list as an exclusion list, so the mode is only offered when every
-	// selected environment supports it, and a list that is not known to be in exclude mode stays read-only then.
-	const modesPartlySupported = $derived(!containerModesSupported && containerModesKnown);
-	const autoUpdateListLocked = $derived(modesPartlySupported && autoUpdateMode?.value !== 'exclude');
-	const autoHealListLocked = $derived(modesPartlySupported && autoHealMode?.value !== 'exclude');
+	// Older agents read a shared list as an exclusion list, so the mode is only offered when every selected
+	// environment supports it, and the list stays read-only then while any environment uses include mode.
+	const modesPartlySupported = $derived(!containerModes.every && containerModes.some);
+	// While the selected environments use different modes the list means different things for them.
+	const autoUpdateModeMixed = $derived(containerModes.every && autoUpdateMode?.value == null);
+	const autoHealModeMixed = $derived(containerModes.every && autoHealMode?.value == null);
+	const autoUpdateListLocked = $derived(autoUpdateModeMixed || (modesPartlySupported && containerModes.autoUpdateInclude));
+	const autoHealListLocked = $derived(autoHealModeMixed || (modesPartlySupported && containerModes.autoHealInclude));
 	const containerModeOptions = [
 		{ value: 'exclude', label: m.container_mode_exclude() },
 		{ value: 'include', label: m.container_mode_include() }
@@ -134,13 +130,16 @@
 		[
 			m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` }),
 			autoUpdateIncludeMode ? m.auto_update_include_dependents_hint() : '',
-			listCleared('autoUpdateExcludedContainers', autoUpdateMode?.value) ? m.container_list_cleared_hint() : ''
+			clearedHint('autoUpdateExcludedContainers', autoUpdateMode?.value),
+			autoUpdateModeMixed ? m.container_mode_mixed_hint() : ''
 		]
 			.filter(Boolean)
 			.join(' ')
 	);
 	const autoHealListHelp = $derived(
-		listCleared('autoHealExcludedContainers', autoHealMode?.value) ? m.container_list_cleared_hint() : undefined
+		[clearedHint('autoHealExcludedContainers', autoHealMode?.value), autoHealModeMixed ? m.container_mode_mixed_hint() : '']
+			.filter(Boolean)
+			.join(' ') || undefined
 	);
 	const autoUpdateListed = $derived(parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers.value));
 	const autoHealListed = $derived(parseExcludedContainerSet(formInputs.autoHealExcludedContainers.value));
@@ -189,9 +188,27 @@
 		return !!mixed(listKey) || (!!lock(listKey)?.locked && !!formInputs[listKey].value.trim());
 	}
 
-	function listCleared(listKey: ContainerListKey, mode: ContainerMode | null | undefined): boolean {
+	// A list cleared while the environments used different modes cannot be restored by switching back.
+	function clearedHint(listKey: ContainerListKey, mode: ContainerMode | null | undefined): string {
 		const cleared = clearedLists[listKey];
-		return !!cleared && cleared.mode !== mode && !formInputs[listKey].value.trim();
+		if (!cleared || cleared.mode === mode || formInputs[listKey].value.trim()) return '';
+		return cleared.mode === null ? m.container_list_cleared_mixed_hint() : m.container_list_cleared_hint();
+	}
+
+	// The mixed popover sets one environment's mode directly, so it is routed through changeMode to clear the list.
+	function modeMixed(modeKey: ContainerModeKey, listKey: ContainerListKey): MixedSettingValue[] | undefined {
+		if (modeBlocked(listKey)) return undefined;
+		return mixed(modeKey)?.map((entry) => ({
+			...entry,
+			apply: () => {
+				const input = formInputs[modeKey];
+				const before = input.value;
+				entry.apply();
+				const target = input.value;
+				input.value = before;
+				if (target) changeMode(modeKey, listKey, target);
+			}
+		}));
 	}
 
 	// The saved copy belongs to the mode it was cleared from, so it is only restored when switching back to that
@@ -369,7 +386,7 @@
 			class="p-0"
 			helpText={autoUpdateModeBlocked ? m.container_mode_blocked_hint() : undefined}
 			lock={lock('autoUpdateMode')}
-			mixed={mixed('autoUpdateMode')}
+			mixed={modeMixed('autoUpdateMode', 'autoUpdateExcludedContainers')}
 		>
 			{#snippet children({ describedBy })}
 				<SelectWithLabel
@@ -418,7 +435,7 @@
 		layout="wide"
 		class="p-0"
 		lock={lock('autoUpdateExcludedContainers')}
-		mixed={mixed('autoUpdateExcludedContainers')}
+		mixed={autoUpdateListLocked ? undefined : mixed('autoUpdateExcludedContainers')}
 	>
 		{#snippet children({ describedBy })}
 			<div class="space-y-2">
@@ -451,7 +468,7 @@
 			class="p-0"
 			helpText={autoHealModeBlocked ? m.container_mode_blocked_hint() : undefined}
 			lock={lock('autoHealMode')}
-			mixed={mixed('autoHealMode')}
+			mixed={modeMixed('autoHealMode', 'autoHealExcludedContainers')}
 		>
 			{#snippet children({ describedBy })}
 				<SelectWithLabel
@@ -521,7 +538,7 @@
 		layout="wide"
 		class="p-0"
 		lock={lock('autoHealExcludedContainers')}
-		mixed={mixed('autoHealExcludedContainers')}
+		mixed={autoHealListLocked ? undefined : mixed('autoHealExcludedContainers')}
 	>
 		{#snippet children({ describedBy })}
 			<div class="space-y-2">

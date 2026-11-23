@@ -1296,7 +1296,8 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 }
 
 // ExcludedContainers lists the containers the updater engine must skip. In include mode these are the
-// IDs of all containers that are neither listed nor labelled updater=true.
+// IDs and names of all containers that are neither listed nor labelled updater=true. The names keep a
+// container excluded when it is recreated with a new ID while the engine runs.
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
 	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
 	if !policy.Include {
@@ -1312,6 +1313,9 @@ func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, erro
 	for _, summary := range listResult.Items {
 		if !policy.Allows(summary.Labels, summary.Names) {
 			excluded = append(excluded, summary.ID)
+			for _, name := range summary.Names {
+				excluded = append(excluded, strings.TrimPrefix(name, "/"))
+			}
 		}
 	}
 	return excluded, nil

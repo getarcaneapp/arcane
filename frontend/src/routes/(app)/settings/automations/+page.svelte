@@ -26,14 +26,18 @@
 	]}
 >
 	{#snippet content({ formInputs, mixed, lock }, scope)}
-		{@const modeSupport = scope.entries.map(({ settings }) => 'autoUpdateMode' in settings.values)}
+		{@const values = scope.entries.map(({ settings }) => settings.values)}
 		<AutomationsTab
 			{formInputs}
 			{mixed}
 			{lock}
 			environments={scope.entries.map(({ environment }) => environment)}
-			containerModesSupported={modeSupport.every(Boolean)}
-			containerModesKnown={modeSupport.some(Boolean)}
+			containerModes={{
+				every: values.every((value) => 'autoUpdateMode' in value),
+				some: values.some((value) => 'autoUpdateMode' in value),
+				autoUpdateInclude: values.some((value) => value.autoUpdateMode === 'include'),
+				autoHealInclude: values.some((value) => value.autoHealMode === 'include')
+			}}
 		/>
 	{/snippet}
 </EnvironmentSettingsPage>

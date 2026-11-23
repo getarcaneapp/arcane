@@ -4794,5 +4794,7 @@
   "container_mode_include": "Only the listed ones",
   "container_list_cleared_hint": "The list was cleared because the new mode gives it the opposite meaning. Switch back to restore it.",
   "container_mode_unsupported_hint": "Some selected environments run an older version without the include mode. Update them or edit each environment on its own to change the mode. A list in include mode stays read-only here.",
-  "container_mode_blocked_hint": "The mode cannot change here because the container list differs between the selected environments or is set by an environment variable. Edit each environment on its own, or change the list first."
+  "container_mode_blocked_hint": "The mode cannot change here because the container list differs between the selected environments or is set by an environment variable. Edit each environment on its own, or change the list first.",
+  "container_mode_mixed_hint": "The selected environments use different modes, so this list is read-only until they share one mode.",
+  "container_list_cleared_mixed_hint": "The list was cleared because the selected environments used different modes. Add the containers again for the new mode."
 }

@@ -49,11 +49,13 @@ type (
 
 	LockReason string
 
-	// ContainerListChange adds a container name to, or removes it from, a container list setting.
+	// ContainerListChange turns an automation on or off for one container by editing its container list,
+	// which skips the listed containers in exclude mode and acts only on them in include mode.
 	ContainerListChange struct {
-		Key           string
+		ListKey       string
+		ModeKey       string
 		ContainerName string
-		Listed        bool
+		Enabled       bool
 	}
 
 	// ContainerSelection decides which containers an automation acts on. Listed holds the names from
@@ -845,7 +847,8 @@ func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value i
 	return s.UpdateSetting(ctx, key, strconv.Itoa(value))
 }
 
-// SetContainerListed adds or removes a container name in a comma-separated container list setting.
+// SetContainerListed updates a container list for a container's automation setting. The mode is read
+// under the same lock as the list, so a concurrent mode change cannot flip the entry's meaning.
 func (s *SettingsService) SetContainerListed(ctx context.Context, change ContainerListChange) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
@@ -853,14 +856,15 @@ func (s *SettingsService) SetContainerListed(ctx context.Context, change Contain
 		return err
 	}
 
-	ordered := kit.Unique(kit.TrimNonEmpty(strings.Split(s.GetStringSetting(ctx, change.Key), ",")))
-	if change.Listed {
+	listed := change.Enabled == (s.GetStringSetting(ctx, change.ModeKey) == ContainerModeInclude)
+	ordered := kit.Unique(kit.TrimNonEmpty(strings.Split(s.GetStringSetting(ctx, change.ListKey), ",")))
+	if listed {
 		ordered = kit.Unique(append(ordered, change.ContainerName))
 	} else {
 		ordered = slices.DeleteFunc(ordered, func(name string) bool { return name == change.ContainerName })
 	}
 
-	values, err := s.prepareUpdateValues([]types.SettingUpdate{{Key: change.Key, Value: strings.Join(ordered, ",")}})
+	values, err := s.prepareUpdateValues([]types.SettingUpdate{{Key: change.ListKey, Value: strings.Join(ordered, ",")}})
 	if err != nil {
 		return err
 	}

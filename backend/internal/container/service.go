@@ -1638,15 +1638,11 @@ func (s *ContainerService) SetAutoUpdate(ctx context.Context, opts SetAutoUpdate
 	if labels.IsUpdateDisabled(containerLabels) || (policy.Include && containerlabel.IsEnabled(containerLabels, labels.LabelUpdater)) {
 		return common.ErrContainerAutoUpdateLabelControlled
 	}
-	// The list holds the updated containers in include mode and the skipped ones in exclude mode.
-	listed := !opts.Enabled
-	if policy.Include {
-		listed = opts.Enabled
-	}
 	return s.settingsService.SetContainerListed(ctx, settings.ContainerListChange{
-		Key:           "autoUpdateExcludedContainers",
+		ListKey:       "autoUpdateExcludedContainers",
+		ModeKey:       "autoUpdateMode",
 		ContainerName: strings.TrimPrefix(info.Name, "/"),
-		Listed:        listed,
+		Enabled:       opts.Enabled,
 	})
 }
 
