@@ -2032,7 +2032,7 @@ func (s *UpdaterService) UpdateServiceImages(ctx context.Context, projectID stri
 }
 
 func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID string) (*types.ProjectUpdateInfo, error) {
-	details, err := s.deps.Projects.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
+	details, err := s.deps.Projects.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeRuntimeServices: true})
 	if err != nil {
 		return nil, err
 	}
@@ -2090,7 +2090,7 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 	for i, service := range services {
 		g.Go(func() (workerErr error) {
 			defer concurrency.RecoverToError(&workerErr, "project service update check", "projectId", projectID, "service", service.Name)
-			records[i] = s.checkProjectService(ctx, projectID, service, checkImage)
+			records[i] = s.checkProjectService(ctx, projectID, service, details.RuntimeServices, checkImage)
 			return nil
 		})
 	}
@@ -2143,6 +2143,7 @@ func (s *UpdaterService) checkProjectService(
 	ctx context.Context,
 	projectID string,
 	service composeTypes.ServiceConfig,
+	runtime []types.ProjectRuntimeService,
 	checkImage func(context.Context, string, string, updatertypes.CheckRequest) (updatertypes.CheckResult, error),
 ) imageupdate.ImageUpdateRecord {
 	checkTime := time.Now().UTC()
@@ -2187,13 +2188,18 @@ func (s *UpdaterService) checkProjectService(
 		}
 		return new(target.Tag), nil
 	}()
+	// The local tag can already be current while running containers still use an older image.
+	staleDigest, stale := "", false
+	if checkErr == nil && !check.UpdateAvailable && check.TargetDigest != "" {
+		staleDigest, stale = s.staleRunningDigest(ctx, service, check.TargetDigest, runtime)
+	}
 	return imageupdate.ImageUpdateRecord{
 		ProjectID:     projectID,
 		ServiceName:   service.Name,
 		PolicyKey:     imageref.UpdatePolicyKey(service.Image, service.Labels),
 		CheckTime:     checkTime,
 		LatestVersion: latestVersion,
-		CurrentDigest: mo.EmptyableToOption(check.CurrentDigest).ToPointer(),
+		CurrentDigest: mo.EmptyableToOption(cmp.Or(staleDigest, check.CurrentDigest)).ToPointer(),
 		LatestDigest:  mo.EmptyableToOption(check.TargetDigest).ToPointer(),
 		LastError: func() *string {
 			switch {
@@ -2217,8 +2223,39 @@ func (s *UpdaterService) checkProjectService(
 			return check.UpdateType
 		}(),
 		CurrentVersion: cmp.Or(check.CurrentVersion, parsed.Tag),
-		HasUpdate:      check.UpdateAvailable && targetErr == nil,
+		HasUpdate:      (check.UpdateAvailable || stale) && targetErr == nil,
 	}
+}
+
+// staleRunningDigest returns the digest of the first running container of service whose image lacks targetDigest.
+func (s *UpdaterService) staleRunningDigest(ctx context.Context, service composeTypes.ServiceConfig, targetDigest string, runtime []types.ProjectRuntimeService) (string, bool) {
+	for _, replica := range runtime {
+		if replica.Name != service.Name || replica.ContainerID == "" || replica.Status != string(container.StateRunning) {
+			continue
+		}
+		inspected, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, replica.ContainerID, client.ContainerInspectOptions{})
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "failed to inspect project container for update check", "containerId", replica.ContainerID, "service", service.Name, "error", err)
+			continue
+		}
+		// A container created from another reference is recreated by a deploy, not an image update.
+		if refs.NormalizeImageUpdateRef(kit.FromPtr(inspected.Container.Config).Image) != refs.NormalizeImageUpdateRef(service.Image) {
+			continue
+		}
+		running, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			return dockerClient.ImageInspect(ctx, inspected.Container.Image)
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "failed to inspect project container image for update check", "containerId", replica.ContainerID, "service", service.Name, "error", err)
+			continue
+		}
+		if digests := imageref.RepositoryDigests(running.RepoDigests, service.Image); !slices.Contains(digests, targetDigest) {
+			return slices.Concat(digests, []string{running.ID})[0], true
+		}
+	}
+	return "", false
 }
 
 func (s *UpdaterService) RegisterWorkflows(engine *flow.Engine) error {

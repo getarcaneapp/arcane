@@ -50,6 +50,7 @@ type (
 		Path       string
 		Body       []byte
 		WantResult bool
+		WantCheck  bool
 	}
 
 	WebhookService struct {
@@ -799,11 +800,11 @@ func remoteWebhookRequest(wh *Webhook, actionType string) ([]remoteWebhookCall, 
 		containerPath := apiPrefix + "/containers/" + url.PathEscape(ref)
 		switch actionType {
 		case WebhookActionTypeUpdate:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/update", Body: nil, WantResult: true}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/update", Body: nil, WantResult: true, WantCheck: false}}, nil
 		case WebhookActionTypeStart, WebhookActionTypeStop, WebhookActionTypeRestart:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "?action=" + actionType, Body: nil, WantResult: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "?action=" + actionType, Body: nil, WantResult: false, WantCheck: false}}, nil
 		case WebhookActionTypeRedeploy:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/redeploy", Body: nil, WantResult: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/redeploy", Body: nil, WantResult: false, WantCheck: false}}, nil
 		}
 		return nil, ErrWebhookInvalidAction
 	case WebhookTargetTypeProject:
@@ -816,25 +817,25 @@ func remoteWebhookRequest(wh *Webhook, actionType string) ([]remoteWebhookCall, 
 				return nil, fmt.Errorf("encode project update request: %w", err)
 			}
 			return []remoteWebhookCall{
-				{Method: http.MethodPost, Path: apiPrefix + "/updater/projects/" + url.PathEscape(wh.TargetID) + "/check", Body: nil, WantResult: false},
-				{Method: http.MethodPost, Path: apiPrefix + "/updater/run", Body: body, WantResult: true},
+				{Method: http.MethodPost, Path: apiPrefix + "/updater/projects/" + url.PathEscape(wh.TargetID) + "/check", Body: nil, WantResult: false, WantCheck: true},
+				{Method: http.MethodPost, Path: apiPrefix + "/updater/run", Body: body, WantResult: true, WantCheck: false},
 			}, nil
 		case WebhookActionTypeDown, WebhookActionTypeRestart:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "?action=" + actionType, Body: nil, WantResult: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "?action=" + actionType, Body: nil, WantResult: false, WantCheck: false}}, nil
 		case WebhookActionTypeUp, WebhookActionTypeRedeploy:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "/deploy?action=" + actionType, Body: nil, WantResult: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "/deploy?action=" + actionType, Body: nil, WantResult: false, WantCheck: false}}, nil
 		}
 		return nil, ErrWebhookInvalidAction
 	case WebhookTargetTypeUpdater:
 		if actionType != WebhookActionTypeRun {
 			return nil, ErrWebhookInvalidAction
 		}
-		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/updater/run?automatic=true", Body: nil, WantResult: true}}, nil
+		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/updater/run?automatic=true", Body: nil, WantResult: true, WantCheck: false}}, nil
 	case WebhookTargetTypeGitOps:
 		if actionType != WebhookActionTypeSync {
 			return nil, ErrWebhookInvalidAction
 		}
-		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/gitops/syncs/" + url.PathEscape(wh.TargetID) + "?action=sync", Body: nil, WantResult: false}}, nil
+		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/gitops/syncs/" + url.PathEscape(wh.TargetID) + "?action=sync", Body: nil, WantResult: false, WantCheck: false}}, nil
 	default:
 		return nil, ErrWebhookInvalidType
 	}
@@ -847,19 +848,30 @@ func (s *WebhookService) executeRemoteWebhookAction(ctx context.Context, wh *Web
 	}
 
 	var result *types.UpdaterResult
+	var checkErr error
 	for _, call := range calls {
-		if call.WantResult {
+		switch {
+		case call.WantResult:
 			var out types.ApiResponse[*types.UpdaterResult]
 			if proxyJSONRequestErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, call.Method, call.Path, call.Body, &out); proxyJSONRequestErr != nil {
-				return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyJSONRequestErr)
+				return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, errors.Join(checkErr, proxyJSONRequestErr))
 			}
 			result = out.Data
-			continue
+		case call.WantCheck:
+			var out types.ApiResponse[*types.ProjectUpdateInfo]
+			if proxyCheckErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, call.Method, call.Path, call.Body, &out); proxyCheckErr != nil {
+				return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyCheckErr)
+			}
+			checkErr = projectCheckError(out.Data)
+		default:
+			var out types.ApiResponse[any]
+			if proxyServiceActionErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, call.Method, call.Path, call.Body, &out); proxyServiceActionErr != nil {
+				return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyServiceActionErr)
+			}
 		}
-		var out types.ApiResponse[any]
-		if proxyServiceActionErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, call.Method, call.Path, call.Body, &out); proxyServiceActionErr != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyServiceActionErr)
-		}
+	}
+	if checkErr != nil {
+		return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, errors.Join(checkErr, failedUpdateError(result)))
 	}
 
 	return result, nil
@@ -961,16 +973,22 @@ func (s *WebhookService) executeProjectWebhookAction(ctx context.Context, wh *We
 	switch actionType {
 	case WebhookActionTypeUpdate:
 		// Same check-then-apply the UI's project update uses; the webhook names the project, so exclusions do not apply.
-		if _, err := s.updaterService.CheckProjectUpdates(ctx, wh.TargetID); err != nil {
+		// Failed image checks still let cleanly checked services update, but the webhook reports them as failed.
+		info, err := s.updaterService.CheckProjectUpdates(ctx, wh.TargetID)
+		if err != nil {
 			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
 		}
+		checkErr := projectCheckError(info)
 		result, err := s.updaterService.ApplyPending(ctx, types.UpdaterOptions{
 			Type:                     "project",
 			ResourceIds:              []string{wh.TargetID},
 			IgnoreSettingsExclusions: true,
 		})
 		if err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, errors.Join(checkErr, err))
+		}
+		if checkErr != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, errors.Join(checkErr, failedUpdateError(result)))
 		}
 		return result, nil
 	case WebhookActionTypeUp:
@@ -1034,6 +1052,14 @@ func (s *WebhookService) wrapWebhookActionError(ctx context.Context, wh *Webhook
 		return fmt.Errorf("%s %s failed: %w", targetKind, actionType, err)
 	}
 	return nil
+}
+
+// projectCheckError reports image checks that failed in a project update check, which the UI shows as a failed check.
+func projectCheckError(info *types.ProjectUpdateInfo) error {
+	if kit.FromPtr(info).ErrorCount == 0 {
+		return nil
+	}
+	return fmt.Errorf("update check failed for %d image(s): %s", info.ErrorCount, kit.FromPtr(info.ErrorMessage))
 }
 
 // failedUpdateError reports failed or blocked items in an update result, which the UI treats as a failed update.
