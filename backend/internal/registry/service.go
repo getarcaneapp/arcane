@@ -93,6 +93,8 @@ type (
 
 	rateLimitRoundTripFunc func(*http.Request) (*http.Response, error)
 
+	freshImageDigestsKey struct{}
+
 	ImageConfigOptions struct {
 		Platform    v1.Platform
 		Credentials []types.ContainerRegistryCredential
@@ -843,14 +845,10 @@ func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *Con
 	return s.TestRegistry(ctx, reg.URL, ecrUser, ecrPass)
 }
 
-// ForgetImageDigests drops the cached digests and lookup failures of imageRefs, so their next lookup reads the registry.
-func (s *ContainerRegistryService) ForgetImageDigests(imageRefs ...string) {
-	for _, imageRef := range imageRefs {
-		if parts, err := refs.NormalizeReference(imageRef); err == nil {
-			s.cache.Delete(parts.NormalizedRef)
-			s.digestFailures.Delete(parts.NormalizedRef)
-		}
-	}
+// WithFreshImageDigests makes ImageDigest calls under ctx read the registry instead of cached digests,
+// lookups in flight, or recent failures, and store what they read for later lookups.
+func WithFreshImageDigests(ctx context.Context) context.Context {
+	return context.WithValue(ctx, freshImageDigestsKey{}, true)
 }
 
 func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef string) (string, error) {
@@ -859,11 +857,7 @@ func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef str
 		return "", err
 	}
 
-	if cachedErr, failed, _ := s.digestFailures.Get(parts.NormalizedRef); failed {
-		return "", cachedErr
-	}
-
-	digestValue, found, err := s.cache.GetOrLoad(parts.NormalizedRef, func(normalizedRef string) (string, bool, error) {
+	load := func(normalizedRef string) (string, bool, error) {
 		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 		defer cancel()
 
@@ -872,7 +866,28 @@ func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef str
 			return "", false, loadErr
 		}
 		return result.Digest, true, nil
-	})
+	}
+	var (
+		digestValue string
+		found       bool
+	)
+	if fresh, _ := ctx.Value(freshImageDigestsKey{}).(bool); fresh {
+		digestValue, found, err = load(parts.NormalizedRef)
+		if err == nil {
+			// Delete first so a load already in flight does not overwrite the fresh digest.
+			s.cache.Delete(parts.NormalizedRef)
+			s.cache.Set(cache.Entry[string, string]{
+				Key:   parts.NormalizedRef,
+				Value: digestValue,
+			})
+			s.digestFailures.Delete(parts.NormalizedRef)
+		}
+	} else {
+		if cachedErr, failed, _ := s.digestFailures.Get(parts.NormalizedRef); failed {
+			return "", cachedErr
+		}
+		digestValue, found, err = s.cache.GetOrLoad(parts.NormalizedRef, load)
+	}
 	if err != nil {
 		if ctx.Err() == nil {
 			s.digestFailures.Set(cache.Entry[string, error]{
