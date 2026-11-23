@@ -607,7 +607,7 @@ func TestImageUpdateService_InspectLocalImageSnapshot_IsLocalBuild(t *testing.T)
 			}))
 			t.Cleanup(server.Close)
 
-			svc := &ImageUpdateService{dockerService: newImageUpdateTestDockerService(t, server)}
+			svc := NewImageUpdateService(ImageUpdateServiceParams{DockerService: newImageUpdateTestDockerService(t, server)})
 			snapshot, err := svc.inspectLocalImageSnapshot(t.Context(), "local-only:latest", map[string]struct{}{})
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, snapshot.IsLocalBuild)
@@ -3260,6 +3260,7 @@ func startCheckWorkflow(t *testing.T, svc *ImageUpdateService) *flowtest.Harness
 	harness := flowtest.New(t, activities)
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
+	t.Cleanup(func() { _ = svc.Stop(context.WithoutCancel(t.Context())) })
 	return harness
 }
 

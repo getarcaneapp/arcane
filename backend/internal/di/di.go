@@ -114,7 +114,12 @@ var (
 			apns.NewApnsService,
 			notification.NewNotificationService,
 			fx.Annotate(provideWithWorkflows(vulnerability.NewVulnerabilityService), fx.As(fx.Self()), fx.As(new(updater.VulnerabilityScanner))),
-			provideWithWorkflows(imageupdate.NewImageUpdateService),
+			fx.Annotate(
+				provideWithWorkflows(imageupdate.NewImageUpdateService),
+				fx.OnStop(func(ctx context.Context, service *imageupdate.ImageUpdateService) error {
+					return service.Stop(ctx)
+				}),
+			),
 			provideWithWorkflows(image.NewImageService),
 			build.NewBuildService,
 			project.NewLifecycleService,
