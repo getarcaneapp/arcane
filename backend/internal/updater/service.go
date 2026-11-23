@@ -800,6 +800,36 @@ func (s *UpdaterService) AggregateHistory(ctx context.Context, limit int) (types
 	}, nil
 }
 
+func (s *UpdaterService) AggregateApplyPending(ctx context.Context) (types.ApiResponse[*types.UpdaterResult], error) {
+	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok && scope.Timeout == 0 {
+		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{
+			Handler: scope.Handler,
+			Request: scope.Request,
+			Resolve: scope.Resolve,
+			Path:    scope.Path,
+			IDs:     scope.IDs,
+			Body:    scope.Body,
+			Timeout: timeouts.DefaultAutoUpdateApply,
+		})
+	}
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[*types.UpdaterResult]) *types.UpdaterResult {
+		result := types.UpdaterResult{Items: []types.UpdaterResourceResult{}, Success: true}
+		for _, environment := range environments {
+			data := kit.FromPtr(environment.Data)
+			result = types.UpdaterResult{
+				Items:     slices.Concat(result.Items, data.Items),
+				Checked:   result.Checked + data.Checked,
+				Updated:   result.Updated + data.Updated,
+				Restarted: result.Restarted + data.Restarted,
+				Skipped:   result.Skipped + data.Skipped,
+				Failed:    result.Failed + data.Failed,
+				Success:   result.Success && data.Success,
+			}
+		}
+		return &result
+	})
+}
+
 func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef, oldRefToNewRef map[string]string) ([]types.UpdaterResourceResult, error) {
 	results, err := s.engine.RestartContainersUsingOldImages(ctx, updater.RestartTargets{ByOldID: oldIDToNewRef, ByOldRef: oldRefToNewRef})
 	return resultFromModule(&updater.Result{Items: results}).Items, err

@@ -31,13 +31,13 @@
 	import { pinViewAction } from '#lib/utils/dashboard-layout.js';
 	import {
 		acrossEnvironmentsNote,
+		actAcrossEnvironments,
 		actionEnvironments,
 		destinationEnvironmentId,
 		hasShownPermission,
 		listScopes,
 		readableEnvironments,
 		readEachEnvironment,
-		settleAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -97,13 +97,14 @@
 	const pruneImagesMutation = createMutation(() => ({
 		mutationKey: ['images', 'prune', pageState.scope],
 		mutationFn: (_requestedScope: string) =>
-			settleAcrossEnvironments(actionEnvironments('images:prune'), (id) =>
+			actAcrossEnvironments(actionEnvironments('images:prune'), (scope, config) =>
 				imageService.pruneImages(
 					{
 						mode: imagePruneMode,
 						...(imagePruneMode === 'olderThan' ? { until: imagePruneUntil } : {})
 					},
-					id
+					scope,
+					config
 				)
 			),
 		onSuccess: async (results, requestedScope) => {
@@ -119,7 +120,9 @@
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['images', 'check-updates', pageState.scope],
 		mutationFn: () =>
-			settleAcrossEnvironments(actionEnvironments('image-updates:check'), (id) => imageService.checkAllImages(id)),
+			actAcrossEnvironments(actionEnvironments('image-updates:check'), (scope, config) =>
+				imageService.checkAllImages(scope, config)
+			),
 		onSuccess: async (results) => {
 			toast.success(m.images_update_check_completed(), activityToastOptions(extractActivityId(results[0]?.value)));
 			await invalidateEnvironmentImages(results);

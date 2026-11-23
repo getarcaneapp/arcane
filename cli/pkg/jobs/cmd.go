@@ -16,6 +16,7 @@ import (
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
+	"getarcane.dev/cli/v3/internal/runtime"
 	clitypes "getarcane.dev/cli/v3/internal/types"
 	"getarcane.dev/types/v3"
 )
@@ -130,6 +131,9 @@ func newUpdateCmd() *cobra.Command {
 				FailureMessage: "failed to update job schedules",
 				Render: func(data types.JobScheduleConfig) error {
 					output.Success("Job schedules updated")
+					if app, ok := runtime.From(cmd.Context()); ok && app.AllConfirmed {
+						return nil
+					}
 					output.KeyValue("Agent health interval", data.EnvironmentHealthInterval)
 					output.KeyValue("Event cleanup interval", data.EventCleanupInterval)
 					output.KeyValue("Expired sessions cleanup interval", data.ExpiredSessionsCleanupInterval)
@@ -138,7 +142,7 @@ func newUpdateCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMergedAction, cmd)
 	cmd.Flags().StringVar(&opts.environmentHealthInterval, "agent-health-interval", "", "Agent health job interval (cron expression)")
 	cmd.Flags().StringVar(&opts.eventCleanupInterval, "event-cleanup-interval", "", "Event cleanup job interval (cron expression)")
 	cmd.Flags().StringVar(&opts.expiredSessionsCleanupInterval, "expired-sessions-cleanup-interval", "", "Expired sessions cleanup job interval (cron expression)")

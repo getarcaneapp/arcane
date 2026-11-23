@@ -62,6 +62,10 @@ func newPruneCmd() *cobra.Command {
 					Networks:   &types.PruneNetworksOptions{Mode: types.PruneNetworkModeUnused},
 				},
 				Render: func(data types.PruneAllResult) error {
+					if app, ok := runtime.From(cmd.Context()); ok && app.AllConfirmed {
+						output.Success("System prune started")
+						return nil
+					}
 					output.Header("System Prune Results")
 					output.KeyValue("Space Reclaimed", output.UnsignedBytes(data.SpaceReclaimed))
 					return nil
@@ -69,7 +73,7 @@ func newPruneCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMergedAction, cmd)
 	return cmd
 }
 

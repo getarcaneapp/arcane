@@ -336,7 +336,7 @@ func newPruneCmd() *cobra.Command {
 		dangling bool
 	}
 	command := &cobra.Command{
-		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeAll},
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMergedAction},
 		Use:          "prune",
 		Short:        "Remove unused images",
 		SilenceUsage: true,

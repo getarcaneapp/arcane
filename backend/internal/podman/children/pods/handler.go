@@ -134,6 +134,19 @@ func (h *Handler) Delete(ctx context.Context, input *DeletePodInput) (*handlerut
 }
 
 func (h *Handler) Prune(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.PodPruneReport], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[[]types.PodPruneReport]) []types.PodPruneReport {
+			reports := []types.PodPruneReport{}
+			for _, environment := range environments {
+				reports = append(reports, environment.Data...)
+			}
+			return reports
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to prune pods: " + err.Error())
+		}
+		return &handlerutil.Out[[]types.PodPruneReport]{Body: body}, nil
+	}
 	reports, err := h.service.Prune(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(err)

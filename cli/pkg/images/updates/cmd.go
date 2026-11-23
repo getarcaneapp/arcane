@@ -34,9 +34,12 @@ func newCheckCmd() *cobra.Command {
 		all bool
 	}
 	command := &cobra.Command{
-		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeAll},
-		Use:         "check [image-ref...]",
-		Short:       "Check image references for updates",
+		Annotations: map[string]string{
+			"arcane:scope":              cmdutil.ScopeAll,
+			"arcane:merged-action-flag": "all",
+		},
+		Use:   "check [image-ref...]",
+		Short: "Check image references for updates",
 		Long: "Check image references for updates.\n\nWith a single reference the update status is checked directly; with " +
 			"multiple references a batch check is performed. With --all every image is checked.",
 		Args:         cobra.ArbitraryArgs,
@@ -52,11 +55,15 @@ func newCheckCmd() *cobra.Command {
 					return errors.New("--all cannot be combined with image references")
 				}
 
-				result, checkAllUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAction(c.EnvID(), "all"), struct{}{})
-				if checkAllUpdatesErr != nil {
-					return fmt.Errorf("failed to check all updates: %w", checkAllUpdatesErr)
-				}
-				return printBatchResults(cmd, result.Data)
+				return cmdutil.Run(cmd, c, cmdutil.Spec[jsontext.Value]{
+					Method:         http.MethodPost,
+					Path:           clitypes.ImageUpdatesCheckAction(c.EnvID(), "all"),
+					Body:           struct{}{},
+					FailureMessage: "failed to check all updates",
+					Render: func(data jsontext.Value) error {
+						return printBatchResults(cmd, data)
+					},
+				})
 			}
 
 			if len(args) == 0 {
@@ -95,7 +102,7 @@ func newCheckCmd() *cobra.Command {
 
 func newCheckAllCmd() *cobra.Command {
 	return &cobra.Command{
-		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeAll},
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMergedAction},
 		Use:          "check-all",
 		Hidden:       true,
 		Short:        "Check all images for updates",
@@ -107,12 +114,15 @@ func newCheckAllCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAction(c.EnvID(), "all"), struct{}{})
-			if err != nil {
-				return fmt.Errorf("failed to check all updates: %w", err)
-			}
-
-			return printBatchResults(cmd, result.Data)
+			return cmdutil.Run(cmd, c, cmdutil.Spec[jsontext.Value]{
+				Method:         http.MethodPost,
+				Path:           clitypes.ImageUpdatesCheckAction(c.EnvID(), "all"),
+				Body:           struct{}{},
+				FailureMessage: "failed to check all updates",
+				Render: func(data jsontext.Value) error {
+					return printBatchResults(cmd, data)
+				},
+			})
 		},
 	}
 }
