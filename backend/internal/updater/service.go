@@ -2040,11 +2040,16 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 		return nil, errors.New("project has no resolved Compose services to check")
 	}
 	services := make([]composeTypes.ServiceConfig, 0, len(details.Services))
+	images := make([]string, 0, len(details.Services))
 	for _, service := range details.Services {
 		if strings.TrimSpace(service.Image) != "" {
 			services = append(services, service)
+			images = append(images, service.Image)
 		}
 	}
+	// A project check is asked for (UI, webhook, CLI), often right after a push, so it reads current
+	// registry digests instead of ones cached by an earlier check.
+	s.deps.RegistryDigestResolver.ForgetImageDigests(images...)
 
 	type cachedCheck struct {
 		err    error

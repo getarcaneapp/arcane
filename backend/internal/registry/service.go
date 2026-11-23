@@ -843,6 +843,16 @@ func (s *ContainerRegistryService) TestECRRegistry(ctx context.Context, reg *Con
 	return s.TestRegistry(ctx, reg.URL, ecrUser, ecrPass)
 }
 
+// ForgetImageDigests drops the cached digests and lookup failures of imageRefs, so their next lookup reads the registry.
+func (s *ContainerRegistryService) ForgetImageDigests(imageRefs ...string) {
+	for _, imageRef := range imageRefs {
+		if parts, err := refs.NormalizeReference(imageRef); err == nil {
+			s.cache.Delete(parts.NormalizedRef)
+			s.digestFailures.Delete(parts.NormalizedRef)
+		}
+	}
+}
+
 func (s *ContainerRegistryService) ImageDigest(ctx context.Context, imageRef string) (string, error) {
 	parts, err := refs.NormalizeReference(imageRef)
 	if err != nil {
