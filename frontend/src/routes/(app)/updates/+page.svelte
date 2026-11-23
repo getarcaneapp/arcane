@@ -21,12 +21,13 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
 	import {
+		actAcrossEnvironments,
 		actionEnvironments,
 		hasShownPermission,
 		listScopes,
-		readableEnvironments,
-		settleAcrossEnvironments
+		readableEnvironments
 	} from '#lib/utils/environments.js';
+	import { scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
 	import ContainerUpdatesTable from './components/container-updates-table.svelte';
@@ -42,35 +43,23 @@
 	// The page loader already populated these keys, so no initialData is needed.
 	// Previous rows are kept only within the same environment, and results are
 	// tagged with their environment so a switch never shows another's rows.
-	const containersQuery = createQuery(() => {
-		const queryScope = scope;
-		return {
+	const containersQuery = createQuery(() =>
+		scopedQueryOptions(scope, {
 			...containerListQuery(
-				queryScope,
+				scope,
 				readableEnvironments('containers:list'),
 				ensureStandaloneContainerUpdatesFilter(containerRequestOptions)
 			),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
-		};
-	});
+		})
+	);
 
-	const projectsQuery = createQuery(() => {
-		const queryScope = scope;
-		return {
-			...projectListQuery(queryScope, readableEnvironments('projects:list'), ensureUpdatesFilter(projectRequestOptions)),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value }),
+	const projectsQuery = createQuery(() =>
+		scopedQueryOptions(scope, {
+			...projectListQuery(scope, readableEnvironments('projects:list'), ensureUpdatesFilter(projectRequestOptions)),
 			refetchOnMount: false
-		};
-	});
+		})
+	);
 
 	const containers = $derived(containersQuery.data?.envId === scope ? containersQuery.data.value : null);
 	const projects = $derived(projectsQuery.data?.envId === scope ? projectsQuery.data.value : null);
@@ -92,7 +81,7 @@
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['updates', 'check-all', scope],
 		mutationFn: (environments: EnvironmentRef[]) =>
-			settleAcrossEnvironments(environments, (id) => imageService.checkAllImages(id)),
+			actAcrossEnvironments(environments, (scope, config) => imageService.checkAllImages(scope, config)),
 		onSuccess: async (_result, environments) => {
 			toast.success(m.images_update_check_completed());
 			await Promise.all([

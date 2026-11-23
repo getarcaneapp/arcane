@@ -168,6 +168,10 @@ func UploadSession(envID, kind, uploadID string) string {
 	return pathf("/api/agents/%s/uploads/%s/%s", envID, kind, uploadID)
 }
 
+func UploadSessionDownload(envID, kind, uploadID string) string {
+	return pathf("/api/agents/%s/uploads/%s/%s/download", envID, kind, uploadID)
+}
+
 func UploadSessionChunk(envID, kind, uploadID string, index int) string {
 	return pathf("/api/agents/%s/uploads/%s/%s/chunks/%d", envID, kind, uploadID, index)
 }
@@ -310,6 +314,14 @@ func ProjectTransfer(envID, projectID string) string {
 
 func ProjectTransferPreflight(envID, projectID string) string {
 	return pathf("/api/agents/%s/projects/%s/transfer/preflight", envID, projectID)
+}
+
+func ProjectExport(envID, projectID string) string {
+	return pathf("/api/agents/%s/projects/%s/export", envID, projectID)
+}
+
+func ProjectImport(envID string) string {
+	return pathf("/api/agents/%s/projects/import", envID)
 }
 
 func ProjectWorkspace(envID, projectID string) string {

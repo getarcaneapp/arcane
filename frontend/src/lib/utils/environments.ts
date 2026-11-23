@@ -102,6 +102,10 @@ export function destinationEnvironmentId(
 	return permitted[0] ?? (picked || LOCAL_DOCKER_ENVIRONMENT_ID);
 }
 
+export function environmentScope(environments: EnvironmentRef[]): string {
+	return environments.map((env) => env.id).join(',');
+}
+
 export function listScopes(environmentIds: string[]): string[] {
 	return [...new Set([...environmentIds, environmentIds.join(','), environmentStore.shownKey])];
 }
@@ -112,7 +116,7 @@ export function acrossEnvironmentsNote(environments: EnvironmentRef[]): string {
 	return m.all_environments_confirm_note({ count: environments.length });
 }
 
-export async function collectAcrossEnvironments<T>(
+async function collectAcrossEnvironments<T>(
 	environments: EnvironmentRef[],
 	run: (environmentId: string, config: APIRequestConfig) => Promise<T>,
 	reportInline = true
@@ -146,6 +150,17 @@ export async function settleAcrossEnvironments<T>(
 	return values;
 }
 
+export async function actAcrossEnvironments<C extends object>(
+	environments: EnvironmentRef[],
+	run: (scope: string, config?: APIRequestConfig) => Promise<C>
+): Promise<{ environment: EnvironmentRef; value: C }[]> {
+	const [only] = environments;
+	if (environments.length === 1 && only) return [{ environment: only, value: await run(only.id) }];
+	const { byEnvironment, failedEnvironments } = await readEachEnvironment(environments, run, {} as C);
+	toastEnvironmentFailures(failedEnvironments);
+	return byEnvironment.map(({ environment, data }) => ({ environment, value: data }));
+}
+
 export function toastEnvironmentFailures(failures: EnvironmentFailure[]) {
 	for (const { environment, message } of failures) {
 		toast.error(m.all_environments_request_failed({ environment: environment.name }), {
@@ -169,7 +184,7 @@ export async function readAcrossEnvironments<T>(
 	const { included, excluded } = limitEnvironments(environments);
 	let reported: EnvironmentFailure[] = [];
 	const result = await tryCatch(
-		run(included.map((env) => env.id).join(','), {
+		run(environmentScope(included), {
 			suppressAccessDeniedToast: reportInline,
 			onFailedEnvironments: (failures) => {
 				reported = failures;
@@ -279,17 +294,40 @@ export async function fetchAcrossEnvironments<
 	// Picks are checked against every shown environment, so picking only ones this page skips shows nothing.
 	const picked = environmentFilterIds(environmentFilter);
 	const targets = picked.length > 0 ? environments.filter((env) => picked.includes(env.id)) : environments;
+	const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: options.pagination?.limit ?? 0 };
 	if (targets.length === 0) {
-		const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: options.pagination?.limit ?? 0 };
 		return { data: [], pagination, failedEnvironments: [], excludedEnvironments: [] } as unknown as EnvironmentPage<P>;
 	}
 	const sortsByEnvironment = options.sort?.column === ENVIRONMENT_FILTER && targets.length === 1;
 	const request: O = { ...options, filters: options.filters && filters, sort: sortsByEnvironment ? undefined : options.sort };
-	const {
-		value: page,
-		failures,
-		excluded
-	} = await readAcrossEnvironments(targets, (scope, config) => fetch(scope, request, config));
+	let reported: EnvironmentFailure[] = [];
+	const read = await tryCatch(
+		readAcrossEnvironments(targets, (scope, config) =>
+			fetch(scope, request, {
+				...config,
+				onFailedEnvironments: (failures) => {
+					reported = failures;
+					config.onFailedEnvironments?.(failures);
+				}
+			})
+		)
+	);
+	if (read.error !== null) {
+		if (picked.length === 0) throw read.error;
+		const { included, excluded } = limitEnvironments(targets);
+		const message = extractApiErrorMessage(read.error).replace(`${included[0]!.name}: `, '');
+		const attempted = reported.length > 0 ? reported : included.map((environment) => ({ environment, message }));
+		return {
+			data: [],
+			pagination,
+			failedEnvironments: attempted.map((failure) => ({
+				environment: included.find((env) => env.id === failure.environment.id) ?? failure.environment,
+				message: failure.message
+			})),
+			excludedEnvironments: excluded
+		} as unknown as EnvironmentPage<P>;
+	}
+	const { value: page, failures, excluded } = read.data;
 	return {
 		...page,
 		data: environmentRows(page.data, targets),

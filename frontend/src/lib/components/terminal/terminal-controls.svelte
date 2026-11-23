@@ -6,15 +6,20 @@
 
 	let {
 		selectedShell = $bindable(),
+		selectedUser = $bindable(),
 		onShellChange,
+		onUserChange,
 		onReconnect
 	}: {
 		selectedShell: string;
+		selectedUser: string;
 		onShellChange?: (shell: string) => void;
+		onUserChange?: (user: string) => void;
 		onReconnect?: () => void;
 	} = $props();
 
 	const commonShells = [
+		{ value: 'auto', label: m.auto() },
 		{ value: '/bin/sh', label: 'sh' },
 		{ value: '/bin/bash', label: 'bash' },
 		{ value: '/bin/ash', label: 'ash' },
@@ -23,6 +28,7 @@
 	];
 
 	const shellLabels: Record<string, string> = {
+		auto: m.auto(),
 		'/bin/sh': 'sh',
 		'/bin/bash': 'bash',
 		'/bin/ash': 'ash',
@@ -54,9 +60,40 @@
 			onShellChange?.(customShell);
 		}
 	}
+
+	const userOptions = [
+		{ value: 'default', label: m.container_default_user() },
+		{ value: 'root', label: 'root' },
+		{ value: 'custom', label: m.custom() }
+	];
+
+	let customUserOpen = $state(false);
+	let customUser = $derived(selectedUser === 'root' ? '' : selectedUser);
+	const userSelectValue = $derived.by(() => {
+		if (customUserOpen || (selectedUser !== '' && selectedUser !== 'root')) return 'custom';
+		if (selectedUser === 'root') return 'root';
+		return 'default';
+	});
+
+	function handleUserChange(value: string | undefined) {
+		if (!value) return;
+
+		customUserOpen = value === 'custom';
+		if (customUserOpen) return;
+		selectedUser = value === 'root' ? 'root' : '';
+		onUserChange?.(selectedUser);
+	}
+
+	function handleCustomUserSubmit() {
+		const user = customUser.trim();
+		if (!user) return;
+		customUserOpen = false;
+		selectedUser = user;
+		onUserChange?.(user);
+	}
 </script>
 
-<div class="flex items-center gap-2">
+<div class="flex flex-wrap items-center gap-2">
 	<Select.Root value={selectedShell} type="single" onValueChange={handleShellChange}>
 		<Select.Trigger class="h-8 w-35">
 			{shellLabels[selectedShell] ?? m.select_shell_placeholder()}
@@ -83,6 +120,35 @@
 			}}
 		/>
 		<ArcaneButton action="base" tone="outline" onclick={handleCustomShellSubmit} class="h-8" customLabel={m.apply()} />
+	{/if}
+
+	<Select.Root value={userSelectValue} type="single" onValueChange={handleUserChange}>
+		<Select.Trigger class="h-8 w-40" aria-label={m.common_user()}>
+			{userOptions.find((option) => option.value === userSelectValue)?.label}
+		</Select.Trigger>
+		<Select.Content>
+			{#each userOptions as option (option.value)}
+				<Select.Item value={option.value}>
+					{option.label}
+				</Select.Item>
+			{/each}
+		</Select.Content>
+	</Select.Root>
+
+	{#if userSelectValue === 'custom'}
+		<Input
+			type="text"
+			bind:value={customUser}
+			placeholder={m.container_user_placeholder()}
+			aria-label={m.common_user()}
+			class="h-8 w-45"
+			onkeydown={(e) => {
+				if (e.key === 'Enter') {
+					handleCustomUserSubmit();
+				}
+			}}
+		/>
+		<ArcaneButton action="base" tone="outline" onclick={handleCustomUserSubmit} class="h-8" customLabel={m.apply()} />
 	{/if}
 
 	<ArcaneButton

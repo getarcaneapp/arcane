@@ -5,8 +5,8 @@ import (
 )
 
 const (
-	v118SecretSourcePermissions = `["variables:sources:list","variables:sources:read","variables:sources:create","variables:sources:update","variables:sources:delete","variables:sources:refresh"]`
-	v118PriorPermissions        = `[
+	v120SecretSourcePermissions = `["variables:sources:list","variables:sources:read","variables:sources:create","variables:sources:update","variables:sources:delete","variables:sources:refresh"]`
+	v120PriorPermissions        = `[
     "users:list", "users:read", "users:create", "users:update", "users:delete", "roles:list", "roles:read",
     "apikeys:list", "apikeys:read", "apikeys:create", "apikeys:update", "apikeys:delete", "federated:list",
     "federated:read", "federated:create", "federated:update", "federated:delete", "settings:read",
@@ -27,7 +27,7 @@ const (
     "containers:update", "containers:kill", "containers:pause", "containers:delete", "containers:exec",
     "containers:autoupdate", "projects:list", "projects:read", "projects:logs", "projects:create",
     "projects:update", "projects:deploy", "projects:jobs:run", "projects:down", "projects:restart", "projects:delete",
-    "projects:archive", "images:list", "images:read", "images:pull", "images:push", "images:build",
+    "projects:archive", "projects:export", "images:list", "images:read", "images:pull", "images:push", "images:build",
     "images:tag", "images:commit", "images:prune", "images:delete", "images:upload", "images:patch",
     "volumes:list", "volumes:read", "volumes:create", "volumes:rename", "volumes:delete", "volumes:prune",
     "volumes:upload", "volumes:backup", "networks:list", "networks:read", "networks:create",
@@ -58,7 +58,7 @@ const (
     "environment-settings:read", "environment-settings:update"
 ]`
 
-	v118SQLiteUp = `
+	v120SQLiteUp = `
 CREATE TABLE secret_sources (
     id TEXT PRIMARY KEY,
     created_at DATETIME NOT NULL,
@@ -91,11 +91,11 @@ SET permissions = (
     SELECT json_group_array(value) FROM (
         SELECT value FROM json_each(roles.permissions)
         UNION
-        SELECT value FROM json_each('` + v118SecretSourcePermissions + `')
+        SELECT value FROM json_each('` + v120SecretSourcePermissions + `')
     )
 )
 WHERE NOT EXISTS (
-    SELECT 1 FROM json_each('` + v118PriorPermissions + `') AS prior
+    SELECT 1 FROM json_each('` + v120PriorPermissions + `') AS prior
     WHERE prior.value NOT IN (SELECT value FROM json_each(roles.permissions))
 );
 INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, created_at)
@@ -110,11 +110,11 @@ FROM (
     SELECT api_key_id, MIN(environment_id) AS environment_id
     FROM api_key_permissions
     WHERE COALESCE(environment_id, '') = ''
-        AND permission IN (SELECT value FROM json_each('` + v118PriorPermissions + `'))
+        AND permission IN (SELECT value FROM json_each('` + v120PriorPermissions + `'))
     GROUP BY api_key_id
-    HAVING COUNT(DISTINCT permission) = (SELECT COUNT(*) FROM json_each('` + v118PriorPermissions + `'))
+    HAVING COUNT(DISTINCT permission) = (SELECT COUNT(*) FROM json_each('` + v120PriorPermissions + `'))
 ) AS admins
-CROSS JOIN json_each('` + v118SecretSourcePermissions + `') AS granted
+CROSS JOIN json_each('` + v120SecretSourcePermissions + `') AS granted
 WHERE NOT EXISTS (
     SELECT 1 FROM api_key_permissions AS existing
     WHERE existing.api_key_id = admins.api_key_id
@@ -122,7 +122,7 @@ WHERE NOT EXISTS (
         AND COALESCE(existing.environment_id, '') = ''
 );
 `
-	v118PostgresUp = `
+	v120PostgresUp = `
 CREATE TABLE IF NOT EXISTS secret_sources (
     id text PRIMARY KEY,
     created_at timestamp with time zone NOT NULL,
@@ -153,21 +153,21 @@ CREATE INDEX IF NOT EXISTS idx_secret_source_environments_env ON secret_source_e
 UPDATE roles
 SET permissions = permissions || (
     SELECT COALESCE(jsonb_agg(granted), '[]'::jsonb)
-    FROM jsonb_array_elements_text('` + v118SecretSourcePermissions + `'::jsonb) AS granted
+    FROM jsonb_array_elements_text('` + v120SecretSourcePermissions + `'::jsonb) AS granted
     WHERE NOT roles.permissions @> jsonb_build_array(granted)
 )
-WHERE roles.permissions @> '` + v118PriorPermissions + `'::jsonb;
+WHERE roles.permissions @> '` + v120PriorPermissions + `'::jsonb;
 INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id, created_at)
 SELECT gen_random_uuid()::text, admins.api_key_id, granted, admins.environment_id, CURRENT_TIMESTAMP
 FROM (
     SELECT api_key_id, MIN(environment_id) AS environment_id
     FROM api_key_permissions
     WHERE COALESCE(environment_id, '') = ''
-        AND permission IN (SELECT jsonb_array_elements_text('` + v118PriorPermissions + `'::jsonb))
+        AND permission IN (SELECT jsonb_array_elements_text('` + v120PriorPermissions + `'::jsonb))
     GROUP BY api_key_id
-    HAVING COUNT(DISTINCT permission) = jsonb_array_length('` + v118PriorPermissions + `'::jsonb)
+    HAVING COUNT(DISTINCT permission) = jsonb_array_length('` + v120PriorPermissions + `'::jsonb)
 ) AS admins
-CROSS JOIN jsonb_array_elements_text('` + v118SecretSourcePermissions + `'::jsonb) AS granted
+CROSS JOIN jsonb_array_elements_text('` + v120SecretSourcePermissions + `'::jsonb) AS granted
 WHERE NOT EXISTS (
     SELECT 1 FROM api_key_permissions AS existing
     WHERE existing.api_key_id = admins.api_key_id
@@ -175,7 +175,7 @@ WHERE NOT EXISTS (
         AND COALESCE(existing.environment_id, '') = ''
 );
 `
-	v118SQLiteDown = `
+	v120SQLiteDown = `
 DROP TABLE secret_source_environments;
 DROP TABLE secret_sources;
 DELETE FROM webhooks WHERE target_type = 'secretsource';
@@ -186,7 +186,7 @@ SET permissions = (
 WHERE EXISTS (SELECT 1 FROM json_each(roles.permissions) WHERE value LIKE 'variables:sources:%');
 DELETE FROM api_key_permissions WHERE permission LIKE 'variables:sources:%';
 `
-	v118PostgresDown = `
+	v120PostgresDown = `
 DROP TABLE IF EXISTS secret_source_environments;
 DROP TABLE IF EXISTS secret_sources;
 DELETE FROM webhooks WHERE target_type = 'secretsource';
@@ -202,5 +202,5 @@ DELETE FROM api_key_permissions WHERE permission LIKE 'variables:sources:%';
 )
 
 func init() {
-	goose.AddMigrationContext(run(v118SQLiteUp, v118PostgresUp), run(v118SQLiteDown, v118PostgresDown))
+	goose.AddMigrationContext(run(v120SQLiteUp, v120PostgresUp), run(v120SQLiteDown, v120PostgresDown))
 }

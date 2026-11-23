@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -52,6 +51,7 @@ type (
 		HelperImage     func(ctx context.Context) (string, error)
 		StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
 		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
+		StopHelper      func(ctx context.Context, volumeName string) error
 		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 	}
 
@@ -158,6 +158,11 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 		if err != nil {
 			return fmt.Errorf("failed to create pre-restore backup: %w", err)
 		}
+		defer func() {
+			if err != nil {
+				err = fmt.Errorf("volume restore failed; pre-restore backup %s holds the previous contents: %w", preBackupID, err)
+			}
+		}()
 	}
 	if entry.Format == types.VolumeBackupFormatArchive {
 		if restoreArchiveBackupErr := s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, nil); restoreArchiveBackupErr != nil {
@@ -505,6 +510,16 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		if createErr := s.createComposeVolume(ctx, volumeName, *composeVolume); createErr != nil {
 			return createErr
 		}
+		defer func() {
+			if err == nil {
+				return
+			}
+			stopHelperErr := s.deps.StopHelper(context.WithoutCancel(ctx), volumeName)
+			_, removeErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
+				return dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{})
+			})
+			err = errors.Join(err, stopHelperErr, removeErr)
+		}()
 	}
 	stopped, err := s.deps.StopContainers(ctx, volumeName, user, true)
 	containersStopped := len(stopped) > 0
@@ -523,6 +538,11 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		if err != nil {
 			return fmt.Errorf("failed to create pre-restore backup: %w", err)
 		}
+		defer func() {
+			if err != nil {
+				err = fmt.Errorf("volume restore failed; pre-restore backup %s holds the previous contents: %w", preBackupID, err)
+			}
+		}()
 	}
 
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
@@ -630,10 +650,7 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 	if !errdefs.IsNotFound(inspectErr) {
 		return fmt.Errorf("failed to inspect volume for restore: %w", inspectErr)
 	}
-	createOptions, err := projects.ComposeVolumeCreateOptions(projects.ComposeVolumeConfig(composetypes.VolumeConfig{
-		Driver: target.Driver,
-		Labels: target.Labels,
-	}, target.Key, volumeName, target.Project), nil)
+	createOptions, err := projects.ComposeVolumeTargetCreateOptions(volumeName, target)
 	if err != nil {
 		return err
 	}

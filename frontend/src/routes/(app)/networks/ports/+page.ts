@@ -19,7 +19,6 @@ export const load: PageLoad = async ({ parent }) => {
 		.catch((err: unknown) => throwPageLoadError(err, 'Failed to load ports'));
 
 	return {
-		scope,
 		ports,
 		portRequestOptions
 	};

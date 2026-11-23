@@ -309,6 +309,7 @@ function createActivityStore() {
 			environmentIds.map((id) => ({ id, name: core.environmentState(id)?.name ?? id }))
 		);
 		let reported: EnvironmentFailure[] = [];
+		const knownBefore = new Set(_activities.map((activity) => activity.id));
 		const result = await tryCatch(
 			readAcrossEnvironments(
 				included,
@@ -339,7 +340,10 @@ function createActivityStore() {
 					continue;
 				}
 				const environmentRows = included.length > 1 ? rows.filter((row) => row.environmentId === environment.id) : rows;
-				replaceEnvironmentSnapshot(environment.id, environmentRows);
+				const arrivedLive = (state.environmentActivities[environment.id] ?? []).filter(
+					(activity) => !knownBefore.has(activity.id) && !environmentRows.some((row) => row.id === activity.id)
+				);
+				replaceEnvironmentSnapshot(environment.id, [...arrivedLive, ...environmentRows]);
 			}
 		}
 
@@ -359,7 +363,18 @@ function createActivityStore() {
 		if (!core.environmentState(environmentId)) {
 			return;
 		}
-		const normalizedActivities = sortActivities(activities.map((activity) => normalizeActivity(activity, environmentId)));
+		const existing = state.environmentActivities[environmentId] ?? [];
+		const normalizedActivities = sortActivities(
+			activities.map((activity) => {
+				const normalized = normalizeActivity(activity, environmentId);
+				const current = existing.find((item) => item.id === activity.id);
+				const currentTime = parseInstant(current?.updatedAt);
+				const incomingTime = parseInstant(normalized.updatedAt);
+				if (current && currentTime && incomingTime && currentTime.epochNanoseconds > incomingTime.epochNanoseconds)
+					return current;
+				return normalized;
+			})
+		);
 		let details = state.details;
 		for (const activity of normalizedActivities) {
 			noteActivityStatus(activity);

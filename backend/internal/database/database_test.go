@@ -356,7 +356,8 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	require.NoError(t, err)
 	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
 	for i, permission := range authz.AllPermissions() {
-		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun || strings.HasPrefix(permission, "variables:sources:") {
+		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun || permission == authz.PermProjectsExport ||
+			strings.HasPrefix(permission, "variables:sources:") {
 			continue
 		}
 		id := fmt.Sprintf("c%d", i)
@@ -441,7 +442,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 118))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -465,7 +466,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	renamedCatalogPermissions := []string{
 		"settings:read", "settings:update", "variables:read", "system-backups:read", "swarm:read",
 		"podman:read", "image-updates:read", "image-updates:check", "vulnerabilities:read", "activities:read",
-		"gitops:backup", "projects:deploy",
+		"gitops:backup", "projects:deploy", "projects:create",
 	}
 	for id, permissions := range rolePermissionsWhere(`id LIKE 'c%'`) {
 		permission := catalogRoles[id]
@@ -943,7 +944,62 @@ func TestMigration117_GrantsProjectsJobsRun(t *testing.T) {
 	assert.Empty(t, scopes)
 }
 
-func TestMigration118_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
+func TestMigration118_HardensPostgresSchema(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-schema-hardening.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('ak1', 'Key 1', 'hash-1', 'ak1')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 118))
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('ak2', 'Key 2', 'hash-1', 'ak2')`)
+	require.Error(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 117))
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('ak2', 'Key 2', 'hash-1', 'ak2')`)
+	require.NoError(t, err)
+}
+
+func TestMigration119_GrantsProjectsExport(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-projects-export.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 118))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('x1', 'Creator', '["projects:list","projects:read","projects:create"]'),
+		('x2', 'Reader', '["projects:list","projects:read"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO environments (id, name, api_url, status, enabled) VALUES ('xe1', 'Remote', 'edge://remote', 'online', TRUE)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES ('xk1', 'Create key', 'hash-xk1', 'xk1')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('xp1', 'xk1', 'projects:create', NULL),
+		('xp2', 'xk1', 'projects:create', 'xe1')`)
+	require.NoError(t, err)
+	granted := func() (string, string, string) {
+		var creator, reader, scopes string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'x1'`).Scan(&creator))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'x2'`).Scan(&reader))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COALESCE(group_concat(scope, ','), '') FROM (
+			SELECT COALESCE(environment_id, 'global') AS scope FROM api_key_permissions
+			WHERE api_key_id = 'xk1' AND permission = 'projects:export' ORDER BY scope)`).Scan(&scopes))
+		return creator, reader, scopes
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
+	creator, reader, scopes := granted()
+	assert.JSONEq(t, `["projects:list","projects:read","projects:create","projects:export"]`, creator)
+	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)
+	assert.Equal(t, "global,xe1", scopes)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 118))
+	creator, reader, scopes = granted()
+	assert.JSONEq(t, `["projects:list","projects:read","projects:create"]`, creator)
+	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)
+	assert.Empty(t, scopes)
+}
+
+func TestMigration120_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-secret-sources.db")
 	schemaObjects := func() int {
@@ -961,7 +1017,7 @@ func TestMigration118_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
 	})
 	require.Len(t, secretSourcePermissions, 6)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 117))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
 	priorJSON, err := json.Marshal(priorPermissions)
 	require.NoError(t, err)
 	almostPermissions := append(slices.Clone(priorPermissions[1:]), "unknown:one")
@@ -998,7 +1054,7 @@ func TestMigration118_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
 		return admin, editor, adminKeyGrants, variablesKeyGrants
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 118))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
 	assert.Equal(t, 4, schemaObjects())
 	admin, editor, adminKeyGrants, variablesKeyGrants := state()
 	assert.ElementsMatch(t, authz.AllPermissions(), admin, "full admins keep global admin status")
@@ -1019,7 +1075,7 @@ func TestMigration118_AddsSecretSourcesAndGrantsFullAdmins(t *testing.T) {
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO webhooks (id, name, token_hash, token_prefix, target_type, target_id) VALUES ('w1', 'refresh', 'h1', 'p1', 'secretsource', 's1')`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 117))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 119))
 	assert.Zero(t, schemaObjects())
 	admin, _, adminKeyGrants, _ = state()
 	assert.ElementsMatch(t, priorPermissions, admin)

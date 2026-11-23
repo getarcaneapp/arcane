@@ -28,13 +28,16 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
+	"kit.getarcane.app/docker"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
+	"kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/search"
+	"getarcane.dev/arcane/v3/pkg/containerlabel"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/validation"
@@ -45,6 +48,23 @@ type (
 	Source string
 
 	LockReason string
+
+	// ContainerListChange turns an automation on or off for one container by editing its container list,
+	// which skips the listed containers in exclude mode and acts only on them in include mode.
+	ContainerListChange struct {
+		ListKey       string
+		ModeKey       string
+		ContainerName string
+		Enabled       bool
+	}
+
+	// ContainerSelection decides which containers an automation acts on. Listed holds the names from
+	// the automation's container list, which excludes them or, with Include, is the list to act on.
+	ContainerSelection struct {
+		Listed  map[string]bool
+		Label   string
+		Include bool
+	}
 
 	snapshot struct {
 		values  *Settings
@@ -84,6 +104,10 @@ const (
 	browserSessionSigningKeySize  = 64
 	minCiphertextBytes            = 28
 	sensitiveSettingsEncryptedKey = "sensitiveSettingsEncrypted"
+
+	// ContainerModeInclude makes an automation act only on listed or labelled containers. Any other
+	// mode value, including the default "exclude", skips the listed containers instead.
+	ContainerModeInclude = "include"
 
 	SourceDefault Source = "default"
 	SourceDB      Source = "db"
@@ -274,18 +298,6 @@ func (s *SettingsService) IsLocked(key string) (bool, LockReason) {
 	default:
 		return false, ""
 	}
-}
-
-func (s *SettingsService) GetSettings(_ context.Context) (*Settings, error) {
-	return s.GetSettingsConfig(), nil
-}
-
-func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *Settings {
-	cfg, err := s.GetSettings(ctx)
-	if err != nil {
-		slog.WarnContext(ctx, "failed to load settings, falling back to defaults", "error", err)
-	}
-	return kit.Ternary(cfg == nil, &Settings{}, cfg)
 }
 
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
@@ -808,9 +820,7 @@ func (s *SettingsService) SystemVolumeBackupPolicies() (*types.SystemVolumeBacku
 			return nil, fmt.Errorf("decode system-managed volume backup policies: %w", err)
 		}
 	}
-	return &types.SystemVolumeBackupPolicyCollection{
-		Policies: kit.Ternary(collection.Policies == nil, []types.SystemVolumeBackupPolicy{}, collection.Policies),
-	}, nil
+	return &collection, nil
 }
 
 func (s *SettingsService) ProjectsDirectories() ([]types.ProjectsDirectoryEntry, error) {
@@ -837,25 +847,61 @@ func (s *SettingsService) SetIntSetting(ctx context.Context, key string, value i
 	return s.UpdateSetting(ctx, key, strconv.Itoa(value))
 }
 
-func (s *SettingsService) SetContainerAutoUpdateExclusion(ctx context.Context, containerName string, excluded bool) error {
+// SetContainerListed updates a container list for a container's automation setting. The mode is read
+// under the same lock as the list, so a concurrent mode change cannot flip the entry's meaning.
+func (s *SettingsService) SetContainerListed(ctx context.Context, change ContainerListChange) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	ordered := kit.Unique(kit.TrimNonEmpty(strings.Split(s.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ",")))
-	if excluded {
-		ordered = kit.Unique(append(ordered, containerName))
+	listed := change.Enabled == (s.GetStringSetting(ctx, change.ModeKey) == ContainerModeInclude)
+	ordered := kit.Unique(kit.TrimNonEmpty(strings.Split(s.GetStringSetting(ctx, change.ListKey), ",")))
+	if listed {
+		ordered = kit.Unique(append(ordered, change.ContainerName))
 	} else {
-		ordered = slices.DeleteFunc(ordered, func(name string) bool { return name == containerName })
+		ordered = slices.DeleteFunc(ordered, func(name string) bool { return name == change.ContainerName })
 	}
 
-	values, err := s.prepareUpdateValues([]types.SettingUpdate{{Key: "autoUpdateExcludedContainers", Value: strings.Join(ordered, ",")}})
+	values, err := s.prepareUpdateValues([]types.SettingUpdate{{Key: change.ListKey, Value: strings.Join(ordered, ",")}})
 	if err != nil {
 		return err
 	}
 	return s.persistSettings(ctx, values)
+}
+
+// AutoUpdatePolicy returns which containers auto-update may install updates for. The
+// updater=false label is checked separately because it also applies in exclude mode.
+func (s *SettingsService) AutoUpdatePolicy(ctx context.Context) ContainerSelection {
+	// One snapshot keeps the list and the mode from the same saved configuration.
+	cfg := s.GetSettingsConfig()
+	return ContainerSelection{
+		Listed:  docker.ExcludedContainerNameSet(cfg.AutoUpdateExcludedContainers.Value),
+		Label:   labels.LabelUpdater,
+		Include: cfg.AutoUpdateMode.Value == ContainerModeInclude,
+	}
+}
+
+// AutoHealPolicy returns which containers auto-heal may restart.
+func (s *SettingsService) AutoHealPolicy(ctx context.Context) ContainerSelection {
+	cfg := s.GetSettingsConfig()
+	return ContainerSelection{
+		Listed:  docker.ExcludedContainerNameSet(cfg.AutoHealExcludedContainers.Value),
+		Label:   containerlabel.AutoHealLabel,
+		Include: cfg.AutoHealMode.Value == ContainerModeInclude,
+	}
+}
+
+// Allows reports whether the selection covers a container. In include mode the container must carry
+// Label=true or be listed. In exclude mode every container that is not listed qualifies.
+func (p ContainerSelection) Allows(containerLabels map[string]string, names []string) bool {
+	// ContainerNameExcluded is a generic name-set lookup despite its name.
+	listed := docker.ContainerNameExcluded(names, p.Listed)
+	if p.Include {
+		return listed || containerlabel.IsEnabled(containerLabels, p.Label)
+	}
+	return !listed
 }
 
 func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {
@@ -1035,7 +1081,7 @@ func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id types.Feature
 	if !ok {
 		return false
 	}
-	cfg := s.GetSettingsOrDefaults(ctx)
+	cfg := s.GetSettingsConfig()
 	value, _, _, err := cfg.FieldByKey(definition.SettingKey)
 	if err != nil || value == "" {
 		return definition.DefaultEnabled

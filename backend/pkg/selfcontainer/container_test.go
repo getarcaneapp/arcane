@@ -97,6 +97,32 @@ func TestInspectCurrentArcaneContainer_KeepsUnlabeledHitOverUnrelatedLabeledInst
 	assert.Equal(t, "custom123", got.ID)
 }
 
+func TestContainerDetection_TrueNASMountInfoAndSignals(t *testing.T) {
+	const fullID = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	trueNASMountInfo := "900 880 0:120 /containers/" + fullID + "/resolv.conf /etc/resolv.conf rw,relatime - zfs pool/ix-apps/docker rw\n"
+
+	id, err := currentContainerID(
+		func() (string, error) { return "", errors.New("no container ID found") },
+		func() (string, error) { return trueNASMountInfo, nil },
+	)
+	require.NoError(t, err)
+	assert.Equal(t, fullID, id)
+
+	noEnv := func(string) string { return "" }
+	noPath := func(string) bool { return false }
+	noID := func() (string, error) { return "", errors.New("no container ID found") }
+
+	assert.False(t, runningInContainer(noEnv, noPath, noID))
+	assert.True(t, runningInContainer(func(k string) string {
+		if k == "ARCANE_IN_CONTAINER" {
+			return "true"
+		}
+		return ""
+	}, noPath, noID))
+	assert.True(t, runningInContainer(noEnv, func(p string) bool { return p == "/.dockerenv" }, noID))
+	assert.True(t, runningInContainer(noEnv, noPath, func() (string, error) { return fullID, nil }))
+}
+
 func newTestDockerClient(t *testing.T, handler http.HandlerFunc) *client.Client {
 	t.Helper()
 

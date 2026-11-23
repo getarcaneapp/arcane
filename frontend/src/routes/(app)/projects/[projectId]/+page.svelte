@@ -15,6 +15,7 @@
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectExportDialog from '#lib/components/dialogs/project-export-dialog.svelte';
 	import ProjectTransferDialog, { projectTransferTargets } from '#lib/components/dialogs/project-transfer-dialog.svelte';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
@@ -51,7 +52,8 @@
 		SearchIcon,
 		ResetIcon,
 		GitBranchIcon,
-		FolderMoveIcon
+		FolderMoveIcon,
+		DownloadIcon
 	} from '#lib/icons/index.js';
 	import { RefreshIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
@@ -120,7 +122,7 @@
 	} from '../components/project-workspace-utils';
 
 	let { data } = $props();
-	let projectId = $derived(data.projectId);
+	const { envId, projectId, project: initialProject } = untrack(() => data);
 	const queryClient = useQueryClient();
 
 	const isLoading = $state({
@@ -137,11 +139,11 @@
 		archiving: false
 	});
 
-	const envId = $derived(data.envId);
 	const canUpdateProject = $derived(hasPermission('projects:update', envId));
 	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
 	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
 	let transferOpen = $state(false);
+	let exportOpen = $state(false);
 
 	let includeFilesState = $state<Record<string, string>>({});
 	let loadedIncludeFileContents = $state<Record<string, string>>({});
@@ -161,7 +163,7 @@
 
 	const detailQuery = createQuery(() => ({
 		...projectDetailQuery(envId, projectId),
-		initialData: data.project,
+		initialData: initialProject,
 		refetchOnMount: (query) => query.state.isInvalidated
 	}));
 	const tagsQuery = createQuery(() => projectTagsQuery(envId, [{ id: envId, name: environmentName(envId) }]));
@@ -196,7 +198,7 @@
 	});
 
 	const lifecycleSyncQuery = createQuery(() => {
-		const syncId = data.project?.gitOpsManagedBy;
+		const syncId = detailQuery.data.gitOpsManagedBy;
 		return {
 			...gitOpsSyncDetailQuery(envId, syncId),
 			enabled: !!syncId,
@@ -245,7 +247,7 @@
 	}
 
 	const project = $derived.by(() => {
-		const detail = detailQuery.data ?? data.project;
+		const detail = detailQuery.data ?? initialProject;
 		if (!detail) return null;
 		return withLoadedProjectIncludeContent(detail);
 	});
@@ -341,6 +343,9 @@
 	let envExists = $derived(!!project?.envFileExists);
 	let envActive = $derived(envExists || envEditorRequested);
 	let canRemoveEnv = $derived(canEditEnv && !gitOwnsFiles);
+	const creatableManagedRootNames = $derived(
+		new Set([...(canEditEnv && !envActive ? ['.env'] : []), ...(canEditOverride && !overrideActive ? [overrideFileName] : [])])
+	);
 
 	const overrideWorkspaceRows = $derived.by(() => {
 		if (overrideActive) {
@@ -723,17 +728,9 @@
 		};
 	}
 
-	async function syncProjectQueries(updatedProject: Project) {
-		const currentEnvId = envId;
-
-		// The save response is slim (no directory walks), so merge it into the
-		// cached detail instead of replacing it wholesale.
-		queryClient.setQueryData(
-			queryKeys.projects.detail(currentEnvId, updatedProject.id),
-			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
-		);
-		await Promise.all(
-			listScopes([currentEnvId]).flatMap((scope) => [
+	function invalidateProjectListQueries(targetEnvId: string) {
+		return Promise.all(
+			listScopes([targetEnvId]).flatMap((scope) => [
 				queryClient.invalidateQueries({
 					queryKey: queryKeys.projects.listPrefix(scope)
 				}),
@@ -744,23 +741,25 @@
 		);
 	}
 
+	async function syncProjectQueries(updatedProject: Project) {
+		const currentEnvId = envId;
+
+		// The save response is slim (no directory walks), so merge it into the
+		// cached detail instead of replacing it wholesale.
+		queryClient.setQueryData(
+			queryKeys.projects.detail(currentEnvId, updatedProject.id),
+			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
+		);
+		await invalidateProjectListQueries(currentEnvId);
+	}
+
 	const checkProjectUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.projects.detailCheckUpdates(envId, projectId),
 		mutationFn: () => projectService.checkUpdates(projectId, envId),
 		onSuccess: async (result) => {
 			const currentEnvId = envId;
 			summarizeUpdateCheckResult(result);
-			await Promise.all([
-				refreshProjectDetails(),
-				...listScopes([currentEnvId]).flatMap((scope) => [
-					queryClient.invalidateQueries({
-						queryKey: queryKeys.projects.listPrefix(scope)
-					}),
-					queryClient.invalidateQueries({
-						queryKey: queryKeys.projects.statusCounts(scope)
-					})
-				])
-			]);
+			await Promise.all([refreshProjectDetails(), invalidateProjectListQueries(currentEnvId)]);
 		},
 		onError: () => {
 			toast.error(m.containers_check_updates_failed());
@@ -952,17 +951,7 @@
 				onSuccess: async () => {
 					toast.success(archiving ? m.compose_archive_success() : m.compose_unarchive_success());
 					await refreshProjectDetails();
-					const currentEnvId = envId;
-					await Promise.all(
-						listScopes([currentEnvId]).flatMap((scope) => [
-							queryClient.invalidateQueries({
-								queryKey: queryKeys.projects.listPrefix(scope)
-							}),
-							queryClient.invalidateQueries({
-								queryKey: queryKeys.projects.statusCounts(scope)
-							})
-						])
-					);
+					await invalidateProjectListQueries(envId);
 				}
 			});
 		} finally {
@@ -1393,6 +1382,14 @@
 	}
 
 	async function createProjectWorkspaceFile(parentPath: string, name: string, content = '', stagedFile?: File) {
+		if (!parentPath && name === '.env' && canEditEnv && !envActive) {
+			handleAddEnv();
+			return;
+		}
+		if (!parentPath && name === overrideFileName && canEditOverride && !overrideActive) {
+			handleAddOverride();
+			return;
+		}
 		if (!(await projectWorkspaceFolders.load(parentPath))) return;
 		const relativePath = planProjectWorkspaceFileCreate(projectWorkspacePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
@@ -1700,6 +1697,16 @@
 				onclick: () => (transferOpen = true)
 			});
 		}
+		if (!project?.isDiscovered && hasPermission('projects:export', envId)) {
+			list.push({
+				id: 'export',
+				action: 'base',
+				label: m.images_export(),
+				icon: DownloadIcon,
+				group: 'manage',
+				onclick: () => (exportOpen = true)
+			});
+		}
 		list.push(
 			pinDashboardAction('pin-dashboard', m.pin_to_dashboard(), () =>
 				createDashboardWidget('resource', {
@@ -1813,7 +1820,13 @@
 										onCreateFolder={createProjectWorkspaceFolder}
 										onUpload={uploadProjectWorkspaceFiles}
 										onDownload={downloadProjectWorkspaceFile}
-										validateName={(name, parentPath) => validateProjectWorkspaceFileName(name, parentPath, composeFileName)}
+										validateName={(name, parentPath, mode) =>
+											validateProjectWorkspaceFileName(
+												name,
+												parentPath,
+												composeFileName,
+												mode === 'create_file' ? creatableManagedRootNames : undefined
+											)}
 										onRename={renameProjectWorkspaceFile}
 										onMove={moveProjectWorkspaceFile}
 										onDelete={deleteProjectWorkspaceFile}
@@ -2480,7 +2493,7 @@
 
 			{#if project.urls && project.urls.length > 0}
 				<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-					{#each project.urls as url (url)}
+					{#each project.urls as { url, label } (url)}
 						<a
 							class="inline-flex h-6 max-w-40 min-w-0 items-center gap-1.5 rounded-lg border border-info/20 bg-background/70 px-2.5 text-xs font-semibold ring-offset-background transition-colors hover:border-info/40 hover:bg-info/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-56 md:max-w-72 dark:bg-info/20 dark:hover:bg-info/30"
 							href={toSafeHref(url)}
@@ -2489,7 +2502,7 @@
 							title={url}
 						>
 							<GlobeIcon class="size-3 text-info" />
-							<span class="truncate">{formatUrlLabel(url)}</span>
+							<span class="truncate">{label || formatUrlLabel(url)}</span>
 						</a>
 					{/each}
 				</div>
@@ -2609,3 +2622,4 @@
 {/if}
 
 <ProjectTransferDialog bind:open={transferOpen} {project} environmentId={envId} />
+<ProjectExportDialog bind:open={exportOpen} {project} environmentId={envId} />

@@ -39,16 +39,6 @@ async function getVersionInformation(): Promise<VersionInfo> {
 	return toAppVersionInformation(response.data.data);
 }
 
-async function getNewestVersion(): Promise<string | undefined> {
-	const info = await getVersionInformation();
-	return info.newestVersion;
-}
-
-async function getReleaseUrl(): Promise<string | undefined> {
-	const info = await getVersionInformation();
-	return info.releaseUrl;
-}
-
 async function getLatestGitHubRelease(): Promise<{ tag: string; body: string; publishedAt: string; url: string }> {
 	const res = await fetch('https://api.github.com/repos/getarcaneapp/arcane/releases/latest', {
 		headers: { Accept: 'application/vnd.github+json' }
@@ -66,7 +56,5 @@ async function getLatestGitHubRelease(): Promise<{ tag: string; body: string; pu
 export default {
 	getVersionInformation,
 	getLatestGitHubRelease,
-	getNewestVersion,
-	getReleaseUrl,
 	getCurrentVersion
 };

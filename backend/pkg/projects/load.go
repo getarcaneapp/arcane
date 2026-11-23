@@ -19,7 +19,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/tree"
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/go-units"
 	"github.com/samber/mo"
@@ -33,7 +33,7 @@ import (
 )
 
 type (
-	PrepareProjectFunc func(ctx context.Context, project *composetypes.Project) error
+	PrepareProjectFunc func(ctx context.Context, project *composeTypes.Project) error
 
 	LoadOptions struct {
 		PathMapper        *PathMapper
@@ -187,7 +187,7 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 	}
 }
 
-func LoadComposeProjectFromContent(ctx context.Context, opts types.ComposeContentOptions) (project *composetypes.Project, err error) {
+func LoadComposeProjectFromContent(ctx context.Context, opts types.ComposeContentOptions) (project *composeTypes.Project, err error) {
 	defer recoverComposeLoadPanic(ctx, "in-memory compose content", &project, &err)
 
 	if strings.TrimSpace(opts.ComposeContent) == "" {
@@ -213,16 +213,16 @@ func LoadComposeProjectFromContent(ctx context.Context, opts types.ComposeConten
 	}
 	envMap["PWD"] = workingDir
 
-	configFiles := []composetypes.ConfigFile{{Content: []byte(composeContent)}}
+	configFiles := []composeTypes.ConfigFile{{Content: []byte(composeContent)}}
 	if strings.TrimSpace(opts.OverrideContent) != "" {
-		configFiles = append(configFiles, composetypes.ConfigFile{Content: []byte(opts.OverrideContent)})
+		configFiles = append(configFiles, composeTypes.ConfigFile{Content: []byte(opts.OverrideContent)})
 	}
 
-	configDetails := composetypes.ConfigDetails{
+	configDetails := composeTypes.ConfigDetails{
 		Version:     api.ComposeVersion,
 		WorkingDir:  workingDir,
 		ConfigFiles: configFiles,
-		Environment: composetypes.Mapping(envMap),
+		Environment: composeTypes.Mapping(envMap),
 	}
 
 	loaderOptions := []func(*loader.Options){func(loaderOpts *loader.Options) {
@@ -327,7 +327,7 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 	}
 }
 
-func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *composetypes.Project, err error) {
+func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *composeTypes.Project, err error) {
 	defer recoverComposeLoadPanic(ctx, opts.ComposeFile, &project, &err)
 
 	workdir := filepath.Dir(opts.ComposeFile)
@@ -356,33 +356,33 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 		return nil, envOptsErr
 	}
 
-	var configFiles []composetypes.ConfigFile
+	var configFiles []composeTypes.ConfigFile
 	switch {
 	case len(envOpts.ConfigFiles) > 0:
 		// COMPOSE_FILE selects the exact file set (first entry is the base, later
 		// entries merge over it). As `docker compose` does for an explicit `-f`,
 		// no override file is auto-loaded.
 		for _, f := range envOpts.ConfigFiles {
-			configFiles = append(configFiles, composetypes.ConfigFile{Filename: f})
+			configFiles = append(configFiles, composeTypes.ConfigFile{Filename: f})
 		}
 		if !slices.Contains(envOpts.ConfigFiles, opts.ComposeFile) {
 			slog.DebugContext(ctx, "COMPOSE_FILE selection supersedes resolved compose file", "resolved", opts.ComposeFile, "selection", envOpts.ConfigFiles)
 		}
 	default:
-		configFiles = []composetypes.ConfigFile{{Filename: opts.ComposeFile}}
+		configFiles = []composeTypes.ConfigFile{{Filename: opts.ComposeFile}}
 		if slices.Contains(ComposeFileCandidates, filepath.Base(opts.ComposeFile)) {
 			if overrideFile := DetectComposeOverrideFile(ctx, workdir); overrideFile != "" {
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: overrideFile})
+				configFiles = append(configFiles, composeTypes.ConfigFile{Filename: overrideFile})
 				slog.DebugContext(ctx, "merging compose override file", "base", opts.ComposeFile, "override", overrideFile)
 			}
 		}
 	}
 
-	cfg := composetypes.ConfigDetails{
+	cfg := composeTypes.ConfigDetails{
 		Version:     api.ComposeVersion,
 		WorkingDir:  workdir,
 		ConfigFiles: configFiles,
-		Environment: composetypes.Mapping(fullEnvMap),
+		Environment: composeTypes.Mapping(fullEnvMap),
 	}
 
 	loaderOptions := []func(*loader.Options){func(loaderOpts *loader.Options) {
@@ -439,12 +439,12 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 }
 
 func finishLoadedProject(ctx context.Context,
-	project *composetypes.Project,
+	project *composeTypes.Project,
 	workingDir string,
 	pathMapper types.VolumeSourcePathMapper,
 	translateFileResources bool,
 	rawSources map[string]string,
-	prepare PrepareProjectFunc) (*composetypes.Project,
+	prepare PrepareProjectFunc) (*composeTypes.Project,
 	error,
 ) {
 	if err := applyServiceLabelMetadata(project); err != nil {
@@ -471,7 +471,7 @@ func finishLoadedProject(ctx context.Context,
 	return project, nil
 }
 
-func harvestRawSources(ctx context.Context, cfg composetypes.ConfigDetails, loaderOptions ...func(*loader.Options)) (rawSources map[string]string) {
+func harvestRawSources(ctx context.Context, cfg composeTypes.ConfigDetails, loaderOptions ...func(*loader.Options)) (rawSources map[string]string) {
 	defer func() {
 		if panicErr := concurrency.PanicToError(recover()); panicErr != nil {
 			slog.DebugContext(ctx, "panic while harvesting raw compose paths", "error", panicErr)
@@ -495,7 +495,7 @@ func harvestRawSources(ctx context.Context, cfg composetypes.ConfigDetails, load
 	rawSources = make(map[string]string)
 	for name, service := range project.Services {
 		for _, volume := range service.Volumes {
-			if volume.Type == composetypes.VolumeTypeBind && volume.Source != "" {
+			if volume.Type == composeTypes.VolumeTypeBind && volume.Source != "" {
 				rawSources[("volume:" + name + "\x00" + filepath.Clean(volume.Target))] = volume.Source
 			}
 		}
@@ -503,7 +503,7 @@ func harvestRawSources(ctx context.Context, cfg composetypes.ConfigDetails, load
 
 	for name, job := range project.AllJobs() {
 		for _, volume := range job.Volumes {
-			if volume.Type == composetypes.VolumeTypeBind && volume.Source != "" {
+			if volume.Type == composeTypes.VolumeTypeBind && volume.Source != "" {
 				rawSources[("job_volume:" + name + "\x00" + filepath.Clean(volume.Target))] = volume.Source
 			}
 		}
@@ -538,7 +538,7 @@ func isNilVolumeSourcePathMapper(pathMapper types.VolumeSourcePathMapper) bool {
 //nolint:gocritic // Pointer output updates the caller's named error result after recovery.
 func recoverComposeLoadPanic(ctx context.Context,
 	source string,
-	project **composetypes.Project,
+	project **composeTypes.Project,
 	err *error,
 ) {
 	if panicErr := concurrency.PanicToError(recover()); panicErr != nil {
@@ -552,8 +552,8 @@ func recoverComposeLoadPanic(ctx context.Context,
 	}
 }
 
-func applyCustomLabels(projectName, serviceName, workingDirectory string, composeFiles []string) composetypes.Labels {
-	return composetypes.Labels{
+func applyCustomLabels(projectName, serviceName, workingDirectory string, composeFiles []string) composeTypes.Labels {
+	return composeTypes.Labels{
 		api.ProjectLabel:     projectName,
 		api.ServiceLabel:     serviceName,
 		api.VersionLabel:     api.ComposeVersion,
@@ -563,12 +563,12 @@ func applyCustomLabels(projectName, serviceName, workingDirectory string, compos
 	}
 }
 
-func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap) {
+func injectServiceConfiguration(project *composeTypes.Project, injectionVars EnvMap) {
 	for i, s := range project.Services {
 		s.CustomLabels = applyCustomLabels(project.Name, s.Name, project.WorkingDir, project.ComposeFiles)
 
 		if s.Environment == nil {
-			s.Environment = make(composetypes.MappingWithEquals)
+			s.Environment = make(composeTypes.MappingWithEquals)
 		}
 
 		for k, v := range injectionVars {
@@ -580,10 +580,10 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 		project.Services[i] = s
 	}
 
-	for _, jobs := range []composetypes.Jobs{project.Jobs, project.DisabledJobs} {
+	for _, jobs := range []composeTypes.Jobs{project.Jobs, project.DisabledJobs} {
 		for name, job := range jobs {
 			if job.Environment == nil {
-				job.Environment = make(composetypes.MappingWithEquals)
+				job.Environment = make(composeTypes.MappingWithEquals)
 			}
 
 			for k, v := range injectionVars {
@@ -597,33 +597,7 @@ func injectServiceConfiguration(project *composetypes.Project, injectionVars Env
 	}
 }
 
-func LoadComposeProjectFromDir(ctx context.Context, dir string, opts LoadOptions) (*composetypes.Project, string, error) {
-	composeFile, err := DetectComposeFile(ctx, opts.ProjectsDirectory, dir)
-	if err != nil {
-		return nil, "", err
-	}
-
-	proj, err := LoadComposeProject(ctx, LoadOptions{
-		ComposeFile:       composeFile,
-		ProjectName:       opts.ProjectName,
-		ProjectsDirectory: opts.ProjectsDirectory,
-		AutoInjectEnv:     opts.AutoInjectEnv,
-		PathMapper:        opts.PathMapper,
-		EnvOverride:       opts.EnvOverride,
-		ConfigureLoader:   opts.ConfigureLoader,
-		Lenient:           opts.Lenient,
-		Dependencies:      opts.Dependencies,
-		Services:          opts.Services,
-		Prepare:           opts.Prepare,
-	})
-	if err != nil {
-		return nil, "", err
-	}
-
-	return proj, composeFile, nil
-}
-
-func ResolveRelativeProjectPaths(project *composetypes.Project, workdir string) {
+func ResolveRelativeProjectPaths(project *composeTypes.Project, workdir string) {
 	if project == nil || workdir == "" {
 		return
 	}
@@ -632,7 +606,7 @@ func ResolveRelativeProjectPaths(project *composetypes.Project, workdir string) 
 		modified := false
 		for i := range service.Volumes {
 			v := &service.Volumes[i]
-			if v.Type == composetypes.VolumeTypeBind {
+			if v.Type == composeTypes.VolumeTypeBind {
 				if resolved, ok := resolvePathRelative(workdir, v.Source).Get(); ok {
 					v.Source = resolved
 					modified = true
@@ -666,7 +640,7 @@ func resolvePathRelative(workdir, candidate string) mo.Option[string] {
 	return mo.Some(filepath.Clean(filepath.Join(workdir, candidate)))
 }
 
-func recordComposeDependencies(project *composetypes.Project, dependencies *types.ComposeDependencies) {
+func recordComposeDependencies(project *composeTypes.Project, dependencies *types.ComposeDependencies) {
 	if dependencies != nil {
 		for name, service := range project.Services {
 			for _, envFile := range service.EnvFiles {
@@ -700,7 +674,7 @@ func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeReq
 	}
 
 	validationProjectName := NormalizeProjectName(req.ProjectName)
-	var configFiles []composetypes.ConfigFile
+	var configFiles []composeTypes.ConfigFile
 	switch {
 	case len(envOpts.ConfigFiles) > 0:
 		overrideName := cmp.Or(strings.TrimSpace(req.OverrideFileName), DefaultComposeOverrideFileName)
@@ -711,31 +685,31 @@ func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeReq
 		for i, f := range envOpts.ConfigFiles {
 			switch {
 			case i == 0:
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(req.ComposeContent)})
+				configFiles = append(configFiles, composeTypes.ConfigFile{Filename: f, Content: []byte(req.ComposeContent)})
 			case req.OverrideContent != nil && overridePath != "" && f == overridePath:
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f, Content: []byte(*req.OverrideContent)})
+				configFiles = append(configFiles, composeTypes.ConfigFile{Filename: f, Content: []byte(*req.OverrideContent)})
 			default:
-				configFiles = append(configFiles, composetypes.ConfigFile{Filename: f})
+				configFiles = append(configFiles, composeTypes.ConfigFile{Filename: f})
 			}
 		}
 	default:
-		configFiles = []composetypes.ConfigFile{
+		configFiles = []composeTypes.ConfigFile{
 			{Filename: filepath.Join(req.ProjectPath, "compose.yaml"), Content: []byte(req.ComposeContent)},
 		}
 		if req.OverrideContent != nil {
 			overrideName := cmp.Or(strings.TrimSpace(req.OverrideFileName), DefaultComposeOverrideFileName)
-			configFiles = append(configFiles, composetypes.ConfigFile{
+			configFiles = append(configFiles, composeTypes.ConfigFile{
 				Filename: filepath.Join(req.ProjectPath, overrideName),
 				Content:  []byte(*req.OverrideContent),
 			})
 		}
 	}
 
-	cfg := composetypes.ConfigDetails{
+	cfg := composeTypes.ConfigDetails{
 		Version:     api.ComposeVersion,
 		WorkingDir:  req.ProjectPath,
 		ConfigFiles: configFiles,
-		Environment: composetypes.Mapping(fullEnvMap),
+		Environment: composeTypes.Mapping(fullEnvMap),
 	}
 
 	missingIncludeLoader := &MissingIncludeStubLoader{ctx: ctx, projectPath: req.ProjectPath}

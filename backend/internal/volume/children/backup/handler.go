@@ -193,10 +193,10 @@ func (h *Handler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBack
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(input.Body.S3DestinationID) == "" {
+	if input.Body.Destination != types.VolumeBackupDestinationLocal && strings.TrimSpace(input.Body.S3DestinationID) == "" {
 		return nil, huma.Error400BadRequest("select an S3 destination to discover")
 	}
-	created, failures, err := h.service.DiscoverRemoteBackups(ctx, input.Body.S3DestinationID)
+	created, failures, err := h.service.DiscoverBackups(ctx, input.Body)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

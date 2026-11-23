@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"reflect"
 	"slices"
-	"sort"
 	"strings"
 
 	"kit.getarcane.app/normalization"
@@ -51,7 +50,7 @@ func BuildCategories[T any]() []types.Category {
 		categories[categoryID] = append(categories[categoryID], sm)
 	}
 
-	results := []types.Category{}
+	var results []types.Category
 	for _, catID := range categoryOrder {
 		catMeta := catMetaMap[catID]
 		if catMeta == nil {
@@ -75,44 +74,32 @@ func BuildCategories[T any]() []types.Category {
 func Search(categories []types.Category, query string) types.SearchResponse {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
-		return types.SearchResponse{
-			Results: []types.Category{},
-			Query:   query,
-			Count:   0,
-		}
+		return types.SearchResponse{Query: query}
 	}
 
 	var results []types.Category
 
 	for _, cat := range categories {
-		categoryMatch := categoryMatches(cat, query)
-
+		categoryMatch := matchesAny(query, cat.Title, cat.Description) || matchesAny(query, cat.Keywords...)
 		matchingSettings := findMatchingSettings(cat.Settings, query)
 
 		if categoryMatch || len(matchingSettings) > 0 {
-			relevanceScore := calculateRelevance(cat, matchingSettings, query)
-
-			categoryResult := types.Category{
-				ID:             cat.ID,
-				Title:          cat.Title,
-				Description:    cat.Description,
-				Icon:           cat.Icon,
-				URL:            cat.URL,
-				Keywords:       cat.Keywords,
-				Settings:       cat.Settings,
-				RelevanceScore: relevanceScore,
-			}
-
-			if len(matchingSettings) > 0 {
-				categoryResult.MatchingSettings = matchingSettings
-			}
-
-			results = append(results, categoryResult)
+			results = append(results, types.Category{
+				ID:               cat.ID,
+				Title:            cat.Title,
+				Description:      cat.Description,
+				Icon:             cat.Icon,
+				URL:              cat.URL,
+				Keywords:         cat.Keywords,
+				Settings:         cat.Settings,
+				RelevanceScore:   calculateRelevance(cat, matchingSettings, query),
+				MatchingSettings: matchingSettings,
+			})
 		}
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].RelevanceScore > results[j].RelevanceScore
+	slices.SortFunc(results, func(a, b types.Category) int {
+		return cmp.Compare(b.RelevanceScore, a.RelevanceScore)
 	})
 
 	return types.SearchResponse{
@@ -122,47 +109,20 @@ func Search(categories []types.Category, query string) types.SearchResponse {
 	}
 }
 
-func categoryMatches(cat types.Category, query string) bool {
-	if strings.Contains(strings.ToLower(cat.Title), query) {
-		return true
-	}
-	if strings.Contains(strings.ToLower(cat.Description), query) {
-		return true
-	}
-	for _, keyword := range cat.Keywords {
-		if strings.Contains(strings.ToLower(keyword), query) {
-			return true
-		}
-	}
-	return false
+func matchesAny(query string, values ...string) bool {
+	return slices.ContainsFunc(values, func(v string) bool {
+		return strings.Contains(strings.ToLower(v), query)
+	})
 }
 
 func findMatchingSettings(settings []types.SettingMetadata, query string) []types.SettingMetadata {
 	var matching []types.SettingMetadata
 	for _, setting := range settings {
-		if settingMatches(setting, query) {
+		if matchesAny(query, setting.Key, setting.Label, setting.Description) || matchesAny(query, setting.Keywords...) {
 			matching = append(matching, setting)
 		}
 	}
 	return matching
-}
-
-func settingMatches(setting types.SettingMetadata, query string) bool {
-	if strings.Contains(strings.ToLower(setting.Key), query) {
-		return true
-	}
-	if strings.Contains(strings.ToLower(setting.Label), query) {
-		return true
-	}
-	if strings.Contains(strings.ToLower(setting.Description), query) {
-		return true
-	}
-	for _, keyword := range setting.Keywords {
-		if strings.Contains(strings.ToLower(keyword), query) {
-			return true
-		}
-	}
-	return false
 }
 
 func calculateRelevance(cat types.Category, matchingSettings []types.SettingMetadata, query string) int {

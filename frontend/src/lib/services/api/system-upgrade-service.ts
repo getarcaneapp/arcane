@@ -14,11 +14,8 @@ async function checkUpgradeAvailable(environmentId: string = '0', config?: APIRe
 	return res.data;
 }
 
-async function startUpgradeJob(environmentIds?: string[]): Promise<UpgradeJob> {
-	const res = await apiClient.post<ApiResponse<UpgradeJob>>(
-		'/agents/0/system/upgrade/jobs',
-		environmentIds?.length ? { environmentIds } : {}
-	);
+async function startUpgradeJob(environmentIds: string[]): Promise<UpgradeJob> {
+	const res = await apiClient.post<ApiResponse<UpgradeJob>>(`/agents/${environmentIds.join(',')}/system/upgrade/jobs`);
 	return res.data.data;
 }
 

@@ -93,15 +93,11 @@ const (
 var errRemoteCacheInvalidated = errors.New("remote template cache invalidated")
 
 func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.Client, settingsService *settings.SettingsService) *TemplateService {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-
 	revalidationCtx := context.WithoutCancel(ctx)
 	var service *TemplateService
 	service = &TemplateService{
 		db:              db,
-		httpClient:      httpClient,
+		httpClient:      cmp.Or(httpClient, http.DefaultClient),
 		settingsService: settingsService,
 		remoteCache: &cache.Cache[uint64, []ComposeTemplate]{
 			Load: func(generation uint64) ([]ComposeTemplate, bool, error) {
@@ -296,12 +292,10 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *ComposeT
 	if template.Name == "" {
 		return common.Classify(common.ErrValidation, errors.New("template name is required"))
 	}
-	if template.ID == "" {
-		template.ID = uuid.New().String()
-	}
+	template.ID = cmp.Or(template.ID, uuid.New().String())
 	template.IsCustom = true
 	template.IsRemote = false
-	setTemplateIconURL(template, projects.ResolveTemplateIconURL(ctx, template.Content, mo.PointerToOption(template.EnvContent).OrEmpty()))
+	setTemplateIconURL(template, projects.ResolveTemplateIconURL(ctx, template.Content, kit.FromPtr(template.EnvContent)))
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(template).Error; err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
@@ -352,7 +346,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, req typ
 				return common.Classify(common.ErrValidation, errors.New("the name and description of a template from the templates directory cannot be changed"))
 			}
 			var writeErr error
-			restoreFiles, writeErr = writeImportedTemplateFiles(ctx, filepath.Join(baseDir, folder), composePath, updates.Content, mo.PointerToOption(updates.EnvContent).OrEmpty())
+			restoreFiles, writeErr = writeImportedTemplateFiles(ctx, filepath.Join(baseDir, folder), composePath, updates.Content, kit.FromPtr(updates.EnvContent))
 			if writeErr != nil {
 				return writeErr
 			}
@@ -363,7 +357,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, req typ
 
 		existing.Content = updates.Content
 		existing.EnvContent = updates.EnvContent
-		setTemplateIconURL(&existing, projects.ResolveTemplateIconURL(ctx, existing.Content, mo.PointerToOption(existing.EnvContent).OrEmpty()))
+		setTemplateIconURL(&existing, projects.ResolveTemplateIconURL(ctx, existing.Content, kit.FromPtr(existing.EnvContent)))
 		if err := tx.Save(&existing).Error; err != nil {
 			return fmt.Errorf("failed to update template: %w", err)
 		}
@@ -730,7 +724,7 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context, generation ui
 			defer mu.Unlock()
 			successfulRegistries++
 			for _, template := range remoteTemplates {
-				template.Registry = cloneRegistry(&reg)
+				template.Registry = new(reg)
 				template.RegistryID = mo.EmptyableToOption(strings.TrimSpace(reg.ID)).ToPointer()
 				templates = append(templates, template)
 			}
@@ -849,7 +843,7 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *Templ
 			Description: remote.Description,
 			IsRemote:    true,
 			RegistryID:  mo.EmptyableToOption(strings.TrimSpace(reg.ID)).ToPointer(),
-			Registry:    cloneRegistry(reg),
+			Registry:    mo.PointerToOption(reg).ToPointer(),
 			Metadata: &ComposeTemplateMetadata{
 				Version:          mo.EmptyableToOption(strings.TrimSpace(remote.Version)).ToPointer(),
 				Author:           mo.EmptyableToOption(strings.TrimSpace(remote.Author)).ToPointer(),
@@ -895,24 +889,25 @@ func (s *TemplateService) fetchRegistryManifest(ctx context.Context, rawURL stri
 
 func (s *TemplateService) FetchTemplateContent(ctx context.Context, template *ComposeTemplate) (composeContent, envContent string, err error) {
 	if !template.IsRemote {
-		return template.Content, mo.PointerToOption(template.EnvContent).OrEmpty(), nil
+		return template.Content, kit.FromPtr(template.EnvContent), nil
 	}
-	if template.Metadata == nil || template.Metadata.RemoteURL == nil || strings.TrimSpace(*template.Metadata.RemoteURL) == "" {
+	remoteURL := kit.FromPtr(kit.FromPtr(template.Metadata).RemoteURL)
+	if strings.TrimSpace(remoteURL) == "" {
 		return "", "", fmt.Errorf("remote template %q is missing compose_url in registry metadata", template.ID)
 	}
 
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "template.fetch", trace.WithAttributes(
 		attribute.String("arcane.template.id", template.ID),
-		attribute.String("arcane.template.registry_id", mo.PointerToOption(template.RegistryID).OrEmpty()),
+		attribute.String("arcane.template.registry_id", kit.FromPtr(template.RegistryID)),
 	))
 	defer func() { logging.EndSpan(span, err) }()
 
-	composeBody, err := s.FetchRaw(ctx, *template.Metadata.RemoteURL)
+	composeBody, err := s.FetchRaw(ctx, remoteURL)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to fetch compose content from %s: %w", *template.Metadata.RemoteURL, err)
+		return "", "", fmt.Errorf("failed to fetch compose content from %s: %w", remoteURL, err)
 	}
 
-	if envURL := mo.PointerToOption(template.Metadata.EnvURL).OrEmpty(); envURL != "" {
+	if envURL := kit.FromPtr(template.Metadata.EnvURL); envURL != "" {
 		envBody, envErr := s.FetchRaw(ctx, envURL)
 		if envErr != nil {
 			slog.WarnContext(ctx, "failed to fetch env content", "url", envURL, "error", envErr)
@@ -1080,14 +1075,14 @@ func cloneTemplateMetadata(meta *ComposeTemplateMetadata) *ComposeTemplateMetada
 		return nil
 	}
 	return &ComposeTemplateMetadata{
-		Version:          mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.Version).OrEmpty())).ToPointer(),
-		Author:           mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.Author).OrEmpty())).ToPointer(),
-		Tags:             append([]string(nil), meta.Tags...),
-		RemoteURL:        mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.RemoteURL).OrEmpty())).ToPointer(),
-		EnvURL:           mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.EnvURL).OrEmpty())).ToPointer(),
-		DocumentationURL: mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.DocumentationURL).OrEmpty())).ToPointer(),
-		IconURL:          mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.IconURL).OrEmpty())).ToPointer(),
-		RegistryIconURL:  mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.RegistryIconURL).OrEmpty())).ToPointer(),
+		Version:          mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(meta.Version))).ToPointer(),
+		Author:           mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(meta.Author))).ToPointer(),
+		Tags:             slices.Clone(meta.Tags),
+		RemoteURL:        mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(meta.RemoteURL))).ToPointer(),
+		EnvURL:           mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(meta.EnvURL))).ToPointer(),
+		DocumentationURL: mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(meta.DocumentationURL))).ToPointer(),
+		IconURL:          mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(meta.IconURL))).ToPointer(),
+		RegistryIconURL:  mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(meta.RegistryIconURL))).ToPointer(),
 	}
 }
 
@@ -1099,19 +1094,11 @@ func cloneRemoteTemplates(items []ComposeTemplate) []ComposeTemplate {
 	cloned := make([]ComposeTemplate, len(items))
 	for i := range items {
 		cloned[i] = items[i]
-		cloned[i].RegistryID = mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(items[i].RegistryID).OrEmpty())).ToPointer()
-		cloned[i].Registry = cloneRegistry(items[i].Registry)
+		cloned[i].RegistryID = mo.EmptyableToOption(strings.TrimSpace(kit.FromPtr(items[i].RegistryID))).ToPointer()
+		cloned[i].Registry = mo.PointerToOption(items[i].Registry).ToPointer()
 		cloned[i].Metadata = cloneTemplateMetadata(items[i].Metadata)
 	}
 	return cloned
-}
-
-func cloneRegistry(registry *TemplateRegistry) *TemplateRegistry {
-	if registry == nil {
-		return nil
-	}
-
-	return new(*registry)
 }
 
 func (s *TemplateService) invalidateRemoteCache() {
@@ -1167,7 +1154,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 			continue
 		}
 		if folderErr == nil {
-			iconURL := projects.ResolveTemplateIconURL(ctx, compose, mo.PointerToOption(envPtr).OrEmpty())
+			iconURL := projects.ResolveTemplateIconURL(ctx, compose, kit.FromPtr(envPtr))
 			folderErr = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 				// Match on description (the absolute compose path) or, for disk imports, the folder name so
 				// directory reconfigurations and compose renames keep a single row.

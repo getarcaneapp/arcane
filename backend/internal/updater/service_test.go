@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -894,8 +894,17 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&AutoUpdateRecord{}, &activity.Activity{}, &activity.ActivityMessage{}))
 	activityService := activity.NewActivityService(db, nil)
+	settingsService, settingsErr := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    ctx,
+		DB:     db,
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, settingsErr)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 		DB:              db,
+		SettingsService: settingsService,
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activityService,
 	})
@@ -1835,7 +1844,7 @@ func TestUpdaterProjectChecksWithoutContainers(t *testing.T) {
 				target:     "3.20.0",
 			},
 		} {
-			localConfig := composetypes.ServiceConfig{
+			localConfig := composeTypes.ServiceConfig{
 				Name:   tt.name,
 				Image:  "alpine:3.20.0",
 				Labels: map[string]string{labels.LabelUpdateConstraint: tt.constraint},
@@ -1850,7 +1859,7 @@ func TestUpdaterProjectChecksWithoutContainers(t *testing.T) {
 				require.NoError(t, loadErr)
 				localConfig = model.Services[tt.name]
 			}
-			record := service.checkProjectService(t.Context(), "project", localConfig)
+			record := service.checkProjectService(t.Context(), "project", localConfig, nil)
 			require.Nil(t, record.LastError)
 			require.Equal(t, tt.available, record.HasUpdate)
 			require.Equal(t, tt.target, *record.LatestVersion)

@@ -81,8 +81,7 @@ func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testin
 	// GetSettings should clone the in-memory snapshot and not touch the database.
 	svc.db = nil
 
-	settingsCfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	settingsCfg := svc.GetSettingsConfig()
 	require.Equal(t, "http://cached", settingsCfg.BaseServerURL.Value)
 }
 
@@ -99,8 +98,7 @@ func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecret(t 
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
 
-	current, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	current := svc.GetSettingsConfig()
 	require.Equal(t, "https://issuer.example.com", current.OidcIssuerUrl.Value)
 	require.Equal(t, "old-client-secret", current.OidcClientSecret.Value)
 }
@@ -119,8 +117,7 @@ func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWhenClearingSecret(t
 	})
 	require.NoError(t, err)
 
-	current, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	current := svc.GetSettingsConfig()
 	require.Equal(t, "https://replacement.example.com", current.OidcIssuerUrl.Value)
 	require.Empty(t, current.OidcClientSecret.Value)
 }
@@ -138,8 +135,7 @@ func TestSettingsServiceUpdateSettingsRejectsEnablingOIDCWithoutSecret(t *testin
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
 
-	current, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	current := svc.GetSettingsConfig()
 	require.Equal(t, "false", current.OidcEnabled.Value)
 }
 
@@ -327,8 +323,7 @@ func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecre
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
 
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcProviderName", "  Cafe\u0301 SSO  "))
-	before, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	before := svc.GetSettingsConfig()
 	require.Equal(t, "Café SSO", before.OidcProviderName.Value)
 
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{
@@ -338,8 +333,7 @@ func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecre
 	})
 	require.NoError(t, err)
 
-	current, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	current := svc.GetSettingsConfig()
 	require.Equal(t, "https://replacement.example.com", current.OidcIssuerUrl.Value)
 	require.Equal(t, "new-client-secret", current.OidcClientSecret.Value)
 	require.Equal(t, "Café Login", current.OidcProviderName.Value)
@@ -358,8 +352,7 @@ func TestSettingsServiceUpdateSettingsRejectsTrivyServerChangeWithStoredToken(t 
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
 
-	current, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	current := svc.GetSettingsConfig()
 	require.Equal(t, "https://trivy.example.com", current.TrivyServerUrl.Value)
 	require.Equal(t, "old-trivy-token", current.TrivyServerToken.Value)
 }
@@ -378,8 +371,7 @@ func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithReplacementToke
 	})
 	require.NoError(t, err)
 
-	current, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	current := svc.GetSettingsConfig()
 	require.Equal(t, "https://replacement.example.com", current.TrivyServerUrl.Value)
 	require.Equal(t, "new-trivy-token", current.TrivyServerToken.Value)
 }
@@ -397,8 +389,7 @@ func TestSettingsServiceUpdateSettingsAllowsClearingTrivyServerWithStoredToken(t
 	})
 	require.NoError(t, err)
 
-	current, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	current := svc.GetSettingsConfig()
 	require.Empty(t, current.TrivyServerUrl.Value)
 	require.Equal(t, "old-trivy-token", current.TrivyServerToken.Value)
 }
@@ -415,8 +406,7 @@ func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithoutStoredToken(
 	})
 	require.NoError(t, err)
 
-	current, loadErr := svc.GetSettings(ctx)
-	require.NoError(t, loadErr)
+	current := svc.GetSettingsConfig()
 	require.Equal(t, "https://replacement.example.com", current.TrivyServerUrl.Value)
 }
 
@@ -453,8 +443,7 @@ func TestSettingsService_GetSettings_EnvOverride_OidcMergeAccounts(t *testing.T)
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	settingsCfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	settingsCfg := svc.GetSettingsConfig()
 	require.True(t, settingsCfg.OidcMergeAccounts.IsTrue())
 }
 
@@ -466,8 +455,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyScanTimeout(t *testing.T) 
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	settingsCfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	settingsCfg := svc.GetSettingsConfig()
 	require.Equal(t, 1800, settingsCfg.TrivyScanTimeout.AsInt())
 }
 
@@ -481,8 +469,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyResourceLimits(t *testing.
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	settingsCfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	settingsCfg := svc.GetSettingsConfig()
 	require.False(t, settingsCfg.TrivyResourceLimitsEnabled.IsTrue())
 	require.Equal(t, "2.5", settingsCfg.TrivyCpuLimit.Value)
 	require.Equal(t, 2048, settingsCfg.TrivyMemoryLimitMb.AsInt())
@@ -496,8 +483,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	settingsCfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	settingsCfg := svc.GetSettingsConfig()
 	require.Equal(t, "arcane-external", settingsCfg.TrivyNetwork.Value)
 }
 
@@ -509,8 +495,7 @@ func TestSettingsService_GetSettings_EnvOverride_FollowProjectSymlinks(t *testin
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	settingsCfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	settingsCfg := svc.GetSettingsConfig()
 	require.True(t, settingsCfg.FollowProjectSymlinks.IsTrue())
 }
 
@@ -523,8 +508,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	settingsCfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	settingsCfg := svc.GetSettingsConfig()
 	require.Equal(t, "label=disable,\nlabel=type:container_runtime_t", settingsCfg.TrivySecurityOpts.Value)
 	require.True(t, settingsCfg.TrivyPrivileged.IsTrue())
 }
@@ -689,10 +673,6 @@ func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
 	require.NoError(t, svc.UpdateSetting(ctx, "baseServerUrl", "https://arcane.test"))
 
 	require.Equal(t, "https://arcane.test", svc.GetSettingsConfig().BaseServerURL.Value)
-
-	settingsCfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "https://arcane.test", settingsCfg.BaseServerURL.Value)
 }
 
 func TestSettingsService_UpdateSettings_PruneModesDoNotTriggerScheduledPruneCallback(t *testing.T) {
@@ -852,7 +832,12 @@ func TestSettingsServiceActorSerializesContainerExclusionUpdates(t *testing.T) {
 	for _, name := range []string{"api", "worker"} {
 		go func() {
 			<-start
-			results <- svc.SetContainerAutoUpdateExclusion(ctx, name, true)
+			results <- svc.SetContainerListed(ctx, ContainerListChange{
+				ListKey:       "autoUpdateExcludedContainers",
+				ModeKey:       "autoUpdateMode",
+				ContainerName: name,
+				Enabled:       false,
+			})
 		}()
 	}
 	close(start)
@@ -862,7 +847,7 @@ func TestSettingsServiceActorSerializesContainerExclusionUpdates(t *testing.T) {
 	require.ElementsMatch(t, []string{"api", "worker"}, strings.Split(svc.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ","))
 }
 
-func BenchmarkSettingsService_GetSettings(b *testing.B) {
+func BenchmarkSettingsService_GetSettingsConfig(b *testing.B) {
 	ctx := b.Context()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -881,12 +866,8 @@ func BenchmarkSettingsService_GetSettings(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		settingsCfg, getSettingsErr := svc.GetSettings(ctx)
-		if getSettingsErr != nil {
-			require.FailNowf(b, "benchmark GetSettings failed", "%v", getSettingsErr)
-		}
-		if settingsCfg == nil {
-			require.FailNow(b, "GetSettings returned nil settings")
+		if svc.GetSettingsConfig() == nil {
+			require.FailNow(b, "GetSettingsConfig returned nil settings")
 		}
 	}
 }
@@ -1264,10 +1245,8 @@ func TestSettingsServiceEffectiveSnapshotMaterialized(t *testing.T) {
 	require.Equal(t, "/env/projects", svc.GetStringSetting(ctx, "projectsDirectory"))
 
 	// Reads share the materialized snapshot instead of cloning per call.
-	first, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
-	again, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	first := svc.GetSettingsConfig()
+	again := svc.GetSettingsConfig()
 	require.Same(t, first, again)
 
 	// A settings update rebuilds the snapshot: the new value is visible and
@@ -1276,8 +1255,7 @@ func TestSettingsServiceEffectiveSnapshotMaterialized(t *testing.T) {
 	require.Equal(t, "http://after.example", svc.GetStringSetting(ctx, "baseServerUrl"))
 	require.Equal(t, "/env/projects", svc.GetStringSetting(ctx, "projectsDirectory"))
 
-	refreshed, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	refreshed := svc.GetSettingsConfig()
 	require.NotSame(t, first, refreshed)
 }
 
@@ -1330,8 +1308,7 @@ func TestSettingsService_FeaturePersistenceAndEnvironmentIsolation(t *testing.T)
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"featureVulnerabilityManagementEnabled": enabled})
 	require.NoError(t, err)
 	require.True(t, svc.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement))
-	cfg, err := svc.GetSettings(ctx)
-	require.NoError(t, err)
+	cfg := svc.GetSettingsConfig()
 	require.Equal(t, scheduled, cfg.VulnerabilityScanEnabled.Value)
 	require.Equal(t, ignore, cfg.TrivyIgnore.Value)
 }

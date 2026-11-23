@@ -138,8 +138,12 @@ linters:
           alias: kit
         - pkg: getarcane.dev/arcane/v3/internal/docker
           alias: dockerInternal
+        - pkg: getarcane.dev/arcane/v3/internal/registry
+          alias: registryInternal
         - pkg: charm.land/log/v2
           alias: charmLog
+        - pkg: github.com/compose-spec/compose-go/v2/types
+          alias: composeTypes
 
     lll:
       line-length: 200

@@ -26,7 +26,6 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
-	"golang.org/x/mod/semver"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
@@ -34,7 +33,7 @@ import (
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/mapping"
-	"kit.getarcane.app/sys/cgroup"
+	"kit.getarcane.app/semver"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/labels"
 	"kit.getarcane.app/updater/refs"
@@ -468,10 +467,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
-		func() bool {
-			_, currentContainerIDErr := cgroup.CurrentContainerID()
-			return currentContainerIDErr == nil
-		},
+		selfcontainer.RunningInContainer,
 		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
 			return docker.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
 		},
@@ -704,7 +700,7 @@ func resolveSelfUpgradeTargetImage(currentImageRef string, info *types.VersionIn
 	if !semver.IsValid(newestTag) {
 		return "", fmt.Errorf("resolved newest version %q is not a valid semver release", newestVersion)
 	}
-	if semver.Compare(newestTag, kit.EnsurePrefix(tagged.Tag(), "v")) < 0 {
+	if semver.Compare(newestTag, tagged.Tag()) < 0 {
 		return "", fmt.Errorf("newest release %q is older than the running %q; refusing to downgrade", newestVersion, tagged.Tag())
 	}
 
@@ -888,7 +884,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 	if job.Status != UpgradeJobStatusRunning {
 		return nil, nil
 	}
-	if allowed, authorizeErr := s.authorizeUpgradeJob(ctx, job, input.KeyID); !allowed {
+	if allowed, authorizeErr := s.authorizeUpgradeJob(ctx, job, input.KeyID, remote.ID); !allowed {
 		return nil, authorizeErr
 	}
 	index := upsertPendingResult(job, remote.ID, remote.Name)
@@ -1094,18 +1090,18 @@ func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, err
 	if err != nil {
 		return nil, err
 	}
+	manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
+		return r.EnvironmentID == environment.LocalEnvironmentID
+	})
 	allowed, err := func() (bool, error) {
-		if job.Status != UpgradeJobStatusRunning {
-			return false, nil
+		if job.Status != UpgradeJobStatusRunning || manager < 0 {
+			return job.Status == UpgradeJobStatusRunning, nil
 		}
-		return s.authorizeUpgradeJob(ctx, job, input.KeyID)
+		return s.authorizeUpgradeJob(ctx, job, input.KeyID, environment.LocalEnvironmentID)
 	}()
 	if err != nil {
 		return nil, err
 	}
-	manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
-		return r.EnvironmentID == environment.LocalEnvironmentID
-	})
 	if allowed && manager < 0 {
 		s.finalizeUpgradeJob(ctx, job, "", "")
 	}
@@ -1542,12 +1538,12 @@ func (s *Service) loadUpgradeJob(ctx context.Context, id string) (*UpgradeJob, e
 	return job, err
 }
 
-func (s *Service) authorizeUpgradeJob(ctx context.Context, job *UpgradeJob, keyID string) (bool, error) {
+func (s *Service) authorizeUpgradeJob(ctx context.Context, job *UpgradeJob, keyID, environmentID string) (bool, error) {
 	permissions, err := s.roles.ResolveExecutionPermissions(ctx, job.UserID, keyID)
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}
-	if err == nil && permissions.Allows(authz.PermSystemUpgrade, environment.LocalEnvironmentID) {
+	if err == nil && permissions.Allows(authz.PermSystemUpgrade, environmentID) {
 		return true, nil
 	}
 	s.markUpgradeJobFailed(ctx, job, "requesting user no longer has permission to upgrade")

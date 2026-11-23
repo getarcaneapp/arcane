@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -30,6 +31,8 @@ type (
 		Resolve EnvironmentResolver
 		Path    string
 		IDs     []string
+		Body    []byte
+		Timeout time.Duration // optional per-environment timeout; defaults to environmentRequestTimeout
 	}
 
 	EnvironmentResult[R any] struct {
@@ -87,7 +90,7 @@ func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (Envi
 		return EnvironmentCollection[R]{}, errors.New("request has no environment scope")
 	}
 
-	collectCtx, cancel := context.WithTimeout(ctx, environmentRequestTimeout)
+	collectCtx, cancel := context.WithTimeout(ctx, cmp.Or(scope.Timeout, environmentRequestTimeout))
 	defer cancel()
 	outcomes := make([]environmentOutcome[R], len(scope.IDs))
 	var group errgroup.Group
@@ -179,17 +182,18 @@ func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id
 
 	writer := &boundedResponseWriter{header: http.Header{}}
 	scope.Handler.ServeHTTP(writer, (&http.Request{
-		Method:     scope.Request.Method,
-		URL:        target,
-		Proto:      scope.Request.Proto,
-		ProtoMajor: scope.Request.ProtoMajor,
-		ProtoMinor: scope.Request.ProtoMinor,
-		Header:     header,
-		Body:       http.NoBody,
-		Host:       scope.Request.Host,
-		RemoteAddr: scope.Request.RemoteAddr,
-		RequestURI: target.RequestURI(),
-		TLS:        scope.Request.TLS,
+		Method:        scope.Request.Method,
+		URL:           target,
+		Proto:         scope.Request.Proto,
+		ProtoMajor:    scope.Request.ProtoMajor,
+		ProtoMinor:    scope.Request.ProtoMinor,
+		Header:        header,
+		Body:          io.NopCloser(bytes.NewReader(scope.Body)),
+		ContentLength: int64(len(scope.Body)),
+		Host:          scope.Request.Host,
+		RemoteAddr:    scope.Request.RemoteAddr,
+		RequestURI:    target.RequestURI(),
+		TLS:           scope.Request.TLS,
 	}).WithContext(WithEnvironmentScope(requestCtx, nil)))
 	status := cmp.Or(writer.status, http.StatusOK)
 	switch {

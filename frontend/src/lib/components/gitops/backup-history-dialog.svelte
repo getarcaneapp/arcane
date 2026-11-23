@@ -10,7 +10,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { gitOpsBackupHistoryQuery, gitOpsBackupRevisionQuery } from '#lib/query/gitops.js';
 	import type { GitOpsBackupHistoryEntry, GitOpsSync } from '#lib/types/gitops.js';
-	import { formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { formatDateTimeShort, firstLine } from '#lib/utils/formatting.js';
 
 	let {
 		open = $bindable(false),
@@ -49,10 +49,6 @@
 			}
 			return { code: line.startsWith(' ') ? line.slice(1) : line, variant: 'default' };
 		});
-	}
-
-	function firstLine(message: string): string {
-		return message.split('\n')[0] ?? message;
 	}
 
 	function handleOpenChange(next: boolean) {

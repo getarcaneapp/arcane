@@ -18,7 +18,7 @@
 	import type { GitOpsSyncCreate, GitOpsSyncUpdate } from '#lib/types/ui/gitops.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { destinationEnvironmentId, hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SyncTable from './components/sync-table.svelte';
@@ -36,16 +36,14 @@
 	const createEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'gitops:create'));
 	const canCreate = $derived(hasShownPermission('gitops:create'));
 
-	const syncsQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...gitOpsSyncListQuery(scope, readableEnvironments('gitops:list'), pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ scope, value })
-		};
-	});
+	const syncsQuery = createQuery(() =>
+		scopedQueryOptions(
+			pageState.scope,
+			gitOpsSyncListQuery(pageState.scope, readableEnvironments('gitops:list'), pageState.requestOptions)
+		)
+	);
 	const syncs = $derived(syncsQuery.data?.value ?? data.syncs);
-	const resourcesReady = $derived(syncsQuery.data?.scope === pageState.scope || data.scope === pageState.scope);
+	const resourcesReady = $derived(syncsQuery.data?.envId === pageState.scope || data.scope === pageState.scope);
 	const isRefreshing = $derived(syncsQuery.isFetching && !syncsQuery.isPending);
 
 	const saveSyncMutation = createMutation(() => ({

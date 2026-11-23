@@ -252,7 +252,7 @@ func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input t
 		S3Enabled:       update.S3Enabled,
 		S3DestinationID: update.S3DestinationID,
 		SelectionMode:   input.SelectionMode,
-		VolumeNames:     kit.Ternary(input.SelectionMode == types.SystemVolumeSelectionAll || names == nil, []string{}, names),
+		VolumeNames:     kit.Ternary(input.SelectionMode == types.SystemVolumeSelectionAll, nil, names),
 		IgnoreAnonymous: input.IgnoreAnonymous,
 	}, nil
 }
@@ -476,15 +476,16 @@ func (s *Service) executeSystemVolumeBackups(
 		}
 		reportProgress(ctx)
 		overridden, backupErr := s.volumes.HasEnabledBackupPolicy(ctx, candidate.Name)
-		if backupErr == nil && overridden {
+		if backupErr == nil && !overridden {
+			_, backupErr = s.volumes.CreateSystemManagedBackup(ctx, candidate.Name, types.SystemUser, trigger, seriesID, policy)
+		}
+		// A volume-level policy owns the volume, whether found before or after waiting for its admission.
+		if (backupErr == nil && overridden) || errors.Is(backupErr, volume.ErrVolumeBackupPolicyOverridden) {
 			if skipProgressErr := jobcontext.Progress(ctx, types.TargetOutcome{ID: candidate.Name, Status: types.RunStatusSkipped}); skipProgressErr != nil {
 				return nil, skipProgressErr
 			}
 			skipped++
 			continue
-		}
-		if backupErr == nil {
-			_, backupErr = s.volumes.CreateSystemManagedBackup(ctx, candidate.Name, types.SystemUser, trigger, seriesID, policy)
 		}
 		if errors.Is(backupErr, volume.ErrVolumeBackupAlreadyRunning) {
 			skipped++

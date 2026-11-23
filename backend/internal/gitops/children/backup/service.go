@@ -12,7 +12,6 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -180,7 +179,7 @@ func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req type
 	if err != nil {
 		return nil, err
 	}
-	if project.GitOpsManagedBy != nil && strings.TrimSpace(*project.GitOpsManagedBy) != "" {
+	if strings.TrimSpace(kit.FromPtr(project.GitOpsManagedBy)) != "" {
 		return nil, common.Classify(common.ErrConflict, errors.New("project is deployed from Git; disconnect that sync before backing it up"))
 	}
 	var existing int64
@@ -992,7 +991,7 @@ func analyzeBackup(ctx context.Context, repoPath, directory string, snapshot *ba
 			analysis.remove = append(analysis.remove, file)
 		}
 	}
-	sort.Strings(analysis.remove)
+	slices.Sort(analysis.remove)
 
 	switch {
 	case len(analysis.changes) == 0:
@@ -1095,7 +1094,7 @@ func diffBackupHashes(local, remote map[string]string) []types.GitOpsBackupFileC
 			changes = append(changes, types.GitOpsBackupFileChange{Path: file, Change: BackupChangeRemoved})
 		}
 	}
-	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
+	slices.SortFunc(changes, func(a, b types.GitOpsBackupFileChange) int { return strings.Compare(a.Path, b.Path) })
 	return changes
 }
 
@@ -1169,7 +1168,7 @@ func normalizeBackupPaths(ctx context.Context, rules backupPathRules, raw []stri
 		}
 	}
 	normalized = kit.Unique(normalized)
-	sort.Strings(normalized)
+	slices.Sort(normalized)
 	return normalized, nil
 }
 

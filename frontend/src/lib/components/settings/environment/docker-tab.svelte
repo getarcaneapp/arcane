@@ -20,6 +20,11 @@
 
 	const shellOptions = [
 		{
+			value: 'auto',
+			label: m.auto(),
+			description: m.auto_shell_description()
+		},
+		{
 			value: '/bin/sh',
 			label: '/bin/sh',
 			description: m.docker_shell_sh_description()

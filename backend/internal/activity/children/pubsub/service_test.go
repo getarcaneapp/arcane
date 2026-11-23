@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/types/v3"
@@ -36,12 +37,11 @@ func TestSubscriberCoalescesProgressEvents(t *testing.T) {
 
 	const updates = 500
 	for i := 1; i <= updates; i++ {
-		progress := i * 100 / updates
 		service.PublishActivity(types.Activity{
 			ID:            "act-1",
 			EnvironmentID: "0",
 			Status:        types.ActivityStatusRunning,
-			Progress:      &progress,
+			Progress:      new(i * 100 / updates),
 		})
 	}
 
@@ -52,7 +52,7 @@ func TestSubscriberCoalescesProgressEvents(t *testing.T) {
 		case event := <-events:
 			received++
 			require.Equal(t, "activity", event.Type)
-			if event.Activity != nil && event.Activity.Progress != nil && *event.Activity.Progress == 100 {
+			if kit.FromPtr(kit.FromPtr(event.Activity).Progress) == 100 {
 				// The consumer was idle during publishing, so the backlog must
 				// have been coalesced instead of delivered event-for-event.
 				require.Less(t, received, updates)
@@ -74,8 +74,12 @@ func TestDropsStaleSnapshotAfterTerminalPublish(t *testing.T) {
 		Type:          types.ActivityTypeImagePull,
 		Status:        types.ActivityStatusRunning,
 	}
-	completed := stale
-	completed.Status = types.ActivityStatusSuccess
+	completed := types.Activity{
+		ID:            "act-1",
+		EnvironmentID: "0",
+		Type:          types.ActivityTypeImagePull,
+		Status:        types.ActivityStatusSuccess,
+	}
 
 	events, _, unsubscribe := service.Subscribe("0")
 	defer unsubscribe()

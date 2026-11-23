@@ -7,6 +7,7 @@
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import ServiceEditorDialog from '#lib/components/dialogs/service-editor-dialog.svelte';
+	import { LabelsList } from '#lib/components/labels/index.js';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
@@ -26,6 +27,7 @@
 		EditIcon,
 		LayersIcon,
 		RedeployIcon,
+		TagIcon,
 		TrashIcon
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
@@ -174,7 +176,7 @@
 	const hasEnvVars = $derived(envVars.length > 0);
 	const hasLabels = $derived(Object.keys(labels).length > 0);
 	const hasAdvancedConfig = $derived(command.length > 0 || args.length > 0 || !!workingDir || !!user || !!hostname);
-	const showConfiguration = $derived(hasEnvVars || hasLabels || hasAdvancedConfig);
+	const showConfiguration = $derived(hasEnvVars || hasAdvancedConfig);
 	const hasPorts = $derived(endpointPorts.length > 0);
 	const hasNetworks = $derived(specNetworks.length > 0 || virtualIPs.length > 0);
 	const showNetworkTab = $derived(hasPorts || hasNetworks);
@@ -241,6 +243,7 @@
 		...(canViewServiceLogs ? [{ value: 'logs', label: m.common_logs(), icon: FileTextIcon }] : []),
 		{ value: 'tasks', label: m.tasks(), icon: JobsIcon },
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
+		...(hasLabels ? [{ value: 'labels', label: m.common_labels(), icon: TagIcon }] : []),
 		...(showNetworkTab ? [{ value: 'network', label: m.resource_networks_cap(), icon: NetworksIcon }] : []),
 		...(hasMounts ? [{ value: 'storage', label: m.storage(), icon: VolumesIcon }] : [])
 	]);
@@ -395,18 +398,13 @@
 
 			{#if showConfiguration}
 				<Tabs.Content value="config" class="h-full">
-					<ServiceConfiguration
-						{envVars}
-						{labels}
-						{command}
-						{args}
-						{workingDir}
-						{user}
-						{hostname}
-						{hasEnvVars}
-						{hasLabels}
-						{hasAdvancedConfig}
-					/>
+					<ServiceConfiguration {envVars} {command} {args} {workingDir} {user} {hostname} {hasEnvVars} {hasAdvancedConfig} />
+				</Tabs.Content>
+			{/if}
+
+			{#if hasLabels}
+				<Tabs.Content value="labels" class="h-full">
+					<LabelsList {labels} />
 				</Tabs.Content>
 			{/if}
 

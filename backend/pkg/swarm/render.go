@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
+
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
 )
@@ -51,15 +53,13 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 	if err != nil {
 		return nil, invalidStackError(err)
 	}
-	if project.Name == "" {
-		project.Name = stackName
-	}
+	project.Name = cmp.Or(project.Name, stackName)
 
-	configMetaByKey, err := planConfigs(ctx, project, ns)
+	configMetaByKey, err := planManagedFileResources(ctx, project.Configs, ns, project.WorkingDir, project.Environment, "config")
 	if err != nil {
 		return nil, invalidStackError(err)
 	}
-	secretMetaByKey, err := planSecrets(ctx, project, ns)
+	secretMetaByKey, err := planManagedFileResources(ctx, project.Secrets, ns, project.WorkingDir, project.Environment, "secret")
 	if err != nil {
 		return nil, invalidStackError(err)
 	}
@@ -80,17 +80,11 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		Name:            stackName,
 		RenderedCompose: string(rendered),
 		Services:        serviceNames,
-		Networks:        sortedStringValues(planNetworks(project, ns)),
-		Volumes:         sortedStringValues(planVolumes(project, ns)),
+		Networks:        slices.Sorted(maps.Values(planResourceNames(project.Networks, ns, func(c composeTypes.NetworkConfig) string { return c.Name }))),
+		Volumes:         slices.Sorted(maps.Values(planResourceNames(project.Volumes, ns, func(c composeTypes.VolumeConfig) string { return c.Name }))),
 		Configs:         sortedPlannedResourceNames(configMetaByKey),
 		Secrets:         sortedPlannedResourceNames(secretMetaByKey),
 	}, nil
-}
-
-func sortedStringValues(valuesByKey map[string]string) []string {
-	values := slices.Collect(maps.Values(valuesByKey))
-	slices.Sort(values)
-	return values
 }
 
 func sortedPlannedResourceNames(plansByKey map[string]plannedFileResource) []string {

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -108,30 +108,30 @@ func TestPathMapper_FromMounts_NoMatchAndMatchingMounts(t *testing.T) {
 func TestPathMapper_TranslateVolumeSources(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "C:/User/arcane/projects")
 
-	project := &composetypes.Project{
-		Services: composetypes.Services{
+	project := &composeTypes.Project{
+		Services: composeTypes.Services{
 			"app": {
 				Name: "app",
-				Volumes: []composetypes.ServiceVolumeConfig{
+				Volumes: []composeTypes.ServiceVolumeConfig{
 					{
-						Type:   composetypes.VolumeTypeBind,
+						Type:   composeTypes.VolumeTypeBind,
 						Source: "/app/data/projects/myproj/data",
 						Target: "/data",
 					},
 					{
-						Type:   composetypes.VolumeTypeVolume,
+						Type:   composeTypes.VolumeTypeVolume,
 						Source: "named-vol",
 						Target: "/vol",
 					},
 				},
 			},
 		},
-		Secrets: composetypes.Secrets{
+		Secrets: composeTypes.Secrets{
 			"my-secret": {
 				File: "/app/data/projects/myproj/secret.txt",
 			},
 		},
-		Configs: composetypes.Configs{
+		Configs: composeTypes.Configs{
 			"my-config": {
 				File: "/app/data/projects/myproj/config.yaml",
 			},
@@ -149,21 +149,21 @@ func TestPathMapper_TranslateVolumeSources(t *testing.T) {
 
 func TestPathMapper_TranslateVolumeSourcesKeepsArcaneReadFiles(t *testing.T) {
 	pm := NewPathMapper("/app/data/swarm/sources", "/host/swarm/sources")
-	project := &composetypes.Project{
-		Services: composetypes.Services{
+	project := &composeTypes.Project{
+		Services: composeTypes.Services{
 			"app": {
 				Name: "app",
-				Volumes: []composetypes.ServiceVolumeConfig{{
-					Type:   composetypes.VolumeTypeBind,
+				Volumes: []composeTypes.ServiceVolumeConfig{{
+					Type:   composeTypes.VolumeTypeBind,
 					Source: "/app/data/swarm/sources/0/stack/data",
 					Target: "/data",
 				}},
 			},
 		},
-		Secrets: composetypes.Secrets{
+		Secrets: composeTypes.Secrets{
 			"secret": {File: "/app/data/swarm/sources/0/stack/secret.txt"},
 		},
-		Configs: composetypes.Configs{
+		Configs: composeTypes.Configs{
 			"config": {File: "/app/data/swarm/sources/0/stack/config.yaml"},
 		},
 	}
@@ -176,21 +176,21 @@ func TestPathMapper_TranslateVolumeSourcesKeepsArcaneReadFiles(t *testing.T) {
 
 func TestPathMapper_TranslateVolumeSourcesDriverOptsDevice(t *testing.T) {
 	pm := NewPathMapper("/app/data/projects", "/host/arcane-data/projects")
-	project := &composetypes.Project{
-		Volumes: composetypes.Volumes{
+	project := &composeTypes.Project{
+		Volumes: composeTypes.Volumes{
 			"bind-backed": {
 				Driver:     "local",
-				DriverOpts: composetypes.Options{"type": "none", "o": "bind", "device": "/app/data/projects/myproj/data"},
+				DriverOpts: composeTypes.Options{"type": "none", "o": "bind", "device": "/app/data/projects/myproj/data"},
 			},
 			"nfs-backed": {
 				Driver:     "local",
-				DriverOpts: composetypes.Options{"type": "nfs", "o": "addr=10.0.0.1,rw", "device": ":/exported/path"},
+				DriverOpts: composeTypes.Options{"type": "nfs", "o": "addr=10.0.0.1,rw", "device": ":/exported/path"},
 			},
 			// compose-go only absolutizes a device when `o` is exactly "bind", so this
 			// one stays relative and must be left alone rather than failing the load.
 			"unresolved-bind": {
 				Driver:     "local",
-				DriverOpts: composetypes.Options{"type": "none", "o": "bind,ro", "device": "data"},
+				DriverOpts: composeTypes.Options{"type": "none", "o": "bind,ro", "device": "data"},
 			},
 			"plain": {},
 		},
@@ -210,13 +210,13 @@ func TestRemapEscapedRelativeSources_MountTableTakesPrecedence(t *testing.T) {
 	require.True(t, pm.isNonMatching)
 
 	containerWorkingDir := "/app/data/projects/goclaw"
-	project := &composetypes.Project{
-		Services: composetypes.Services{
+	project := &composeTypes.Project{
+		Services: composeTypes.Services{
 			"goclaw": {
 				Name: "goclaw",
-				Volumes: []composetypes.ServiceVolumeConfig{
-					{Type: composetypes.VolumeTypeBind, Source: "/app/data/projects/goclaw/media", Target: "/media"},
-					{Type: composetypes.VolumeTypeBind, Source: "/goclaw/data", Target: "/app/data"},
+				Volumes: []composeTypes.ServiceVolumeConfig{
+					{Type: composeTypes.VolumeTypeBind, Source: "/app/data/projects/goclaw/media", Target: "/media"},
+					{Type: composeTypes.VolumeTypeBind, Source: "/goclaw/data", Target: "/app/data"},
 				},
 			},
 		},

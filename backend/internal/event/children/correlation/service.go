@@ -39,7 +39,11 @@ const (
 )
 
 func NewService(now func() time.Time) *Service {
-	return &Service{now: now}
+	return &Service{
+		expectations: make(map[expectation]time.Time),
+		windows:      make(map[windowKey]window),
+		now:          now,
+	}
 }
 
 func (c *Service) prune(now time.Time) {
@@ -77,10 +81,7 @@ func (c *Service) MarkExpectation(resourceType, resourceID, resourceName string)
 	defer c.mu.Unlock()
 	now := c.now()
 	c.prune(now)
-	if c.expectations == nil {
-		c.expectations = make(map[expectation]time.Time)
-	}
-	c.expectations[expectation{resourceType, resourceID, resourceName}] = now.Add(expectationTTL)
+	c.expectations[expectation{resourceType: resourceType, resourceID: resourceID, resourceName: resourceName}] = now.Add(expectationTTL)
 }
 
 func (c *Service) BeginComposeWindow(composeProject string) func() {
@@ -97,7 +98,7 @@ func (c *Service) BeginResourceWindow(resourceType, resourceID, resourceName str
 	if resourceID == "" && resourceName == "" {
 		return func() {}
 	}
-	return c.beginWindows([]windowKey{{kind: "resource", resource: expectation{resourceType, resourceID, resourceName}}})
+	return c.beginWindows([]windowKey{{kind: "resource", resource: expectation{resourceType: resourceType, resourceID: resourceID, resourceName: resourceName}}})
 }
 
 func (c *Service) BeginTypeWindow(resourceType string) func() {
@@ -110,9 +111,6 @@ func (c *Service) BeginTypeWindow(resourceType string) func() {
 func (c *Service) beginWindows(keys []windowKey) func() {
 	c.mu.Lock()
 	c.prune(c.now())
-	if c.windows == nil {
-		c.windows = make(map[windowKey]window)
-	}
 	for _, key := range keys {
 		w := c.windows[key]
 		w.active++

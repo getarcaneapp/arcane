@@ -9,7 +9,7 @@
 	import { podmanQuadletListQuery } from '#lib/query/podman.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
-	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 
 	import QuadletsTable from './components/quadlets-table.svelte';
 
@@ -21,14 +21,9 @@
 	);
 	const canInstall = $derived(quadletEnvironments.some((env) => hasPermission('podman-quadlets:create', env.id)));
 
-	const quadletsQuery = createQuery(() => {
-		const scope = pageState.scope;
-		return {
-			...podmanQuadletListQuery(scope, quadletEnvironments, pageState.requestOptions),
-			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
-			select: (value) => ({ envId: scope, value })
-		};
-	});
+	const quadletsQuery = createQuery(() =>
+		scopedQueryOptions(pageState.scope, podmanQuadletListQuery(pageState.scope, quadletEnvironments, pageState.requestOptions))
+	);
 
 	const resourcesReady = $derived(quadletsQuery.data?.envId === pageState.scope);
 	const quadlets = $derived(quadletsQuery.data?.value ?? data.quadlets);

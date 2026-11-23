@@ -1,50 +1,27 @@
 # AI Usage Policy
 
-Arcane has clear rules for AI-assisted contributions:
+Arcane is built with AI assistance and welcomes responsible AI use. This policy is about contribution quality, not banning tools.
 
-- **All AI usage in any form must be disclosed.** You must state the tool you used (e.g., Claude Code, Cursor, GitHub Copilot, ChatGPT) along with the extent that the work was AI-assisted.
+> [!IMPORTANT]
+> These rules apply to all outside contributions. Undisclosed AI usage (or suspected undisclosed usage) results in PR closure, and repeated violations may result in being blocked from contributing. Maintainers are exempt and use AI tools at their own discretion.
 
-- **Pull requests created by AI must have been fully verified with human testing.** AI must not create hypothetically correct code that hasn't been tested. You must run the development environment, verify both frontend and backend work correctly, and manually test your changes. You must not allow AI to write code for platforms or environments you don't have access to manually test on.
+## Rules
 
-- **Code must follow Arcane's existing patterns.** Before writing code, read [AGENTS.md](AGENTS.md) for technical guidance. AI-generated code that ignores project conventions (Svelte 5 syntax, service patterns, error handling) will be rejected.
+- Disclose all AI usage. State the tool/model you used and how much of the work was AI-assisted.
+- Manually test every PR yourself. Never submit untested or "should work" AI code, and do not submit code for platforms or environments you cannot test.
+- Follow Arcane's conventions in [AGENTS.md](AGENTS.md). AI-generated code that ignores project patterns (Svelte 5 runes, service layers, error handling, etc.) will be rejected.
+- Issues and discussions may use AI, but a human must review and trim them before posting. Cut the fluff and keep it focused.
+- No AI-generated media (images, art, videos, audio). Only text and code are allowed.
 
-- **Issues and discussions can use AI assistance but must have a full human-in-the-loop.** This means that any content generated with AI must have been reviewed _and edited_ by a human before submission. AI is very good at being overly verbose and including noise that distracts from the main point. Humans must do their research and trim this down.
+## Testing before submitting
 
-- **No AI-generated media is allowed** (art, images, videos, audio, etc.). Text and code are the only acceptable AI-generated content, per the other rules in this policy.
+- Start the dev environment with `./scripts/development/dev.sh start` (or `just dev docker`).
+- Verify the frontend (`http://localhost:3000`), backend (`http://localhost:3552`), and hot reload all work.
+- Manually test your changes and include clear verification evidence (such as before/after screenshots or video for UI changes, or runtime/CLI output).
+- Run `just format all` and `just lint all` and fix any errors.
 
-- **Contributors who ignore this policy will face consequences.** Undisclosed AI usage or suspected AI usage without disclosure will result in PR closure. Repeated violations may result in being blocked from contributing. You've been warned.
+## Why this exists
 
-These rules apply to all outside contributions. Maintainers are exempt from these rules and may use AI tools at their discretion; they've proven themselves trustworthy to apply good judgment.
-
-## Testing Requirements
-
-Before submitting any AI-assisted contribution, you must:
-
-1. Start the development environment: `./scripts/development/dev.sh start`
-2. Access the frontend at http://localhost:3000 and verify it works
-3. Verify the backend at http://localhost:3552 responds correctly
-4. Test your specific changes manually
-5. Ensure no linting errors exist
-6. Verify hot reload works for both frontend and backend
-
-If you prefer `just`, the `Justfile` includes equivalent shortcuts such as `just dev docker`, `just lint frontend`, and `just test backend`.
-
-## There are Humans Here
-
-Please remember that Arcane is maintained by humans.
-
-Every discussion, issue, and pull request is read and reviewed by humans. It is a point of interaction between people and their work. Approaching this with low-effort, unverified submissions is disrespectful and puts the burden of validation on maintainers who volunteer their time.
-
-In a perfect world, AI would produce high-quality, correct code every time. But that reality depends on the person using the AI. Today, we see too many contributions where AI-generated code hasn't been tested, doesn't follow project patterns, or solves problems that don't exist. Until this improves, we need clear rules to protect maintainer time.
-
-## AI is Welcome Here
-
-Arcane is developed with AI assistance, and maintainers use AI tools productively in their workflow. As a project, we welcome AI as a tool for those who use it responsibly!
-
-**Our reason for this policy is not an anti-AI stance**, but rather a response to the increase in low-quality AI-generated pull requests that don't address real user needs or follow project standards. It's about the quality of contributions, not the tools used to create them.
-
-This section exists to be transparent about the project's use of AI and to clarify that this policy targets contribution quality, not the use of AI tools themselves.
-
-## Technical Guidance for AI Tools
-
-If you're using AI tools to contribute to Arcane, ensure your AI is configured with our coding standards. See [AGENTS.md](AGENTS.md) for architecture patterns, anti-patterns to avoid, and project-specific conventions that will help AI tools generate code that matches our standards.
+- Every issue, discussion, and PR is reviewed by human maintainers volunteering their time.
+- Low-effort, unverified AI submissions shift the work of validation onto maintainers and slow everyone down.
+- If you use AI to contribute, configure it with [AGENTS.md](AGENTS.md) so its output matches Arcane's standards.

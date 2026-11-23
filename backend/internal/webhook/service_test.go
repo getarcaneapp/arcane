@@ -28,7 +28,9 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
 
@@ -57,10 +59,10 @@ func initWebhookTokenCryptoForTests() {
 }
 
 func newTestWebhookService(db *database.DB) *WebhookService {
-	return &WebhookService{
-		db:           db,
-		eventService: event.NewEventService(db, &config.Config{}, nil),
-	}
+	return NewWebhookService(WebhookServiceParams{
+		DB:           db,
+		EventService: event.NewEventService(db, &config.Config{}, nil),
+	})
 }
 
 func fetchWebhook(t *testing.T, db *database.DB, id string) Webhook {
@@ -393,7 +395,7 @@ func TestListWebhookSummaries_ResolvesTargetNames(t *testing.T) {
 	_, _, err = svc.CreateWebhook(ctx, "gitops-hook", WebhookTargetTypeGitOps, WebhookActionTypeSync, "sync-1", types.LocalDockerEnvironmentID, types.Actor{}, authz.SudoPermissionSet())
 	require.NoError(t, err)
 
-	summaries, err := svc.ListWebhookSummaries(ctx, types.LocalDockerEnvironmentID)
+	summaries, _, err := svc.ListWebhookSummaries(ctx, types.LocalDockerEnvironmentID, pagination.QueryParams{})
 	require.NoError(t, err)
 	require.Len(t, summaries, 3)
 
@@ -425,7 +427,7 @@ func TestListWebhookSummaries_DefaultsLegacyActionType(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(legacyWebhook).Error)
 
-	summaries, err := svc.ListWebhookSummaries(ctx, types.LocalDockerEnvironmentID)
+	summaries, _, err := svc.ListWebhookSummaries(ctx, types.LocalDockerEnvironmentID, pagination.QueryParams{})
 	require.NoError(t, err)
 	require.Len(t, summaries, 1)
 	assert.Equal(t, WebhookActionTypeUpdate, summaries[0].ActionType)
@@ -799,17 +801,17 @@ func webhookScopeContext(t *testing.T, target string, bodies map[string]any) con
 func TestAggregateWebhookSummariesMergesEnvironments(t *testing.T) {
 	now := time.Now()
 	ctx := webhookScopeContext(t, "/api/agents/a,b,c/webhooks", map[string]any{
-		"a": types.ApiResponse[[]types.Webhook]{
+		"a": types.Paginated[types.Webhook]{
 			Success: true,
 			Data:    []types.Webhook{{ID: "old", CreatedAt: now.Add(-time.Hour)}},
 		},
-		"b": types.ApiResponse[[]types.Webhook]{
+		"b": types.Paginated[types.Webhook]{
 			Success: true,
 			Data:    []types.Webhook{{ID: "new", CreatedAt: now}},
 		},
 	})
 
-	body, err := (&WebhookService{}).AggregateWebhookSummaries(ctx)
+	body, err := handlerutil.AggregatePaginated(ctx, webhookPagination, pagination.QueryParams{SortParams: pagination.SortParams{Sort: "createdAt", Order: pagination.SortDesc}})
 	require.NoError(t, err)
 
 	require.Len(t, body.Data, 2)

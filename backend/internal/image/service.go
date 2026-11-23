@@ -1205,6 +1205,30 @@ func (s *ImageService) AggregateImageCounts(ctx context.Context) (types.ApiRespo
 	})
 }
 
+func (s *ImageService) AggregatePruneImages(ctx context.Context) (types.ApiResponse[types.ImagePruneReport], error) {
+	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok && scope.Timeout == 0 {
+		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{ //exhaustruct:enforce
+			Handler: scope.Handler,
+			Request: scope.Request,
+			Resolve: scope.Resolve,
+			Path:    scope.Path,
+			IDs:     scope.IDs,
+			Body:    scope.Body,
+			Timeout: timeouts.DefaultDockerDiskUsage,
+		})
+	}
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.ImagePruneReport]) types.ImagePruneReport {
+		report := types.ImagePruneReport{ImagesDeleted: []string{}}
+		for _, environment := range environments {
+			report = types.ImagePruneReport{
+				ImagesDeleted:  slices.Concat(report.ImagesDeleted, environment.Data.ImagesDeleted),
+				SpaceReclaimed: report.SpaceReclaimed + environment.Data.SpaceReclaimed,
+			}
+		}
+		return report
+	})
+}
+
 func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []container.Summary) map[string]string {
 	projectIDs := make(map[string]string)
 	projectNameSet := make(map[string]struct{})

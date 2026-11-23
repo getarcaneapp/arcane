@@ -548,7 +548,7 @@ func containerMatcher() *authz.PermissionMatcher {
 	m := authz.NewPermissionMatcher()
 	m.Add(http.MethodGet, "/containers", authz.PermContainersList)
 	m.Add(http.MethodPost, "/containers/{containerId}/restart", authz.PermContainersRestart)
-	m.AddPublic(http.MethodGet, "/settings/public")
+	m.Add(http.MethodGet, "/settings/public", "")
 	return m
 }
 

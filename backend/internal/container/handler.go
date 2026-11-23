@@ -1,6 +1,7 @@
 package container
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -21,7 +22,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/middleware"
-	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -34,7 +34,6 @@ type (
 	ContainerHandler struct {
 		containerService *ContainerService
 		dockerService    *docker.DockerClientService
-		settingsService  *settings.SettingsService
 		activityService  *activity.ActivityService
 		appCtx           context.Context
 	}
@@ -447,10 +446,10 @@ func (h *ContainerHandler) RunContainerAction(ctx context.Context, input *Contai
 
 func (h *ContainerHandler) containerActivityName(ctx context.Context, containerID string) string {
 	name, err := h.containerService.GetContainerNameByReference(ctx, containerID)
-	if err != nil || name == "" {
+	if err != nil {
 		return containerID
 	}
-	return name
+	return cmp.Or(name, containerID)
 }
 
 func (h *ContainerHandler) runContainerAction(ctx context.Context, input *ContainerActionInput, cfg containerActionConfig) (*handlerutil.Out[types.MessageResponse], error) {
@@ -550,19 +549,24 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *GetCont
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container redeployed", nil)
 
-	details, inspectErr := h.containerService.GetContainerDetails(runtimeCtx, newContainerID)
+	return h.recreatedContainerOutput(runtimeCtx, newContainerID, activityID), nil
+}
+
+func (h *ContainerHandler) recreatedContainerOutput(ctx context.Context, containerID, activityID string) *handlerutil.Out[types.ContainerDetails] {
+	trimmedActivityID := mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+	details, inspectErr := h.containerService.GetContainerDetails(ctx, containerID)
 	if inspectErr != nil {
-		// Container was redeployed successfully, but we couldn't fetch full details.
+		// Container was recreated successfully, but we couldn't fetch full details.
 		// Return minimal response with just the ID so frontend can still navigate.
 		return &handlerutil.Out[types.ContainerDetails]{
 			Body: types.ApiResponse[types.ContainerDetails]{
 				Success: true,
 				Data: types.ContainerDetails{
-					ID:         newContainerID,
-					ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+					ID:         containerID,
+					ActivityID: trimmedActivityID,
 				},
 			},
-		}, nil
+		}
 	}
 
 	return &handlerutil.Out[types.ContainerDetails]{
@@ -586,12 +590,13 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *GetCont
 				IconDarkURL:       details.IconDarkURL,
 				RedeployDisabled:  details.RedeployDisabled,
 				AutoUpdateEnabled: details.AutoUpdateEnabled,
+				AutoUpdateInclude: details.AutoUpdateInclude,
 				UpdateInfo:        details.UpdateInfo,
 				Hardened:          details.Hardened,
-				ActivityID:        mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
+				ActivityID:        trimmedActivityID,
 			},
 		},
-	}, nil
+	}
 }
 
 func (h *ContainerHandler) GetContainerEditConfig(ctx context.Context, input *GetContainerEditConfigInput) (*handlerutil.Out[types.ContainerEditConfig], error) {
@@ -650,48 +655,7 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edited", nil)
 
-	details, inspectErr := h.containerService.GetContainerDetails(runtimeCtx, newContainerID)
-	if inspectErr != nil {
-		// Container was recreated successfully, but we couldn't fetch full details.
-		// Return minimal response with just the ID so frontend can still navigate.
-		return &handlerutil.Out[types.ContainerDetails]{
-			Body: types.ApiResponse[types.ContainerDetails]{
-				Success: true,
-				Data: types.ContainerDetails{
-					ID:         newContainerID,
-					ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-				},
-			},
-		}, nil
-	}
-
-	return &handlerutil.Out[types.ContainerDetails]{
-		Body: types.ApiResponse[types.ContainerDetails]{
-			Success: true,
-			Data: types.ContainerDetails{ //exhaustruct:enforce
-				ID:                details.ID,
-				Name:              details.Name,
-				Image:             details.Image,
-				ImageID:           details.ImageID,
-				Created:           details.Created,
-				State:             details.State,
-				Config:            details.Config,
-				HostConfig:        details.HostConfig,
-				NetworkSettings:   details.NetworkSettings,
-				Ports:             details.Ports,
-				Mounts:            details.Mounts,
-				Labels:            details.Labels,
-				ComposeInfo:       details.ComposeInfo,
-				IconLightURL:      details.IconLightURL,
-				IconDarkURL:       details.IconDarkURL,
-				RedeployDisabled:  details.RedeployDisabled,
-				AutoUpdateEnabled: details.AutoUpdateEnabled,
-				UpdateInfo:        details.UpdateInfo,
-				Hardened:          details.Hardened,
-				ActivityID:        mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
-			},
-		},
-	}, nil
+	return h.recreatedContainerOutput(runtimeCtx, newContainerID, activityID), nil
 }
 
 func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*handlerutil.Out[types.MessageResponse], error) {
@@ -733,13 +697,9 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[types.MessageResponse], error) {
-	containerName, err := h.containerService.GetContainerNameByReference(ctx, input.ContainerID)
-	if err != nil {
-		return nil, huma.Error404NotFound("container not found")
-	}
-
-	if setContainerAutoUpdateExclusionErr := h.settingsService.SetContainerAutoUpdateExclusion(ctx, containerName, !input.Body.Enabled); setContainerAutoUpdateExclusionErr != nil {
-		return nil, huma.Error500InternalServerError("failed to update auto-update setting")
+	if err := h.containerService.SetAutoUpdate(ctx, SetAutoUpdateOptions{Reference: input.ContainerID, Enabled: input.Body.Enabled}); err != nil {
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update auto-update setting: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput(kit.Ternary(input.Body.Enabled, "Auto-update enabled", "Auto-update disabled"), ""), nil

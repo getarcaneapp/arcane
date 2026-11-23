@@ -68,8 +68,8 @@ class PodmanService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/agents/${environmentId}/podman/pods`, request));
 	}
 
-	async prunePods(environmentId: string): Promise<PodPruneReport[]> {
-		return this.handleResponse(this.api.post(`/agents/${environmentId}/podman/pods/prune`, {}));
+	async prunePods(environmentId: string, config?: APIRequestConfig): Promise<PodPruneReport[]> {
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/podman/pods/prune`, {}, config));
 	}
 
 	async podAction(podId: string, action: PodmanPodAction, environmentId: string, request: PodActionRequest = {}): Promise<void> {

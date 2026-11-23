@@ -264,8 +264,8 @@ func row(roots []types.ProjectsDirectoryStatus, catalog string, p types.ProjectR
 		GitOpsManagedBy: p.GitOpsManagedBy,
 		ArchivedAt:      p.ArchivedAt,
 		Status:          LiveStatus(p.Status, snapshot.Err, services),
-		DirName:         mo.PointerToOption(p.DirName).OrEmpty(),
-		ComposeName:     mo.PointerToOption(p.ComposeProjectName).OrEmpty(),
+		DirName:         kit.FromPtr(p.DirName),
+		ComposeName:     kit.FromPtr(p.ComposeProjectName),
 		Name:            p.Name,
 		RelativePath:    RelativePath(root, p.Path),
 		ProjectsRoot:    root,
@@ -372,7 +372,7 @@ func ApplyPresentation(ctx context.Context, projectsDir, catalog string, records
 func KnownComposeProjectNames(records []types.ProjectRecord) map[string]struct{} {
 	known := make(map[string]struct{}, len(records)*2)
 	for _, p := range records {
-		for _, name := range kit.TrimNonEmpty([]string{p.Name, mo.PointerToOption(p.ComposeProjectName).OrEmpty()}) {
+		for _, name := range kit.TrimNonEmpty([]string{p.Name, kit.FromPtr(p.ComposeProjectName)}) {
 			known[name] = struct{}{}
 			if normalized := projects.NormalizeProjectName(name); normalized != "" {
 				known[normalized] = struct{}{}
@@ -471,7 +471,7 @@ func (s *Service) DiscoveredUpdateRows(
 				ContainerID:     c.ID,
 			})
 		}
-		updateInfo := s.summarizeRuns(projects.ImageRefsFromRuntimeServices(runtimeServices), checkServices, scoped)
+		updateInfo := s.summarizeRuns(projects.ImageRefsFrom(runtimeServices, func(svc types.ProjectRuntimeService) string { return svc.Image }), checkServices, scoped)
 		if !kit.FromPtr(updateInfo).HasUpdate {
 			continue
 		}

@@ -1,54 +1,24 @@
 <script lang="ts">
-	import type { Attachment } from 'svelte/attachments';
-
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { SuccessIcon, ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { MANAGER_ENVIRONMENT_ID } from '#lib/stores/upgrade-job.store.svelte.js';
-	import type { UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
+	import type { UpgradeJobResult } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
 
 	import UpdateAllElapsed from './update-all-elapsed.svelte';
+	import { createLogTailAttachment, formatUpgradeVersions, upgradeStages, upgradeStatusDisplay } from './upgrade-job';
 
 	let { result }: { result: UpgradeJobResult } = $props();
 
-	const statusDisplay: Record<UpgradeJobResultStatus, { label: () => string; text: string }> = {
-		pending: { label: m.common_pending, text: 'text-muted-foreground' },
-		updating: { label: m.common_action_updating, text: 'text-primary' },
-		updated: { label: m.common_updated, text: 'text-muted-foreground' },
-		up_to_date: { label: m.image_update_up_to_date_title, text: 'text-muted-foreground' },
-		triggered: { label: m.environments_update_all_status_triggered, text: 'text-warning' },
-		skipped_offline: { label: m.environments_update_all_status_skipped_offline, text: 'text-warning' },
-		failed: { label: m.common_failed, text: 'text-destructive' }
-	};
-
-	const stages: Array<{ stage: UpgradeJobStage; label: () => string }> = [
-		{ stage: 'checking', label: m.environments_update_all_stage_checking },
-		{ stage: 'starting', label: m.environments_update_all_stage_starting },
-		{ stage: 'pulling', label: m.environments_update_all_stage_pulling },
-		{ stage: 'upgrading', label: m.environments_update_all_stage_upgrading },
-		{ stage: 'reconnecting', label: m.environments_update_all_stage_reconnecting },
-		{ stage: 'verifying', label: m.environments_update_all_stage_verifying }
-	];
-
-	const display = $derived(statusDisplay[result.status] ?? statusDisplay.pending);
+	const display = $derived(upgradeStatusDisplay[result.status] ?? upgradeStatusDisplay.pending);
 	const isManager = $derived(result.environmentId === MANAGER_ENVIRONMENT_ID);
 	const logs = $derived(result.logs ?? []);
-	const stageIndex = $derived(stages.findIndex((entry) => entry.stage === result.stage));
-
-	const versions = $derived.by(() => {
-		const from = result.fromVersion?.trim() ?? '';
-		const to = result.toVersion?.trim() ?? '';
-		if (!from || !to || from === to) return to || from;
-		return `${from} → ${to}`;
-	});
-
-	const followLogTail: Attachment<HTMLPreElement> = (node) => {
-		void logs.length;
-		node.scrollTop = node.scrollHeight;
-	};
+	const stageIndex = $derived(upgradeStages.findIndex((entry) => entry.stage === result.stage));
+	const versions = $derived(formatUpgradeVersions(result));
+	const followLogTail = createLogTailAttachment(() => logs.length);
 </script>
 
 <div class="flex min-w-0 flex-col gap-3 px-5 py-4 text-sm sm:min-h-0 sm:flex-1">
@@ -76,7 +46,7 @@
 		</div>
 
 		<ol class="space-y-1.5">
-			{#each stages as entry, index (entry.stage)}
+			{#each upgradeStages as entry, index (entry.stage)}
 				<li
 					class={cn(
 						'flex items-center gap-2',

@@ -17,15 +17,15 @@ export const load: PageLoad = async ({ parent }) => {
 		direction: 'desc'
 	});
 
+	void queryClient.prefetchQuery(imageUsageCountsQuery(scope, environments));
 	const result = await tryCatch(
 		Promise.all([
 			queryClient.ensureQueryData({ ...imageListQuery(scope, environments, imageRequestOptions), revalidateIfStale: true }),
-			queryClient.ensureQueryData({ ...imageUsageCountsQuery(scope, environments), revalidateIfStale: true }),
 			featureStore.load(environments.map((env) => env.id))
 		])
 	);
 	if (result.error !== null) throwPageLoadError(result.error, 'Failed to load images');
-	const [images, imageUsageCounts] = result.data;
+	const [images] = result.data;
 
-	return { scope, images, imageRequestOptions, imageUsageCounts };
+	return { images, imageRequestOptions };
 };

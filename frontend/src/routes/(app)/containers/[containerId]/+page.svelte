@@ -14,6 +14,7 @@
 	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
+	import { LabelsList } from '#lib/components/labels/index.js';
 	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -29,12 +30,14 @@
 		CodeIcon,
 		InspectIcon,
 		HealthIcon,
-		LayoutListIcon
+		LayoutListIcon,
+		TagIcon
 	} from '#lib/icons/index.js';
 	import { EditIcon, ProjectsIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerDetailQuery } from '#lib/query/containers.js';
+	import { refetchEnvironmentSettings } from '#lib/query/environments.js';
 	import { projectDetailQuery } from '#lib/query/projects.js';
 	import { projectListForEnvironmentQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -49,7 +52,7 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
-	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
+	import { autoUpdateLabelControl } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { createDashboardWidget, pinDashboardAction } from '#lib/utils/dashboard-layout.js';
 	import { calculateMemoryUsage, getCustomHostname, getThemedIconUrl } from '#lib/utils/docker.js';
@@ -89,11 +92,17 @@
 	let hasInitialStatsLoaded = $state(false);
 	let statsError = $state(false);
 
-	// Auto-update: the Docker label controls the state when set (not toggleable via UI).
+	// Auto-update: the Docker label controls the state when it decides (not toggleable via UI).
 	// The status itself comes from the container response; older agents omit it.
-	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelDisabled(container?.labels));
+	const autoUpdateLabelControlled = $derived(container ? autoUpdateLabelControl(container) : undefined);
 	const autoUpdateStatusAvailable = $derived(typeof container?.autoUpdateEnabled === 'boolean');
 	const autoUpdateEnabled = $derived(container?.autoUpdateEnabled === true);
+
+	// The toggle edits the environment's container lists, so its cached settings must reload too.
+	async function refreshAfterAutoUpdateChange() {
+		await refetchEnvironmentSettings(queryClient, currentEnvId);
+		await refreshContainerDetails();
+	}
 
 	async function refreshContainerDetails() {
 		const [, result] = await Promise.all([
@@ -154,7 +163,6 @@
 	const hasEnvVars = $derived(!!(container?.config?.env && container.config.env.length > 0));
 	const hasPorts = $derived(!!(container?.ports && container.ports.length > 0));
 	const hasLabels = $derived(!!(container?.labels && Object.keys(container.labels).length > 0));
-	const showConfiguration = $derived(hasEnvVars || hasLabels);
 
 	const hasNetworks = $derived(
 		!!(container?.networkSettings?.networks && Object.keys(container.networkSettings.networks).length > 0)
@@ -202,7 +210,7 @@
 		() => {
 			void refreshAfterUpdate();
 		},
-		() => data.container.id
+		() => container?.id ?? ''
 	);
 
 	onMount(() => {
@@ -397,7 +405,8 @@
 			{ value: 'logs', label: m.common_logs(), icon: FileTextIcon, visible: canViewLogs },
 			{ value: 'shell', label: m.common_shell(), icon: TerminalIcon, visible: showShell },
 			{ value: 'healthcheck', label: m.containers_nav_healthcheck(), icon: HealthIcon, visible: hasHealthcheck },
-			{ value: 'config', label: m.common_configuration(), icon: SettingsIcon, visible: showConfiguration },
+			{ value: 'environment', label: m.environment(), icon: SettingsIcon, visible: hasEnvVars },
+			{ value: 'labels', label: m.common_labels(), icon: TagIcon, visible: hasLabels },
 			{ value: 'network', label: m.resource_networks_cap(), icon: NetworksIcon, visible: showNetworkTab },
 			{ value: 'storage', label: m.storage(), icon: VolumesIcon, visible: hasMounts },
 			{ value: 'compose', label: m.compose(), icon: CodeIcon, visible: showComposeTab },
@@ -603,7 +612,7 @@
 			{autoUpdateEnabled}
 			{autoUpdateLabelControlled}
 			{autoUpdateStatusAvailable}
-			onAutoUpdateChange={refreshContainerDetails}
+			onAutoUpdateChange={refreshAfterAutoUpdateChange}
 			onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
 			onViewStorage={hasMounts ? () => onTabChange('storage') : undefined}
 			onViewNetworks={showNetworkTab ? () => onTabChange('network') : undefined}
@@ -671,9 +680,15 @@
 		</Tabs.Content>
 	{/if}
 
-	{#if showConfiguration}
-		<Tabs.Content value="config" class="h-full">
-			<ContainerConfiguration {container} {hasEnvVars} {hasLabels} />
+	{#if hasEnvVars}
+		<Tabs.Content value="environment" class="h-full">
+			<ContainerConfiguration {container} />
+		</Tabs.Content>
+	{/if}
+
+	{#if hasLabels}
+		<Tabs.Content value="labels" class="h-full">
+			<LabelsList labels={container.labels} />
 		</Tabs.Content>
 	{/if}
 

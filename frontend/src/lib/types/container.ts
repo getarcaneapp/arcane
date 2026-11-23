@@ -213,10 +213,6 @@ export interface ContainerResourceSample {
 	pids: number;
 }
 
-export interface ContainerResourceSampleSubscription {
-	containerIds: string[];
-}
-
 export interface ContainerResourceSampleBatch {
 	samples: Record<string, ContainerResourceSample>;
 	error?: string;
@@ -244,6 +240,8 @@ export interface ContainerSummary {
 	redeployDisabled?: boolean;
 	/** Eligibility under the updater label and exclusion setting; absent on older agents. */
 	autoUpdateEnabled?: boolean;
+	/** The environment only auto-updates listed or labelled containers (include mode); absent on older agents. */
+	autoUpdateInclude?: boolean;
 	hidden?: boolean;
 	resourceSample?: ContainerResourceSample;
 }
@@ -279,6 +277,8 @@ export interface ContainerDetails {
 	redeployDisabled?: boolean;
 	/** Eligibility under the updater label and exclusion setting; absent on older agents. */
 	autoUpdateEnabled?: boolean;
+	/** The environment only auto-updates listed or labelled containers (include mode); absent on older agents. */
+	autoUpdateInclude?: boolean;
 	/** Stored update check for the container's current policy; absent on older agents. */
 	updateInfo?: ImageUpdateInfo;
 	/** Docker Hardened Image metadata from the image labels; absent on older agents. */

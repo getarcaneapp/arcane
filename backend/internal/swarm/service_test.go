@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -60,7 +61,7 @@ func TestAggregateTasksMergesEnvironments(t *testing.T) {
 		},
 	})
 
-	body, err := (&SwarmService{}).AggregateTasks(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	body, err := handlerutil.AggregatePaginated(ctx, taskPagination, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
 	require.NoError(t, err)
 
 	require.Len(t, body.Data, 2)

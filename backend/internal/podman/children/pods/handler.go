@@ -1,6 +1,7 @@
 package pods
 
 import (
+	"cmp"
 	"context"
 	"errors"
 
@@ -12,6 +13,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
 )
 
@@ -72,7 +74,7 @@ func NewHandler(service *Service, audit func(ctx context.Context, environmentID,
 func (h *Handler) List(ctx context.Context, input *ListPodsInput) (*handlerutil.Page[types.Pod], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := h.service.Aggregate(ctx, params)
+		body, err := handlerutil.AggregatePaginated(ctx, podPagination, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list pods: " + err.Error())
 		}
@@ -87,7 +89,7 @@ func (h *Handler) List(ctx context.Context, input *ListPodsInput) (*handlerutil.
 	return &handlerutil.Page[types.Pod]{
 		Body: types.Paginated[types.Pod]{
 			Success:    true,
-			Data:       kit.Ternary(items != nil, items, []types.Pod{}),
+			Data:       items,
 			Pagination: handlerutil.PaginationResponse(page),
 		},
 	}, nil
@@ -134,6 +136,27 @@ func (h *Handler) Delete(ctx context.Context, input *DeletePodInput) (*handlerut
 }
 
 func (h *Handler) Prune(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.PodPruneReport], error) {
+	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := httpx.CollectEnvironmentData(httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{ //exhaustruct:enforce
+			Handler: scope.Handler,
+			Request: scope.Request,
+			Resolve: scope.Resolve,
+			Path:    scope.Path,
+			IDs:     scope.IDs,
+			Body:    scope.Body,
+			Timeout: cmp.Or(scope.Timeout, timeouts.DefaultDockerDiskUsage),
+		}), nil, func(environments []types.EnvironmentData[[]types.PodPruneReport]) []types.PodPruneReport {
+			reports := []types.PodPruneReport{}
+			for _, environment := range environments {
+				reports = append(reports, environment.Data...)
+			}
+			return reports
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to prune pods: " + err.Error())
+		}
+		return &handlerutil.Out[[]types.PodPruneReport]{Body: body}, nil
+	}
 	reports, err := h.service.Prune(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -143,7 +166,7 @@ func (h *Handler) Prune(ctx context.Context, input *types.EnvironmentInput) (*ha
 	return &handlerutil.Out[[]types.PodPruneReport]{
 		Body: types.ApiResponse[[]types.PodPruneReport]{
 			Success: true,
-			Data:    kit.Ternary(reports != nil, reports, []types.PodPruneReport{}),
+			Data:    reports,
 		},
 	}, nil
 }
@@ -166,7 +189,7 @@ func (h *Handler) Stats(ctx context.Context, input *PodStatsInput) (*handlerutil
 	return &handlerutil.Out[[]types.PodStats]{
 		Body: types.ApiResponse[[]types.PodStats]{
 			Success: true,
-			Data:    kit.Ternary(stats != nil, stats, []types.PodStats{}),
+			Data:    stats,
 		},
 	}, nil
 }

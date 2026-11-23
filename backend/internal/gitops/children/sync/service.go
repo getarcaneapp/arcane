@@ -116,6 +116,23 @@ func New(p Params) *Service {
 	}
 }
 
+func (s *Service) Unchanged(ctx context.Context, sync *projectpkg.GitOpsSync) bool {
+	if slices.Contains(projectpkg.GitOpsPushModes, sync.Mode) || sync.PendingRedeploy || kit.FromPtr(sync.LastSyncStatus) != "success" || sync.Repository == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	authConfig, err := s.repoService.GetAuthConfig(ctx, sync.Repository)
+	if err != nil {
+		return false
+	}
+	head, exists, err := s.repoService.RemoteBranchHead(ctx, sync.Repository.URL, sync.Branch, authConfig)
+	if err != nil || !exists || head != kit.FromPtr(sync.LastSyncCommit) {
+		return false
+	}
+	return s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", sync.ID).Update("last_sync_at", time.Now()).Error == nil
+}
+
 func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult) (*types.GitOpsSyncResult, error) {
 	pinned := ""
 	if run, ok := jobcontext.Run(ctx); ok {
@@ -366,23 +383,23 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 	if pinned != "" && pinned != source.commitHash {
 		repo, openErr := git.PlainOpen(repoPath)
 		if openErr != nil {
-			return source, openErr
+			return source, s.failSync(ctx, result, sync, actor, "Failed to open repository", openErr)
 		}
 		tree, treeErr := repo.Worktree()
 		if treeErr != nil {
-			return source, treeErr
+			return source, s.failSync(ctx, result, sync, actor, "Failed to open repository worktree", treeErr)
 		}
 		if checkoutErr := tree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(pinned)}); checkoutErr != nil {
-			return source, checkoutErr
+			return source, s.failSync(ctx, result, sync, actor, "Failed to check out revision "+pinned, checkoutErr)
 		}
 		source.commitHash = pinned
 	}
 	if source.commitHash == "" {
-		return source, errors.New("GitOps source revision is unavailable")
+		return source, s.failSync(ctx, result, sync, actor, "GitOps source revision is unavailable", errors.New("GitOps source revision is unavailable"))
 	}
 	revision, err := json.Marshal(syncRevision{Commit: source.commitHash})
 	if err != nil {
-		return source, err
+		return source, s.failSync(ctx, result, sync, actor, "Failed to record sync revision", err)
 	}
 	progress := types.TargetOutcome{ResourceType: "gitops_sync", ID: sync.ID, Status: types.RunStatusRunning, RecoveryData: revision}
 	if progressErr := jobcontext.Progress(ctx, progress); progressErr != nil {
@@ -513,12 +530,15 @@ func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectp
 	switch {
 	case running || sync.RedeployAfterSync || sync.PendingRedeploy:
 		slog.InfoContext(ctx, "Redeploying project after Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running, "pending", sync.PendingRedeploy)
-		if redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, &types.ProjectDeployOptions{Build: true}); redeployErr != nil {
+		redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, &types.ProjectDeployOptions{Build: true})
+		if redeployErr == nil || errors.Is(redeployErr, common.ErrSelfRedeployBlocked) {
+			if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
+				slog.WarnContext(ctx, "Failed to clear pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
+			}
+		}
+		if redeployErr != nil {
 			slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", redeployErr, "projectId", project.ID)
 			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployErr))
-		}
-		if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
-			slog.WarnContext(ctx, "Failed to clear pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
 		}
 	case sync.PullImageAfterSync:
 		credentials, credentialsErr := s.projectService.ResolveRegistryCredentials(ctx)

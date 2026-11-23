@@ -155,11 +155,7 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 }
 
 func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlInput) (*GetOidcAuthUrlOutput, error) {
-	enabled, err := h.authService.IsOidcEnabled(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to check OIDC status")
-	}
-	if !enabled {
+	if !h.authService.IsOidcEnabled() {
 		return nil, huma.Error400BadRequest("OIDC authentication is disabled")
 	}
 
@@ -277,11 +273,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 }
 
 func (h *OidcHandler) InitiateDeviceAuth(ctx context.Context, _ *InitiateDeviceAuthInput) (*InitiateDeviceAuthOutput, error) {
-	enabled, err := h.authService.IsOidcEnabled(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to check OIDC status")
-	}
-	if !enabled {
+	if !h.authService.IsOidcEnabled() {
 		return nil, huma.Error400BadRequest("OIDC authentication is disabled")
 	}
 

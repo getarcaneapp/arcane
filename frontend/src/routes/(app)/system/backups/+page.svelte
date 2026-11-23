@@ -188,7 +188,7 @@
 			newRecoveryKey = generated.data.recoveryKey;
 			policyCollection = { ...policyCollection, recoveryKeyStored: true };
 			void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
-			void discoverStoredBackups();
+			void discoverStoredBackups({ local: true });
 			keyOpen = true;
 		} finally {
 			generatingKey = false;
@@ -229,7 +229,7 @@
 			}
 			policyCollection = { ...policyCollection, recoveryKeyStored: true };
 			void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
-			void discoverStoredBackups();
+			void discoverStoredBackups({ local: true });
 			importKeyOpen = false;
 			toast.success(m.system_backups_recovery_key_saved());
 		} finally {
@@ -391,11 +391,11 @@
 
 	let autoDiscovered = false;
 	let mounted = false;
-	async function discoverStoredBackups() {
-		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
-		if (!canDiscoverBackups) return;
+	async function discoverStoredBackups({ local = false } = {}) {
+		if (!mounted || !policyCollection.recoveryKeyStored || !canDiscoverBackups) return;
+		if (!local && (autoDiscovered || !data.destinations.length)) return;
 		autoDiscovered = true;
-		const found = await runAutomaticBackupDiscovery(data.destinations);
+		const found = await runAutomaticBackupDiscovery(data.destinations, { local });
 		if (mounted && found) await refresh();
 	}
 	onMount(() => {

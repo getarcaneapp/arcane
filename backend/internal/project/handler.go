@@ -6,6 +6,8 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,8 +21,11 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/tags"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/workspace"
@@ -32,6 +37,7 @@ type (
 		projectService  *ProjectService
 		activityService *activity.ActivityService
 		appCtx          context.Context
+		bundles         *bundle.Service
 	}
 
 	ListProjectsDirectoriesInput struct {
@@ -85,6 +91,7 @@ type (
 	}
 
 	ExportProjectArchiveInput struct {
+		Body          *types.ExportProjectArchive
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
 	}
@@ -201,7 +208,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	return &handlerutil.Page[types.Project]{
 		Body: types.Paginated[types.Project]{
 			Success:    true,
-			Data:       kit.Ternary(projects == nil, []types.Project{}, projects),
+			Data:       projects,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
 		},
 	}, nil
@@ -254,7 +261,7 @@ func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *types.Environme
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list project tags: " + err.Error())
 	}
-	return &handlerutil.Out[[]types.ProjectTagOption]{Body: types.ApiResponse[[]types.ProjectTagOption]{Success: true, Data: kit.Ternary(options == nil, []types.ProjectTagOption{}, options)}}, nil
+	return &handlerutil.Out[[]types.ProjectTagOption]{Body: types.ApiResponse[[]types.ProjectTagOption]{Success: true, Data: options}}, nil
 }
 
 func (h *ProjectHandler) ListProjectReferences(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectReference], error) {
@@ -550,6 +557,10 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 	if err != nil {
 		return nil, err
 	}
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, authz.ProjectImportConditions.Required("start", strconv.FormatBool(input.Body.Start))); permErr != nil {
+		return nil, permErr
+	}
 
 	var proj *Project
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
@@ -563,10 +574,17 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 		Step:           "Importing project",
 		Message:        "Importing project",
 		SuccessMessage: "Project imported successfully",
-		Metadata:       database.JSON{"action": "import_project", "uploadId": input.Body.UploadID},
+		Metadata:       database.JSON{"action": "import_project"},
 	}, func(runtimeCtx context.Context) error {
-		var importErr error
-		proj, importErr = h.projectService.ImportProjectArchive(runtimeCtx, input.Body, *user)
+		projectID, importErr := h.bundles.Import(runtimeCtx, bundle.ImportOptions{
+			User:           *user,
+			Request:        input.Body,
+			RestoreVolumes: permissions.Allows(authz.PermVolumesCreate, input.EnvironmentID) && permissions.Allows(authz.PermVolumesUpload, input.EnvironmentID),
+		})
+		if importErr != nil {
+			return importErr
+		}
+		proj, importErr = h.projectService.GetProjectFromDatabaseByID(runtimeCtx, projectID)
 		return importErr
 	})
 	if err != nil {
@@ -579,17 +597,64 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 }
 
 func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *ExportProjectArchiveInput) (*handlerutil.Out[types.UploadSession], error) {
-	if _, err := handlerutil.RequireUser(ctx); err != nil {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
 		return nil, err
 	}
-	session, err := h.projectService.ExportProjectArchive(ctx, input.ProjectID)
+	request := kit.FromPtr(input.Body)
+	required := slices.Concat(
+		authz.ProjectExportConditions.Required("volumes", strconv.FormatBool(len(request.Volumes) > 0)),
+		authz.ProjectExportConditions.Required("stopProject", strconv.FormatBool(request.StopProject)),
+	)
+	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, required); permErr != nil {
+		return nil, permErr
+	}
+
+	var session *types.UploadSession
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	_, err = activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           types.ActivityTypeResourceAction,
+		ResourceType:   "project",
+		ResourceID:     input.ProjectID,
+		ResourceName:   h.projectActivityName(runtimeCtx, input.ProjectID),
+		User:           user,
+		Step:           "Exporting project",
+		Message:        "Exporting project",
+		SuccessMessage: "Project exported successfully",
+		Metadata:       database.JSON{"action": "export_project", "volumes": request.Volumes, "stopProject": request.StopProject},
+	}, func(runtimeCtx context.Context) error {
+		var exportErr error
+		session, exportErr = h.bundles.Export(runtimeCtx, bundle.ExportOptions{
+			User:      *user,
+			ProjectID: input.ProjectID,
+			Request:   request,
+		})
+		return exportErr
+	})
 	if err != nil {
-		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
+			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
+		return nil, huma.Error500InternalServerError("Failed to export project: " + err.Error())
 	}
 	return &handlerutil.Out[types.UploadSession]{
 		Body: types.ApiResponse[types.UploadSession]{
 			Success: true,
 			Data:    *session,
+		},
+	}, nil
+}
+
+func (h *ProjectHandler) GetProjectExportOptions(ctx context.Context, input *GetProjectInput) (*handlerutil.Out[types.ProjectExportOptions], error) {
+	options, err := h.bundles.Options(ctx, input.ProjectID)
+	if err != nil {
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+	}
+	return &handlerutil.Out[types.ProjectExportOptions]{
+		Body: types.ApiResponse[types.ProjectExportOptions]{
+			Success: true,
+			Data:    options,
 		},
 	}, nil
 }
@@ -687,7 +752,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 			"removeVolumes": kit.FromPtr(input.Body).RemoveVolumes,
 		},
 		Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-			return h.projectService.DestroyProject(runtimeCtx, projectID, DestroyOptions{
+			return h.projectService.DestroyProject(runtimeCtx, projectID, types.ProjectDestroyOptions{
 				RemoveFiles:   mo.PointerToOption(kit.FromPtr(input.Body).RemoveFiles).OrElse(true),
 				RemoveVolumes: kit.FromPtr(input.Body).RemoveVolumes,
 			}, user)
@@ -940,13 +1005,17 @@ func (h *ProjectHandler) RunProjectJob(ctx context.Context, input *RunProjectJob
 	}), nil
 }
 
+func projectWorkspaceHTTPError(err error) error {
+	if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
+		return huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return huma.Error500InternalServerError("internal error")
+}
+
 func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProjectWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
 	result, err := h.projectService.GetProjectWorkspace(ctx, input.ProjectID, input.Path)
 	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("internal error")
+		return nil, projectWorkspaceHTTPError(err)
 	}
 	return &handlerutil.Out[types.Workspace]{Body: types.ApiResponse[types.Workspace]{Success: true, Data: *result}}, nil
 }
@@ -954,10 +1023,7 @@ func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProj
 func (h *ProjectHandler) GetProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*handlerutil.Out[types.WorkspaceFileContent], error) {
 	result, err := h.projectService.GetProjectWorkspaceFile(ctx, input.ProjectID, input.RelativePath)
 	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("internal error")
+		return nil, projectWorkspaceHTTPError(err)
 	}
 	return &handlerutil.Out[types.WorkspaceFileContent]{Body: types.ApiResponse[types.WorkspaceFileContent]{Success: true, Data: *result}}, nil
 }
@@ -965,10 +1031,7 @@ func (h *ProjectHandler) GetProjectWorkspaceFile(ctx context.Context, input *Get
 func (h *ProjectHandler) DownloadProjectWorkspaceFile(ctx context.Context, input *GetProjectWorkspaceFileInput) (*huma.StreamResponse, error) {
 	reader, size, name, err := h.projectService.DownloadProjectWorkspaceFile(ctx, input.ProjectID, input.RelativePath)
 	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("internal error")
+		return nil, projectWorkspaceHTTPError(err)
 	}
 	return handlerutil.DownloadResponse(reader, size, name), nil
 }
@@ -998,10 +1061,7 @@ func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *Upda
 		return h.projectService.UpdateProjectWorkspace(runtimeCtx, input.ProjectID, manifest, uploads, *user)
 	})
 	if err != nil {
-		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
-			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-		}
-		return nil, huma.Error500InternalServerError("internal error")
+		return nil, projectWorkspaceHTTPError(err)
 	}
 	return handlerutil.MessageOutput("Project workspace updated successfully", activityID), nil
 }

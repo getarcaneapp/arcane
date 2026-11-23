@@ -1,7 +1,7 @@
 import { m } from '#lib/paraglide/messages.js';
 import type { DockerInfo } from '#lib/types/dockerinfo.js';
 import type { PodmanInfo, PodmanInfoIDMap, PodmanStatus } from '#lib/types/podman.js';
-import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
+import { bytes, firstLine, formatDateTimeShort } from '#lib/utils/formatting.js';
 
 type Value = string | number | null | undefined;
 
@@ -42,10 +42,6 @@ function formatTime(value: string | undefined): string {
 
 function shortCommit(commit: { ID?: string } | undefined | null): string {
 	return commit?.ID?.slice(0, 12) || '-';
-}
-
-function firstLine(value: string | undefined): string {
-	return value?.split('\n')[0]?.trim() ?? '';
 }
 
 function formatIdMap(entries: PodmanInfoIDMap[] | undefined): string {

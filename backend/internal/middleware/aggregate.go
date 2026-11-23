@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -31,14 +33,26 @@ func NewEnvironmentScopeMiddleware(resolve httpx.EnvironmentResolver, matcher *a
 			switch {
 			case slices.Contains(ids, ""):
 				return writeProxyError(c, http.StatusBadRequest, "Environment scope contains an empty environment ID")
-			case len(unique) > maxEnvironments:
+			case req.Method == http.MethodGet && len(unique) > maxEnvironments:
 				return writeProxyError(c, http.StatusBadRequest, "Environment scope is limited to "+strconv.Itoa(maxEnvironments)+" environments")
-			case req.Method != http.MethodGet || matcher == nil || !matcher.SupportsEnvironmentAggregation(http.MethodGet, kit.Ternary(hasSuffix, "/"+suffix, "")):
+			case matcher == nil || !matcher.SupportsEnvironmentAggregation(req.Method, kit.Ternary(hasSuffix, "/"+suffix, "")):
 				return writeProxyError(c, http.StatusBadRequest, "This operation does not support multiple environments")
 			}
 
-			scope := &httpx.EnvironmentScope{IDs: unique, Request: req.Clone(req.Context()), Handler: c.Echo(), Resolve: resolve}
-			c.SetRequest(req.WithContext(httpx.WithEnvironmentScope(req.Context(), scope)))
+			body, err := io.ReadAll(http.MaxBytesReader(c.Response(), req.Body, 1<<20))
+			if err != nil {
+				return writeProxyError(c, http.StatusBadRequest, "Could not read the request body")
+			}
+			scope := &httpx.EnvironmentScope{
+				Handler: c.Echo(),
+				Request: req.Clone(req.Context()),
+				Resolve: resolve,
+				IDs:     unique,
+				Body:    body,
+			}
+			scoped := req.WithContext(httpx.WithEnvironmentScope(req.Context(), scope))
+			scoped.Body = io.NopCloser(bytes.NewReader(body))
+			c.SetRequest(scoped)
 			return next(c)
 		}
 	}

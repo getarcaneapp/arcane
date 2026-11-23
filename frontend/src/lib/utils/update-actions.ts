@@ -5,9 +5,10 @@ import { m } from '#lib/paraglide/messages.js';
 import BaseAPIService from '#lib/services/api-service.js';
 import { imageService } from '#lib/services/image-service.js';
 import { userService } from '#lib/services/user-service.js';
+import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import type { AutoUpdateResourceType, UpdaterResult } from '#lib/types/updater.js';
 import { activityToastOptions } from '#lib/utils/activity-toast.js';
-import { acrossEnvironmentsNote, actionEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
+import { acrossEnvironmentsNote, actAcrossEnvironments, actionEnvironments } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export function applyScopedUpdate(
@@ -43,23 +44,35 @@ export function throwOnUpdateFailure<T extends Pick<UpdaterResult, 'failed' | 'i
 	return result;
 }
 
-export function summarizeUpdateResult(result: UpdaterResult) {
-	const options = activityToastOptions(result.activityId);
-	const updated = (result.updated ?? 0) + (result.restarted ?? 0);
-	const blocked = result.items?.find((item) => item.status === 'blocked');
-	const failed = Math.max(0, (result.failed ?? 0) - (result.items?.filter((item) => item.status === 'blocked').length ?? 0));
+export function summarizeUpdateResults(results: UpdaterResult[]) {
+	if (results.length === 0) return;
+	const activityOptions = results.flatMap((result) => activityToastOptions(result.activityId) ?? []);
+	let options = activityOptions[0];
+	if (activityOptions.length > 1) {
+		options = { action: { label: m.activity_view_activity(), onClick: () => activityStore.openCenter() } };
+	}
+	const items = results.flatMap((result) => result.items ?? []);
+	const updated = results.reduce((total, result) => total + (result.updated ?? 0) + (result.restarted ?? 0), 0);
+	const blocked = items.find((item) => item.status === 'blocked');
+	const failed = Math.max(
+		0,
+		results.reduce((total, result) => total + (result.failed ?? 0), 0) - items.filter((item) => item.status === 'blocked').length
+	);
+
+	const blockedOptions = { ...options, description: blocked?.error || m.update_blocked_by_vulnerability_limits() };
 
 	if (failed > 0 && updated > 0) {
-		toast.warning(m.updates_apply_partial({ updated, failed }), options);
+		toast.warning(m.updates_apply_partial({ updated, failed }), blocked ? blockedOptions : options);
 	} else if (failed > 0) {
-		toast.error(m.updates_apply_failed({ failed }), options);
+		toast.error(m.updates_apply_failed({ failed }), blocked ? blockedOptions : options);
+	} else if (updated > 0 && blocked) {
+		toast.warning(m.updates_apply_success({ updated }), blockedOptions);
 	} else if (updated > 0) {
 		toast.success(m.updates_apply_success({ updated }), options);
-	} else if (!blocked) {
-		toast.info(m.image_update_up_to_date_title(), options);
-	}
-	if (blocked) {
+	} else if (blocked) {
 		toast.warning(m.update_blocked_by_vulnerability_limits(), { ...options, description: blocked.error });
+	} else {
+		toast.info(m.image_update_up_to_date_title(), options);
 	}
 }
 
@@ -100,14 +113,14 @@ export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndA
 				if (restartsThisBackend) BaseAPIService.setUpgradeInProgress(true);
 				try {
 					const results = await tryCatch(
-						settleAcrossEnvironments(environments, (id) => imageService.runAutoUpdate(undefined, id))
+						actAcrossEnvironments(environments, (scope, config) => imageService.runAutoUpdate(undefined, scope, config))
 					);
 					if (results.error !== null) {
 						console.error('Update all failed:', results.error);
 						toast.error(m.updates_apply_all_failed());
 						return;
 					}
-					for (const { value } of results.data) summarizeUpdateResult(value);
+					summarizeUpdateResults(results.data.map(({ value }) => value));
 					const refreshed = await tryCatch(Promise.resolve(onRefresh?.()));
 					if (refreshed.error !== null) {
 						console.error('Update all failed:', refreshed.error);

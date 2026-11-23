@@ -24,8 +24,6 @@ import type {
 	SwarmStackDeployRequest,
 	SwarmStackDeployResponse,
 	SwarmStackInspect,
-	SwarmStackRenderConfigRequest,
-	SwarmStackRenderConfigResponse,
 	SwarmStackSource,
 	SwarmUnlockKeyResponse,
 	SwarmUnlockRequest,
@@ -246,13 +244,6 @@ class SwarmService extends BaseAPIService {
 			params
 		});
 		return res.data;
-	}
-
-	async renderStackConfig(
-		request: SwarmStackRenderConfigRequest,
-		environmentId: string
-	): Promise<SwarmStackRenderConfigResponse> {
-		return this.handleResponse(this.api.post(`/agents/${environmentId}/swarm/stacks/config/render`, request));
 	}
 
 	async getSwarmInfo(environmentId: string): Promise<SwarmInfo> {

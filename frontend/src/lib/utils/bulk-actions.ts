@@ -2,7 +2,7 @@ import { toast } from 'svelte-sonner';
 
 import { markActivityToastShown } from '#lib/components/activity/activity-completion-toasts.js';
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
-import { runWithActivityBatchId } from '#lib/services/api-service.js';
+import { isSessionCancelledError, runWithActivityBatchId } from '#lib/services/api-service.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import type { Activity } from '#lib/types/activity.js';
 import type { ConfirmDialogOptions } from '#lib/types/ui/confirmdialog.js';
@@ -62,6 +62,7 @@ async function runBulkOperation<T>({
 
 	let firstActivityId: string | undefined;
 	const activityIds: string[] = [];
+	let sessionCancelled = false;
 	const tally = (key: string, outcome: Result<T>) => {
 		const { id } = parseRowKey(key);
 		if (outcome.error) {
@@ -95,15 +96,23 @@ async function runBulkOperation<T>({
 		};
 		if (sequential) {
 			for (const id of ids) {
-				tally(id, await startRun(id));
+				const outcome = await startRun(id);
+				if (isSessionCancelledError(outcome.error)) {
+					sessionCancelled = true;
+					break;
+				}
+				tally(id, outcome);
 			}
 		} else {
 			const outcomes = await Promise.all(ids.map(async (id) => [id, await startRun(id)] as const));
+			sessionCancelled = outcomes.some(([, outcome]) => isSessionCancelledError(outcome.error));
 			for (const [id, outcome] of outcomes) tally(id, outcome);
 		}
 	} finally {
 		setLoading?.(false);
 	}
+
+	if (sessionCancelled) return result;
 
 	// The summary toast below covers every spawned activity; suppress the
 	// per-activity completion toasts for all of them, not just the linked one.

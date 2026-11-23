@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
 
@@ -76,14 +76,14 @@ func RuntimeProjectName(fallback string, runtimeContainers []container.Summary) 
 
 func (s *Service) ComposeServices(
 	ctx context.Context,
-	composeProject *composetypes.Project,
+	composeProject *composeTypes.Project,
 	runtimeContainers []container.Summary,
 	meta projects.ArcaneComposeMetadata,
 	catalog string,
 ) ([]types.ProjectRuntimeService, error) {
 	runtimeName := RuntimeProjectName(composeProject.Name, runtimeContainers)
 	containers, err := projects.ComposePs(ctx, types.ComposePsOptions{
-		Project:    &composetypes.Project{Name: runtimeName},
+		Project:    &composeTypes.Project{Name: runtimeName},
 		DockerHost: s.dockerService.DockerHost(),
 		All:        true,
 	})
@@ -120,7 +120,7 @@ func (s *Service) ComposeServices(
 			Health:        kit.Ternary(c.Health != "", new(string(c.Health)), nil),
 			IconLightURL:  resolvedIcon.IconLightURL,
 			IconDarkURL:   resolvedIcon.IconDarkURL,
-			ServiceConfig: func() *composetypes.ServiceConfig {
+			ServiceConfig: func() *composeTypes.ServiceConfig {
 				if cfg, ok := composeProject.Services[c.Service]; ok {
 					return &cfg
 				}
@@ -165,7 +165,7 @@ func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []types.
 	}
 
 	// Loaded so include paths with ${VAR} references are expanded.
-	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
+	cfg := s.settingsService.GetSettingsConfig()
 	projectsDirectory, _ := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	envMap, _, _ := projects.NewEnvLoader(projectsDirectory, filepath.Dir(composeFile), kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool)).LoadEnvironment(ctx)
 
@@ -348,8 +348,8 @@ func (s *Service) ConfiguredRuntimeServices(ctx context.Context, services []type
 	return resolved
 }
 
-func ConfiguredRuntimeServiceUpdateInfo(services []composetypes.ServiceConfig, runtime []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) map[string]*types.ImageUpdateInfo {
-	configs := make(map[string]composetypes.ServiceConfig, len(services))
+func ConfiguredRuntimeServiceUpdateInfo(services []composeTypes.ServiceConfig, runtime []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) map[string]*types.ImageUpdateInfo {
+	configs := make(map[string]composeTypes.ServiceConfig, len(services))
 	for _, service := range services {
 		configs[service.Name] = service
 	}

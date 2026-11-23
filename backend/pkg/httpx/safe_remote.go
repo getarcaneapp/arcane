@@ -87,21 +87,22 @@ var (
 	}
 )
 
+func unsafeRemoteURLError(err error) error {
+	return common.Classify(
+		common.ErrUnsafeRemoteURL,
+		fmt.Errorf("Remote URL is not allowed: %w", err), //nolint:staticcheck // Preserve the existing error message.
+	)
+}
+
 func ValidateSafeRemoteURL(ctx context.Context, rawURL string, lookupIP LookupIPFunc) (*url.URL, error) {
 	parsed, err := ValidateOutboundHTTPURL(rawURL)
 	if err != nil {
-		return nil, common.Classify(
-			common.ErrUnsafeRemoteURL,
-			fmt.Errorf("Remote URL is not allowed: %w", err), //nolint:staticcheck // Preserve the existing error message.
-		)
+		return nil, unsafeRemoteURLError(err)
 	}
 
 	host := strings.ToLower(parsed.Hostname())
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
-		return nil, common.Classify(
-			common.ErrUnsafeRemoteURL,
-			fmt.Errorf("Remote URL is not allowed: %w", errors.New("missing or blocked hostname")), //nolint:staticcheck // Preserve the existing error message.
-		)
+		return nil, unsafeRemoteURLError(errors.New("missing or blocked hostname"))
 	}
 
 	if _, err = resolveAllowedIPs(ctx, parsed.Hostname(), lookupIP, publicOnlyPolicy); err != nil {
@@ -133,23 +134,24 @@ func NewSafeOutboundHTTPClient(base *http.Client, lookupIP LookupIPFunc) (*http.
 
 	transport.DialContext = guardedDialContext(baseDial, lookupIP, publicOnlyPolicy)
 
-	client := *base
-	// Instrumented after the SSRF dialer is installed; the wrapper never dials itself.
-	client.Transport = otelhttp.NewTransport(transport)
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return errors.New("stopped after 10 redirects")
-		}
-		if _, err := ValidateSafeRemoteURL(req.Context(), req.URL.String(), lookupIP); err != nil {
-			return err
-		}
-		if base.CheckRedirect != nil {
-			return base.CheckRedirect(req, via)
-		}
-		return nil
-	}
-
-	return &client, nil
+	return &http.Client{
+		// Instrumented after the SSRF dialer is installed; the wrapper never dials itself.
+		Transport: otelhttp.NewTransport(transport),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			if _, err := ValidateSafeRemoteURL(req.Context(), req.URL.String(), lookupIP); err != nil {
+				return err
+			}
+			if base.CheckRedirect != nil {
+				return base.CheckRedirect(req, via)
+			}
+			return nil
+		},
+		Jar:     base.Jar,
+		Timeout: base.Timeout,
+	}, nil
 }
 
 func NewPrivateNetworkHTTPClient(cfg PrivateNetworkClientConfig) *http.Client {
@@ -183,10 +185,7 @@ func guardedDialContext(
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
-			return nil, common.Classify(
-				common.ErrUnsafeRemoteURL,
-				fmt.Errorf("Remote URL is not allowed: %w", err), //nolint:staticcheck // Preserve the existing error message.
-			)
+			return nil, unsafeRemoteURLError(err)
 		}
 
 		ips, err := resolveAllowedIPs(ctx, host, lookupIP, policy)
@@ -221,10 +220,7 @@ func resolveAllowedIPs(ctx context.Context, host string, lookupIP LookupIPFunc, 
 		}
 		var err error
 		if ips, err = lookupIP(ctx, host); err != nil {
-			return nil, common.Classify(
-				common.ErrUnsafeRemoteURL,
-				fmt.Errorf("Remote URL is not allowed: %w", err), //nolint:staticcheck // Preserve the existing error message.
-			)
+			return nil, unsafeRemoteURLError(err)
 		}
 	}
 
@@ -236,19 +232,13 @@ func resolveAllowedIPs(ctx context.Context, host string, lookupIP LookupIPFunc, 
 		addr, ok := netip.AddrFromSlice(ip)
 		addr = addr.Unmap()
 		if !ok || policy.blocks(addr) || policy.blocks(embeddedIPv4(addr)) {
-			return nil, common.Classify(
-				common.ErrUnsafeRemoteURL,
-				fmt.Errorf("Remote URL is not allowed: %w", fmt.Errorf("blocked IP address %s", ip)), //nolint:staticcheck // Preserve the existing error message.
-			)
+			return nil, unsafeRemoteURLError(fmt.Errorf("blocked IP address %s", ip))
 		}
 		allowed = append(allowed, ip)
 	}
 
 	if len(allowed) == 0 {
-		return nil, common.Classify(
-			common.ErrUnsafeRemoteURL,
-			fmt.Errorf("Remote URL is not allowed: %w", errors.New("host did not resolve to an allowed IP")), //nolint:staticcheck // Preserve the existing error message.
-		)
+		return nil, unsafeRemoteURLError(errors.New("host did not resolve to an allowed IP"))
 	}
 	return allowed, nil
 }

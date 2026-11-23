@@ -13,6 +13,7 @@ export class ContainerResourcePoller {
 	private readonly resume = () => {
 		if (!this.refresh || document.hidden) return;
 		this.clearTimer();
+		this.generation += 1;
 		void this.poll(this.generation);
 	};
 

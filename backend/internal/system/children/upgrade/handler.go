@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -12,7 +14,9 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -41,11 +45,6 @@ type (
 	TriggerUpgradeData struct {
 		Message  string `json:"message" doc:"Response message"`
 		UpToDate bool   `json:"upToDate" doc:"Environment already runs the newest image, so no restart is expected"`
-	}
-
-	StartUpgradeJobInput struct {
-		Body *types.StartUpgradeJobRequest
-		types.EnvironmentInput
 	}
 )
 
@@ -117,7 +116,7 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 	}, nil
 }
 
-func (h *Handler) StartUpgradeJob(ctx context.Context, input *StartUpgradeJobInput) (*handlerutil.Out[types.UpgradeJob], error) {
+func (h *Handler) StartUpgradeJob(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.UpgradeJob], error) {
 	if h.cfg.AgentEnabled {
 		return nil, huma.Error400BadRequest("upgrade jobs are managed on the Arcane manager")
 	}
@@ -127,9 +126,9 @@ func (h *Handler) StartUpgradeJob(ctx context.Context, input *StartUpgradeJobInp
 		return nil, err
 	}
 
-	slog.InfoContext(ctx, "Upgrade job triggered", "user", user.Username, "userId", user.ID, "environments", kit.FromPtr(input.Body).EnvironmentIDs)
+	slog.InfoContext(ctx, "Upgrade job triggered", "user", user.Username, "userId", user.ID, "environments", input.EnvironmentID)
 
-	job, err := h.service.StartUpgradeJob(ctx, *user, kit.FromPtr(input.Body).EnvironmentIDs)
+	job, err := h.service.StartUpgradeJob(ctx, *user, kit.Unique(strings.Split(input.EnvironmentID, ",")))
 	if err != nil {
 		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
 			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
@@ -158,6 +157,10 @@ func (h *Handler) GetCurrentUpgradeJob(ctx context.Context, input *types.Environ
 	if job == nil {
 		return nil, huma.Error404NotFound("no upgrade job found")
 	}
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+	job.Results = slices.DeleteFunc(job.Results, func(r UpgradeJobResult) bool {
+		return !permissions.Allows(authz.PermSystemRead, r.EnvironmentID)
+	})
 
 	body, err := handlerutil.MapOneAPIResponse[*UpgradeJob, types.UpgradeJob](job, func(mapErr error) string {
 		return mapErr.Error()

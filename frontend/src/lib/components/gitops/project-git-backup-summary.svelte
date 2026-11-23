@@ -35,6 +35,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { environmentHref } from '#lib/utils/environments.js';
+	import { firstLine } from '#lib/utils/formatting.js';
 	import { formatDateTimeShort, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { syncedPaths } from '#lib/utils/gitops.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -126,10 +127,6 @@
 				return { icon: GitBranchIcon, color: 'text-muted-foreground', bg: 'bg-muted ring-border' };
 		}
 	});
-
-	function firstLine(message: string): string {
-		return message.split('\n')[0] ?? message;
-	}
 
 	async function invalidate() {
 		await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.all });

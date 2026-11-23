@@ -7,13 +7,13 @@
 	import { toast } from 'svelte-sonner';
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectImportDialog from '#lib/components/dialogs/project-import-dialog.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
-	import { ContainersIcon, ProjectsIcon, PlayIcon, StopIcon } from '#lib/icons/index.js';
+	import { ContainersIcon, ProjectsIcon, PlayIcon, StopIcon, UploadIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { projectListQuery, projectStatusCountsQuery } from '#lib/query/projects.js';
-	import { projectTagsQuery } from '#lib/query/projects.js';
+	import { projectListQuery, projectStatusCountsQuery, projectTagsQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -31,6 +31,7 @@
 		settleAcrossEnvironments,
 		withFailedEnvironments
 	} from '#lib/utils/environments.js';
+	import { scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 
 	import ProjectsTable from './components/projects-table.svelte';
 
@@ -66,25 +67,18 @@
 	};
 
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
-	const projectsQuery = createQuery(() => {
-		const queryScope = scope;
-		return {
-			...projectListQuery(queryScope, readableEnvironments('projects:list'), projectRequestOptions),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value }),
+	const projectsQuery = createQuery(() =>
+		scopedQueryOptions(scope, {
+			...projectListQuery(scope, readableEnvironments('projects:list'), projectRequestOptions),
 			refetchOnMount: false
-		};
-	});
+		})
+	);
 	let projects = $derived(projectsQuery.data?.envId === scope ? projectsQuery.data.value : null);
 
 	const statusCountsQuery = createQuery(() => {
 		const queryScope = scope;
 		return {
 			...projectStatusCountsQuery(queryScope, readableEnvironments('projects:list')),
-			initialData: data.scope === queryScope ? data.projectStatusCounts : undefined,
 			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
@@ -94,7 +88,6 @@
 		const environments = readableEnvironments('projects:list');
 		return {
 			...projectTagsQuery(queryScope, environments),
-			initialData: data.scope === queryScope ? data.projectTags : undefined,
 			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
 		};
@@ -221,6 +214,16 @@
 	const canCreateProject = $derived(hasShownPermission('projects:create'));
 	const canDeployProject = $derived(hasShownPermission('projects:deploy'));
 
+	let importOpen = $state(false);
+
+	async function refreshImportedProjects(environmentId: string) {
+		await Promise.all(
+			listScopes([environmentId]).map((listScope) =>
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(listScope) })
+			)
+		);
+	}
+
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
 		if (canCreateProject) {
@@ -230,6 +233,14 @@
 				placement: 'primary',
 				label: m.compose_create_project(),
 				onclick: () => goto(resolve('/(app)/projects/new'))
+			});
+			buttons.push({
+				id: 'import',
+				action: 'base',
+				placement: 'secondary',
+				label: m.import(),
+				icon: UploadIcon,
+				onclick: () => (importOpen = true)
 			});
 		}
 		if (canDeployProject) {
@@ -287,6 +298,8 @@
 {#snippet projectsEmptyState()}
 	<EmptyState icon={ProjectsIcon} title={m.projects_empty_title()} description={m.projects_empty_description()} />
 {/snippet}
+
+<ProjectImportDialog bind:open={importOpen} onImported={refreshImportedProjects} />
 
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}

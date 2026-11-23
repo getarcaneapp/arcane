@@ -14,7 +14,7 @@ import (
 	"time"
 	"uuid"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/go-units"
 	"github.com/italypaleale/francis/builtin/workflow"
 
@@ -278,7 +278,7 @@ func (s *Service) CreateResource(ctx context.Context, opts ResourceOptions) erro
 }
 
 func createVolume(ctx context.Context, project types.Project, source, target Environment, name string, user types.Actor) error {
-	if !slices.ContainsFunc(slices.Collect(maps.Values(project.Volumes)), func(config composetypes.VolumeConfig) bool {
+	if !slices.ContainsFunc(slices.Collect(maps.Values(project.Volumes)), func(config composeTypes.VolumeConfig) bool {
 		return bool(config.External) && config.Name == name
 	}) {
 		return common.Classify(common.ErrBadRequest, fmt.Errorf("project %s has no external volume %s", project.Name, name))
@@ -306,7 +306,7 @@ func createVolume(ctx context.Context, project types.Project, source, target Env
 }
 
 func createNetwork(ctx context.Context, project types.Project, source, target Environment, name string, user types.Actor) error {
-	if !slices.ContainsFunc(slices.Collect(maps.Values(project.Networks)), func(config composetypes.NetworkConfig) bool {
+	if !slices.ContainsFunc(slices.Collect(maps.Values(project.Networks)), func(config composeTypes.NetworkConfig) bool {
 		return bool(config.External) && config.Name == name
 	}) {
 		return common.Classify(common.ErrBadRequest, fmt.Errorf("project %s has no external network %s", project.Name, name))
@@ -452,33 +452,32 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 		})
 	}
 	var externalVolumes, hostVolumes, sourceVolumes, missingVolumes, targetVolumes, built []string
-	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
-		config := project.Volumes[key]
-		if config.External {
-			externalVolumes = append(externalVolumes, config.Name)
-			continue
-		}
-		if len(config.DriverOpts) > 0 {
-			hostVolumes = append(hostVolumes, config.Name)
-			continue
-		}
-		if request.IncludeVolumes {
-			targetVolumes = append(targetVolumes, targetVolumeName(project.Name, key, config.Name, request.Name))
-			_, exists, existsErr := source.Volume(ctx, config.Name)
-			if existsErr != nil {
-				return fmt.Errorf("inspect source volume %s: %w", config.Name, existsErr)
+	for _, volume := range projects.ClassifyProjectVolumes(project) {
+		switch volume.Kind {
+		case types.ProjectVolumeExternal:
+			externalVolumes = append(externalVolumes, volume.Name)
+		case types.ProjectVolumeDriverOpts:
+			hostVolumes = append(hostVolumes, volume.Name)
+		case types.ProjectVolumeNamed:
+			targetName := targetVolumeName(project.Name, volume.Key, volume.Name, request.Name)
+			if request.IncludeVolumes {
+				targetVolumes = append(targetVolumes, targetName)
+				_, exists, existsErr := source.Volume(ctx, volume.Name)
+				if existsErr != nil {
+					return fmt.Errorf("inspect source volume %s: %w", volume.Name, existsErr)
+				}
+				if !exists {
+					missingVolumes = append(missingVolumes, volume.Name)
+					continue
+				}
 			}
-			if !exists {
-				missingVolumes = append(missingVolumes, config.Name)
-				continue
-			}
+			sourceVolumes = append(sourceVolumes, volume.Name)
+			plan.Volumes = append(plan.Volumes, types.ProjectTransferVolume{
+				Key:        volume.Key,
+				SourceName: volume.Name,
+				TargetName: targetName,
+			})
 		}
-		sourceVolumes = append(sourceVolumes, config.Name)
-		plan.Volumes = append(plan.Volumes, types.ProjectTransferVolume{
-			Key:        key,
-			SourceName: config.Name,
-			TargetName: targetVolumeName(project.Name, key, config.Name, request.Name),
-		})
 	}
 	if !request.IncludeVolumes && len(sourceVolumes) > 0 {
 		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
@@ -502,8 +501,8 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Code:     types.ProjectTransferVolumeDataExternal,
 			Severity: types.ProjectTransferSeverityWarning,
 			Message: fmt.Sprintf(
-				"These volumes of project %s keep their data outside Docker through driver options, "+
-					"so their data is not copied and they are created from the same options on the target environment: %s.",
+				"These volumes of project %s keep their data outside Docker through another driver or driver options, "+
+					"so their data is not copied and they are created from the same configuration on the target environment: %s.",
 				project.Name, strings.Join(hostVolumes, ", "),
 			),
 		})
@@ -824,7 +823,7 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 			return ctxErr
 		}
 		config, ok := targetProject.Volumes[volume.Key]
-		if !ok || bool(config.External) || len(config.DriverOpts) > 0 {
+		if !ok || bool(config.External) || len(config.DriverOpts) > 0 || cmp.Or(config.Driver, "local") != "local" {
 			return fmt.Errorf("volume %s is not a Docker-managed named volume of the imported project on the target environment", volume.Key)
 		}
 		if copyErr := s.copyVolume(ctx, r, volume, config, targetProject.ComposeName); copyErr != nil {
@@ -834,7 +833,7 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 	return nil
 }
 
-func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTransferVolume, config composetypes.VolumeConfig, composeName string) error {
+func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTransferVolume, config composeTypes.VolumeConfig, composeName string) error {
 	artifact := "volume " + volume.Key
 	existing, exists, err := r.target.Volume(ctx, config.Name)
 	if err != nil {

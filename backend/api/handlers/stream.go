@@ -33,6 +33,15 @@ import (
 )
 
 type (
+	StreamParams struct {
+		API                huma.API
+		ActivityHandler    *activity.ActivityHandler
+		EnvironmentHandler *environment.EnvironmentHandler
+		EventService       *event.EventService
+		VersionService     *version.VersionService
+		SystemService      *system.SystemService
+	}
+
 	StreamHandler struct {
 		events      *event.EventService
 		activity    *activity.ActivityHandler
@@ -69,20 +78,13 @@ var streamChannelConditions = authz.PermissionConditions{
 	},
 }
 
-func RegisterStream(
-	api huma.API,
-	activityHandler *activity.ActivityHandler,
-	environmentHandler *environment.EnvironmentHandler,
-	eventService *event.EventService,
-	versionService *version.VersionService,
-	systemService *system.SystemService,
-) {
+func RegisterStream(p StreamParams) {
 	h := &StreamHandler{
-		events:      eventService,
-		activity:    activityHandler,
-		environment: environmentHandler,
-		version:     versionService,
-		system:      systemService,
+		events:      p.EventService,
+		activity:    p.ActivityHandler,
+		environment: p.EnvironmentHandler,
+		version:     p.VersionService,
+		system:      p.SystemService,
 	}
 
 	meter := otel.Meter(logging.InstrumentationName)
@@ -92,7 +94,7 @@ func RegisterStream(
 		otel.Handle(err)
 	}
 
-	sse.Register(api, huma.Operation{
+	sse.Register(p.API, huma.Operation{
 		OperationID: "streamClient",
 		Method:      http.MethodGet,
 		Path:        "/stream",
@@ -221,6 +223,9 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 		producers = append(producers, forwardStreamChannel(
 			types.StreamChannelUpgrade,
 			func(channel string, job types.UpgradeJob) types.StreamEvent {
+				job.Results = slices.DeleteFunc(slices.Clone(job.Results), func(r types.UpgradeJobResult) bool {
+					return !ps.Allows(authz.PermSystemRead, r.EnvironmentID)
+				})
 				return types.StreamEvent{Channel: channel, Upgrade: &job, Timestamp: time.Now()}
 			},
 			h.system.RunUpgradeStreamProducer,

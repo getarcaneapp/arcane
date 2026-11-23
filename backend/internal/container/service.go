@@ -50,6 +50,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/containerlabel"
 	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -93,6 +94,13 @@ type (
 
 	containerNameContextKey struct{}
 
+	ExecOptions struct {
+		Shell string
+		User  string
+		Cols  uint
+		Rows  uint
+	}
+
 	ExecSession struct {
 		hijackedResp client.HijackedResponse
 		dockerClient *client.Client
@@ -127,6 +135,12 @@ type (
 		PodmanService   *podman.Service
 	}
 
+	// SetAutoUpdateOptions names the container to change and whether auto-update should be on.
+	SetAutoUpdateOptions struct {
+		Reference string
+		Enabled   bool
+	}
+
 	DeleteContainerOptions struct {
 		Force         bool
 		RemoveVolumes bool
@@ -139,6 +153,8 @@ type (
 )
 
 const (
+	AutoShell = "auto"
+
 	containerGroupByProject  = "project"
 	containerNoProjectGroup  = "No Project"
 	containerIconMetadataTTL = 5 * time.Second
@@ -456,11 +472,6 @@ func (s *ContainerService) lockContainer(ctx context.Context, op, containerID st
 	return unlock, nil
 }
 
-func containerNameFromContext(ctx context.Context) string {
-	name, _ := ctx.Value(containerNameContextKey{}).(string)
-	return name
-}
-
 func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, containerID string, user types.Actor, cfg containerLifecycleAction) error {
 	unlock, err := s.lockContainer(ctx, cfg.action+" container", containerID)
 	if err != nil {
@@ -474,11 +485,12 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 	}
 	maps.Copy(metadata, cfg.metadata)
 
+	containerName, _ := ctx.Value(containerNameContextKey{}).(string)
 	if logErr := s.eventService.LogResourceEvent(ctx, event.ResourceEvent{
 		Type:          cfg.eventType,
 		ResourceType:  "container",
 		ResourceID:    containerID,
-		ResourceName:  cmp.Or(containerNameFromContext(ctx), containerID),
+		ResourceName:  cmp.Or(containerName, containerID),
 		UserID:        user.ID,
 		Username:      user.Username,
 		EnvironmentID: "0",
@@ -1553,6 +1565,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 		slog.WarnContext(ctx, "Failed to inspect container image", "imageId", details.ImageID, "error", err)
 	}
 	resolvedIcon := s.resolveContainerIcon(ctx, details.Labels, map[string]projects.ArcaneComposeMetadata{})
+	autoUpdatePolicy := s.settingsService.AutoUpdatePolicy(ctx)
 
 	return types.ContainerDetails{ //exhaustruct:enforce
 		ID:              details.ID,
@@ -1576,11 +1589,11 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 			ContainerID:        details.ID,
 			CurrentContainerID: currentContainerID,
 		}),
-		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) &&
-			!docker.ContainerNameExcluded([]string{details.Name}, docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))),
-		UpdateInfo: updates[details.ID],
-		Hardened:   dhi.Info(kit.FromPtr(imageInspect.Config).Labels, time.Now()),
-		ActivityID: details.ActivityID,
+		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) && autoUpdatePolicy.Allows(details.Labels, []string{details.Name}),
+		AutoUpdateInclude: autoUpdatePolicy.Include,
+		UpdateInfo:        updates[details.ID],
+		Hardened:          dhi.Info(kit.FromPtr(imageInspect.Config).Labels, time.Now()),
+		ActivityID:        details.ActivityID,
 	}, nil
 }
 
@@ -1597,11 +1610,21 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 		return result, err
 	})
 	if err != nil {
+		// Podman's Docker-compatible top fails with HTTP 500 when the image has no ps.
+		if errdefs.IsInternal(err) && ctx.Err() == nil {
+			podmanProcesses, podmanErr := s.podmanService.ContainerTop(ctx, containerID)
+			if podmanErr == nil {
+				return podmanProcesses, nil
+			}
+			if !errors.Is(podmanErr, common.ErrPodmanNotDetected) {
+				slog.DebugContext(ctx, "Podman container top fallback failed", "containerId", containerID, "error", podmanErr)
+			}
+		}
 		return types.ContainerProcesses{}, common.ClassifyDockerError(fmt.Errorf("failed to list container processes: %w", err))
 	}
 	return types.ContainerProcesses{
-		Titles:    kit.Ternary(result.Titles == nil, []string{}, result.Titles),
-		Processes: kit.Ternary(result.Processes == nil, [][]string{}, result.Processes),
+		Titles:    result.Titles,
+		Processes: result.Processes,
 	}, nil
 }
 
@@ -1611,6 +1634,26 @@ func (s *ContainerService) GetContainerNameByReference(ctx context.Context, ref 
 		return "", err
 	}
 	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
+// SetAutoUpdate turns automatic updates on or off for a container by editing the auto-update
+// container list. Containers whose updater label decides are rejected.
+func (s *ContainerService) SetAutoUpdate(ctx context.Context, opts SetAutoUpdateOptions) error {
+	info, err := s.GetContainerByReference(ctx, opts.Reference)
+	if err != nil {
+		return err
+	}
+	containerLabels := kit.FromPtr(info.Config).Labels
+	policy := s.settingsService.AutoUpdatePolicy(ctx)
+	if labels.IsUpdateDisabled(containerLabels) || (policy.Include && containerlabel.IsEnabled(containerLabels, labels.LabelUpdater)) {
+		return common.ErrContainerAutoUpdateLabelControlled
+	}
+	return s.settingsService.SetContainerListed(ctx, settings.ContainerListChange{
+		ListKey:       "autoUpdateExcludedContainers",
+		ModeKey:       "autoUpdateMode",
+		ContainerName: strings.TrimPrefix(info.Name, "/"),
+		Enabled:       opts.Enabled,
+	})
 }
 
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, opts DeleteContainerOptions, user types.Actor) error {
@@ -1972,6 +2015,7 @@ func (s *ContainerService) ListContainersPaginated(
 				UpdateInfo:        item.UpdateInfo,
 				RedeployDisabled:  item.RedeployDisabled,
 				AutoUpdateEnabled: item.AutoUpdateEnabled,
+				AutoUpdateInclude: item.AutoUpdateInclude,
 				Hidden:            item.Hidden,
 				ResourceSample:    samples[item.ID],
 			})
@@ -2236,7 +2280,7 @@ func (s *ContainerService) BuildSummaries(
 	currentContainerErr error,
 ) []types.ContainerSummary {
 	items := make([]types.ContainerSummary, 0, len(containers))
-	excluded := docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))
+	autoUpdatePolicy := s.settingsService.AutoUpdatePolicy(ctx)
 	for _, dc := range containers {
 		summary := types.NewContainerSummary(dc)
 		policy := updater.DefaultLabelPolicy().TagPolicy(dc.Labels)
@@ -2267,7 +2311,8 @@ func (s *ContainerService) BuildSummaries(
 				ContainerID:        summary.ID,
 				CurrentContainerID: currentContainerID,
 			}),
-			AutoUpdateEnabled: !labels.IsUpdateDisabled(dc.Labels) && !docker.ContainerNameExcluded(dc.Names, excluded),
+			AutoUpdateEnabled: !labels.IsUpdateDisabled(dc.Labels) && autoUpdatePolicy.Allows(dc.Labels, dc.Names),
+			AutoUpdateInclude: autoUpdatePolicy.Include,
 			Hidden:            hidden,
 			ResourceSample:    summary.ResourceSample,
 		})
@@ -2474,19 +2519,28 @@ func (s *ContainerService) CalculateStatusCounts(items []types.ContainerSummary)
 	}
 }
 
-func (s *ContainerService) CreateExec(ctx context.Context, containerID string, cmd []string, cols, rows uint) (string, error) {
+func (s *ContainerService) CreateExec(ctx context.Context, containerID string, opts ExecOptions) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
+	cmd := []string{cmp.Or(opts.Shell, "/bin/sh")}
+	if opts.Shell == AutoShell {
+		cmd = []string{"/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"}
+	}
+
 	execResp, err := dockerClient.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+		User:         opts.User,
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		TTY:          true,
-		ConsoleSize:  client.ConsoleSize{Height: rows, Width: cols},
-		Cmd:          cmd,
+		ConsoleSize: client.ConsoleSize{
+			Height: opts.Rows,
+			Width:  opts.Cols,
+		},
+		Cmd: cmd,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create exec: %w", err)

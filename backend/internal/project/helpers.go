@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -81,10 +83,6 @@ func (c *composeNameCache) projectID(normalizedName string) mo.Option[string] {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if c.byName == nil {
-		return mo.None[string]()
-	}
-
 	projectID, ok := c.byName[normalizedName]
 	return mo.TupleToOption(projectID, ok)
 }
@@ -97,9 +95,6 @@ func (c *composeNameCache) put(normalizedName, projectID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.byName == nil {
-		c.byName = make(map[string]string)
-	}
 	c.byName[normalizedName] = projectID
 }
 
@@ -118,6 +113,15 @@ func (c *composeNameCache) replace(byName map[string]string) {
 	c.mu.Lock()
 	c.byName = byName
 	c.mu.Unlock()
+}
+
+// knownServices drops services the Compose files no longer name: Compose rejects the whole command for one, and an empty list would mean every service.
+func knownServices(model *composeTypes.Project, services []string) []string {
+	all := model.AllServices()
+	return slices.DeleteFunc(slices.Clone(services), func(name string) bool {
+		_, ok := all[name]
+		return !ok
+	})
 }
 
 func deleteProjectWithTags(tx *gorm.DB, projectID string) error {

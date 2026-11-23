@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/stretchr/testify/require"
 
 	updaterlabels "kit.getarcane.app/updater/labels"
@@ -39,7 +39,7 @@ x-arcane:
 	require.NoError(t, err)
 	require.Equal(t, "https://cdn.jsdelivr.net/gh/homarr-labs/webp/raspberry-pi.webp", meta.ProjectIcon.Light)
 	require.Equal(t, "https://cdn.jsdelivr.net/gh/homarr-labs/webp/raspberry-pi.webp", meta.ProjectIcon.Dark)
-	require.Equal(t, []string{"https://www.example.com"}, meta.ProjectURLS)
+	require.Equal(t, []types.ProjectURL{{URL: "https://www.example.com"}}, meta.ProjectURLS)
 }
 
 func TestParseArcaneComposeMetadata_ServiceLabelIconsOutrankProjectIcon(t *testing.T) {
@@ -90,7 +90,41 @@ services:
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/icon-light.png", meta.ProjectIcon.Light)
 	require.Equal(t, "https://example.com/icon-dark.png", meta.ProjectIcon.Dark)
-	require.Equal(t, []string{"https://example.com/docs"}, meta.ProjectURLS)
+	require.Equal(t, []types.ProjectURL{{URL: "https://example.com/docs"}}, meta.ProjectURLS)
+}
+
+func TestParseArcaneComposeMetadata_URLDisplayNames(t *testing.T) {
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".env"), []byte("URL_GITHUB=https://github.com/crowdsecurity/crowdsec\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "compose.yaml"), []byte(`include:
+  - included.yaml
+services:
+  app:
+    image: nginx:alpine
+x-arcane:
+  urls:
+    - label: " GitHub - CrowdSec "
+      url: ${URL_GITHUB}
+    - https://www.crowdsec.net
+    - label: Missing URL
+    - label: Duplicate
+      url: https://www.crowdsec.net
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "included.yaml"), []byte(`x-arcane:
+  urls:
+    - label: Docs
+      url: https://docs.crowdsec.net
+    - label: Included duplicate
+      url: https://github.com/crowdsecurity/crowdsec
+`), 0o600))
+
+	meta, err := ParseArcaneComposeMetadata(t.Context(), filepath.Join(tempDir, "compose.yaml"), tempDir, false)
+	require.NoError(t, err)
+	require.Equal(t, []types.ProjectURL{
+		{URL: "https://github.com/crowdsecurity/crowdsec", Label: "GitHub - CrowdSec"},
+		{URL: "https://www.crowdsec.net"},
+		{URL: "https://docs.crowdsec.net", Label: "Docs"},
+	}, meta.ProjectURLS)
 }
 
 func TestParseArcaneComposeMetadata_TagNamesColorsInterpolationAndIncludes(t *testing.T) {
@@ -242,7 +276,7 @@ services:
 	require.NoError(t, err)
 	memory, err := LoadComposeProjectFromContent(t.Context(), types.ComposeContentOptions{ComposeContent: content, WorkingDir: dir, ProjectName: "metadata"})
 	require.NoError(t, err)
-	for _, project := range []*composetypes.Project{disk, memory} {
+	for _, project := range []*composeTypes.Project{disk, memory} {
 		inherited := project.Services["inherited"].Labels
 		require.Equal(t, "tag", inherited[updaterlabels.LabelUpdateStrategy])
 		require.Equal(t, "3.x", inherited[updaterlabels.LabelUpdateConstraint])
@@ -318,7 +352,7 @@ services:
 		},
 	)
 	require.NoError(t, err)
-	for _, project := range []*composetypes.Project{disk, memory} {
+	for _, project := range []*composeTypes.Project{disk, memory} {
 		require.Equal(t, "false", project.Services["inherited"].Labels[imageref.UpdateCheckLabel])
 		require.Equal(t, "true", project.Services["overridden"].Labels[imageref.UpdateCheckLabel])
 		require.Equal(t, "true", project.Services["explicit"].Labels[imageref.UpdateCheckLabel])

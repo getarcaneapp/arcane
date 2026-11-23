@@ -10,20 +10,12 @@ type ConvertedDockerRun = {
 };
 
 class SystemService extends BaseAPIService {
-	async pruneAllForEnvironment(environmentId: string, options: PruneAllRequest) {
-		return this.handleResponse(this.api.post(`/agents/${environmentId}/system/prune`, options));
-	}
-
-	async startAllStoppedContainers(environmentId: string) {
-		return this.handleResponse(
-			this.api.post(`/agents/${environmentId}/system/containers`, undefined, { params: { action: 'startstopped' } })
-		);
-	}
-
-	async stopAllContainers(environmentId: string) {
-		return this.handleResponse(
-			this.api.post(`/agents/${environmentId}/system/containers`, undefined, { params: { action: 'stopall' } })
-		);
+	async pruneAllForEnvironment(
+		environmentId: string,
+		options: PruneAllRequest,
+		config?: APIRequestConfig
+	): Promise<{ activityId?: string }> {
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/system/prune`, options, config));
 	}
 
 	async getDockerInfoForEnvironment(environmentId: string): Promise<DockerInfo> {

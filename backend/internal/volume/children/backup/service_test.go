@@ -117,19 +117,16 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	service.RegisterJobsOnStartup(t.Context())
 	job, registered := jobScheduler.jobs["volume-backup:"+policy.ID]
 	require.True(t, registered)
-	// Holding the volume's admission lease skips the scheduled run, which still completes its activity.
-	lease, admitted, err := engine.TryAcquireRun(t.Context(), backup.VolumeAdmissionScope, policy.VolumeName)
-	require.NoError(t, err)
-	require.True(t, admitted)
-	defer lease.Release(t.Context())
+	// Disabling the policy after registration ends the scheduled run before a backup, which still completes its activity.
+	require.NoError(t, gormDB.Model(policy).Update("enabled", false).Error)
 
 	outcome, scheduledBackupErr := job.Run(t.Context())
 	require.NoError(t, scheduledBackupErr)
-	require.Equal(t, types.RunStatusSkipped, outcome.Status)
+	require.Equal(t, types.RunStatusCanceled, outcome.Status)
 
 	var backupActivity activity.Activity
 	require.NoError(t, gormDB.Where("resource_type = ?", "volume_backup").First(&backupActivity).Error)
-	require.Equal(t, types.ActivityStatusSuccess, backupActivity.Status)
+	require.Equal(t, types.ActivityStatusCancelled, backupActivity.Status)
 	require.Equal(t, "scheduled_volume_backup", backupActivity.Metadata["action"])
 	require.Equal(t, policy.Schedule, backupActivity.Metadata["schedule"])
 }
@@ -202,6 +199,19 @@ func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	fallback := discoveredVolumeBackup("d", "r", backup.DiscoveredSnapshot{ID: "x", Label: "vol"})
 	require.NotNil(t, fallback)
 	require.False(t, fallback.CreatedAt.IsZero())
+
+	local := discoveredVolumeBackup("", "", backup.DiscoveredSnapshot{ID: "abc123", Label: "app-data", Tags: []string{"daily", backup.RunSnapshotTag("backup-1")}})
+	require.NotNil(t, local)
+	require.Equal(t, "backup-1", local.ID)
+	require.Equal(t, types.VolumeBackupTriggerDiscovered, local.Trigger)
+	require.Equal(t, types.VolumeBackupDestinationLocal, local.Destination)
+	require.Equal(t, "abc123", local.LocalSnapshotID)
+	require.Empty(t, local.RemoteSnapshotID)
+	require.Empty(t, local.S3DestinationID)
+
+	untagged := discoveredVolumeBackup("", "", backup.DiscoveredSnapshot{ID: "def456", Label: "app-data"})
+	require.NotNil(t, untagged)
+	require.Equal(t, "local-def456", untagged.ID)
 }
 
 func TestDiscoveredSnapshotDecodesRusticLabel(t *testing.T) {
@@ -233,6 +243,7 @@ func TestOrphanedVolumeBackupIDs(t *testing.T) {
 		{ID: "manual-deleted-system-policy", VolumeName: "app-data", PolicyID: systemSeries("weekly"), Trigger: manual},
 		{ID: "removed-volume", VolumeName: "old-data", Trigger: manual},
 		{ID: "removed-volume-with-policy", VolumeName: "old-data", PolicyID: systemSeries("nightly"), Trigger: scheduled},
+		{ID: "discovered-removed-volume", VolumeName: "old-data", Trigger: types.VolumeBackupTriggerDiscovered},
 	}
 
 	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1"}, []string{"manual", "nightly"})

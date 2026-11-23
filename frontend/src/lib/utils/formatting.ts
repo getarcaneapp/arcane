@@ -1,6 +1,7 @@
 import Convert from 'ansi-to-html';
 import stripAnsi from 'strip-ansi';
 import { config } from 'zod/v4/core';
+import en from 'zod/v4/locales/en.js';
 
 import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime.js';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
@@ -8,6 +9,10 @@ import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 export function capitalizeFirstLetter(string: string): string {
 	if (!string) return '';
 	return string.charAt(0).toUpperCase() + string.slice(1);
+}
+
+export function firstLine(value: string | undefined): string {
+	return value?.split('\n')[0]?.trim() ?? '';
 }
 
 export function truncateString(str: string | undefined, maxLength: number): string {
@@ -397,10 +402,43 @@ export function formatElapsedTime(value: InstantInput, options: RelativeTimeForm
 	return elapsedTimeFormatter(relative.unit).format(elapsedSeconds);
 }
 
+const zodLocaleLoaders: Record<Exclude<Locale, 'en'>, () => Promise<{ default: typeof en }>> = {
+	cs: () => import('zod/v4/locales/cs.js'),
+	da: () => import('zod/v4/locales/da.js'),
+	de: () => import('zod/v4/locales/de.js'),
+	el: () => import('zod/v4/locales/el.js'),
+	eo: () => import('zod/v4/locales/eo.js'),
+	es: () => import('zod/v4/locales/es.js'),
+	fr: () => import('zod/v4/locales/fr.js'),
+	hu: () => import('zod/v4/locales/hu.js'),
+	id: () => import('zod/v4/locales/id.js'),
+	it: () => import('zod/v4/locales/it.js'),
+	ja: () => import('zod/v4/locales/ja.js'),
+	ko: () => import('zod/v4/locales/ko.js'),
+	nl: () => import('zod/v4/locales/nl.js'),
+	pl: () => import('zod/v4/locales/pl.js'),
+	'pt-BR': () => import('zod/v4/locales/pt-BR.js'),
+	'pt-PT': () => import('zod/v4/locales/pt.js'),
+	ru: () => import('zod/v4/locales/ru.js'),
+	sv: () => import('zod/v4/locales/sv.js'),
+	tr: () => import('zod/v4/locales/tr.js'),
+	uk: () => import('zod/v4/locales/uk.js'),
+	vi: () => import('zod/v4/locales/vi.js'),
+	'zh-CN': () => import('zod/v4/locales/zh-CN.js'),
+	'zh-TW': () => import('zod/v4/locales/zh-TW.js')
+};
+
 export function setLocale(locale: Locale, reload = true) {
-	void import(`../../../node_modules/zod/v4/locales/${locale}.js`)
-		.then((zodLocale) => config(zodLocale.default()))
-		.catch((error: unknown) => console.warn(`Failed to load zod locale for ${locale}:`, error));
+	if (locale === 'en') {
+		config(en());
+	} else {
+		const loadLocale = zodLocaleLoaders[locale];
+		if (loadLocale) {
+			void loadLocale()
+				.then((zodLocale) => config(zodLocale.default()))
+				.catch((error: unknown) => console.warn(`Failed to load zod locale for ${locale}:`, error));
+		}
+	}
 
 	void setParaglideLocale(locale, { reload });
 	document.documentElement.lang = locale;

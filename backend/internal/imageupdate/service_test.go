@@ -29,7 +29,6 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -608,7 +607,7 @@ func TestImageUpdateService_InspectLocalImageSnapshot_IsLocalBuild(t *testing.T)
 			}))
 			t.Cleanup(server.Close)
 
-			svc := &ImageUpdateService{dockerService: newImageUpdateTestDockerService(t, server)}
+			svc := NewImageUpdateService(ImageUpdateServiceParams{DockerService: newImageUpdateTestDockerService(t, server)})
 			snapshot, err := svc.inspectLocalImageSnapshot(t.Context(), "local-only:latest", map[string]struct{}{})
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, snapshot.IsLocalBuild)
@@ -882,8 +881,8 @@ func TestImageUpdateService_CheckImages_SkippedDigestPinnedReferenceClearsStaleE
 	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", recordID).First(&saved).Error)
 	assert.False(t, saved.HasUpdate)
 	assert.Nil(t, saved.LastError)
-	assert.Equal(t, pinnedDigest, mo.PointerToOption(saved.CurrentDigest).OrEmpty())
-	assert.Equal(t, pinnedDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
+	assert.Equal(t, pinnedDigest, kit.FromPtr(saved.CurrentDigest))
+	assert.Equal(t, pinnedDigest, kit.FromPtr(saved.LatestDigest))
 }
 
 func TestImageUpdateService_CheckImages_DigestPinnedTagPreservedWhenLocalImageHasNoRepoTags(t *testing.T) {
@@ -1003,7 +1002,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 
 	var saved ImageUpdateRecord
 	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
-	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
+	assert.Equal(t, remoteDigest, kit.FromPtr(saved.LatestDigest))
 }
 
 func newImageUpdateConfigServer(t *testing.T, localDigest string, localLabels map[string]string, localCreated string) *httptest.Server {
@@ -1205,7 +1204,7 @@ func TestImageUpdateService_CheckImages_UsesRegistryFallback(t *testing.T) {
 
 	var saved ImageUpdateRecord
 	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
-	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
+	assert.Equal(t, remoteDigest, kit.FromPtr(saved.LatestDigest))
 }
 
 func TestImageUpdateService_CheckImagesCompletesActivityAfterRequestContextCanceled(t *testing.T) {
@@ -1477,7 +1476,7 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshot_PersistsRegistryOnlySuc
 	assert.Equal(t, repository, saved.Repository)
 	assert.Equal(t, "alpine", saved.Tag)
 	assert.True(t, saved.HasUpdate)
-	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
+	assert.Equal(t, remoteDigest, kit.FromPtr(saved.LatestDigest))
 	assert.Nil(t, saved.LastError)
 }
 
@@ -1605,23 +1604,23 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 	var projectDigestRecord ImageUpdateRecord
 	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "project::proj::web").First(&projectDigestRecord).Error)
 	assert.False(t, projectDigestRecord.HasUpdate, "project digest preview must be refreshed after pull")
-	assert.Equal(t, localDigest, mo.PointerToOption(projectDigestRecord.CurrentDigest).OrEmpty())
-	assert.Equal(t, localDigest, mo.PointerToOption(projectDigestRecord.LatestDigest).OrEmpty())
+	assert.Equal(t, localDigest, kit.FromPtr(projectDigestRecord.CurrentDigest))
+	assert.Equal(t, localDigest, kit.FromPtr(projectDigestRecord.LatestDigest))
 	assert.True(t, projectDigestRecord.CheckTime.After(now))
 
 	var projectTagRecord ImageUpdateRecord
 	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "project::proj::api").First(&projectTagRecord).Error)
 	assert.True(t, projectTagRecord.HasUpdate, "project tag preview is not satisfied by pulling the same tag")
-	assert.Equal(t, "1.3.0", mo.PointerToOption(projectTagRecord.LatestVersion).OrEmpty())
+	assert.Equal(t, "1.3.0", kit.FromPtr(projectTagRecord.LatestVersion))
 
 	var projectNewerRecord ImageUpdateRecord
 	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "project::proj::worker").First(&projectNewerRecord).Error)
 	assert.True(t, projectNewerRecord.HasUpdate, "a preview targeting a digest other than the pulled one is kept")
-	assert.Equal(t, newerDigest, mo.PointerToOption(projectNewerRecord.LatestDigest).OrEmpty())
+	assert.Equal(t, newerDigest, kit.FromPtr(projectNewerRecord.LatestDigest))
 
 	var projectFailedRecord ImageUpdateRecord
 	require.NoError(t, db.WithContext(t.Context()).Where("id = ?", "project::proj::broken").First(&projectFailedRecord).Error)
-	assert.Equal(t, "registry unreachable", mo.PointerToOption(projectFailedRecord.LastError).OrEmpty(), "a failed preview check is not cleared by a pull")
+	assert.Equal(t, "registry unreachable", kit.FromPtr(projectFailedRecord.LastError), "a failed preview check is not cleared by a pull")
 
 	// Sha256 records for old images that other containers are still running must stay HasUpdate=true.
 	var fullRecord ImageUpdateRecord
@@ -1643,8 +1642,8 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 	assert.False(t, currentRecord.HasUpdate)
 	assert.Equal(t, repository, currentRecord.Repository)
 	assert.Equal(t, "1.2.3", currentRecord.Tag)
-	assert.Equal(t, localDigest, mo.PointerToOption(currentRecord.CurrentDigest).OrEmpty())
-	assert.Equal(t, localDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
+	assert.Equal(t, localDigest, kit.FromPtr(currentRecord.CurrentDigest))
+	assert.Equal(t, localDigest, kit.FromPtr(currentRecord.LatestDigest))
 	assert.Equal(t, "1.2.3", currentRecord.CurrentVersion)
 	require.NotNil(t, currentRecord.LatestVersion)
 	assert.Equal(t, "1.2.3", *currentRecord.LatestVersion)
@@ -1842,10 +1841,10 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 
 			if tt.expectPreserved {
 				assert.Nil(t, saved.LastError, "previous good record should be preserved")
-				assert.Equal(t, "sha256:current", mo.PointerToOption(saved.LatestDigest).OrEmpty())
+				assert.Equal(t, "sha256:current", kit.FromPtr(saved.LatestDigest))
 				assert.Equal(t, checkTime, saved.CheckTime.UTC())
 			} else {
-				assert.Equal(t, tt.resultError, mo.PointerToOption(saved.LastError).OrEmpty())
+				assert.Equal(t, tt.resultError, kit.FromPtr(saved.LastError))
 				assert.Nil(t, saved.LatestDigest)
 			}
 		})
@@ -2925,7 +2924,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		EventService:        event.NewEventService(db, &config.Config{}, nil),
 		NotificationService: newTestNotificationService(t, db),
 	})
-	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, checks, 2)
 	require.Equal(t, "1.1.0", checks["one"].LatestVersion)
@@ -2950,7 +2949,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 	// Changing one policy to an invalid expression clears its actionable state
 	// without overwriting the other container's result.
 	values["one"][labels.LabelUpdateConstraint] = "invalid"
-	checks, err = svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err = svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, checks["one"].Error)
 	require.False(t, checks["one"].HasUpdate)
@@ -3081,7 +3080,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&stale).Error)
 
-	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, checks, 1)
 	require.True(t, checks["install-excluded"].HasUpdate, "updater=false and the UI exclusion do not block checks")
@@ -3178,15 +3177,15 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 
 	scanCtx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	_, err = svc.checkContainerTagUpdates(scanCtx, []string{imageRefs["fast"], imageRefs["slow"]}, nil)
+	_, err = svc.checkContainerTagUpdates(scanCtx, []string{imageRefs["fast"], imageRefs["slow"]}, nil, nil)
 	require.ErrorContains(t, err, context.DeadlineExceeded.Error())
 	var records []ImageUpdateRecord
 	require.NoError(t, db.Find(&records).Error)
 	require.Len(t, records, 1, "only the check that finished before the scan deadline is stored")
 	require.Equal(t, "container::fast", records[0].ID)
 	require.True(t, records[0].HasUpdate)
-	require.Equal(t, "1.1.0", mo.PointerToOption(records[0].LatestVersion).OrEmpty())
-	require.Empty(t, mo.PointerToOption(records[0].LastError).OrEmpty(), "a stored result must not be overwritten by the cancellation")
+	require.Equal(t, "1.1.0", kit.FromPtr(records[0].LatestVersion))
+	require.Empty(t, kit.FromPtr(records[0].LastError), "a stored result must not be overwritten by the cancellation")
 }
 
 func TestImageUpdateService_RunImageCheckExhaustedRateLimitKeepsPreviousResult(t *testing.T) {
@@ -3218,7 +3217,7 @@ func TestImageUpdateService_RunImageCheckExhaustedRateLimitKeepsPreviousResult(t
 	require.NoError(t, db.First(&saved, "id = ?", "sha256:app").Error)
 	assert.True(t, saved.HasUpdate)
 	assert.Nil(t, saved.LastError)
-	assert.Equal(t, previousDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
+	assert.Equal(t, previousDigest, kit.FromPtr(saved.LatestDigest))
 }
 
 func TestImageUpdateService_RunImageCheckReportsPartialFailure(t *testing.T) {
@@ -3261,6 +3260,7 @@ func startCheckWorkflow(t *testing.T, svc *ImageUpdateService) *flowtest.Harness
 	harness := flowtest.New(t, activities)
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
+	t.Cleanup(func() { _ = svc.Stop(context.WithoutCancel(t.Context())) })
 	return harness
 }
 

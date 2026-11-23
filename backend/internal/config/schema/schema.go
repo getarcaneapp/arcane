@@ -16,7 +16,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -101,6 +100,9 @@ var overrideDocRules = map[string]overrideDocRule{
 	"autoUpdateDelay": {
 		requires: "ARCANE_AUTO_UPDATE=true to have effect at runtime.",
 	},
+	"autoUpdateMode": {
+		requires: "ARCANE_AUTO_UPDATE=true to have effect at runtime.",
+	},
 	"scheduledPruneInterval": {
 		requires: "ARCANE_SCHEDULED_PRUNE_ENABLED=true to have effect at runtime.",
 	},
@@ -162,6 +164,9 @@ var overrideDocRules = map[string]overrideDocRule{
 		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
 	},
 	"autoHealExcludedContainers": {
+		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
+	},
+	"autoHealMode": {
 		requires: "ARCANE_AUTO_HEAL_ENABLED=true to have effect at runtime.",
 	},
 	"autoHealMaxRestarts": {
@@ -230,8 +235,8 @@ func collectEnvConfig(ctx context.Context, sourceRoot string) ([]ConfigEntry, er
 	}
 
 	configEntries = append(configEntries, buildablesEntries...)
-	sort.Slice(configEntries, func(i, j int) bool {
-		return configEntries[i].Env < configEntries[j].Env
+	slices.SortFunc(configEntries, func(a, b ConfigEntry) int {
+		return strings.Compare(a.Env, b.Env)
 	})
 
 	return configEntries, nil
@@ -332,11 +337,8 @@ func collectSettings() []SettingEntry {
 		})
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].Category == entries[j].Category {
-			return entries[i].Env < entries[j].Env
-		}
-		return entries[i].Category < entries[j].Category
+	slices.SortFunc(entries, func(a, b SettingEntry) int {
+		return cmp.Or(strings.Compare(a.Category, b.Category), strings.Compare(a.Env, b.Env))
 	})
 
 	return entries

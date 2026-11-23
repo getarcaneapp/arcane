@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	humav2 "github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
 	"github.com/moby/moby/api/types/network"
@@ -112,7 +112,7 @@ func TestSchemaRegistry_AliasesCollidingDockerTypes(t *testing.T) {
 
 	require.Equal(t, "#/components/schemas/DockerSwarmPlacement", registry.Schema(reflect.TypeFor[swarm.Placement](), true, "").Ref)
 	require.Equal(t, "#/components/schemas/DockerNetworkConfigReference", registry.Schema(reflect.TypeFor[*network.ConfigReference](), true, "").Ref)
-	require.Equal(t, "#/components/schemas/Placement", registry.Schema(reflect.TypeFor[composetypes.Placement](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/Placement", registry.Schema(reflect.TypeFor[composeTypes.Placement](), true, "").Ref)
 }
 
 func TestSchemaRegistry_DisambiguatesGenericDomainTypes(t *testing.T) {

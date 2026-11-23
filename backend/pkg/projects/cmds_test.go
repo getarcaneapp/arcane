@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -67,11 +67,11 @@ func TestDetachFromHTTPContext(t *testing.T) {
 func TestComposeStopSkipsWhenNoServicesSpecified(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:9")
 
-	err := ComposeStop(t.Context(), types.ComposeTarget{Project: &composetypes.Project{Name: "test"}})
+	err := ComposeStop(t.Context(), types.ComposeTarget{Project: &composeTypes.Project{Name: "test"}})
 	require.NoError(t, err)
 
 	err = ComposeStop(t.Context(), types.ComposeTarget{
-		Project:  &composetypes.Project{Name: "test"},
+		Project:  &composeTypes.Project{Name: "test"},
 		Services: []string{},
 	})
 	require.NoError(t, err)

@@ -172,7 +172,6 @@
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
 	withoutSearch
-	withoutPagination
 	{onRetry}
 	{columns}
 	{mobileFields}

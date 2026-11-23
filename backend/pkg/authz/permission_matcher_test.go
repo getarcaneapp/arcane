@@ -85,7 +85,7 @@ func TestPermissionMatcherNormalizesEchoParamsAndIgnoresQuery(t *testing.T) {
 
 func TestPermissionMatcherPublicRoute(t *testing.T) {
 	m := NewPermissionMatcher()
-	m.AddPublic("GET", "/settings/public")
+	m.Add("GET", "/settings/public", "")
 
 	perm, ok := m.Lookup("GET", "/settings/public", nil).Get()
 
@@ -129,7 +129,7 @@ func TestPermissionMatcherCollectsEnvironmentAggregation(t *testing.T) {
 	m.CollectFromHumaAPI(api)
 
 	require.True(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/containers"))
-	require.False(t, m.SupportsEnvironmentAggregation(http.MethodPost, "/projects"), "only GET operations aggregate")
+	require.True(t, m.SupportsEnvironmentAggregation(http.MethodPost, "/projects"), "non-GET operations aggregate when they opt in")
 	require.False(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/images"), "operations must opt in")
 	require.False(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/containers/abc"), "suffix must match exactly")
 	perm, ok := m.Lookup(http.MethodGet, "/containers", nil).Get()

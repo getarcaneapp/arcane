@@ -26,9 +26,15 @@ const reservedRootNames = new Set([
 	'docker-compose.override.yml'
 ]);
 
-export function validateProjectWorkspaceFileName(name: string, parentPath = '', composeFileName = 'compose.yaml'): string | null {
+export function validateProjectWorkspaceFileName(
+	name: string,
+	parentPath = '',
+	composeFileName = 'compose.yaml',
+	allowedRootNames?: ReadonlySet<string>
+): string | null {
 	const normalized = validateWorkspaceFileName(name);
 	if (!normalized) return null;
+	if (!parentPath && allowedRootNames?.has(normalized)) return normalized;
 	if (!parentPath && isReservedProjectFileName(normalized, composeFileName)) return null;
 	return normalized;
 }
