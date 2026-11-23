@@ -29,7 +29,7 @@
 		isAutoUpdateLabelDisabled,
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
-	import { listScopes, settleAcrossEnvironments } from '#lib/utils/environments.js';
+	import { actAcrossEnvironments, listScopes } from '#lib/utils/environments.js';
 
 	import type { AutomationsTabProps } from './tab-props';
 
@@ -123,7 +123,7 @@
 	}
 
 	async function saveSchedule(update: Record<string, string>) {
-		await settleAcrossEnvironments(environments, (environmentId) => jobScheduleService.updateJobSchedules(update, environmentId));
+		await actAcrossEnvironments(environments, (scope, config) => jobScheduleService.updateJobSchedules(update, scope, config));
 		await Promise.all(
 			listScopes(environments.map((environment) => environment.id)).map((scope) =>
 				queryClient.invalidateQueries({ queryKey: queryKeys.jobs.list(scope) })

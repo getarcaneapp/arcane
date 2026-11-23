@@ -87,8 +87,10 @@ func RegisterImageUpdates(
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/images/updates/check",
 		Summary:     "Check all or multiple images",
+		Description: "Check images for updates; a comma-separated environment list requires image-updates:check in every one",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, "action", map[string]string{
 		"all":   authz.PermImageUpdatesCheck,
 		"batch": authz.PermImageUpdatesCheck,

@@ -16,9 +16,10 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/system/prune",
 		Summary:     "Prune Docker resources",
-		Description: "Remove unused Docker resources (containers, images, volumes, networks)",
+		Description: "Remove unused Docker resources (containers, images, volumes, networks); a comma-separated environment list requires system:prune in every one",
 		Tags:        []string{"System"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermSystemPrune, h.PruneAll)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

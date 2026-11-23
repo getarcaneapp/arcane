@@ -46,6 +46,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/registry"
@@ -2159,6 +2160,27 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		slog.InfoContext(ctx, "No orphaned image update records found")
 	}
 	return nil
+}
+
+func (s *ImageUpdateService) AggregateCheckImages(ctx context.Context) (types.ApiResponse[types.ImageUpdateBatchResponse], error) {
+	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok && scope.Timeout == 0 {
+		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{ //exhaustruct:enforce
+			Handler: scope.Handler,
+			Request: scope.Request,
+			Resolve: scope.Resolve,
+			Path:    scope.Path,
+			IDs:     scope.IDs,
+			Body:    scope.Body,
+			Timeout: timeouts.DefaultImageUpdateScan,
+		})
+	}
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.ImageUpdateBatchResponse]) types.ImageUpdateBatchResponse {
+		results := types.ImageUpdateBatchResponse{}
+		for _, environment := range environments {
+			maps.Copy(results, environment.Data)
+		}
+		return results
+	})
 }
 
 func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*types.ImageUpdateSummary, error) {

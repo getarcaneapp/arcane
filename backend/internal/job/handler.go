@@ -141,6 +141,15 @@ func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInp
 }
 
 func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedulesInput) (*handlerutil.Out[types.JobScheduleConfig], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[types.JobScheduleConfig]) types.JobScheduleConfig {
+			return types.JobScheduleConfig{}
+		})
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to update job schedules: " + err.Error())
+		}
+		return &handlerutil.Out[types.JobScheduleConfig]{Body: body}, nil
+	}
 	if input.ID != "0" {
 		apiResp, err := h.proxyRemoteJSON.JSON[types.ApiResponse[types.JobScheduleConfig]](ctx, input.ID, http.MethodPatch, "/api/agents/0/jobs/schedules", input.RawBody)
 		if err != nil {

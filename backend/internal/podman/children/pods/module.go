@@ -28,9 +28,15 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("create-podman-pod", http.MethodPost, podsPath, "Create pod", "", podsTag),
 		authz.PermPodmanPodsCreate, h.Create)
-	handlerutil.RegisterSecured(api,
-		handlerutil.Operation("prune-podman-pods", http.MethodPost, podsPath+"/prune", "Prune pods", "Remove every stopped pod", podsTag),
-		authz.PermPodmanPodsPrune, h.Prune)
+	handlerutil.RegisterSecured(api, huma.Operation{
+		OperationID: "prune-podman-pods",
+		Method:      http.MethodPost,
+		Path:        podsPath + "/prune",
+		Summary:     "Prune pods",
+		Description: "Remove every stopped pod; a comma-separated environment list requires podman-pods:prune in every one",
+		Tags:        []string{podsTag},
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
+	}, authz.PermPodmanPodsPrune, h.Prune)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("get-podman-pod-stats", http.MethodGet, podsPath+"/stats", "Get pod stats", "", podsTag),
 		authz.PermPodmanPodsRead, h.Stats)

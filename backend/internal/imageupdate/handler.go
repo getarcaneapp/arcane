@@ -12,6 +12,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
 )
 
@@ -88,6 +89,13 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 func (h *ImageUpdateHandler) CheckImages(ctx context.Context, input *CheckImagesActionInput) (*handlerutil.Out[types.ImageUpdateBatchResponse], error) {
 	if input.Action == "batch" && len(kit.FromPtr(input.Body).ImageRefs) == 0 {
 		return nil, huma.Error400BadRequest("imageRefs is required for action=batch")
+	}
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.imageUpdateService.AggregateCheckImages(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to check image updates: " + err.Error())
+		}
+		return &handlerutil.Out[types.ImageUpdateBatchResponse]{Body: body}, nil
 	}
 
 	runtimeCtx := activity.ActivityRuntimeContext(ctx, h.appCtx)
