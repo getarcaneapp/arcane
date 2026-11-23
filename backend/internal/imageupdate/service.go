@@ -2164,7 +2164,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 
 func (s *ImageUpdateService) AggregateCheckImages(ctx context.Context) (types.ApiResponse[types.ImageUpdateBatchResponse], error) {
 	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok && scope.Timeout == 0 {
-		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{
+		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{ //exhaustruct:enforce
 			Handler: scope.Handler,
 			Request: scope.Request,
 			Resolve: scope.Resolve,

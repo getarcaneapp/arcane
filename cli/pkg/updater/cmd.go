@@ -12,7 +12,6 @@ import (
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
-	"getarcane.dev/cli/v3/internal/runtime"
 	clitypes "getarcane.dev/cli/v3/internal/types"
 	"getarcane.dev/types/v3"
 )
@@ -82,7 +81,10 @@ func newRunCmd() *cobra.Command {
 					if data.Duration != "" {
 						output.KeyValue("Duration", data.Duration)
 					}
-					if app, ok := runtime.From(cmd.Context()); ok && app.AllConfirmed && data.Failed > 0 {
+					return nil
+				},
+				Check: func(data types.UpdaterResult) error {
+					if data.Failed > 0 {
 						return fmt.Errorf("updater failed for %d resources", data.Failed)
 					}
 					return nil

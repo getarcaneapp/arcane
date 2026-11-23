@@ -1,6 +1,7 @@
 package pods
 
 import (
+	"cmp"
 	"context"
 	"errors"
 
@@ -12,6 +13,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/podman"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
 )
 
@@ -134,8 +136,16 @@ func (h *Handler) Delete(ctx context.Context, input *DeletePodInput) (*handlerut
 }
 
 func (h *Handler) Prune(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.PodPruneReport], error) {
-	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
-		body, err := httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[[]types.PodPruneReport]) []types.PodPruneReport {
+	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := httpx.CollectEnvironmentData(httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{ //exhaustruct:enforce
+			Handler: scope.Handler,
+			Request: scope.Request,
+			Resolve: scope.Resolve,
+			Path:    scope.Path,
+			IDs:     scope.IDs,
+			Body:    scope.Body,
+			Timeout: cmp.Or(scope.Timeout, timeouts.DefaultDockerDiskUsage),
+		}), nil, func(environments []types.EnvironmentData[[]types.PodPruneReport]) []types.PodPruneReport {
 			reports := []types.PodPruneReport{}
 			for _, environment := range environments {
 				reports = append(reports, environment.Data...)

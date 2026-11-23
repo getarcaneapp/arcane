@@ -29,6 +29,11 @@ type (
 	mergedScope struct {
 		names    map[string]string
 		failures []types.EnvironmentFailure
+		mutation bool
+	}
+
+	MergedOptions struct {
+		Mutation bool
 	}
 
 	environmentResult struct {
@@ -121,7 +126,7 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 	}
 	actionFlag, _ := cmd.Flags().GetBool(cmd.Annotations["arcane:merged-action-flag"])
 	if mutation := scope == ScopeMergedAction || actionFlag; scope == ScopeMerged || mutation {
-		return RunMerged(cmd, args, run, mutation)
+		return RunMerged(cmd, args, run, MergedOptions{Mutation: mutation})
 	}
 	if scope != ScopeDestination {
 		return RunEnvironments(cmd, args, run, scope == ScopeAll)
@@ -149,16 +154,16 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 	return run(cmd, args)
 }
 
-func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error, mutation bool) error {
+func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error, opts MergedOptions) error {
 	app, _ := runtime.From(cmd.Context())
 	environments, discoveryErr := app.Environments(cmd.Context())
 	if discoveryErr != nil {
 		return discoveryErr
 	}
 	if len(environments) == 0 {
-		return RunEnvironments(cmd, args, run, mutation)
+		return RunEnvironments(cmd, args, run, opts.Mutation)
 	}
-	if mutation {
+	if opts.Mutation {
 		force, _ := cmd.Flags().GetBool("force")
 		confirmed, confirmErr := ConfirmOrCancel(cmd, ConfirmOptions{
 			Label: fmt.Sprintf("%s in all %d agents?", cmd.Short, len(environments)),
@@ -172,9 +177,9 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 			app.AllConfirmed = false
 		}()
 	}
-	limit := kit.Ternary(mutation, len(environments), 64)
+	limit := kit.Ternary(opts.Mutation, len(environments), 64)
 	// The limit is at least 2, so only more environments need it.
-	if !mutation && len(environments) > 2 {
+	if !opts.Mutation && len(environments) > 2 {
 		c, clientErr := ClientFromCommand(cmd)
 		if clientErr != nil {
 			return clientErr
@@ -189,7 +194,10 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 			}
 		}
 	}
-	merged := &mergedScope{names: make(map[string]string, len(environments))}
+	merged := &mergedScope{
+		names:    make(map[string]string, len(environments)),
+		mutation: opts.Mutation,
+	}
 	ids := make([]string, 0, min(limit, len(environments)))
 	for i, env := range environments {
 		merged.names[env.ID] = cmp.Or(env.Name, env.ID)

@@ -1207,7 +1207,7 @@ func (s *ImageService) AggregateImageCounts(ctx context.Context) (types.ApiRespo
 
 func (s *ImageService) AggregatePruneImages(ctx context.Context) (types.ApiResponse[types.ImagePruneReport], error) {
 	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok && scope.Timeout == 0 {
-		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{
+		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{ //exhaustruct:enforce
 			Handler: scope.Handler,
 			Request: scope.Request,
 			Resolve: scope.Resolve,

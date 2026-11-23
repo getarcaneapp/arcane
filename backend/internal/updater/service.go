@@ -802,7 +802,7 @@ func (s *UpdaterService) AggregateHistory(ctx context.Context, limit int) (types
 
 func (s *UpdaterService) AggregateApplyPending(ctx context.Context) (types.ApiResponse[*types.UpdaterResult], error) {
 	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok && scope.Timeout == 0 {
-		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{
+		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{ //exhaustruct:enforce
 			Handler: scope.Handler,
 			Request: scope.Request,
 			Resolve: scope.Resolve,

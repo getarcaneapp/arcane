@@ -122,6 +122,7 @@ func newCheckAllCmd() *cobra.Command {
 				Render: func(data jsontext.Value) error {
 					return printBatchResults(cmd, data)
 				},
+				Check: checkBatchResults,
 			})
 		},
 	}
@@ -180,19 +181,30 @@ func newSummaryCmd() *cobra.Command {
 	}
 }
 
+func checkBatchResults(raw jsontext.Value) error {
+	var result types.ImageUpdateBatchResponse
+	if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil {
+		return fmt.Errorf("failed to parse response: %w", decodeErr)
+	}
+	for _, ref := range slices.Sorted(maps.Keys(result)) {
+		if result[ref] == nil {
+			return fmt.Errorf("image update check failed for %s: no result", ref)
+		}
+		if result[ref].Error != "" {
+			return fmt.Errorf("image update check failed for %s: %s", ref, result[ref].Error)
+		}
+	}
+	return nil
+}
+
 func printBatchResults(cmd *cobra.Command, raw jsontext.Value) error {
 	var result types.ImageUpdateBatchResponse
 	if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil {
 		return fmt.Errorf("failed to parse response: %w", decodeErr)
 	}
 	if app, ok := runtime.From(cmd.Context()); ok && app != nil && app.AllConfirmed {
-		for ref, update := range result {
-			if update == nil {
-				return fmt.Errorf("image update check failed for %s: no result", ref)
-			}
-			if update.Error != "" {
-				return fmt.Errorf("image update check failed for %s: %s", ref, update.Error)
-			}
+		if checkErr := checkBatchResults(raw); checkErr != nil {
+			return checkErr
 		}
 	}
 	if cmdutil.JSONOutputEnabled(cmd) {
