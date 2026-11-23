@@ -1090,18 +1090,18 @@ func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, err
 	if err != nil {
 		return nil, err
 	}
+	manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
+		return r.EnvironmentID == environment.LocalEnvironmentID
+	})
 	allowed, err := func() (bool, error) {
-		if job.Status != UpgradeJobStatusRunning {
-			return false, nil
+		if job.Status != UpgradeJobStatusRunning || manager < 0 {
+			return job.Status == UpgradeJobStatusRunning, nil
 		}
 		return s.authorizeUpgradeJob(ctx, job, input.KeyID, environment.LocalEnvironmentID)
 	}()
 	if err != nil {
 		return nil, err
 	}
-	manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
-		return r.EnvironmentID == environment.LocalEnvironmentID
-	})
 	if allowed && manager < 0 {
 		s.finalizeUpgradeJob(ctx, job, "", "")
 	}
