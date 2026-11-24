@@ -86,6 +86,17 @@ func snapshotTags(projectID, backupID string) []string {
 	return []string{backup.ProjectSnapshotTag, "arcane-project:" + projectID, backup.RunSnapshotTag(backupID)}
 }
 
+// snapshotRun is the backup writing the plan's snapshot, labeled with its project.
+func snapshotRun(entry *ProjectBackup, p plan) backup.SnapshotRun {
+	return backup.SnapshotRun{
+		Snapshots:          entry.snapshots(),
+		RunID:              entry.ID,
+		Label:              entry.ProjectName,
+		Tags:               snapshotTags(entry.ProjectID, entry.ID),
+		DestinationOptions: backup.DestinationOptions{Local: p.LocalEnabled, Remote: p.S3Enabled},
+	}
+}
+
 // snapshotInput lays the project out under /snapshot: its files at project/, each captured volume at
 // volumes/<name>/, and the manifest at meta/.
 func snapshotInput(projectMounts []mount.Mount, metaVolume, backupID string, p plan) backup.CreateSnapshotInput {
@@ -151,6 +162,7 @@ func backupVolumes(classified []types.ProjectVolume) []types.ProjectBackupVolume
 		captured = append(captured, types.ProjectBackupVolume{ //exhaustruct:enforce
 			Key:      volume.Key,
 			Name:     volume.Name,
+			Kind:     volume.Kind,
 			Included: volume.Included,
 		})
 	}

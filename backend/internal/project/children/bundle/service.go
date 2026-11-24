@@ -27,6 +27,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
@@ -189,11 +190,11 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 	if err != nil {
 		return exportState{}, err
 	}
-	running, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	running, err := volumes.ListRunningContainers(ctx, dockerClient)
 	if err != nil {
-		return exportState{}, fmt.Errorf("list containers: %w", err)
+		return exportState{}, err
 	}
-	activeContainers, inUse := projects.ProjectContainerUse(project.ComposeName, running.Items)
+	activeContainers, inUse := projects.ProjectContainerUse(project.ComposeName, running)
 	arcaneOfProject := func(c container.Summary) bool {
 		return project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName && labels.IsArcaneContainer(c.Labels)
 	}
@@ -211,7 +212,7 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		volumes:    resolved,
 		services:   projects.ContainerServices(activeContainers),
 		active:     len(activeContainers) > 0,
-		runsArcane: slices.ContainsFunc(running.Items, arcaneOfProject),
+		runsArcane: slices.ContainsFunc(running, arcaneOfProject),
 	}, nil
 }
 
@@ -482,19 +483,12 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 		}
 		index := target.restores[name]
 		volume := target.volumes[index]
-		external := volume.Kind == types.ProjectVolumeExternal
 		visitErr = s.restoreVolume(ctx, volumeRestore{
-			User: opts.User,
-			Body: body,
-			Name: volume.Name,
-			Compose: types.ComposeVolumeTarget{ //exhaustruct:enforce
-				Labels:   kit.Ternary(external, included[index].DockerLabels, volume.Labels),
-				Project:  target.composeName,
-				Key:      volume.Key,
-				Driver:   volume.Driver,
-				External: external,
-			},
-			Size: size,
+			User:    opts.User,
+			Body:    body,
+			Name:    volume.Name,
+			Compose: projects.NewComposeVolumeTarget(target.composeName, volume, included[index].DockerLabels),
+			Size:    size,
 		})
 		if visitErr == nil {
 			restored = append(restored, volume.Name)
@@ -536,13 +530,19 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	if err != nil {
 		return "", err
 	}
+	// An external volume keeps its name in the new project, so it is restored only when selected; one that exists is
+	// refused, so the original's volume is never restored over.
 	var keys []string
+	defaults := []string{}
 	for _, volume := range manifest.Volumes {
 		if volume.Included {
 			keys = append(keys, volume.Key)
 		}
+		if volume.Included && volume.Kind != types.ProjectVolumeExternal {
+			defaults = append(defaults, volume.Key)
+		}
 	}
-	selected, err := projects.SelectBackupVolumes(keys, request.Volumes)
+	selected, err := projects.SelectBackupVolumes(keys, kit.Ternary(request.Volumes == nil, defaults, request.Volumes))
 	if err != nil {
 		return "", common.Classify(common.ErrValidation, err)
 	}
@@ -630,14 +630,7 @@ func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOpt
 	for _, archive := range slices.Sorted(maps.Keys(target.restores)) {
 		index := target.restores[archive]
 		volume := target.volumes[index]
-		external := volume.Kind == types.ProjectVolumeExternal
-		options, err := projects.ComposeVolumeTargetCreateOptions(volume.Name, types.ComposeVolumeTarget{
-			Labels:   kit.Ternary(external, included[index].DockerLabels, volume.Labels),
-			Project:  target.composeName,
-			Key:      volume.Key,
-			Driver:   volume.Driver,
-			External: external,
-		})
+		options, err := projects.ComposeVolumeTargetCreateOptions(volume.Name, projects.NewComposeVolumeTarget(target.composeName, volume, included[index].DockerLabels))
 		if err != nil {
 			return created, err
 		}
@@ -723,15 +716,27 @@ func (s *Service) checkVolumeTargets(ctx context.Context, included, targets, cla
 		checked[volume.Name] = true
 		checkNames = append(checkNames, volume.Name)
 	}
-	var conflicts []string
+	var conflicts, external []string
 	for _, name := range checkNames {
 		_, exists, err := s.deps.Volume(ctx, name)
 		if err != nil {
 			return nil, fmt.Errorf("inspect volume %s: %w", name, err)
 		}
-		if exists {
+		switch {
+		case !exists:
+		case slices.ContainsFunc(targets, func(target types.ProjectVolume) bool {
+			return target.Name == name && target.Kind == types.ProjectVolumeExternal
+		}):
+			external = append(external, name)
+		default:
 			conflicts = append(conflicts, name)
 		}
+	}
+	if len(external) > 0 {
+		return nil, common.Classify(common.ErrConflict, fmt.Errorf(
+			"the external volumes %s already exist and the new project would use them as they are; leave them out to keep their data untouched",
+			strings.Join(external, ", "),
+		))
 	}
 	if len(conflicts) > 0 {
 		return nil, common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))

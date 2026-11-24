@@ -420,60 +420,35 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	if err != nil {
 		return nil, err
 	}
-	selected, err := func() (*types.SystemBackupPolicy, error) {
-		if request.PolicyID != "" {
-			policy, policyErr := s.store.Policy(ctx, request.PolicyID)
-			if policyErr == nil && policy == nil {
-				return nil, common.Classify(common.ErrNotFound, errors.New("system backup policy not found"))
-			}
-			return policy, policyErr
+	defaults, s3DestinationID, destination := backup.DestinationOptions{Local: true, Remote: false}, request.S3DestinationID, request.Destination
+	if request.PolicyID != "" {
+		policy, policyErr := s.store.Policy(ctx, request.PolicyID)
+		if policyErr != nil {
+			return nil, policyErr
 		}
-		switch request.Destination {
-		case types.SystemBackupDestinationLocal, "":
-			return &types.SystemBackupPolicy{
-				LocalEnabled:    true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		case types.SystemBackupDestinationS3:
-			return &types.SystemBackupPolicy{
-				S3Enabled:       true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		case types.SystemBackupDestinationLocalS3:
-			return &types.SystemBackupPolicy{
-				LocalEnabled:    true,
-				S3Enabled:       true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		default:
-			return nil, common.Classify(common.ErrValidation, errors.New("unknown system backup destination"))
+		if policy == nil {
+			return nil, common.Classify(common.ErrNotFound, errors.New("system backup policy not found"))
 		}
-	}()
+		defaults, s3DestinationID, destination = backup.DestinationOptions{Local: policy.LocalEnabled, Remote: policy.S3Enabled}, policy.S3DestinationID, ""
+	}
+	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
+		Class:           common.ErrValidation,
+		S3Destinations:  nil,
+		Domain:          "system",
+		Destination:     string(destination),
+		S3DestinationID: s3DestinationID,
+		Default:         defaults,
+	})
 	if err != nil {
 		return nil, err
 	}
-	if !selected.LocalEnabled && !selected.S3Enabled {
-		return nil, common.Classify(common.ErrValidation, errors.New("select at least one system backup destination"))
-	}
-	if selected.S3Enabled && selected.S3DestinationID == "" {
-		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the system backup"))
-	}
 	run := &types.SystemBackupRun{
-		ID:        cmp.Or(kit.Ternary(s.config.AgentEnabled, request.ID, ""), "system-"+uuid.New().String()),
-		CreatedAt: time.Now().UTC(),
-		Status:    types.SystemBackupStatusRunning,
-		Trigger:   trigger,
-		Destination: func() types.SystemBackupDestination {
-			switch {
-			case selected.LocalEnabled && selected.S3Enabled:
-				return types.SystemBackupDestinationLocalS3
-			case selected.LocalEnabled:
-				return types.SystemBackupDestinationLocal
-			default:
-				return types.SystemBackupDestinationS3
-			}
-		}(),
-		S3DestinationID: selected.S3DestinationID,
+		ID:              cmp.Or(kit.Ternary(s.config.AgentEnabled, request.ID, ""), "system-"+uuid.New().String()),
+		CreatedAt:       time.Now().UTC(),
+		Status:          types.SystemBackupStatusRunning,
+		Trigger:         trigger,
+		Destination:     types.SystemBackupDestination(backup.Destination(selected)),
+		S3DestinationID: s3DestinationID,
 		PolicyID:        request.PolicyID,
 	}
 	if createErr := s.store.CreateRun(ctx, run); createErr != nil {
@@ -481,8 +456,8 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	}
 	checkpoint := systemBackupRecovery{
 		BackupID:     run.ID,
-		LocalEnabled: selected.LocalEnabled,
-		S3Enabled:    selected.S3Enabled,
+		LocalEnabled: selected.Local,
+		S3Enabled:    selected.Remote,
 	}
 	recoveryData, err := json.Marshal(checkpoint)
 	if err == nil {

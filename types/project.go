@@ -95,15 +95,17 @@ type (
 	}
 
 	ProjectBackupVolume struct {
-		Key      string `json:"key" doc:"Volume key in the compose file"`
-		Name     string `json:"name" doc:"Docker volume name"`
-		Included bool   `json:"included" doc:"Whether the volume's data is in the backup"`
+		Key      string            `json:"key" doc:"Volume key in the compose file"`
+		Name     string            `json:"name" doc:"Docker volume name"`
+		Kind     ProjectVolumeKind `json:"kind,omitempty" enum:"named,external,driverOpts" doc:"How the compose file declares the volume; an external one keeps its name in a project restored as new"`
+		Included bool              `json:"included" doc:"Whether the volume's data is in the backup"`
 	}
 
 	ProjectBackup struct {
 		CreatedAt         time.Time               `json:"createdAt"`
 		CompletedAt       *time.Time              `json:"completedAt,omitempty"`
 		ActivityID        *string                 `json:"activityId,omitempty"`
+		RemoteAvailable   *bool                   `json:"remoteAvailable,omitempty" doc:"Whether S3 still holds the backup's snapshot; omitted when unknown"`
 		ID                string                  `json:"id"`
 		ProjectID         string                  `json:"projectId"`
 		ProjectName       string                  `json:"projectName"`
@@ -129,7 +131,7 @@ type (
 
 	RestoreProjectBackupAsNewRequest struct {
 		Name    string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
-		Volumes []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every volume the backup includes"`
+		Volumes []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every included volume except external ones, which keep their names"`
 		Start   bool     `json:"start,omitempty" doc:"Deploy the new project after the restore, which requires projects:deploy"`
 	}
 

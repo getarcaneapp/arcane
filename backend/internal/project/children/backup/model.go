@@ -3,6 +3,7 @@ package backup
 import (
 	"time"
 
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/types/v3"
 )
@@ -30,6 +31,7 @@ type (
 	// DTOOptions carries what a backup's API value shows but its row doesn't store.
 	DTOOptions struct {
 		ActivityID        *string
+		RemoteAvailable   *bool
 		S3DestinationName string
 	}
 )
@@ -39,6 +41,7 @@ func (ProjectBackup) TableName() string { return "project_backups" }
 func (b *ProjectBackup) DTO(opts DTOOptions) types.ProjectBackup {
 	return types.ProjectBackup{ //exhaustruct:enforce
 		ActivityID:        opts.ActivityID,
+		RemoteAvailable:   opts.RemoteAvailable,
 		S3DestinationName: opts.S3DestinationName,
 		CreatedAt:         b.CreatedAt,
 		CompletedAt:       b.CompletedAt,
@@ -56,5 +59,16 @@ func (b *ProjectBackup) DTO(opts DTOOptions) types.ProjectBackup {
 		Volumes:           b.Volumes,
 		Size:              b.Size,
 		StoppedContainers: b.StoppedContainers,
+	}
+}
+
+// snapshots points at the backup's snapshot fields.
+func (b *ProjectBackup) snapshots() backup.RunSnapshots {
+	return backup.RunSnapshots{
+		LocalID:          &b.LocalSnapshotID,
+		RemoteID:         &b.RemoteSnapshotID,
+		S3DestinationID:  &b.S3DestinationID,
+		Size:             &b.Size,
+		RemoteInstanceID: "",
 	}
 }

@@ -6,6 +6,7 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { backupRunColumns, backupRunMobileFields } from '#lib/components/arcane-table/backup-columns.js';
 	import BackupDestinationCell from '#lib/components/arcane-table/cells/backup-destination-cell.svelte';
 	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
 	import BackupStatusCell from '#lib/components/arcane-table/cells/backup-status-cell.svelte';
@@ -16,6 +17,7 @@
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import ProjectVolumeChecklist from '#lib/components/project-volume-checklist.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -43,7 +45,7 @@
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { S3Destination, SystemBackupDestination } from '#lib/types/backup.js';
 	import type { Paginated } from '#lib/types/base.js';
-	import type { ProjectBackup, ProjectExportOptions, ProjectVolume } from '#lib/types/project.js';
+	import type { ProjectBackup, ProjectBackupVolume, ProjectExportOptions, ProjectVolume } from '#lib/types/project.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { activityToastOptions } from '#lib/utils/activity-toast.js';
@@ -104,12 +106,17 @@
 	let startRestored = $state(false);
 	let restoring = $state(false);
 
+	const backupSelectable = (volume: ProjectVolume) => volume.included;
 	const selectedVolumes = $derived(
-		(options?.volumes ?? []).filter((volume) => volume.included && (checkedOverrides[volume.key] ?? true))
+		(options?.volumes ?? []).filter((volume) => backupSelectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
 	);
 	const needsS3Destination = $derived(destination !== 'local');
 	const restoreVolumes = $derived((restoreItem?.volumes ?? []).filter((volume) => volume.included));
-	const selectedRestoreVolumes = $derived(restoreVolumes.filter((volume) => restoreOverrides[volume.key] ?? true));
+	// A project restored as new keeps an external volume's name, so the volume is restored only when chosen.
+	const restoreByDefault = (volume: ProjectBackupVolume) => !restoreAsNewOpen || volume.kind !== 'external';
+	const selectedRestoreVolumes = $derived(
+		restoreVolumes.filter((volume) => restoreOverrides[volume.key] ?? restoreByDefault(volume))
+	);
 
 	const queryClient = useQueryClient();
 	const backupsQuery = createQuery(() => ({
@@ -306,36 +313,28 @@
 		});
 	}
 
-	function volumeNote(volume: ProjectVolume): string | null {
-		if (volume.backupStore) return m.backup_store_not_backed_up();
-		if (volume.missing) return m.not_created_yet_nothing_to_back_up();
-		if (volume.kind === 'driverOpts') return m.driver_options_not_backed_up();
-		if (volume.kind === 'external' && !volume.included) return m.external_volume_not_backed_up();
-		if (volume.inUse) return m.volume_in_use_elsewhere();
-		return null;
-	}
-
 	function includedVolumes(backup: ProjectBackup): string {
 		const keys = backup.volumes.filter((volume) => volume.included).map((volume) => volume.key);
 		return keys.length ? keys.join(', ') : m.files_only();
 	}
 
+	// Project backups are listed newest first only, so their columns don't sort.
 	const columns = [
 		{ accessorKey: 'createdAt', title: m.common_created(), cell: CreatedCell },
-		{ accessorKey: 'status', title: m.common_status(), cell: StatusCell },
-		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), cell: TriggerCell },
+		...backupRunColumns<ProjectBackup>({
+			status: StatusCell,
+			trigger: TriggerCell,
+			destination: DestinationCell,
+			size: SizeCell
+		}).map((column) => ({ ...column, sortable: false })),
 		{ accessorKey: 'volumes', title: m.resource_volumes_cap(), cell: VolumesCell },
-		{ accessorKey: 'destination', title: m.backups_destination_label(), cell: DestinationCell },
-		{ accessorKey: 'size', title: m.common_size(), cell: SizeCell },
 		{ accessorKey: 'error', title: m.common_error(), cell: ErrorCell, hidden: true }
 	] satisfies ColumnSpec<ProjectBackup>[];
 
+	// Project backups have no management type.
 	const mobileFields = [
-		{ id: 'status', label: m.common_status(), defaultVisible: true },
-		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
-		{ id: 'volumes', label: m.resource_volumes_cap(), defaultVisible: true },
-		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
-		{ id: 'size', label: m.common_size(), defaultVisible: true }
+		...backupRunMobileFields().filter((field) => field.id !== 'type'),
+		{ id: 'volumes', label: m.resource_volumes_cap(), defaultVisible: true }
 	];
 </script>
 
@@ -414,13 +413,16 @@
 					<Checkbox
 						id={`project-restore-volume-${volume.key}`}
 						class="mt-0.5"
-						checked={restoreOverrides[volume.key] ?? true}
+						checked={restoreOverrides[volume.key] ?? restoreByDefault(volume)}
 						disabled={restoring}
 						onCheckedChange={(checked) => (restoreOverrides = { ...restoreOverrides, [volume.key]: checked === true })}
 					/>
 					<div class="grid min-w-0 gap-1">
 						<Label for={`project-restore-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
 						<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
+						{#if filesRequired && volume.kind === 'external'}
+							<span class="text-xs text-muted-foreground">{m.external_volume_keeps_its_name()}</span>
+						{/if}
 					</div>
 				</li>
 			{/each}
@@ -568,27 +570,19 @@
 			{:else}
 				<div class="min-w-0 space-y-2">
 					<p class="text-sm font-medium">{m.include_volume_data()}</p>
-					<ul class="space-y-2">
-						{#each options.volumes as volume (volume.key)}
-							{@const note = volumeNote(volume)}
-							<li class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
-								<Checkbox
-									id={`project-backup-volume-${volume.key}`}
-									class="mt-0.5"
-									checked={volume.included && (checkedOverrides[volume.key] ?? true)}
-									disabled={!volume.included || creating}
-									onCheckedChange={(checked) => (checkedOverrides = { ...checkedOverrides, [volume.key]: checked === true })}
-								/>
-								<div class="grid min-w-0 gap-1">
-									<Label for={`project-backup-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
-									<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
-									{#if note}
-										<span class={['text-xs', volume.inUse ? 'text-warning' : 'text-muted-foreground']}>{note}</span>
-									{/if}
-								</div>
-							</li>
-						{/each}
-					</ul>
+					<ProjectVolumeChecklist
+						volumes={options.volumes}
+						bind:overrides={checkedOverrides}
+						selectable={backupSelectable}
+						notes={{
+							backupStore: m.backup_store_not_backed_up(),
+							missing: m.not_created_yet_nothing_to_back_up(),
+							driverOpts: m.driver_options_not_backed_up(),
+							external: m.external_volume_not_backed_up()
+						}}
+						idPrefix="project-backup-volume"
+						disabled={creating}
+					/>
 				</div>
 			{/if}
 			<LabeledSwitch
