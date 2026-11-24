@@ -48,12 +48,21 @@ allowBuilds:
   sharp: true
 
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
-  vite-plus: 1.7.0
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8001
+  vite-plus: 1.8.0
 
 peerDependencyRules:
-  allowAny:
-    - vite
   allowedVersions:
-    vite: '*'
     'formsnap@2.0.1>sveltekit-superforms': ^3.0.0
+
+minimumReleaseAgeExclude:
+  - '@voidzero-dev/vite-plus-core@8.3.8001'
+  - '@voidzero-dev/vite-plus-darwin-arm64@1.8.0'
+  - '@voidzero-dev/vite-plus-darwin-x64@1.8.0'
+  - '@voidzero-dev/vite-plus-linux-arm64-gnu@1.8.0'
+  - '@voidzero-dev/vite-plus-linux-arm64-musl@1.8.0'
+  - '@voidzero-dev/vite-plus-linux-x64-gnu@1.8.0'
+  - '@voidzero-dev/vite-plus-linux-x64-musl@1.8.0'
+  - '@voidzero-dev/vite-plus-win32-arm64-msvc@1.8.0'
+  - '@voidzero-dev/vite-plus-win32-x64-msvc@1.8.0'
+  - vite-plus@1.8.0

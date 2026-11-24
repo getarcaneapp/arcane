@@ -1,23 +1,43 @@
-import { z } from 'zod/v4';
-
 import { m } from '#lib/paraglide/messages.js';
 import { getLocale } from '#lib/paraglide/runtime.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
 
-const passwordPolicySchema = z.object({
-	minLength: z.number(),
-	requireUppercase: z.boolean(),
-	requireLowercase: z.boolean(),
-	requireNumber: z.boolean(),
-	requireSymbol: z.boolean()
-});
+export interface PasswordPolicy {
+	minLength: number;
+	requireUppercase: boolean;
+	requireLowercase: boolean;
+	requireNumber: boolean;
+	requireSymbol: boolean;
+}
 
-export const passwordPolicyProblemSchema = z.object({
-	type: z.literal('urn:arcane:problem:password-policy'),
-	details: z.object({ policy: passwordPolicySchema })
-});
+export function parsePasswordPolicyProblem(data: unknown): PasswordPolicy | null {
+	if (!data || typeof data !== 'object') return null;
+	const record = data as Record<string, unknown>;
+	if (record['type'] !== 'urn:arcane:problem:password-policy') return null;
+	const details = record['details'];
+	if (!details || typeof details !== 'object') return null;
+	const policy = (details as Record<string, unknown>)['policy'];
+	if (!policy || typeof policy !== 'object') return null;
+	const candidate = policy as Record<string, unknown>;
+	if (
+		typeof candidate['minLength'] !== 'number' ||
+		typeof candidate['requireUppercase'] !== 'boolean' ||
+		typeof candidate['requireLowercase'] !== 'boolean' ||
+		typeof candidate['requireNumber'] !== 'boolean' ||
+		typeof candidate['requireSymbol'] !== 'boolean'
+	) {
+		return null;
+	}
+	return {
+		minLength: candidate['minLength'],
+		requireUppercase: candidate['requireUppercase'],
+		requireLowercase: candidate['requireLowercase'],
+		requireNumber: candidate['requireNumber'],
+		requireSymbol: candidate['requireSymbol']
+	};
+}
 
-export function passwordRequirements(policy?: z.infer<typeof passwordPolicySchema>): string {
+export function passwordRequirements(policy?: PasswordPolicy): string {
 	const settings = settingsStore.current;
 	const length = policy?.minLength ?? settings?.authPasswordMinLength ?? 12;
 	const rules = [

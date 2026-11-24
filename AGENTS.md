@@ -53,7 +53,7 @@ Arcane is a container management platform primarily supporting Docker and Podman
 - Keep comments short. If the structure needs a paragraph, simplify the code.
 - No nested or chained ternaries; use `if`/`else` or `switch`.
 - Always use keyed struct and composite literals: one keyed literal per value, never unkeyed positional struct literals or post-construction field assignments. Put `//exhaustruct:enforce` on full-mapping, DTO, cloning, and record struct literals so `exhaustruct_v5` catches missed fields when structs change.
-- Follow the canonical import aliases in `.golangci.yml` (`docker`, `kit`, `dockerInternal`, `charmLog`, `composeTypes`); otherwise use default import names with no redundant aliases, and alias only to fix a real conflict.
+- Follow the canonical import aliases in `.golangci.yml` (`docker`, `kit`, `dockerInternal`, `registryInternal`, `charmLog`, `composeTypes`); otherwise use default import names with no redundant aliases, and alias only to fix a real conflict.
 - Use `encoding/json/v2` (not v1), stdlib `uuid` (not `github.com/google/uuid`), `github.com/containerd/errdefs` (not `github.com/docker/docker/errdefs`), and `go.yaml.in/yaml/v4` (not `gopkg.in/yaml.v3`).
 - Use `cmp.Or` for defaults instead of `if x == ""`, and `kit.FromPtr` or `new(v)` instead of `p != nil && *p` chains. Do not add nil-to-empty guards for slices or maps (json v2 encodes them as `[]` and `{}`).
 - Do not nil-check injected dependencies (tests pass fakes), do not use `Internal` suffixes, and do not write duplicate or forwarding wrappers or one-line helpers.

@@ -114,7 +114,7 @@ var (
 			apns.NewApnsService,
 			notification.NewNotificationService,
 			fx.Annotate(provideWithWorkflows(vulnerability.NewVulnerabilityService), fx.As(fx.Self()), fx.As(new(updater.VulnerabilityScanner))),
-			provideWithWorkflows(imageupdate.NewImageUpdateService),
+			provideImageUpdateService,
 			provideWithWorkflows(image.NewImageService),
 			build.NewBuildService,
 			project.NewLifecycleService,
@@ -212,6 +212,7 @@ var (
 				return registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
 					DB:              db,
 					DockerClient:    func(ctx context.Context) (registry.RegistryDaemonClient, error) { return localDocker.GetClient(ctx) },
+					Engine:          localDocker.Engine,
 					KVService:       kvService,
 					SettingsService: settingsService,
 				})

@@ -12,7 +12,6 @@ import (
 
 	"getarcane.dev/cli/v3/internal/cmdutil"
 	"getarcane.dev/cli/v3/internal/output"
-	"getarcane.dev/cli/v3/internal/runtime"
 	clitypes "getarcane.dev/cli/v3/internal/types"
 	"getarcane.dev/types/v3"
 )
@@ -68,31 +67,32 @@ func newRunCmd() *cobra.Command {
 			}
 
 			// Updater run can take a long time as it pulls images and restarts containers
-			c.SetTimeout(30 * time.Minute)
-
-			result, err := c.PostJSON[types.UpdaterResult](cmd.Context(), clitypes.UpdaterRun(c.EnvID()), nil)
-			if err != nil {
-				return fmt.Errorf("failed to run updater: %w", err)
-			}
-
-			if app, ok := runtime.From(cmd.Context()); ok && app.AllConfirmed && result.Data.Failed > 0 {
-				return fmt.Errorf("updater failed for %d resources", result.Data.Failed)
-			}
-
-			if cmdutil.JSONOutputEnabled(cmd) {
-				return cmdutil.PrintJSON(result.Data)
-			}
-
-			output.Header("Updater Results")
-			output.KeyValue("Checked", strconv.Itoa(result.Data.Checked))
-			output.KeyValue("Updated", strconv.Itoa(result.Data.Updated))
-			output.KeyValue("Skipped", strconv.Itoa(result.Data.Skipped))
-			output.KeyValue("Failed", strconv.Itoa(result.Data.Failed))
-			output.KeyValue("Duration", result.Data.Duration)
-			return nil
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpdaterResult]{
+				Method:         http.MethodPost,
+				Path:           clitypes.UpdaterRun(c.EnvID()),
+				FailureMessage: "failed to run updater",
+				Timeout:        30 * time.Minute,
+				Render: func(data types.UpdaterResult) error {
+					output.Header("Updater Results")
+					output.KeyValue("Checked", strconv.Itoa(data.Checked))
+					output.KeyValue("Updated", strconv.Itoa(data.Updated))
+					output.KeyValue("Skipped", strconv.Itoa(data.Skipped))
+					output.KeyValue("Failed", strconv.Itoa(data.Failed))
+					if data.Duration != "" {
+						output.KeyValue("Duration", data.Duration)
+					}
+					return nil
+				},
+				Check: func(data types.UpdaterResult) error {
+					if data.Failed > 0 {
+						return fmt.Errorf("updater failed for %d resources", data.Failed)
+					}
+					return nil
+				},
+			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMergedAction, cmd)
 	return cmd
 }
 

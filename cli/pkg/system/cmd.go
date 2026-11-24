@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -61,6 +62,10 @@ func newPruneCmd() *cobra.Command {
 					Networks:   &types.PruneNetworksOptions{Mode: types.PruneNetworkModeUnused},
 				},
 				Render: func(data types.PruneAllResult) error {
+					if app, ok := runtime.From(cmd.Context()); ok && app.AllConfirmed {
+						output.Success("System prune started")
+						return nil
+					}
 					output.Header("System Prune Results")
 					output.KeyValue("Space Reclaimed", output.UnsignedBytes(data.SpaceReclaimed))
 					return nil
@@ -68,7 +73,7 @@ func newPruneCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
+	cmdutil.SetScope(cmdutil.ScopeMergedAction, cmd)
 	return cmd
 }
 
@@ -331,9 +336,19 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 	if confirmationErr != nil || !confirmed {
 		return confirmationErr
 	}
+	environments, err := app.Environments(cmd.Context())
+	if err != nil {
+		return err
+	}
+	environmentIDs := make([]string, 0, len(environments))
+	for _, environment := range environments {
+		if environment.Enabled {
+			environmentIDs = append(environmentIDs, environment.ID)
+		}
+	}
 	return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpgradeJob]{
 		Method:         http.MethodPost,
-		Path:           clitypes.SystemUpgradeJobs(c.EnvID()),
+		Path:           clitypes.SystemUpgradeJobs(strings.Join(environmentIDs, ",")),
 		FailureMessage: "failed to start upgrade job",
 		Render: func(data types.UpgradeJob) error {
 			output.Success("Upgrade job started")

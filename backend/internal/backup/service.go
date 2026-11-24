@@ -133,6 +133,13 @@ type (
 		} `json:"summary"`
 	}
 
+	DiscoveredRecords[T any] struct {
+		ID       func(entry T) string
+		Existing func(ctx context.Context, ids []string) ([]T, error)
+		Create   func(ctx context.Context, entry T) error
+		Entries  []T
+	}
+
 	RecoveryKeyStore struct {
 		db *database.DB
 	}
@@ -225,6 +232,7 @@ var (
 	RecoveryKeyFormat           = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
+	ErrRepositoryMissing       = errors.New("the backup repository does not exist")
 )
 
 func RootSnapshotInput(source mount.Mount, tags ...string) CreateSnapshotInput {
@@ -448,6 +456,45 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
+func (s DiscoveredSnapshot) LocalRunID() string {
+	for _, tag := range s.Tags {
+		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok && runID != "" {
+			return runID
+		}
+	}
+	return "local-" + s.ID
+}
+
+func RecordDiscovered[T any](ctx context.Context, records DiscoveredRecords[T]) (int, error) {
+	if len(records.Entries) == 0 {
+		return 0, nil
+	}
+	ids := make([]string, len(records.Entries))
+	for index, entry := range records.Entries {
+		ids[index] = records.ID(entry)
+	}
+	existing, err := records.Existing(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	recorded := make(map[string]bool, len(existing))
+	for _, entry := range existing {
+		recorded[records.ID(entry)] = true
+	}
+	created := 0
+	for _, entry := range records.Entries {
+		if recorded[records.ID(entry)] {
+			continue
+		}
+		if createErr := records.Create(ctx, entry); createErr != nil {
+			return created, fmt.Errorf("failed to save discovered backup: %w", createErr)
+		}
+		recorded[records.ID(entry)] = true
+		created++
+	}
+	return created, nil
+}
+
 func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, error) {
 	if !fullSnapshotID(snapshotID) {
 		return Snapshot{}, errors.New("a full snapshot ID is required")
@@ -490,6 +537,9 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 
 func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string) ([]DiscoveredSnapshot, error) {
 	output, err := e.run(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
+	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+		return nil, fmt.Errorf("%w: %w", ErrRepositoryMissing, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -631,7 +681,7 @@ func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *cli
 
 func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *client.Client, repository Repository, newPassword string, currentPasswords ...string) (string, error) {
 	_, err := e.ListSnapshots(ctx, dockerClient, repository, newPassword)
-	if err == nil || strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+	if err == nil || errors.Is(err, ErrRepositoryMissing) {
 		return "", nil
 	}
 	for _, candidate := range currentPasswords {

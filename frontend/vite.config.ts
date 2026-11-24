@@ -71,12 +71,38 @@ export default defineConfig(({ command }) => ({
 						{
 							name: 'payload',
 							test: (id: string) => id.includes('@sveltejs/kit/src/runtime/client/payload.js'),
-							priority: 1
+							priority: 2
 						},
 						{
 							name: 'preload',
 							test: (id: string) => id.includes('vite/preload-helper'),
+							priority: 2
+						},
+						{
+							name: 'framework',
+							test: /[\\/]node_modules[\\/](?:svelte|devalue|@tanstack[\\/](?:query-core|svelte-query))[\\/]/,
 							priority: 1
+						},
+						{
+							name: 'ui',
+							test: /[\\/]node_modules[\\/](?:bits-ui|tailwind-variants|tailwind-merge|svelte-sonner|runed|svelte-toolbelt|@floating-ui|tabbable|mode-watcher|clsx)[\\/]/,
+							priority: 1,
+							entriesAware: true,
+							entriesAwareMergeThreshold: 100000
+						},
+						{
+							name: 'messages',
+							test: (id: string) => id.includes('virtual:paraglide/'),
+							priority: 1,
+							entriesAware: true,
+							entriesAwareMergeThreshold: 50000
+						},
+						{
+							name: 'icons',
+							test: (id: string) => id.includes('~icons/'),
+							priority: 1,
+							entriesAware: true,
+							entriesAwareMergeThreshold: 50000
 						},
 						{
 							name: 'root',

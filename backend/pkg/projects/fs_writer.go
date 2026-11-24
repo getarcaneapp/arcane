@@ -74,7 +74,7 @@ func WriteComposeFile(ctx context.Context, write ComposeFileWrite) error {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	composeFileName := DefaultComposeFileName
+	composeFileName := cmp.Or(write.FileName, DefaultComposeFileName)
 	if existingFile, err := DetectComposeFile(ctx, cmp.Or(write.GlobalEnvDirectory, write.ProjectsRoot), dirPath); err == nil && existingFile != "" {
 		composeFileName = filepath.Base(existingFile)
 	}

@@ -39,6 +39,16 @@
 	const titles = $derived(rawTitles ?? []);
 	const processes = $derived(rawProcesses ?? []);
 	const pidIndex = $derived(titles.findIndex((title) => title.toUpperCase() === 'PID'));
+	const processKeys = $derived(
+		withOccurrenceKeys(
+			processes.map((cells) => {
+				if (pidIndex >= 0) {
+					return cells[pidIndex] ?? '';
+				}
+				return JSON.stringify(cells);
+			})
+		)
+	);
 </script>
 
 <Card.Root>
@@ -83,7 +93,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each processes as cells (pidIndex >= 0 ? cells[pidIndex] : cells)}
+					{#each processes as cells, index (processKeys[index]?.key ?? index)}
 						<Table.Row>
 							{#each withOccurrenceKeys(cells) as cell (cell.key)}
 								<Table.Cell><MonoCell value={cell.value} /></Table.Cell>

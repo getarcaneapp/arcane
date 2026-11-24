@@ -54,3 +54,19 @@ export function environmentSettingsAcrossQuery(queryClient: QueryClient, environ
 		}
 	});
 }
+
+/**
+ * Refetches the cached settings of one environment, including multi-environment views that contain it.
+ * Settings pages build their form from the cache when they open, so marking it stale is not enough.
+ */
+export function refetchEnvironmentSettings(queryClient: QueryClient, environmentId: string) {
+	return queryClient.invalidateQueries({
+		queryKey: queryKeys.environments.settingsAll,
+		refetchType: 'all',
+		predicate: ({ queryKey }) => {
+			const [, scope, view] = queryKey;
+			if (view === 'across') return String(scope).split(',').includes(environmentId);
+			return scope === environmentId;
+		}
+	});
+}

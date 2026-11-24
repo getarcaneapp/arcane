@@ -1261,6 +1261,45 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 	}
 }
 
+func TestContainerServiceGetContainerProcessesPodmanFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case dockerTestPath(r.URL.Path) == "/containers/container-1/top":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"message":"executing ps(1) in container: crun: executable file 'ps' not found in $PATH"}`)
+		case r.URL.Path == "/v4.0.0/libpod/version":
+			_, _ = io.WriteString(w, `{"Version":"6.2.0"}`)
+		case r.URL.Path == "/v4.0.0/libpod/info":
+			_, _ = io.WriteString(w, `{"host":{"security":{"rootless":true}}}`)
+		case r.URL.Path == "/v4.0.0/libpod/containers/container-1/top":
+			if r.Method != http.MethodGet || r.URL.Query().Get("stream") != "false" || r.URL.Query().Has("ps_args") {
+				t.Errorf("unexpected Podman top request: %s %s", r.Method, r.URL)
+			}
+			_, _ = io.WriteString(w, `{"Titles":["USER","PID","COMMAND"],"Processes":[["1000","1","/app/server"]]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	svc := NewContainerService(ContainerServiceParams{
+		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
+		PodmanService: podman.NewService(podman.Config{
+			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
+				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
+			},
+			Host:       func() string { return server.URL },
+			NewSystemd: func(bool) libpodman.Systemd { return &quadletTestSystemd{} },
+		}),
+	})
+
+	processes, err := svc.GetContainerProcesses(t.Context(), "container-1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"USER", "PID", "COMMAND"}, processes.Titles)
+	require.Equal(t, [][]string{{"1000", "1", "/app/server"}}, processes.Processes)
+}
+
 func newResourceStatsServer() *resourceStatsServer {
 	return &resourceStatsServer{
 		stats:       map[string]container.StatsResponse{},
