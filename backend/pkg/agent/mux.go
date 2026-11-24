@@ -26,8 +26,11 @@ const (
 	TunnelCapabilityForwardedGlobalAdmin = "forwarded-global-admin-v1"
 	// TunnelCapabilityProjectTransfer marks agents that export and import projects with their volumes as one bundle.
 	TunnelCapabilityProjectTransfer = "project-transfer-v2"
-	tunnelCapabilityMuxWindowPrefix = "mux-window-mib:"
-	tunnelCapabilityReadinessLease  = "readiness-lease-v1"
+	// tunnelCapabilityProjectTransferV1 keeps older managers transferring through the project and volume endpoints
+	// that agents still serve.
+	tunnelCapabilityProjectTransferV1 = "project-transfer-v1"
+	tunnelCapabilityMuxWindowPrefix   = "mux-window-mib:"
+	tunnelCapabilityReadinessLease    = "readiness-lease-v1"
 
 	MuxAgentBaseURL   = "http://agent.tunnel.arcane.internal"
 	muxManagerBaseURL = "http://manager.tunnel.arcane.internal"
@@ -79,7 +82,7 @@ func muxStreamWindowMiB(capabilities []string, fallback int) int {
 	return fallback
 }
 
-func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Client {
+func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error), responseHeaderTimeout time.Duration) *http.Client {
 	return httpx.NewHTTPClient(httpx.ClientConfig{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			dialCtx, cancel := context.WithTimeout(ctx, muxDialTimeout)
@@ -88,7 +91,7 @@ func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Cl
 		},
 		// Stays below the agent server's IdleTimeout so a pooled stream is never reused as the server closes it.
 		IdleConnTimeout:       90 * time.Second,
-		ResponseHeaderTimeout: ProxyResponseHeaderTimeout,
+		ResponseHeaderTimeout: responseHeaderTimeout,
 		MaxIdleConnsPerHost:   8,
 		ReadBufferSize:        64 << 10,
 		WriteBufferSize:       64 << 10,

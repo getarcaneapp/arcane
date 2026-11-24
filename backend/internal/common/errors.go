@@ -94,6 +94,7 @@ var (
 	ErrProjectNotFound                         = Classify(ErrNotFound, errors.New("Project not found"))
 	ErrContainerRegistryNotFound               = Classify(ErrNotFound, errors.New("Container registry not found"))
 	ErrProjectArchived                         = Classify(ErrConflict, errors.New("project is archived and must be unarchived before this action"))
+	ErrProjectLocked                           = Classify(ErrConflict, errors.New("another operation on this project is still running"))
 	ErrProjectMustBeStopped                    = Classify(ErrConflict, errors.New("project must be stopped before archiving"))
 	ErrProjectWorkspaceConflict                = Classify(ErrConflict, errors.New("Project workspace changed; refresh it and try again"))
 	ErrProjectWorkspaceForbidden               = Classify(ErrForbidden, errors.New("Forbidden project workspace path"))

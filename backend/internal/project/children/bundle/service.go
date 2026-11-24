@@ -105,7 +105,7 @@ type (
 	exportState struct {
 		docker     map[string]types.Volume
 		volumes    []types.ProjectVolume
-		services   []string
+		containers []container.Summary
 		active     bool
 		runsArcane bool
 	}
@@ -209,7 +209,7 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 	return exportState{
 		docker:     inspected,
 		volumes:    resolved,
-		services:   projects.ContainerServices(activeContainers),
+		containers: activeContainers,
 		active:     len(activeContainers) > 0,
 		runsArcane: slices.ContainsFunc(running, arcaneOfProject),
 	}, nil
@@ -306,7 +306,9 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 }
 
 // capture reads the project's files and its selected volumes into the bundle as one point in time: the project stops
-// once when asked, and its volumes stay locked, so no volume backup or restore starts a writer during the read.
+// once when asked, and its volumes stay locked, so no volume backup or restore starts a writer during the read. A bundle
+// called consistent is refused when any other container, such as one a volume backup of another volume restarted,
+// writes to its volumes before or after the copy.
 func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, manifest types.ProjectManifest, state exportState) error {
 	archives := map[string]string{}
 	var names []string
@@ -325,6 +327,7 @@ func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, 
 	plan := backup.CapturePlan{
 		Inspect:  s.deps.Volume,
 		Stop:     nil,
+		Verify:   nil,
 		Rejected: nil,
 		Mounts:   make([]mount.Mount, 0, len(names)),
 		Volumes:  names,
@@ -334,13 +337,26 @@ func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, 
 	}
 	if state.active && opts.Request.StopProject {
 		plan.Stop = func(ctx context.Context) (func(context.Context) error, error) {
+			services := projects.ContainerServices(state.containers)
 			start := func(ctx context.Context) error {
-				return s.deps.StartProject(ctx, opts.ProjectID, state.services, opts.User)
+				return s.deps.StartProject(ctx, opts.ProjectID, services, opts.User)
 			}
-			if stopErr := s.deps.StopProject(ctx, opts.ProjectID, state.services, opts.User); stopErr != nil {
+			if stopErr := (backup.ProjectStop{
+				Docker:    s.deps.Docker,
+				Stop:      s.deps.StopProject,
+				User:      opts.User,
+				ProjectID: opts.ProjectID,
+				Compose:   manifest.Project.ComposeName,
+				Active:    state.containers,
+			}).Run(ctx); stopErr != nil {
 				return start, fmt.Errorf("stop project %s: %w", manifest.Project.Name, stopErr)
 			}
 			return start, nil
+		}
+	}
+	if manifest.Consistent {
+		plan.Verify = func(ctx context.Context) error {
+			return backup.CheckNoWriters(ctx, s.deps.Docker, names)
 		}
 	}
 	return backup.Capture(ctx, plan, func(ctx context.Context, mounts []mount.Mount) error {
@@ -476,6 +492,9 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 		return visitErr
 	}
 	steps := backup.RestoreSteps{
+		Docker:       s.deps.Docker,
+		DeleteVolume: s.deps.DeleteVolume,
+		User:         opts.User,
 		Write: func(context.Context, string) error {
 			_, _, readErr := projects.ReadProjectBundle(archive, visit)
 			if readErr != nil && !errors.Is(readErr, visitErr) {
@@ -483,8 +502,10 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 			}
 			return readErr
 		},
+		// RestoreVolumeUpload creates each volume as it restores it.
+		Written: func() []string { return restored },
 		Discard: func(ctx context.Context) (bool, []string) {
-			return s.discard(ctx, opts.User, projectID, opts.Request.Name, restored)
+			return s.discard(ctx, opts.User, projectID, opts.Request.Name)
 		},
 	}
 	if applyErr := steps.Apply(ctx, backup.RestoreState{Redeploy: new(false)}); applyErr != nil {
@@ -591,21 +612,11 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		return "", err
 	}
 	steps := backup.RestoreSteps{
-		Create: func(ctx context.Context, options client.VolumeCreateOptions) error {
-			_, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
-				return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
-			})
-			return createErr
-		},
-		Remove: func(ctx context.Context, names []string) error {
-			var removeErr error
-			for _, name := range names {
-				removeErr = errors.Join(removeErr, s.deps.DeleteVolume(ctx, name, opts.User))
-			}
-			return removeErr
-		},
+		Docker:       s.deps.Docker,
+		DeleteVolume: s.deps.DeleteVolume,
+		User:         opts.User,
 		Discard: func(ctx context.Context) (bool, []string) {
-			return s.discard(ctx, opts.User, projectID, request.Name, nil)
+			return s.discard(ctx, opts.User, projectID, request.Name)
 		},
 	}
 	state := backup.RestoreState{Redeploy: new(false)}
@@ -769,23 +780,17 @@ func (s *Service) restoreVolume(ctx context.Context, restore volumeRestore) erro
 	return nil
 }
 
-// discard removes a new project a failed import or restore created, and the volumes it restored into, naming what it
-// could not remove.
-func (s *Service) discard(ctx context.Context, user types.Actor, projectID, name string, volumeNames []string) (bool, []string) {
+// discard removes a new project a failed import or restore created, naming it when it could not; the restore steps
+// remove the volumes it created.
+func (s *Service) discard(ctx context.Context, user types.Actor, projectID, name string) (bool, []string) {
 	if projectID == "" {
 		return false, nil
 	}
-	var leftovers []string
 	if err := s.deps.RemoveProject(ctx, projectID, types.ProjectDestroyOptions{
 		RemoveFiles:    true,
 		KeepContainers: true,
 	}, user); err != nil {
-		leftovers = append(leftovers, fmt.Sprintf("project %s (%v)", name, err))
+		return true, []string{fmt.Sprintf("project %s (%v)", name, err)}
 	}
-	for _, volume := range volumeNames {
-		if err := s.deps.DeleteVolume(ctx, volume, user); err != nil {
-			leftovers = append(leftovers, fmt.Sprintf("volume %s (%v)", volume, err))
-		}
-	}
-	return true, leftovers
+	return true, nil
 }

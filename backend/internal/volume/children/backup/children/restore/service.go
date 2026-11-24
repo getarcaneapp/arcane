@@ -202,9 +202,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 		},
 		Safety: nil,
 		InUse:  nil,
-		Create: func(ctx context.Context, options client.VolumeCreateOptions) error {
-			return projects.CreateNewVolume(ctx, dockerClient, options)
-		},
+		Docker: s.deps.Docker,
 		Write: func(ctx context.Context, safety string) error {
 			if safety == "" {
 				return opts.Write(ctx)
@@ -220,17 +218,15 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			return s.restoreSnapshot(ctx, dockerClient, opts.VolumeName, source)
 		},
 		Verify: nil,
-		Remove: func(ctx context.Context, names []string) error {
-			var removeErr error
-			for _, name := range names {
-				removeErr = errors.Join(removeErr, s.deps.StopHelper(ctx, name))
-				if _, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{}); err != nil {
-					removeErr = errors.Join(removeErr, err)
-				}
+		DeleteVolume: func(ctx context.Context, name string, _ types.Actor) error {
+			if err := s.deps.StopHelper(ctx, name); err != nil {
+				return err
 			}
-			return removeErr
+			_, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
+			return err
 		},
 		Discard: nil,
+		User:    opts.User,
 	}
 	// Containers that use the volume are always started again, whether or not this restore stopped any.
 	state := backup.RestoreState{Redeploy: new(true), SafetyID: "", Create: nil, MayStop: true, Running: true}

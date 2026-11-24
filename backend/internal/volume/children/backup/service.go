@@ -889,43 +889,40 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	return reader, size, nil
 }
 
+// ExportVolumeArchive tars the volume as a project bundle archives each of its volumes and stores it as an upload.
 func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
 	unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if _, err = dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{}); errdefs.IsNotFound(err) {
+	if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
+	}); errdefs.IsNotFound(err) {
 		return nil, common.Classify(common.ErrNotFound, fmt.Errorf("volume %s not found", volumeName))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect volume for export: %w", err)
 	}
-	containerID, cleanup, err := s.createBackupTempContainerWithMount(ctx, mount.Mount{
-		Type:     mount.TypeVolume,
-		Source:   volumeName,
-		Target:   "/volume",
-		ReadOnly: true,
-	})
+	helperImage, err := s.deps.HelperImage(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"tar", "-czf", "/tmp/volume.tar.gz", "-C", "/volume", "."}); err != nil {
-		cleanup()
+	var session *types.UploadSession
+	err = backup.ArchiveOutput{
+		Add: func(ctx context.Context, _ mount.Mount, size int64, body io.Reader) error {
+			var ingestErr error
+			session, ingestErr = s.deps.Uploads.IngestSession(ctx, types.UploadKindVolumeBackup, volumeName+".tar.gz", size, body)
+			if ingestErr != nil {
+				return fmt.Errorf("failed to store volume archive: %w", ingestErr)
+			}
+			return nil
+		},
+		Image: helperImage,
+		Parts: []mount.Mount{backup.VolumePart(volumeName)},
+	}.Write(ctx, s.deps.Docker)
+	if err != nil {
 		return nil, fmt.Errorf("failed to package volume %s: %w", volumeName, err)
-	}
-	reader, size, err := volumes.DownloadFileFromContainer(ctx, dockerClient, containerID, "/tmp/volume.tar.gz", cleanup)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = reader.Close() }()
-	session, err := s.deps.Uploads.IngestSession(ctx, types.UploadKindVolumeBackup, volumeName+".tar.gz", size, reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store volume archive: %w", err)
 	}
 	return session, nil
 }
