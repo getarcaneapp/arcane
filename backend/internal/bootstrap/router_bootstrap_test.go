@@ -37,7 +37,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 		AppUrl:       "http://localhost:3552",
 		Environment:  config.AppEnvironmentTest,
 	}
-	router := newRouter(RouterParams{
+	router := newAgentRouter(AgentRouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -209,7 +209,7 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	}
 
 	cfg := &config.Config{AgentEnabled: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
-	router := newRouter(RouterParams{
+	router := newAgentRouter(AgentRouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{

@@ -12,6 +12,7 @@ import (
 	"go.uber.org/fx"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/apns"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/gitops"
@@ -58,6 +59,21 @@ type (
 		UploadSessionsCleanup *scheduler.UploadSessionsCleanupJob
 		GitCloneCleanup       *scheduler.GitCloneCleanupJob
 		BackupRepositoryPrune *scheduler.BackupRepositoryPruneJob
+	}
+
+	registerManagerJobsParams struct {
+		fx.In
+
+		Lifecycle fx.Lifecycle
+		AppCtx    context.Context
+		Config    *config.Config
+		Scheduler types.JobScheduler
+		Settings  *settings.SettingsService
+		Apns      *apns.ApnsService
+
+		ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
+		ApnsOutbox             *scheduler.ApnsOutboxJob
+		LdapSync               *scheduler.LdapSyncJob
 	}
 
 	dynamicJobsParams struct {
@@ -287,6 +303,32 @@ func registerJobs(params registerJobsParams) error {
 	}); err != nil {
 		return err
 	}
+	return nil
+}
+
+func registerManagerJobs(params registerManagerJobsParams) error {
+	for _, job := range []types.SchedulerJob{params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync} {
+		if err := params.Scheduler.RegisterJob(job); err != nil {
+			return err
+		}
+	}
+	unsubAPNs := params.Settings.SubscribeSettingsChanges([]string{"apnsEnabled"}, func(updates []types.SettingUpdate) {
+		params.Apns.ApplyEnabledUpdates(params.AppCtx, updates, func() error {
+			return params.Scheduler.AddJob(params.AppCtx, params.ApnsOutbox)
+		})
+	})
+	unsubLDAP := params.Settings.SubscribeSettingsChanges([]string{"ldapEnabled", "ldapSyncInterval"}, func(_ []types.SettingUpdate) {
+		if err := params.Scheduler.AddJob(params.AppCtx, params.LdapSync); err != nil {
+			slog.WarnContext(params.AppCtx, "Failed to reschedule job", "job", params.LdapSync.Name(), "error", err)
+		}
+	})
+	params.Lifecycle.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			unsubLDAP()
+			unsubAPNs()
+			return nil
+		},
+	})
 	return nil
 }
 

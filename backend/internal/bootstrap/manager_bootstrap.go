@@ -14,7 +14,6 @@ import (
 	"getarcane.dev/arcane/v3/api"
 	"getarcane.dev/arcane/v3/api/ws"
 	"getarcane.dev/arcane/v3/internal/apikey"
-	"getarcane.dev/arcane/v3/internal/apns"
 	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -22,7 +21,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/role"
-	"getarcane.dev/arcane/v3/internal/scheduler"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/pkg/agent"
@@ -60,21 +58,6 @@ type (
 		Role        *role.RoleService
 		User        *user.UserService
 		ApiKey      *apikey.ApiKeyService
-	}
-
-	registerManagerJobsParams struct {
-		fx.In
-
-		Lifecycle fx.Lifecycle
-		AppCtx    context.Context
-		Config    *config.Config
-		Scheduler types.JobScheduler
-		Settings  *settings.SettingsService
-		Apns      *apns.ApnsService
-
-		ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
-		ApnsOutbox             *scheduler.ApnsOutboxJob
-		LdapSync               *scheduler.LdapSyncJob
 	}
 )
 
@@ -149,18 +132,6 @@ func createAuthValidator(deps api.HandlerDeps, mgrDeps api.ManagerHandlerDeps) m
 }
 
 func newRouter(p RouterParams) *echo.Echo {
-	if p.Config.AgentEnabled {
-		return newAgentRouter(AgentRouterParams{
-			Context:        p.Context,
-			Lifecycle:      p.Lifecycle,
-			Config:         p.Config,
-			HandlerDeps:    p.HandlerDeps,
-			AuthMiddleware: p.AuthMiddleware,
-			TunnelRegistry: p.TunnelRegistry,
-			TunnelServer:   p.TunnelServer,
-		})
-	}
-
 	e, trustedProxyNets := newBaseRouter(p.Context, p.Config, p.HandlerDeps)
 
 	e.Use(echomiddleware.SecureWithConfig(echomiddleware.SecureConfig{
@@ -337,31 +308,5 @@ func initializeManagerStartupState(p initializeManagerStartupStateParams) error 
 	if err := p.Role.AssertGlobalAdminExists(p.AppCtx, p.DB.WithContext(p.AppCtx)); err != nil {
 		slog.ErrorContext(p.AppCtx, "RBAC global admin guard failed", "error", err)
 	}
-	return nil
-}
-
-func registerManagerJobs(params registerManagerJobsParams) error {
-	for _, job := range []types.SchedulerJob{params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync} {
-		if err := params.Scheduler.RegisterJob(job); err != nil {
-			return err
-		}
-	}
-	unsubAPNs := params.Settings.SubscribeSettingsChanges([]string{"apnsEnabled"}, func(updates []types.SettingUpdate) {
-		params.Apns.ApplyEnabledUpdates(params.AppCtx, updates, func() error {
-			return params.Scheduler.AddJob(params.AppCtx, params.ApnsOutbox)
-		})
-	})
-	unsubLDAP := params.Settings.SubscribeSettingsChanges([]string{"ldapEnabled", "ldapSyncInterval"}, func(_ []types.SettingUpdate) {
-		if err := params.Scheduler.AddJob(params.AppCtx, params.LdapSync); err != nil {
-			slog.WarnContext(params.AppCtx, "Failed to reschedule job", "job", params.LdapSync.Name(), "error", err)
-		}
-	})
-	params.Lifecycle.Append(fx.Hook{
-		OnStop: func(context.Context) error {
-			unsubLDAP()
-			unsubAPNs()
-			return nil
-		},
-	})
 	return nil
 }

@@ -226,12 +226,19 @@
 		if (!ws?.refresh()) error = m.disconnected();
 	}
 
+	const DIAGNOSTICS_PROFILING_CAPABILITY = 'diagnostics-profiling-v1';
+
 	let selectedProfileEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
 	const profileEnvironments = $derived(
 		environmentStore.available.filter((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID || isEnvironmentOnline(env))
 	);
 	const profileEnvId = $derived(
 		profileEnvironments.some((env) => env.id === selectedProfileEnvId) ? selectedProfileEnvId : LOCAL_DOCKER_ENVIRONMENT_ID
+	);
+	const selectedProfileEnv = $derived(profileEnvironments.find((env) => env.id === profileEnvId));
+	const selectedProfileEnvSupportsProfiling = $derived(
+		profileEnvId === LOCAL_DOCKER_ENVIRONMENT_ID ||
+			(selectedProfileEnv?.agentCapabilities?.includes(DIAGNOSTICS_PROFILING_CAPABILITY) ?? false)
 	);
 
 	let dumpEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
@@ -268,6 +275,7 @@
 	}
 
 	async function loadDump(name: 'goroutine' | 'heap') {
+		if (!selectedProfileEnvSupportsProfiling) return;
 		const envId = profileEnvId;
 		dumpControllers[name]?.abort();
 		const controller = new AbortController();
@@ -318,6 +326,7 @@
 	const canProfile = $derived(hasPermission('diagnostics:profile', GLOBAL_SCOPE));
 
 	async function download(p: PprofProfile) {
+		if (!selectedProfileEnvSupportsProfiling) return;
 		downloading = p;
 		error = null;
 		try {
@@ -580,56 +589,65 @@
 										/>
 									</div>
 								</div>
-								<div class="space-y-2">
-									{#each dumps as d (d.id)}
-										<Collapsible.Root
-											open={dumpEnvId === profileEnvId && dumpOpen[d.id]}
-											onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}
-										>
-											<Collapsible.Trigger>
-												{#snippet child({ props })}
-													<button
-														{...props}
-														type="button"
-														class="flex w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-muted/30"
-													>
-														{d.label}
-														<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[d.id] && '-rotate-180')} />
-													</button>
-												{/snippet}
-											</Collapsible.Trigger>
-											<Collapsible.Content>
-												<CodeBlock.Root size="sm" class="mt-1">
-													<CodeBlock.Content
-														code={dumpLoading[d.id] ? m.common_loading() : dumpText[d.id] || m.diagnostics_dump_empty()}
-														class="max-h-96"
-													/>
-												</CodeBlock.Root>
-											</Collapsible.Content>
-										</Collapsible.Root>
-									{/each}
-								</div>
+								{#if selectedProfileEnvSupportsProfiling}
+									<div class="space-y-2">
+										{#each dumps as d (d.id)}
+											<Collapsible.Root
+												open={dumpEnvId === profileEnvId && dumpOpen[d.id]}
+												onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}
+											>
+												<Collapsible.Trigger>
+													{#snippet child({ props })}
+														<button
+															{...props}
+															type="button"
+															class="flex w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-muted/30"
+														>
+															{d.label}
+															<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[d.id] && '-rotate-180')} />
+														</button>
+													{/snippet}
+												</Collapsible.Trigger>
+												<Collapsible.Content>
+													<CodeBlock.Root size="sm" class="mt-1">
+														<CodeBlock.Content
+															code={dumpLoading[d.id] ? m.common_loading() : dumpText[d.id] || m.diagnostics_dump_empty()}
+															class="max-h-96"
+														/>
+													</CodeBlock.Root>
+												</Collapsible.Content>
+											</Collapsible.Root>
+										{/each}
+									</div>
+								{:else}
+									<Alert.Root>
+										<AlertIcon class="size-4" />
+										<Alert.Description>{m.agent_profiling_upgrade_required()}</Alert.Description>
+									</Alert.Root>
+								{/if}
 							</section>
 
-							<section class="space-y-4 border-t border-border/50 pt-8">
-								{@render sectionHeading(m.diagnostics_section_profiles(), m.diagnostics_profiles_hint())}
-								<ul class="divide-y divide-border/40">
-									{#each profiles as p (p.id)}
-										<li class="flex items-center justify-between gap-4 py-2.5">
-											<span class="text-sm font-medium">{p.label}</span>
-											<ArcaneButton
-												action="base"
-												tone="outline"
-												icon={DownloadIcon}
-												customLabel={m.diagnostics_download()}
-												loading={downloading === p.id}
-												disabled={downloading !== null}
-												onclick={() => download(p.id)}
-											/>
-										</li>
-									{/each}
-								</ul>
-							</section>
+							{#if selectedProfileEnvSupportsProfiling}
+								<section class="space-y-4 border-t border-border/50 pt-8">
+									{@render sectionHeading(m.diagnostics_section_profiles(), m.diagnostics_profiles_hint())}
+									<ul class="divide-y divide-border/40">
+										{#each profiles as p (p.id)}
+											<li class="flex items-center justify-between gap-4 py-2.5">
+												<span class="text-sm font-medium">{p.label}</span>
+												<ArcaneButton
+													action="base"
+													tone="outline"
+													icon={DownloadIcon}
+													customLabel={m.diagnostics_download()}
+													loading={downloading === p.id}
+													disabled={downloading !== null}
+													onclick={() => download(p.id)}
+												/>
+											</li>
+										{/each}
+									</ul>
+								</section>
+							{/if}
 						{/if}
 					</div>
 				</Tabs.Content>
