@@ -206,8 +206,8 @@ var (
 			func(db *database.DB, cfg *config.Config, eventService *event.EventService, settingsService *settings.SettingsService) *gitrepo.GitRepositoryService {
 				return gitrepo.NewGitRepositoryService(db, cfg.GitWorkDir, eventService, settingsService)
 			},
-			func(db *database.DB, localEnvironment *environment.EnvironmentService) *s3domain.S3DestinationService {
-				return s3domain.NewS3DestinationService(db, localEnvironment.CheckS3DestinationReferences)
+			func(db *database.DB, settingsService *settings.SettingsService, localEnvironment *environment.EnvironmentService) *s3domain.S3DestinationService {
+				return s3domain.NewS3DestinationService(db, settingsService, localEnvironment.CheckS3DestinationReferences)
 			},
 			func(db *database.DB, localDocker *docker.DockerClientService, kvService *kv.KVService, settingsService *settings.SettingsService) *registry.ContainerRegistryService {
 				return registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
