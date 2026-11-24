@@ -40,6 +40,8 @@ type (
 
 const (
 	ArcaneTrashPrefix = ".arcane-trash-"
+	// RestoreScratchPrefix names the directory a restored project's files are staged in before the project is created.
+	RestoreScratchPrefix = ".project-restore-"
 )
 
 var (
@@ -257,7 +259,7 @@ func IsInternalScratchDirName(name string) bool {
 	if name == "" {
 		return false
 	}
-	if strings.HasPrefix(name, ".project-update-preview-") || strings.HasPrefix(name, ".project-update-backup-") {
+	if strings.HasPrefix(name, ".project-update-preview-") || strings.HasPrefix(name, ".project-update-backup-") || strings.HasPrefix(name, RestoreScratchPrefix) {
 		return true
 	}
 	if strings.HasPrefix(name, ArcaneTrashPrefix) {

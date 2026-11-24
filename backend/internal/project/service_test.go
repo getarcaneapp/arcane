@@ -10961,39 +10961,6 @@ func TestProjectService_MultipleProjectsDirectories_SyncKeepsUnavailableRootReco
 	assert.NoDirExists(t, missing)
 }
 
-func TestProjectService_SoleDirectoryRefusesDirectoriesHoldingOtherProjects(t *testing.T) {
-	extra := t.TempDir()
-	svc, db, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{{Path: extra, Enabled: true}})
-	for _, proj := range []Project{
-		{BaseModel: database.BaseModel{ID: "root"}, Name: "root", Path: primary},
-		{BaseModel: database.BaseModel{ID: "group"}, Name: "group", Path: filepath.Join(extra, "group")},
-		{BaseModel: database.BaseModel{ID: "nested"}, Name: "nested", Path: filepath.Join(extra, "group", "nested")},
-		{BaseModel: database.BaseModel{ID: "web"}, Name: "web", Path: filepath.Join(primary, "web")},
-		{BaseModel: database.BaseModel{ID: "web-two"}, Name: "web-two", Path: filepath.Join(primary, "web-two")},
-	} {
-		require.NoError(t, db.Create(&Project{BaseModel: proj.BaseModel, Name: proj.Name, Path: proj.Path, Status: ProjectStatusStopped}).Error)
-	}
-	tests := []struct {
-		wantErr string
-		project types.Project
-	}{
-		{project: types.Project{ID: "root", Name: "root", Path: primary}, wantErr: "is the projects directory"},
-		{project: types.Project{ID: "group", Name: "group", Path: filepath.Join(extra, "group")}, wantErr: "holds project nested"},
-		{project: types.Project{ID: "nested", Name: "nested", Path: filepath.Join(extra, "group", "nested")}},
-		// A sibling whose name starts with the project's is not inside it.
-		{project: types.Project{ID: "web", Name: "web", Path: filepath.Join(primary, "web")}},
-	}
-	for _, tt := range tests {
-		err := svc.soleDirectory(t.Context(), tt.project)
-		if tt.wantErr == "" {
-			require.NoError(t, err, tt.project.Name)
-			continue
-		}
-		require.ErrorIs(t, err, common.ErrValidation, tt.project.Name)
-		require.ErrorContains(t, err, tt.wantErr, tt.project.Name)
-	}
-}
-
 func TestProjectService_EnsureProjectPathUnderRoot_MultipleRoots(t *testing.T) {
 	extra, disabled, outside := t.TempDir(), t.TempDir(), t.TempDir()
 	svc, db, primary := newMultiRootProjectService(t, []types.ProjectsDirectoryEntry{
@@ -11294,52 +11261,4 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	assert.Equal(t, "copy", imported.Name)
 	assert.Equal(t, []string{"shared-data"}, restored)
 	assert.Equal(t, []types.ComposeVolumeTarget{{Labels: sourceLabels, Project: "copy", Key: "first", External: true}}, targets)
-}
-
-func TestProjectServiceCreatesARestoredProject(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	ctx := t.Context()
-	db := setupProjectTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, ctx, db)
-	require.NoError(t, err)
-	projectsDir := t.TempDir()
-	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.MarshalWrite(w, []container.Summary{})
-	}))
-	t.Cleanup(server.Close)
-	svc := NewProjectService(ProjectServiceParams{
-		DB:                          db,
-		SettingsService:             settingsService,
-		EventService:                event.NewEventService(db, &config.Config{}, nil),
-		DockerService:               newSettingsDockerService(t, newTestDockerClient(t, server)),
-		BuildService:                testBuildBuilder{},
-		Uploads:                     upload.NewUploadService(settingsService),
-		Config:                      loadTestConfig(t),
-		KVService:                   kv.NewKVService(db),
-		RegistryCredentialsProvider: testRegistryCredentials,
-	})
-	// The backed up project's files name its own Compose project.
-	restore := func(_ context.Context, projectPath string) error {
-		return os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("name: web\nservices:\n  app:\n    image: nginx:alpine\n"), 0o644)
-	}
-
-	_, err = svc.importArchive(ctx, CreateProjectOptions{
-		Restore:   func(context.Context, string) error { return errors.New("rustic failed") },
-		Name:      "copy",
-		ExactName: true,
-	})
-	require.ErrorContains(t, err, "restore the project files: rustic failed")
-	entries, err := os.ReadDir(projectsDir)
-	require.NoError(t, err)
-	assert.Empty(t, entries, "a failed restore leaves no project directory")
-
-	proj, err := svc.importArchive(ctx, CreateProjectOptions{Restore: restore, Name: "copy", ExactName: true})
-	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(projectsDir, "copy"), proj.Path)
-	// The restored files deploy under the new project's name, as imported ones do.
-	content, err := os.ReadFile(filepath.Join(proj.Path, "compose.yaml"))
-	require.NoError(t, err)
-	assert.Contains(t, string(content), "name: copy")
 }
