@@ -188,8 +188,29 @@ func (l *Lister) ListEnvironmentsPaginated(ctx context.Context, params paginatio
 
 func (l *Lister) ApplyRuntimeState(env types.Environment) types.Environment {
 	if env.ID == LocalEnvironmentID {
-		env.LocalDockerEnabled = new(l.config.LocalDockerEnabled)
-		return env
+		return types.Environment{ //exhaustruct:enforce
+			ID:                   env.ID,
+			Name:                 env.Name,
+			ApiUrl:               env.ApiUrl,
+			Status:               env.Status,
+			Enabled:              env.Enabled,
+			LastSeen:             env.LastSeen,
+			AgentTransport:       env.AgentTransport,
+			LastAgentTransport:   env.LastAgentTransport,
+			AgentSecurityMode:    env.AgentSecurityMode,
+			AgentSessionID:       env.AgentSessionID,
+			AgentInstance:        env.AgentInstance,
+			AgentCapabilities:    env.AgentCapabilities,
+			AgentRoundTripMs:     env.AgentRoundTripMs,
+			AgentOpenStreams:     env.AgentOpenStreams,
+			Connected:            env.Connected,
+			ConnectedAt:          env.ConnectedAt,
+			LastHeartbeat:        env.LastHeartbeat,
+			AgentMTLSCertificate: env.AgentMTLSCertificate,
+			AgentHost:            env.AgentHost,
+			AgentTunnelStats:     env.AgentTunnelStats,
+			LocalDockerEnabled:   new(l.config.LocalDockerEnabled),
+		}
 	}
 
 	runtimeState, connected := l.tunnels.RuntimeState(env.ID).Get()
