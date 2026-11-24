@@ -8843,7 +8843,7 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 			"# stays\r\n\r\r  plain:\r\n    image: app:1.2.0\r\n  qualified:\r\n    image: docker.io/library/app:1.2.0\r\n  " +
 			"omitted:\r\n    image: registry.example.com:5000/team/app",
 	)
-	expected := "\ufeff# operator configuration\r\n\r\nservices:\r\n  web:\r\n    image: \"app:1.3.0\"   # keep this comment\r\n    " +
+	expected := "\ufeff# operator configuration\r\n\r\nservices:\r\n  web:\r\n    image: \"app:${VERSION}\"   # keep this comment\r\n    " +
 		"environment:\r\n      VERSION: ${VERSION}\r\n\r\n  worker:\r\n    image: 'app:1.3.0'  \r\n  " +
 		"tagged:\r\n    image: !!str app:1.3.0\r\n  escaped:\r\n    image: \"app:1.3.0\"\r\n  untouched:\r\n    image: " +
 		"app:1.2.0 # stays\r\n\r\r  plain:\r\n    image: app:1.3.0\r\n  qualified:\r\n    image: docker.io/library/app:1.3.0\r\n  " +
@@ -8876,7 +8876,7 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 			},
 		},
 	}
-	updated, names, err := update.PrepareProjectServiceImages(source, effective, map[string]updatertypes.ServiceImageChange{
+	updated, names, envUpdates, err := update.PrepareProjectServiceImages(source, effective, map[string]updatertypes.ServiceImageChange{
 		"web":       {ExpectedRef: "docker.io/library/app:1.2.0", TargetRef: "app:1.3.0"},
 		"worker":    {ExpectedRef: "app:1.2.0", TargetRef: "docker.io/library/app:1.3.0"},
 		"tagged":    {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
@@ -8888,7 +8888,82 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"escaped", "omitted", "plain", "qualified", "tagged", "web", "worker"}, names)
 	require.Equal(t, expected, string(updated))
+	require.Equal(t, map[string]string{"VERSION": "1.3.0"}, envUpdates)
 	require.Equal(t, "app:1.2.0", effective.Services["web"].Image)
+}
+
+func TestPrepareProjectServiceImagesEnvBackedTag(t *testing.T) {
+	source := []byte(
+		"services:\n" +
+			"  server:\n    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION}\n" +
+			"  ml:\n    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION}\n" +
+			"  proxy:\n    image: ${PROXY_IMAGE}\n" +
+			"  partial:\n    image: app:v${REV}\n" +
+			"  repo-var:\n    image: ${REGISTRY}/app:1.2.0\n",
+	)
+	effective := &composeTypes.Project{
+		Services: composeTypes.Services{
+			"server":   {Image: "ghcr.io/immich-app/immich-server:v1.120.0"},
+			"ml":       {Image: "ghcr.io/immich-app/immich-machine-learning:v1.120.0"},
+			"proxy":    {Image: "traefik:3.1.0"},
+			"partial":  {Image: "app:v7"},
+			"repo-var": {Image: "registry.example.com/app:1.2.0"},
+		},
+	}
+	updated, names, envUpdates, err := update.PrepareProjectServiceImages(source, effective, map[string]updatertypes.ServiceImageChange{
+		"server":   {ExpectedRef: "ghcr.io/immich-app/immich-server:v1.120.0", TargetRef: "ghcr.io/immich-app/immich-server:v1.121.0"},
+		"proxy":    {ExpectedRef: "traefik:3.1.0", TargetRef: "traefik:3.2.0"},
+		"partial":  {ExpectedRef: "app:v7", TargetRef: "app:v8"},
+		"repo-var": {ExpectedRef: "registry.example.com/app:1.2.0", TargetRef: "registry.example.com/app:1.3.0"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"partial", "proxy", "repo-var", "server"}, names)
+	require.Equal(t, map[string]string{
+		"IMMICH_VERSION": "v1.121.0",
+		"PROXY_IMAGE":    "traefik:3.2.0",
+	}, envUpdates)
+	require.Equal(t,
+		"services:\n"+
+			"  server:\n    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION}\n"+
+			"  ml:\n    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION}\n"+
+			"  proxy:\n    image: ${PROXY_IMAGE}\n"+
+			"  partial:\n    image: app:v8\n"+
+			"  repo-var:\n    image: registry.example.com/app:1.3.0\n",
+		string(updated))
+}
+
+func TestPersistProjectEnvImageUpdates(t *testing.T) {
+	t.Run("rewrites in place and keeps comments", func(t *testing.T) {
+		directory := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(directory, ".env"), []byte("# stack\nIMMICH_VERSION=v1.120.0 # pinned\nOTHER=1\n"), 0o600))
+		require.NoError(t, update.PersistProjectEnvImageUpdates(t.Context(), directory, map[string]string{"IMMICH_VERSION": "v1.121.0"}))
+		content, err := os.ReadFile(filepath.Join(directory, ".env"))
+		require.NoError(t, err)
+		require.Contains(t, string(content), "IMMICH_VERSION=v1.121.0 # pinned")
+		require.Contains(t, string(content), "OTHER=1")
+	})
+	t.Run("appends a variable that is not defined yet", func(t *testing.T) {
+		directory := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(directory, ".env"), []byte("OTHER=1\n"), 0o600))
+		require.NoError(t, update.PersistProjectEnvImageUpdates(t.Context(), directory, map[string]string{"IMMICH_VERSION": "v1.121.0"}))
+		content, err := os.ReadFile(filepath.Join(directory, ".env"))
+		require.NoError(t, err)
+		require.Contains(t, string(content), "IMMICH_VERSION=v1.121.0")
+		require.Contains(t, string(content), "OTHER=1")
+	})
+	t.Run("creates a missing env file", func(t *testing.T) {
+		directory := t.TempDir()
+		require.NoError(t, update.PersistProjectEnvImageUpdates(t.Context(), directory, map[string]string{"IMMICH_VERSION": "v1.121.0"}))
+		content, err := os.ReadFile(filepath.Join(directory, ".env"))
+		require.NoError(t, err)
+		require.Contains(t, string(content), "IMMICH_VERSION=v1.121.0")
+	})
+	t.Run("does nothing without updates", func(t *testing.T) {
+		directory := t.TempDir()
+		require.NoError(t, update.PersistProjectEnvImageUpdates(t.Context(), directory, nil))
+		_, err := os.Stat(filepath.Join(directory, ".env"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
 }
 
 func TestPrepareProjectServiceImagesRejectsUnsupportedSource(t *testing.T) {
@@ -8905,7 +8980,7 @@ func TestPrepareProjectServiceImagesRejectsUnsupportedSource(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			effective := &composeTypes.Project{Services: composeTypes.Services{"web": {Image: "app:1.2.0"}}}
-			updated, _, err := update.PrepareProjectServiceImages([]byte(tt.source), effective, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: tt.expected, TargetRef: "app:1.3.0"}})
+			updated, _, _, err := update.PrepareProjectServiceImages([]byte(tt.source), effective, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: tt.expected, TargetRef: "app:1.3.0"}})
 			require.Error(t, err)
 			require.Nil(t, updated)
 		})

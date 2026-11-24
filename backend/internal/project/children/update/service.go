@@ -400,64 +400,160 @@ func validateImageUpdateSource(node *yaml.Node) error {
 	return nil
 }
 
-func PrepareProjectServiceImages(source []byte, effective *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]byte, []string, error) {
+func PrepareProjectServiceImages(source []byte, effective *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]byte, []string, map[string]string, error) {
 	var document yaml.Node
 	decoder := yaml.NewDecoder(bytes.NewReader(source))
 	if err := decoder.Decode(&document); err != nil {
-		return nil, nil, fmt.Errorf("parse Compose source: %w", err)
+		return nil, nil, nil, fmt.Errorf("parse Compose source: %w", err)
 	}
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, nil, errors.New("tag updates require a single YAML document")
+		return nil, nil, nil, errors.New("tag updates require a single YAML document")
 	}
 	if len(document.Content) != 1 {
-		return nil, nil, errors.New("Compose source must contain a mapping") //nolint:staticcheck // Preserve the existing error message.
+		return nil, nil, nil, errors.New("Compose source must contain a mapping") //nolint:staticcheck // Preserve the existing error message.
 	}
 	if err := validateImageUpdateSource(document.Content[0]); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if composeImageField(document.Content[0], "include") != nil {
-		return nil, nil, errors.New("tag updates do not rewrite Compose includes; update their source manually")
+		return nil, nil, nil, errors.New("tag updates do not rewrite Compose includes; update their source manually")
 	}
 	servicesNode := composeImageField(document.Content[0], "services")
 	if kit.FromPtr(servicesNode).Kind != yaml.MappingNode {
-		return nil, nil, errors.New("Compose source has no services mapping") //nolint:staticcheck // Preserve the existing error message.
+		return nil, nil, nil, errors.New("Compose source has no services mapping") //nolint:staticcheck // Preserve the existing error message.
 	}
 	serviceNames := make([]string, 0, len(changes))
 	// Rewrite image scalars in place; re-encoding the node tree drops blank lines and operator formatting.
 	edits := make([]projects.ScalarEdit, 0, len(changes))
+	var envUpdates map[string]string
 	for name, change := range changes {
 		service, ok := effective.Services[name]
 		if !ok {
-			return nil, nil, fmt.Errorf("service %s is not active in the Compose project", name)
+			return nil, nil, nil, fmt.Errorf("service %s is not active in the Compose project", name)
 		}
 		expected, target := refs.NormalizeImageUpdateRef(change.ExpectedRef), refs.NormalizeImageUpdateRef(change.TargetRef)
 		if expected == "" || target == "" || refs.IsImageIDLikeReference(change.ExpectedRef) || refs.IsImageIDLikeReference(change.TargetRef) {
-			return nil, nil, fmt.Errorf("service %s requires mutable image references", name)
+			return nil, nil, nil, fmt.Errorf("service %s requires mutable image references", name)
 		}
 		if refs.NormalizeImageUpdateRef(service.Image) != expected && refs.NormalizeImageUpdateRef(service.Image) != target {
-			return nil, nil, fmt.Errorf("service %s image changed since update check: expected %s, found %s", name, change.ExpectedRef, service.Image)
+			return nil, nil, nil, fmt.Errorf("service %s image changed since update check: expected %s, found %s", name, change.ExpectedRef, service.Image)
 		}
 		serviceNode := composeImageField(servicesNode, name)
 		if composeImageField(serviceNode, "extends") != nil {
-			return nil, nil, fmt.Errorf("tag updates do not rewrite extended service %s; update its source manually", name)
+			return nil, nil, nil, fmt.Errorf("tag updates do not rewrite extended service %s; update their source manually", name)
 		}
 		imageNode := composeImageField(serviceNode, "image")
 		if kit.FromPtr(imageNode).Kind != yaml.ScalarNode || imageNode.Tag != "!!str" {
-			return nil, nil, fmt.Errorf("service %s requires an explicit image scalar in the authoritative Compose file", name)
+			return nil, nil, nil, fmt.Errorf("service %s requires an explicit image scalar in the authoritative Compose file", name)
 		}
 		if !strings.Contains(imageNode.Value, "$") && refs.NormalizeImageUpdateRef(imageNode.Value) != expected && refs.NormalizeImageUpdateRef(imageNode.Value) != target {
-			return nil, nil, fmt.Errorf("service %s source image changed since Compose was loaded", name)
+			return nil, nil, nil, fmt.Errorf("service %s source image changed since Compose was loaded", name)
+		}
+		if envName, wholeImage, isVar := imageEnvVarRef(imageNode.Value); isVar {
+			value, envErr := imageEnvVarValue(service.Image, change.TargetRef, wholeImage)
+			if envErr != nil {
+				return nil, nil, nil, fmt.Errorf("service %s image: %w", name, envErr)
+			}
+			if envUpdates == nil {
+				envUpdates = make(map[string]string)
+			}
+			envUpdates[envName] = value
+			serviceNames = append(serviceNames, name)
+			continue
 		}
 		edit, err := projects.NewScalarEdit(source, imageNode, refs.PreserveConfiguredRef(service.Image, change.TargetRef))
 		if err != nil {
-			return nil, nil, fmt.Errorf("service %s image: %w", name, err)
+			return nil, nil, nil, fmt.Errorf("service %s image: %w", name, err)
 		}
 		edits = append(edits, edit)
 		serviceNames = append(serviceNames, name)
 	}
 	slices.Sort(serviceNames)
-	return projects.ApplyScalarEdits(source, edits), serviceNames, nil
+	return projects.ApplyScalarEdits(source, edits), serviceNames, envUpdates, nil
+}
+
+// imageEnvVarRef reports whether a Compose image scalar delegates the whole
+// reference or just its tag to a single environment variable, returning the
+// variable's name. Mixed forms like a literal tag with a variable repository
+// still route through the tag variable.
+func imageEnvVarRef(imageRef string) (name string, wholeImage bool, ok bool) {
+	trimmed := strings.TrimSpace(imageRef)
+	if trimmed == "" || strings.Contains(trimmed, "@") {
+		return "", false, false
+	}
+	if n, isVar := envVarRef(trimmed); isVar {
+		return n, true, true
+	}
+	slash, colon, depth := -1, -1, 0
+	for i := 0; i < len(trimmed); i++ {
+		switch c := trimmed[i]; {
+		case c == '{' && i > 0 && trimmed[i-1] == '$':
+			depth++
+		case c == '}' && depth > 0:
+			depth--
+		case depth == 0 && c == '/':
+			slash = i
+		case depth == 0 && c == ':':
+			colon = i
+		}
+	}
+	if colon <= slash {
+		return "", false, false
+	}
+	if n, isVar := envVarRef(trimmed[colon+1:]); isVar {
+		return n, false, true
+	}
+	return "", false, false
+}
+
+// envVarRef returns the name of a value that is a single Compose variable
+// reference: $NAME or ${NAME}, including the defaulted and required forms such
+// as ${NAME:-x}, ${NAME-x}, ${NAME:?x}, ${NAME?x}, ${NAME:+x} and ${NAME+x}.
+func envVarRef(s string) (string, bool) {
+	var inner string
+	if rest, braced := strings.CutPrefix(s, "${"); braced {
+		if !strings.HasSuffix(rest, "}") {
+			return "", false
+		}
+		inner = rest[:len(rest)-1]
+	} else if rest, bare := strings.CutPrefix(s, "$"); bare {
+		inner = rest
+	} else {
+		return "", false
+	}
+	i := 0
+	for i < len(inner) {
+		c := inner[i]
+		if c != '_' && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (i == 0 || c < '0' || c > '9') {
+			break
+		}
+		i++
+	}
+	if i == 0 {
+		return "", false
+	}
+	switch rest := inner[i:]; {
+	case rest == "", strings.ContainsAny(rest[:1], "-+?="):
+		return inner[:i], true
+	case strings.HasPrefix(rest, ":") && len(rest) > 1 && strings.ContainsAny(rest[1:2], "-+?="):
+		return inner[:i], true
+	}
+	return "", false
+}
+
+// imageEnvVarValue computes the environment value for a variable-backed image
+// reference: the target tag for a tag variable, the full rewritten reference
+// when one variable carries the whole image.
+func imageEnvVarValue(configuredImage, targetRef string, wholeImage bool) (string, error) {
+	if wholeImage {
+		return refs.PreserveConfiguredRef(configuredImage, targetRef), nil
+	}
+	target, err := refs.NormalizeReference(targetRef)
+	if err != nil {
+		return "", fmt.Errorf("target image reference: %w", err)
+	}
+	return target.Tag, nil
 }
 
 func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPath string) error {
@@ -545,12 +641,45 @@ func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, eff
 	if err != nil {
 		return nil, fmt.Errorf("read Compose source for tag update: %w", err)
 	}
-	updated, services, err := PrepareProjectServiceImages(original, effective, changes)
+	updated, services, envUpdates, err := PrepareProjectServiceImages(original, effective, changes)
 	if err != nil {
 		return nil, err
+	}
+	if envErr := PersistProjectEnvImageUpdates(ctx, projectPath, envUpdates); envErr != nil {
+		return nil, envErr
 	}
 	if persistErr := PersistProjectServiceImages(ctx, projectPath, logical, original, updated); persistErr != nil {
 		return nil, persistErr
 	}
 	return services, nil
+}
+
+// PersistProjectEnvImageUpdates writes image tag updates for variable-backed
+// image references into the project's .env file, so the Compose source keeps
+// its variable and .env stays the source of truth.
+func PersistProjectEnvImageUpdates(ctx context.Context, projectPath string, updates map[string]string) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	original, err := (acfs.Host{}).ReadFile(ctx, filepath.Join(projectPath, projects.EffectiveEnvFileName))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read project env file for tag update: %w", err)
+	}
+	names := make([]string, 0, len(updates))
+	for name := range updates {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var override strings.Builder
+	for _, name := range names {
+		fmt.Fprintf(&override, "%s=%s\n", name, updates[name])
+	}
+	merged, err := projects.BuildEffectiveEnvContent(string(original), override.String())
+	if err != nil {
+		return fmt.Errorf("merge project env tag update: %w", err)
+	}
+	if err := projects.WriteProjectFile(ctx, projectPath, projectPath, projects.EffectiveEnvFileName, merged); err != nil {
+		return fmt.Errorf("persist project env tag update: %w", err)
+	}
+	return nil
 }
