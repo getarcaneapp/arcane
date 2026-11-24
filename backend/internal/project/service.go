@@ -117,7 +117,8 @@ type (
 		EnvContent *string
 		Uploads    map[int][]byte
 		TagColors  map[string]types.ProjectTagColor
-		// Restore fills the new project directory the way Archive would.
+		// Restore fills the new project directory the way Archive would. It fills a scratch directory before the project
+		// lock is taken, which then becomes the project directory.
 		Restore         func(ctx context.Context, projectPath string) error
 		Actor           types.Actor
 		Manifest        types.CreateProjectWorkspaceManifest
@@ -132,8 +133,9 @@ type (
 	}
 
 	projectArchiveUnpack struct {
-		Restore            func(ctx context.Context, projectPath string) error
-		Archive            io.Reader
+		Archive io.Reader
+		// Staged is the logical path, in ProjectsDirectory, of a scratch directory that replaces the project directory.
+		Staged             string
 		ProjectsDirectory  string
 		GlobalEnvDirectory string
 		ProjectPath        string
@@ -1564,6 +1566,13 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 		return nil, err
 	}
 
+	// A restore reads its backup before the lock, so creates and syncs never wait on the backup repository.
+	staged, cleanupStaged, err := stageRestore(ctx, projectsDirectory, opts.Restore)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupStaged()
+
 	// Held through the DB insert so concurrent creates and syncs cannot claim a half-written directory.
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
@@ -1638,9 +1647,9 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	}
 
 	composePath := filepath.Join(projectPath, cmp.Or(opts.ComposeFileName, projects.DefaultComposeFileName))
-	if opts.Archive != nil || opts.Restore != nil {
+	if opts.Archive != nil || staged != "" {
 		detected, unpackErr := s.unpackProjectArchive(ctx, projectArchiveUnpack{
-			Restore:            opts.Restore,
+			Staged:             staged,
 			Archive:            opts.Archive,
 			ProjectsDirectory:  projectsDirectory,
 			GlobalEnvDirectory: globalEnvDirectory,
@@ -1733,12 +1742,50 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	return proj, nil
 }
 
+// stageRestore fills a scratch directory in the projects directory with restore and returns its logical path there;
+// without a restore it stages nothing.
+func stageRestore(ctx context.Context, projectsDirectory string, restore func(ctx context.Context, projectPath string) error) (string, func(), error) {
+	if restore == nil {
+		return "", func() {}, nil
+	}
+	root := acfs.Root{Path: projectsDirectory}
+	staged, err := root.MkdirTemp(ctx, "/", projects.RestoreScratchPrefix+"*")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create project restore directory: %w", err)
+	}
+	// acfs refuses a cancelled context, so cleanup runs detached; once the directory became the project's, it is gone.
+	cleanup := func() {
+		if removeErr := root.RemoveAll(context.WithoutCancel(ctx), staged); removeErr != nil {
+			slog.WarnContext(ctx, "failed to remove project restore directory", "path", staged, "error", removeErr)
+		}
+	}
+	// It becomes the project directory, so it starts with a project directory's mode, as one created for an import does.
+	if chmodErr := root.Chmod(ctx, staged, fs.DirPerm); chmodErr != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to prepare project restore directory: %w", chmodErr)
+	}
+	if restoreErr := restore(ctx, filepath.Join(projectsDirectory, filepath.FromSlash(strings.TrimPrefix(staged, "/")))); restoreErr != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("restore the project files: %w", restoreErr)
+	}
+	return staged, cleanup, nil
+}
+
 // unpackProjectArchive extracts an imported project, renames its Compose
 // identity to the requested name, and returns the compose file path.
 func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projectArchiveUnpack) (string, error) {
-	if unpack.Restore != nil {
-		if restoreErr := unpack.Restore(ctx, unpack.ProjectPath); restoreErr != nil {
-			return "", fmt.Errorf("restore the project files: %w", restoreErr)
+	if unpack.Staged != "" {
+		// The new project directory is still empty, so the staged one replaces it.
+		root := acfs.Root{Path: unpack.ProjectsDirectory}
+		projectLogical, err := root.LogicalPath(unpack.ProjectPath)
+		if err == nil {
+			err = root.Remove(ctx, projectLogical)
+		}
+		if err == nil {
+			err = root.Rename(ctx, unpack.Staged, projectLogical)
+		}
+		if err != nil {
+			return "", fmt.Errorf("move the restored project files into place: %w", err)
 		}
 	} else if unpackErr := projects.UnpackProjectDirectory(ctx, unpack.ProjectPath, unpack.Archive); unpackErr != nil {
 		return "", common.Classify(common.ErrValidation, fmt.Errorf("invalid project archive: %w", unpackErr))

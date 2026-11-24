@@ -24,6 +24,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/italypaleale/francis/actor"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -41,6 +42,8 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -115,7 +118,8 @@ type (
 	Engine struct {
 		imageService *image.ImageService
 		admission    *runs.Admission
-		repositories map[string]*sync.Mutex
+		// repositories hold one slot per repository, so waiting for one can be cancelled.
+		repositories map[string]chan struct{}
 		// held parks admission a manual start won until the run that won it takes it over.
 		held      map[types.SchedulerAdmissionKey]heldLease
 		authorize func(context.Context, types.BackupRequester) error
@@ -125,6 +129,12 @@ type (
 	heldLease struct {
 		lease *runs.Lease
 		run   string
+	}
+
+	// heldRepository marks a context whose caller holds the repository, so Rustic runs under it don't wait for it again.
+	heldRepository struct {
+		engine *Engine
+		id     string
 	}
 
 	DiscoveredSnapshot struct {
@@ -214,6 +224,59 @@ type (
 		// RefuseArcaneWriters fails instead when an Arcane container mounts one of the volumes.
 		RefuseArcaneWriters bool
 	}
+
+	// DestinationRequest is a backup's requested destinations.
+	DestinationRequest struct {
+		// Class classifies a rejected request.
+		Class error
+		// S3Destinations, when set, requires the S3 destination to be configured.
+		S3Destinations *s3.S3DestinationService
+		// Domain names the backup in messages, e.g. "volume".
+		Domain string
+		// Destination is the requested destination name; empty keeps Default.
+		Destination     string
+		S3DestinationID string
+		Default         DestinationOptions
+	}
+
+	// RunSnapshots points at the snapshot fields of a backup run's row, which the run helpers read and update.
+	RunSnapshots struct {
+		LocalID         *string
+		RemoteID        *string
+		S3DestinationID *string
+		Size            *int64
+		// RemoteInstanceID names the instance whose S3 root holds a discovered run's snapshot; empty means this one.
+		RemoteInstanceID string
+	}
+
+	// SnapshotRun is a backup run writing snapshots under one label to its destinations.
+	SnapshotRun struct {
+		Snapshots RunSnapshots
+		RunID     string
+		Label     string
+		// Tags tag the copies made between repositories; a capture tags its own snapshot.
+		Tags []string
+		DestinationOptions
+	}
+
+	// SnapshotWrite takes a run's first snapshot into the repository it is given, and saves the run's row.
+	SnapshotWrite struct {
+		Capture func(ctx context.Context, repository Repository, password string) (Snapshot, error)
+		Save    func(ctx context.Context) error
+	}
+
+	// RunWatch fails the rows of backups whose workflows end without their task completing them.
+	RunWatch struct {
+		Flow     *flow.Engine
+		Workflow *flow.Workflow
+		// Fail records the message on the backup's row while it still runs.
+		Fail func(ctx context.Context, backupID, message string) error
+	}
+
+	remoteRepositoryKey struct {
+		destinationID string
+		instanceID    string
+	}
 )
 
 const (
@@ -292,7 +355,7 @@ func NewEngine(admission *runs.Admission, imageService *image.ImageService, auth
 		imageService: imageService,
 		admission:    admission,
 		authorize:    authorize,
-		repositories: make(map[string]*sync.Mutex),
+		repositories: make(map[string]chan struct{}),
 		held:         make(map[types.SchedulerAdmissionKey]heldLease),
 	}
 }
@@ -926,19 +989,36 @@ func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) 
 	if strings.TrimSpace(id) == "" {
 		return nil, errors.New("backup repository ID is required")
 	}
+	if ctx.Value(heldRepository{engine: e, id: id}) != nil {
+		return func() {}, nil
+	}
 	e.mu.Lock()
 	lock := e.repositories[id]
 	if lock == nil {
-		lock = &sync.Mutex{}
+		lock = make(chan struct{}, 1)
 		e.repositories[id] = lock
 	}
 	e.mu.Unlock()
-	lock.Lock()
+	select {
+	case lock <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	if err := ctx.Err(); err != nil {
-		lock.Unlock()
+		<-lock
 		return nil, err
 	}
-	return lock.Unlock, nil
+	return func() { <-lock }, nil
+}
+
+// HoldRepository waits for the repository and holds it until release, so a caller stops containers only once its turn
+// has come; Rustic runs under the returned context use the repository without waiting for it again.
+func (e *Engine) HoldRepository(ctx context.Context, id string) (context.Context, func(), error) {
+	unlock, err := e.lockRepository(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	return context.WithValue(ctx, heldRepository{engine: e, id: id}, true), sync.OnceFunc(unlock), nil
 }
 
 func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error {
@@ -1293,6 +1373,82 @@ func Destination(opts DestinationOptions) types.VolumeBackupDestination {
 	}
 }
 
+// ResolveDestination reads a backup's requested destinations and checks them: at least one, and with S3 a selected S3
+// destination. It returns where the backup goes and its S3 destination ID, empty without S3.
+func ResolveDestination(ctx context.Context, req DestinationRequest) (DestinationOptions, string, error) {
+	selected := req.Default
+	switch types.VolumeBackupDestination(req.Destination) {
+	case "":
+	case types.VolumeBackupDestinationLocal:
+		selected = DestinationOptions{Local: true, Remote: false}
+	case types.VolumeBackupDestinationS3:
+		selected = DestinationOptions{Local: false, Remote: true}
+	case types.VolumeBackupDestinationLocalS3:
+		selected = DestinationOptions{Local: true, Remote: true}
+	default:
+		return DestinationOptions{}, "", common.Classify(req.Class, fmt.Errorf("invalid %s backup destination", req.Domain))
+	}
+	if !selected.Local && !selected.Remote {
+		return DestinationOptions{}, "", common.Classify(req.Class, fmt.Errorf("select at least one %s backup destination", req.Domain))
+	}
+	if !selected.Remote {
+		return selected, "", nil
+	}
+	s3DestinationID := strings.TrimSpace(req.S3DestinationID)
+	if s3DestinationID == "" {
+		return DestinationOptions{}, "", common.Classify(req.Class, fmt.Errorf("select an S3 destination for the %s backup", req.Domain))
+	}
+	if req.S3Destinations != nil {
+		if _, err := req.S3Destinations.Configuration(ctx, s3DestinationID); err != nil {
+			return DestinationOptions{}, "", fmt.Errorf("load S3 destination: %w", err)
+		}
+	}
+	return selected, s3DestinationID, nil
+}
+
+// SettleFailure records a backup task's error on its row and returns it, unless the task is handed back to run again
+// or its row already records why it failed.
+func SettleFailure(ctx context.Context, err error, fail func(ctx context.Context, message string) error) error {
+	if err == nil || ctx.Err() != nil || errors.Is(err, actor.ErrJobRejected) || errors.Is(err, ErrBackupSettled) {
+		return err
+	}
+	return errors.Join(err, fail(ctx, err.Error()))
+}
+
+// FailStoppedRun fails an interrupted backup that had stopped containers, which may have changed since, rather than
+// resuming it.
+func FailStoppedRun(ctx context.Context, fail func(ctx context.Context, message string) error) error {
+	if err := fail(ctx, "Backup was interrupted while its containers were stopped"); err != nil {
+		return err
+	}
+	return ErrBackupSettled
+}
+
+// Watch fails the backup's row when its workflow ends without the task completing it.
+func (w RunWatch) Watch(ctx context.Context, backupID, instanceID string) {
+	outcome, err := w.Flow.Wait(ctx, w.Workflow, instanceID)
+	if err != nil || outcome.Status == types.RunStatusSucceeded {
+		return
+	}
+	if failErr := w.Fail(ctx, backupID, cmp.Or(outcome.Message, "Backup did not run")); failErr != nil {
+		slog.WarnContext(ctx, "Failed to close a backup whose workflow ended early", "backupId", backupID, "error", failErr)
+	}
+}
+
+// WatchAccepted restores, at startup, the watch over accepted backups whose saved workflows resume.
+func (w RunWatch) WatchAccepted(ctx context.Context) error {
+	standalone, err := w.Flow.Standalone(ctx)
+	if err != nil {
+		return err
+	}
+	for _, run := range standalone {
+		if backupID := AcceptedBackupID(run); backupID != "" && run.JobID == w.Workflow.Francis().Name() {
+			go w.Watch(context.WithoutCancel(ctx), backupID, run.ID)
+		}
+	}
+	return nil
+}
+
 func NewVolumeRepository(deps VolumeRepositoryDependencies) *VolumeRepository {
 	return &VolumeRepository{deps: deps, legacyPassword: kit.SHA256Hex(legacyVolumePasswordSalt + cmp.Or(deps.EncryptionKey, legacyEncryptionKey))}
 }
@@ -1449,6 +1605,214 @@ func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string
 		r.rekeyed.Store(repository.ID, newKey)
 	}
 	return nil
+}
+
+// HoldLocal holds the local repository, as Engine.HoldRepository does.
+func (r *VolumeRepository) HoldLocal(ctx context.Context) (context.Context, func(), error) {
+	return r.deps.Engine.HoldRepository(ctx, localVolumeRepositoryID)
+}
+
+// WriteRunSnapshots writes the run's missing snapshots: write captures the first into the local repository, or into S3
+// when the run keeps no local copy, and S3 gets a copy of the local snapshot when both are enabled. Each snapshot is
+// saved before the next step.
+func (r *VolumeRepository) WriteRunSnapshots(ctx context.Context, dockerClient *client.Client, run SnapshotRun, write SnapshotWrite) error {
+	if run.Local && *run.Snapshots.LocalID == "" {
+		local, err := r.Local(ctx, dockerClient, LocalRepositoryOptions{})
+		if err != nil {
+			return err
+		}
+		if writeErr := r.writeRunSnapshot(ctx, dockerClient, run, write, local); writeErr != nil {
+			return writeErr
+		}
+	}
+	if !run.Remote || *run.Snapshots.RemoteID != "" {
+		return nil
+	}
+	remote, err := r.Remote(ctx, *run.Snapshots.S3DestinationID, "")
+	if err != nil {
+		return err
+	}
+	if !run.Local {
+		return r.writeRunSnapshot(ctx, dockerClient, run, write, remote)
+	}
+	local, err := r.Local(ctx, dockerClient, LocalRepositoryOptions{ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	return r.writeRunSnapshot(ctx, dockerClient, run, SnapshotWrite{
+		Capture: func(ctx context.Context, repository Repository, password string) (Snapshot, error) {
+			snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, local, *run.Snapshots.LocalID, repository, password, run.Label, run.Tags...)
+			if replicateErr != nil {
+				return Snapshot{}, fmt.Errorf("failed to create S3 Rustic snapshot: %w", replicateErr)
+			}
+			return snapshot, nil
+		},
+		Save: write.Save,
+	}, remote)
+}
+
+// writeRunSnapshot reports and records the snapshot write captures into the repository; a snapshot is recorded even
+// when write rejects it, so it is removed with the failed run.
+func (r *VolumeRepository) writeRunSnapshot(ctx context.Context, dockerClient *client.Client, run SnapshotRun, write SnapshotWrite, repository Repository) error {
+	remote := repository.ID != localVolumeRepositoryID
+	password, err := r.Password(ctx, dockerClient, repository)
+	if err != nil {
+		return err
+	}
+	target := types.TargetOutcome{ResourceType: "backup_destination", ID: run.RunID + ":" + kit.Ternary(remote, "remote", "local"), Status: types.RunStatusRunning}
+	if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
+		return progressErr
+	}
+	snapshot, err := write.Capture(ctx, repository, password)
+	if snapshot.ID != "" {
+		*kit.Ternary(remote, run.Snapshots.RemoteID, run.Snapshots.LocalID) = snapshot.ID
+		*run.Snapshots.Size = kit.Ternary(remote, cmp.Or(*run.Snapshots.Size, snapshot.Size), snapshot.Size)
+		err = errors.Join(err, write.Save(ctx))
+	}
+	if err != nil {
+		return err
+	}
+	target.Status, target.Message = types.RunStatusSucceeded, snapshot.ID
+	return jobcontext.Progress(ctx, target)
+}
+
+// AdoptRunSnapshots records the snapshots an interrupted run wrote but may not have saved, found by their run tag, and
+// copies its S3 snapshot to the local repository when the local one is missing.
+func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *client.Client, run SnapshotRun, previous types.SchedulerRun) error {
+	snapshots := run.Snapshots
+	var local, remote Repository
+	var repositories []Repository
+	var err error
+	if run.Local {
+		if local, err = r.Local(ctx, dockerClient, LocalRepositoryOptions{}); err != nil {
+			return err
+		}
+		repositories = append(repositories, local)
+	}
+	if run.Remote {
+		if remote, err = r.Remote(ctx, *snapshots.S3DestinationID, ""); err != nil {
+			return err
+		}
+		repositories = append(repositories, remote)
+	}
+	password, err := r.Password(ctx, dockerClient, repositories...)
+	if err != nil {
+		return err
+	}
+	attempted := func(destination string) bool {
+		return slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool { return target.ID == run.RunID+":"+destination })
+	}
+	if run.Local && (*snapshots.LocalID != "" || attempted("local")) {
+		snapshot, found, findErr := r.deps.Engine.FindRunSnapshot(ctx, dockerClient, local, password, run.RunID, *snapshots.LocalID)
+		if findErr != nil {
+			return findErr
+		}
+		if found {
+			*snapshots.LocalID, *snapshots.Size = snapshot.ID, snapshot.Size
+		}
+	}
+	if run.Remote && (*snapshots.RemoteID != "" || attempted("remote")) {
+		snapshot, found, findErr := r.deps.Engine.FindRunSnapshot(ctx, dockerClient, remote, password, run.RunID, *snapshots.RemoteID)
+		if findErr != nil {
+			return findErr
+		}
+		if found {
+			*snapshots.RemoteID, *snapshots.Size = snapshot.ID, cmp.Or(*snapshots.Size, snapshot.Size)
+		}
+	}
+	if run.Local && *snapshots.LocalID == "" && *snapshots.RemoteID != "" {
+		snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, remote, *snapshots.RemoteID, local, password, run.Label, run.Tags...)
+		if replicateErr != nil {
+			return replicateErr
+		}
+		*snapshots.LocalID = snapshot.ID
+	}
+	return nil
+}
+
+// ForgetRunSnapshots forgets the runs' snapshots, pruning each repository once, and clears the IDs of those it forgot;
+// an S3 repository that no longer exists holds nothing to forget, so its IDs are cleared too. Snapshots a failure left
+// keep their IDs.
+func (r *VolumeRepository) ForgetRunSnapshots(ctx context.Context, dockerClient *client.Client, entries []RunSnapshots, includeRemote bool) error {
+	ownInstance := strings.TrimSpace(r.deps.Settings.GetSettingsConfig().InstanceID.Value)
+	var localIDs []string
+	remoteGroups := make(map[remoteRepositoryKey][]RunSnapshots)
+	for _, run := range entries {
+		if *run.LocalID != "" {
+			localIDs = append(localIDs, *run.LocalID)
+		}
+		if includeRemote && *run.RemoteID != "" {
+			key := remoteRepositoryKey{destinationID: *run.S3DestinationID, instanceID: cmp.Or(strings.TrimSpace(run.RemoteInstanceID), ownInstance)}
+			remoteGroups[key] = append(remoteGroups[key], run)
+		}
+	}
+	var forgetErr error
+	if len(localIDs) > 0 {
+		repository, err := r.Local(ctx, dockerClient, LocalRepositoryOptions{})
+		if err == nil {
+			err = r.Forget(ctx, dockerClient, repository, localIDs)
+		}
+		if err != nil {
+			forgetErr = fmt.Errorf("failed to delete local Rustic snapshots: %w", err)
+		} else {
+			for _, run := range entries {
+				*run.LocalID = ""
+			}
+		}
+	}
+	for key, group := range remoteGroups {
+		snapshotIDs := make([]string, len(group))
+		for index, run := range group {
+			snapshotIDs[index] = *run.RemoteID
+		}
+		repository, err := r.Remote(ctx, key.destinationID, key.instanceID)
+		var observation types.BackupRepositoryObservation
+		if err == nil {
+			observation, err = CheckRemoteRepository(ctx, r.deps.S3Destinations, key.destinationID, path.Join(VolumeRoot, key.instanceID))
+		}
+		if err == nil && observation.Available {
+			err = r.Forget(ctx, dockerClient, repository, snapshotIDs)
+		} else if err == nil {
+			// Nothing remains to forget; drop the references so the runs can be removed.
+			slog.WarnContext(ctx, "S3 repository is missing; dropping remote snapshot references", "destinationId", key.destinationID, "snapshots", len(snapshotIDs))
+		}
+		if err != nil {
+			forgetErr = errors.Join(forgetErr, fmt.Errorf("failed to delete S3 Rustic snapshots: %w", err))
+			continue
+		}
+		for _, run := range group {
+			*run.RemoteID, *run.S3DestinationID = "", ""
+		}
+	}
+	return forgetErr
+}
+
+// Forget forgets the snapshots in the repository and prunes it; no snapshots only prunes it.
+func (r *VolumeRepository) Forget(ctx context.Context, dockerClient *client.Client, repository Repository, snapshotIDs []string) error {
+	password, err := r.Password(ctx, dockerClient, repository)
+	if err != nil {
+		return err
+	}
+	return r.deps.Engine.ForgetSnapshots(ctx, dockerClient, repository, password, snapshotIDs)
+}
+
+// DescribeRemote returns what a backup list shows of a run's S3 copy but its row doesn't store: the S3 destination's
+// name and whether S3 still holds the snapshot. An empty instanceID means this instance.
+func (r *VolumeRepository) DescribeRemote(ctx context.Context) func(destinationID, instanceID, snapshotID string) (string, *bool) {
+	var destinations map[string]types.S3Destination
+	loaded := false
+	available := RemoteSnapshotChecker(ctx, r.deps.S3Destinations)
+	ownInstance := strings.TrimSpace(r.deps.Settings.GetSettingsConfig().InstanceID.Value)
+	return func(destinationID, instanceID, snapshotID string) (string, *bool) {
+		if strings.TrimSpace(destinationID) == "" {
+			return "", nil
+		}
+		if !loaded {
+			destinations, loaded = r.deps.S3Destinations.DestinationsByID(ctx), true
+		}
+		root := path.Join(VolumeRoot, cmp.Or(strings.TrimSpace(instanceID), ownInstance))
+		return destinations[destinationID].Name, available(destinationID, root, snapshotID)
+	}
 }
 
 // StopContainers stops the running containers in scope, skipping Arcane's own and its helpers, and returns those it stopped.

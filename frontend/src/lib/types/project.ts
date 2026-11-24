@@ -280,6 +280,7 @@ export interface CreateProjectBackupRequest {
 export interface ProjectBackupVolume {
 	key: string;
 	name: string;
+	kind?: ProjectVolumeKind;
 	included: boolean;
 }
 

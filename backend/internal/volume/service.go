@@ -50,24 +50,23 @@ import (
 
 type (
 	VolumeService struct {
-		workspaceLocks concurrency.KeyedMutex
 		// helperGroup deduplicates concurrent read-only helper creation per volume.
 		// Without it two simultaneous browse requests each create a helper and the
 		// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
 		// container that pins the volume until restart.
-		helperGroup      singleflight.Group
-		db               *database.DB
-		dockerService    *dockerInternal.DockerClientService
-		eventService     *event.EventService
-		settingsService  *settings.SettingsService
-		imageService     *image.ImageService
-		helperByVolume   map[string]*volumeHelper
-		backup           *volumebackup.Service
-		repository       *backup.VolumeRepository
-		policies         *backup.Policies
-		workspace        *workspace.Service
-		backupVolumeName string
-		helperMu         sync.Mutex
+		helperGroup     singleflight.Group
+		db              *database.DB
+		dockerService   *dockerInternal.DockerClientService
+		eventService    *event.EventService
+		settingsService *settings.SettingsService
+		imageService    *image.ImageService
+		helperByVolume  map[string]*volumeHelper
+		backup          *volumebackup.Service
+		repository      *backup.VolumeRepository
+		policies        *backup.Policies
+		workspace       *workspace.Service
+		workspaceLocks  concurrency.KeyedMutex
+		helperMu        sync.Mutex
 	}
 
 	VolumeServiceParams struct {
@@ -109,17 +108,15 @@ var (
 )
 
 func NewVolumeService(p VolumeServiceParams) *VolumeService {
-	backupVolumeName := cmp.Or(strings.TrimSpace(p.Config.BackupVolumeName), "arcane-backups")
 	service := &VolumeService{
-		db:               p.DB,
-		dockerService:    p.DockerService,
-		eventService:     p.EventService,
-		settingsService:  p.SettingsService,
-		imageService:     p.ImageService,
-		backupVolumeName: backupVolumeName,
-		repository:       p.Repository,
-		policies:         p.Policies,
-		helperByVolume:   make(map[string]*volumeHelper),
+		db:              p.DB,
+		dockerService:   p.DockerService,
+		eventService:    p.EventService,
+		settingsService: p.SettingsService,
+		imageService:    p.ImageService,
+		repository:      p.Repository,
+		policies:        p.Policies,
+		helperByVolume:  make(map[string]*volumeHelper),
 	}
 	backupDeps := volumebackup.Dependencies{
 		Store:            service.backupStore(),
@@ -530,7 +527,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user types.Actor) error {
 	slog.DebugContext(ctx, "volume service: delete volume", "volume", name, "force", force, "user", user.ID)
 	// Clients may not know this environment's backup volume name, so its removal is refused here.
-	if s.IsBackupVolume(name) {
+	if s.BackupVolumeMatcher(ctx)(name) {
 		return common.ErrVolumeDeleteProtected
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -798,13 +795,17 @@ func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[types.Vo
 	}
 }
 
-// IsBackupVolume reports whether name is the volume that stores this environment's backups.
-func (s *VolumeService) IsBackupVolume(name string) bool {
-	return strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(s.backupVolumeName))
+// BackupVolumeMatcher resolves once which volume holds this environment's backups, the one backups mount, and returns
+// whether a volume name is it; none is when backups are kept on a bind mount.
+func (s *VolumeService) BackupVolumeMatcher(ctx context.Context) func(name string) bool {
+	backupVolume := strings.TrimSpace(s.repository.StorageVolume(ctx))
+	return func(name string) bool {
+		return backupVolume != "" && strings.EqualFold(strings.TrimSpace(name), backupVolume)
+	}
 }
 
-func (s *VolumeService) isInternalVolume(v types.Volume) bool {
-	if s.IsBackupVolume(v.Name) {
+func (s *VolumeService) isInternalVolume(v types.Volume, isBackupVolume func(name string) bool) bool {
+	if isBackupVolume(v.Name) {
 		return true
 	}
 
@@ -825,9 +826,10 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.Sy
 		slog.DebugContext(ctx, "volume service: could not identify Arcane-mounted volumes for centralized backups", "error", inspectErr)
 	}
 	arcaneMounts := kit.FromPtr(inspect).Mounts
+	isBackupVolume := s.BackupVolumeMatcher(ctx)
 	options := make([]types.SystemVolumeBackupOption, 0, len(result.Items))
 	for _, item := range result.Items {
-		if s.isInternalVolume(types.NewVolume(item)) || slices.ContainsFunc(arcaneMounts, func(m container.MountPoint) bool {
+		if s.isInternalVolume(types.NewVolume(item), isBackupVolume) || slices.ContainsFunc(arcaneMounts, func(m container.MountPoint) bool {
 			return m.Type == mount.TypeVolume && cmp.Or(strings.TrimSpace(m.Name), strings.TrimSpace(m.Source)) == item.Name
 		}) {
 			continue
@@ -933,10 +935,11 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 	enrichedVolumes := enrichVolumesWithUsageData(volResult.volumes, usageVolumes)
 
+	isBackupVolume := s.BackupVolumeMatcher(ctx)
 	items := make([]types.Volume, 0, len(enrichedVolumes))
 	for _, v := range enrichedVolumes {
 		volDto := types.NewVolume(v)
-		if !includeInternal && s.isInternalVolume(volDto) {
+		if !includeInternal && s.isInternalVolume(volDto, isBackupVolume) {
 			continue
 		}
 		if containerIDs, ok := volumeContainerMap[v.Name]; ok {
@@ -1041,7 +1044,8 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	if oldName == "" || newName == "" || oldName == newName {
 		return nil, common.ErrVolumeRenameInvalid
 	}
-	if strings.EqualFold(oldName, s.backupVolumeName) || strings.EqualFold(newName, s.backupVolumeName) {
+	isBackupVolume := s.BackupVolumeMatcher(ctx)
+	if isBackupVolume(oldName) || isBackupVolume(newName) {
 		return nil, common.ErrVolumeRenameProtected
 	}
 
@@ -1063,7 +1067,7 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		s.logVolumeRenameError(ctx, oldName, newName, user, "inspect", err)
 		return nil, fmt.Errorf("inspect source volume: %w", err)
 	}
-	if s.isInternalVolume(types.NewVolume(source.Volume)) {
+	if s.isInternalVolume(types.NewVolume(source.Volume), isBackupVolume) {
 		return nil, common.ErrVolumeRenameProtected
 	}
 
