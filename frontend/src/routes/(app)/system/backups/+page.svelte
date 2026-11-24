@@ -110,9 +110,9 @@
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	// System backups live in a local Docker volume, so they need the manager's own Docker.
-	// The policies response carries the flag for users whose environment list lacks the manager.
+	// The policies response carries the flag for users whose environment list lacks the manager; only an explicit false counts.
 	const localDockerDisabled = $derived(
-		!policyCollection.localDockerEnabled || isLocalDockerDisabled(environmentStore.getLocalEnvironment())
+		policyCollection.localDockerEnabled === false || isLocalDockerDisabled(environmentStore.getLocalEnvironment())
 	);
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && !localDockerDisabled);
 	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE) && !localDockerDisabled);

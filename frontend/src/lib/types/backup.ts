@@ -74,7 +74,7 @@ export type UpdateBackupPolicy = {
 export type SystemBackupPolicyCollection = {
 	policies: SystemBackupPolicy[];
 	recoveryKeyStored: boolean;
-	localDockerEnabled: boolean;
+	localDockerEnabled?: boolean;
 };
 
 export type SystemBackupRecoveryKey = {
