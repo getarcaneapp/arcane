@@ -19,6 +19,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -60,9 +61,21 @@ type (
 	}
 
 	Snapshot struct {
-		ID   string `json:"id"`
-		Size int64  `json:"-"`
+		ID   string   `json:"id"`
+		Tags []string `json:"-"`
+		Size int64    `json:"-"`
 	}
+
+	// VolumeOwner is the owner and mode of a volume's root. Rustic keeps them for every file of a volume snapshot but
+	// not for the snapshot's root, so a volume capture records them in a snapshot tag.
+	VolumeOwner struct {
+		UID  int
+		GID  int
+		Mode int64
+	}
+
+	// HelperExec runs a command in a helper container that mounts a volume at /volume.
+	HelperExec func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 
 	rusticSnapshotOutput struct {
 		ID      string `json:"id"`
@@ -219,6 +232,7 @@ type (
 const (
 	VolumeAdmissionScope           = "volume-backup"
 	ProjectSnapshotTag             = "arcane-kind:project"
+	volumeOwnerTagPrefix           = "arcane-owner:"
 	SystemAdmissionScope           = "system-backup"
 	SystemAdmissionID              = "system"
 	RecoveryKeyConfigID            = "system-recovery"
@@ -382,7 +396,7 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 	if decoded.ID == "" {
 		return Snapshot{}, errors.New("rustic did not return a snapshot ID")
 	}
-	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed}, nil
+	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed, Tags: nil}, nil
 }
 
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
@@ -482,6 +496,53 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
+// ReadVolumeOwnerTag returns the snapshot tag that records the owner and mode of the volume the helper mounts.
+func ReadVolumeOwnerTag(ctx context.Context, exec HelperExec, containerID string) (string, error) {
+	stdout, _, err := exec(ctx, containerID, "", []string{"stat", "-c", "%u:%g:%a", "/volume"})
+	if err != nil {
+		return "", fmt.Errorf("read the owner of the volume root: %w", err)
+	}
+	tag := volumeOwnerTagPrefix + strings.TrimSpace(stdout)
+	if _, ok := VolumeOwnerFromTags([]string{tag}); !ok {
+		return "", fmt.Errorf("unexpected owner of the volume root: %q", strings.TrimSpace(stdout))
+	}
+	return tag, nil
+}
+
+// VolumeOwnerFromTags returns the volume root's owner and mode a snapshot recorded; snapshots taken before Arcane
+// recorded them have none.
+func VolumeOwnerFromTags(tags []string) (VolumeOwner, bool) {
+	for _, tag := range tags {
+		value, found := strings.CutPrefix(tag, volumeOwnerTagPrefix)
+		if !found {
+			continue
+		}
+		fields := strings.Split(value, ":")
+		if len(fields) != 3 {
+			return VolumeOwner{}, false
+		}
+		uid, uidErr := strconv.Atoi(fields[0])
+		gid, gidErr := strconv.Atoi(fields[1])
+		mode, modeErr := strconv.ParseInt(fields[2], 8, 64)
+		if uidErr != nil || gidErr != nil || modeErr != nil || uid < 0 || gid < 0 || mode < 0 || mode > 0o7777 {
+			return VolumeOwner{}, false
+		}
+		return VolumeOwner{UID: uid, GID: gid, Mode: mode}, true
+	}
+	return VolumeOwner{}, false
+}
+
+// Apply gives the volume the helper mounts at /volume this owner and mode.
+func (o VolumeOwner) Apply(ctx context.Context, exec HelperExec, containerID string) error {
+	if _, _, err := exec(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", o.UID, o.GID), "/volume"}); err != nil {
+		return fmt.Errorf("failed to restore volume root ownership: %w", err)
+	}
+	if _, _, err := exec(ctx, containerID, "", []string{"chmod", strconv.FormatInt(o.Mode&0o7777, 8), "/volume"}); err != nil {
+		return fmt.Errorf("failed to restore volume root mode: %w", err)
+	}
+	return nil
+}
+
 func (s DiscoveredSnapshot) LocalRunID() string {
 	for _, tag := range s.Tags {
 		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok && runID != "" {
@@ -553,7 +614,7 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 		if found.ID != "" {
 			return Snapshot{}, false, errors.New("multiple snapshots match the backup run")
 		}
-		found = Snapshot{ID: snapshot.ID, Size: snapshot.Summary.TotalBytesProcessed}
+		found = Snapshot{ID: snapshot.ID, Size: snapshot.Summary.TotalBytesProcessed, Tags: snapshot.Tags}
 	}
 	if snapshotID != "" && found.ID == "" {
 		return Snapshot{}, false, errors.New("recorded backup snapshot is unavailable")

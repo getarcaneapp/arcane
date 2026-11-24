@@ -590,22 +590,42 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	if err != nil {
 		return "", err
 	}
-	var created []string
 	steps := backup.RestoreSteps{
-		Write: func(ctx context.Context, _ string) error {
-			target, targetErr := s.importTarget(ctx, projectID, included)
-			if targetErr != nil {
-				return targetErr
+		Create: func(ctx context.Context, options client.VolumeCreateOptions) error {
+			_, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+				return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
+			})
+			return createErr
+		},
+		Remove: func(ctx context.Context, names []string) error {
+			var removeErr error
+			for _, name := range names {
+				removeErr = errors.Join(removeErr, s.deps.DeleteVolume(ctx, name, opts.User))
 			}
-			var restoreErr error
-			created, restoreErr = s.restoreBackupVolumes(ctx, opts, target, included)
-			return restoreErr
+			return removeErr
 		},
 		Discard: func(ctx context.Context) (bool, []string) {
-			return s.discard(ctx, opts.User, projectID, request.Name, created)
+			return s.discard(ctx, opts.User, projectID, request.Name, nil)
 		},
 	}
-	err = steps.Apply(ctx, backup.RestoreState{Redeploy: new(false)})
+	state := backup.RestoreState{Redeploy: new(false)}
+	target, err := s.importTarget(ctx, projectID, included)
+	var restores []types.ProjectBackupRestoreVolume
+	if err == nil {
+		state.Create, restores, err = newVolumes(target, included)
+	}
+	if err != nil {
+		return "", steps.Rollback(ctx, state, nil, err)
+	}
+	steps.Write = func(ctx context.Context, _ string) error {
+		return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
+			ProjectID:   opts.ProjectID,
+			BackupID:    opts.BackupID,
+			Volumes:     restores,
+			LockVolumes: true,
+		})
+	}
+	err = steps.Apply(ctx, state)
 	releaseBackups(context.WithoutCancel(ctx))
 	if err != nil {
 		return "", err
@@ -619,10 +639,10 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	return projectID, nil
 }
 
-// restoreBackupVolumes creates the new project's volumes, once for volumes that share one, and restores the backup's
-// data into them; it returns the names of the volumes it created, also when a step fails.
-func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOptions, target importTarget, included []types.ProjectVolume) ([]string, error) {
-	var created []string
+// newVolumes returns how to create the new project's volumes, once for volumes that share one, and which of the
+// backup's volumes is restored into each.
+func newVolumes(target importTarget, included []types.ProjectVolume) ([]client.VolumeCreateOptions, []types.ProjectBackupRestoreVolume, error) {
+	create := make([]client.VolumeCreateOptions, 0, len(target.restores))
 	restores := make([]types.ProjectBackupRestoreVolume, 0, len(target.restores))
 	for _, archive := range slices.Sorted(maps.Keys(target.restores)) {
 		index := target.restores[archive]
@@ -636,22 +656,12 @@ func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOpt
 			External: external,
 		})
 		if err != nil {
-			return created, err
+			return nil, nil, err
 		}
-		if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
-			return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
-		}); err != nil {
-			return created, err
-		}
-		created = append(created, volume.Name)
+		create = append(create, options)
 		restores = append(restores, types.ProjectBackupRestoreVolume{Key: volume.Key, Snapshot: included[index].Name, Name: volume.Name})
 	}
-	return created, s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
-		ProjectID:   opts.ProjectID,
-		BackupID:    opts.BackupID,
-		Volumes:     restores,
-		LockVolumes: true,
-	})
+	return create, restores, nil
 }
 
 func (s *Service) importTarget(ctx context.Context, projectID string, included []types.ProjectVolume) (importTarget, error) {
