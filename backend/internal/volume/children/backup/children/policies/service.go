@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
 	"slices"
 	"time"
 
@@ -49,9 +48,6 @@ type (
 		PolicyID string `json:"policyId"`
 	}
 )
-
-// errRemoteOnlyDisabled stops a scheduled run whose only destination, S3, was just disabled for a missing repository.
-var errRemoteOnlyDisabled = errors.New("the S3 repository is missing and the policy has no local destination")
 
 func NewService(deps Dependencies) *Service {
 	return &Service{
@@ -201,32 +197,15 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		if current == nil {
 			return common.ErrVolumeBackupPolicyNotFound
 		}
-		var remoteErr error
-		if current.S3Enabled {
-			remoteErr = backup.CheckScheduledRemote(ctx, s.deps.DB, s.deps.S3Destinations, backup.ScheduledRemoteRequest{
-				DestinationID: current.S3DestinationID,
-				Root:          path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value),
-				Tables:        backup.VolumeRepositoryTables,
-			})
-		}
-		var disableErr error
-		remoteDisabled, disableErr = backup.DisableMissingRemote(remoteErr, current.LocalEnabled, &current.S3Enabled, &current.Enabled, func(field string) (bool, error) {
-			return s.deps.Policies.DisableRemote(ctx, current, field)
+		var checkErr error
+		remoteDisabled, checkErr = s.deps.Policies.CheckRemote(ctx, current, backup.RemoteCheck{
+			S3Destinations: s.deps.S3Destinations,
+			Settings:       s.deps.Settings,
+			Reschedule:     s.reschedule,
 		})
-		if disableErr != nil {
-			return disableErr
-		}
-		if !remoteDisabled {
-			return nil
-		}
-		// Rescheduled before the backup runs, so a later edit of the policy is not undone afterwards.
-		s.reschedule(ctx, current)
-		if !current.LocalEnabled {
-			return errRemoteOnlyDisabled
-		}
-		return nil
+		return checkErr
 	})
-	if errors.Is(err, errRemoteOnlyDisabled) {
+	if errors.Is(err, backup.ErrRemoteOnlyDisabled) {
 		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	// The backup re-reads the policy once admitted, so a wait can still find it disabled or deleted.

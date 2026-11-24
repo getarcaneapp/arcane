@@ -234,7 +234,7 @@ func TestSystemBackupStoreExpiresRunsOfDeletedPolicies(t *testing.T) {
 	} {
 		require.NoError(t, db.Create(&run).Error)
 	}
-	store := (&SystemService{db: db}).backupStore(nil)
+	store := (&SystemService{db: db}).backupStore()
 
 	expired, err := store.ExpiredUnmanagedRunIDs(t.Context(), types.UnmanagedBackupSweep{Now: now, Retention: 7 * 24 * time.Hour})
 	require.NoError(t, err)

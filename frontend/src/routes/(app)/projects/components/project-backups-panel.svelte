@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -16,6 +14,7 @@
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
 	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectRestoreAsNewDialog from '#lib/components/dialogs/project-restore-as-new-dialog.svelte';
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
@@ -23,7 +22,6 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
@@ -50,7 +48,6 @@
 	import type {
 		ProjectBackup,
 		ProjectBackupPolicy,
-		ProjectBackupVolume,
 		ProjectExportOptions,
 		ProjectVolume,
 		UpdateProjectBackupPolicy
@@ -66,6 +63,7 @@
 		backupPolicyUpdateFromPolicy,
 		backupStatusLabel,
 		backupTriggerLabel,
+		restorableVolumes,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
@@ -88,7 +86,6 @@
 	const canBackup = $derived(hasPermission('projects:backup', environmentId));
 	const canRestore = $derived(hasPermission('projects:restore', environmentId));
 	const canRestoreAsNew = $derived(hasPermission('projects:create', environmentId));
-	const canStartRestored = $derived(hasPermission('projects:deploy', environmentId));
 	const canTrackActivities = $derived(hasPermission('activities:list', environmentId));
 	const canReadActivities = $derived(hasPermission('activities:read', environmentId));
 	// Destinations are a global resource; an environment-scoped grant does not cover them.
@@ -112,8 +109,6 @@
 	let restoreFiles = $state(true);
 	let restoreOverrides = $state<Record<string, boolean>>({});
 	let redeploy = $state(true);
-	let restoreName = $state('');
-	let startRestored = $state(false);
 	let restoring = $state(false);
 
 	let scheduleOpen = $state(false);
@@ -142,12 +137,8 @@
 		(options?.volumes ?? []).filter((volume) => backupSelectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
 	);
 	const needsS3Destination = $derived(destination !== 'local');
-	const restoreVolumes = $derived((restoreItem?.volumes ?? []).filter((volume) => volume.included));
-	// A project restored as new keeps an external volume's name, so the volume is restored only when chosen.
-	const restoreByDefault = (volume: ProjectBackupVolume) => !restoreAsNewOpen || volume.kind !== 'external';
-	const selectedRestoreVolumes = $derived(
-		restoreVolumes.filter((volume) => restoreOverrides[volume.key] ?? restoreByDefault(volume))
-	);
+	const restoreVolumes = $derived(restorableVolumes(restoreItem?.volumes ?? []));
+	const selectedRestoreVolumes = $derived(restoreVolumes.filter((volume) => restoreOverrides[volume.key] ?? true));
 
 	const queryClient = useQueryClient();
 	const backupsQuery = createQuery(() => ({
@@ -290,8 +281,6 @@
 		restoreFiles = true;
 		restoreOverrides = {};
 		redeploy = true;
-		restoreName = `${backup.projectName}-restored`;
-		startRestored = false;
 	}
 
 	function openRestore(backup: ProjectBackup) {
@@ -300,7 +289,7 @@
 	}
 
 	function openRestoreAsNew(backup: ProjectBackup) {
-		resetRestore(backup);
+		restoreItem = backup;
 		restoreAsNewOpen = true;
 	}
 
@@ -328,32 +317,6 @@
 				// Only activities say when a restore ends; without them the server still refuses a second one.
 				restoreActivity.accepted(canTrackActivities ? data.activityId : undefined);
 				toast.success(m.restore_started(), canReadActivities ? activityToastOptions(data.activityId, false) : undefined);
-			}
-		});
-	}
-
-	async function handleRestoreAsNew() {
-		if (!restoreItem || restoring || !restoreName.trim()) return;
-		restoring = true;
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(
-				projectService.restoreBackupAsNew(
-					projectId,
-					restoreItem.id,
-					{
-						name: restoreName.trim(),
-						volumes: selectedRestoreVolumes.map((volume) => volume.key),
-						start: startRestored && canStartRestored
-					},
-					environmentId
-				)
-			),
-			message: m.failed_to_restore_backup(),
-			setLoadingState: (value) => (restoring = value),
-			onSuccess: async (project) => {
-				restoreAsNewOpen = false;
-				toast.success(m.project_restored_from_backup({ name: project.name }), activityToastOptions(project.activityId));
-				await goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: project.id }));
 			}
 		});
 	}
@@ -460,42 +423,6 @@
 			{/if}
 		</RowActionsMenu>
 	{/if}
-{/snippet}
-
-{#snippet RestoreParts(filesRequired: boolean)}
-	<div class="min-w-0 space-y-2">
-		<p class="text-sm font-medium">{m.what_to_restore()}</p>
-		<ul class="space-y-2">
-			<li class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
-				<Checkbox
-					id="project-restore-files"
-					class="mt-0.5"
-					checked={filesRequired || restoreFiles}
-					disabled={filesRequired || restoring}
-					onCheckedChange={(checked) => (restoreFiles = checked === true)}
-				/>
-				<Label for="project-restore-files" class="mb-0">{m.project_files()}</Label>
-			</li>
-			{#each restoreVolumes as volume (volume.key)}
-				<li class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
-					<Checkbox
-						id={`project-restore-volume-${volume.key}`}
-						class="mt-0.5"
-						checked={restoreOverrides[volume.key] ?? restoreByDefault(volume)}
-						disabled={restoring}
-						onCheckedChange={(checked) => (restoreOverrides = { ...restoreOverrides, [volume.key]: checked === true })}
-					/>
-					<div class="grid min-w-0 gap-1">
-						<Label for={`project-restore-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
-						<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
-						{#if filesRequired && volume.kind === 'external'}
-							<span class="text-xs text-muted-foreground">{m.external_volume_keeps_its_name()}</span>
-						{/if}
-					</div>
-				</li>
-			{/each}
-		</ul>
-	</div>
 {/snippet}
 
 {#snippet BackupMobileCard({
@@ -809,7 +736,26 @@
 			<AlertIcon class="size-4" />
 			<Alert.Description>{m.restore_replaces_current_data()}</Alert.Description>
 		</Alert.Root>
-		{@render RestoreParts(false)}
+		<div class="min-w-0 space-y-2">
+			<p class="text-sm font-medium">{m.what_to_restore()}</p>
+			<div class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
+				<Checkbox
+					id="project-restore-files"
+					class="mt-0.5"
+					checked={restoreFiles}
+					disabled={restoring}
+					onCheckedChange={(checked) => (restoreFiles = checked === true)}
+				/>
+				<Label for="project-restore-files" class="mb-0">{m.project_files()}</Label>
+			</div>
+			<ProjectVolumeChecklist
+				volumes={restoreVolumes}
+				bind:overrides={restoreOverrides}
+				selectable={() => true}
+				idPrefix="project-restore-volume"
+				disabled={restoring}
+			/>
+		</div>
 		{#if running}
 			<LabeledSwitch
 				id="project-restore-redeploy"
@@ -835,43 +781,4 @@
 	{/snippet}
 </ResponsiveDialog>
 
-<ResponsiveDialog
-	bind:open={restoreAsNewOpen}
-	title={m.restore_as_new_project()}
-	description={m.restore_as_new_project_description()}
-	contentClass="sm:max-w-xl"
-	dismissible={!restoring}
->
-	<div class="grid min-w-0 gap-y-4 py-4" data-testid="project-restore-as-new-dialog">
-		<div class="space-y-2">
-			<Label for="project-restore-name">{m.project_name()}</Label>
-			<Input
-				id="project-restore-name"
-				value={restoreName}
-				autocomplete="off"
-				disabled={restoring}
-				oninput={(event) => (restoreName = event.currentTarget.value)}
-			/>
-		</div>
-		{@render RestoreParts(true)}
-		<LabeledSwitch
-			id="project-restore-start"
-			checked={startRestored && canStartRestored}
-			label={m.start_after_restore()}
-			disabled={!canStartRestored || restoring}
-			onCheckedChange={(next) => (startRestored = next)}
-		/>
-	</div>
-
-	{#snippet footer()}
-		<ArcaneButton action="cancel" onclick={() => (restoreAsNewOpen = false)} disabled={restoring} />
-		<ArcaneButton
-			action="create"
-			customLabel={m.restore_as_new_project()}
-			onclick={handleRestoreAsNew}
-			loading={restoring}
-			disabled={restoring || !restoreName.trim()}
-			data-testid="project-restore-as-new-submit"
-		/>
-	{/snippet}
-</ResponsiveDialog>
+<ProjectRestoreAsNewDialog bind:open={restoreAsNewOpen} backup={restoreItem} {environmentId} />

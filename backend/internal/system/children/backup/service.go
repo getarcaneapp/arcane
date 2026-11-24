@@ -83,7 +83,6 @@ type (
 		CountLocalRuns            func(ctx context.Context) (int64, error)
 		CountVolumeRepositoryRuns func(ctx context.Context) (int64, error)
 		CountRunningVolumeBackups func(ctx context.Context) (int64, error)
-		CheckScheduledRemote      func(ctx context.Context, destinationID string) error
 		ListHistory               func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
 	}
 
@@ -1495,23 +1494,18 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 	if policy == nil || !policy.Enabled {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
-	remoteErr := func() error {
-		if !policy.S3Enabled {
-			return nil
-		}
-		return s.store.CheckScheduledRemote(ctx, policy.S3DestinationID)
-	}()
-	remoteDisabled, disableErr := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		return s.policies.DisableRemote(ctx, policy, field)
+	remoteDisabled, disableErr := s.policies.CheckRemote(ctx, policy, backup.RemoteCheck{
+		S3Destinations: s.s3Destinations,
+		Settings:       s.settingsService,
+		Root:           "arcane-system-recovery",
+		Tables:         []string{"system_backup_runs"},
+		Reschedule:     s.rescheduleSystemBackupPolicy,
 	})
+	if errors.Is(disableErr, backup.ErrRemoteOnlyDisabled) {
+		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+	}
 	if disableErr != nil {
 		return types.SchedulerOutcome{}, disableErr
-	}
-	if remoteDisabled {
-		s.rescheduleSystemBackupPolicy(ctx, policy)
-	}
-	if remoteDisabled && !policy.LocalEnabled {
-		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	run, runErr := func() (*types.SystemBackupRun, error) {
 		prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerScheduled, types.CreateSystemBackupRequest{PolicyID: policy.ID})

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
 	"slices"
 	"strings"
 	"time"
@@ -539,27 +538,18 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 	if policy == nil || !policy.Enabled {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
-	remoteErr := func() error {
-		if !policy.S3Enabled {
-			return nil
-		}
-		return backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, backup.ScheduledRemoteRequest{
-			DestinationID: policy.S3DestinationID,
-			Root:          path.Join(backup.VolumeRoot, s.settings.GetSettingsConfig().InstanceID.Value),
-			Tables:        backup.VolumeRepositoryTables,
-		})
-	}()
-	remoteDisabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		return s.policies.DisableRemote(ctx, policy, field)
+	remoteDisabled, err := s.policies.CheckRemote(ctx, policy, backup.RemoteCheck{
+		S3Destinations: s.s3Destinations,
+		Settings:       s.settings,
+		Root:           "",
+		Tables:         nil,
+		Reschedule:     s.rescheduleSystemVolumeBackup,
 	})
+	if errors.Is(err, backup.ErrRemoteOnlyDisabled) {
+		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+	}
 	if err != nil {
 		return types.SchedulerOutcome{}, err
-	}
-	if remoteDisabled {
-		s.rescheduleSystemVolumeBackup(ctx, policy)
-	}
-	if remoteDisabled && !policy.LocalEnabled {
-		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	result, err := func() (*types.SystemVolumeBackupRunResult, error) {
 		input, _, prepareErr := s.prepareSystemVolumeBackups(ctx, types.RunSystemVolumeBackupsRequest{PolicyID: policyID},

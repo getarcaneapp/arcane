@@ -163,7 +163,7 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 		}),
 	}
 	s.backup = systembackup.NewService(systembackup.Dependencies{
-		Store:                 s.backupStore(p.S3Destinations),
+		Store:                 s.backupStore(),
 		DB:                    p.DB,
 		Policies:              p.Policies,
 		SQLDB:                 p.DB.DB.DB,
@@ -509,7 +509,7 @@ func resolveUpgraderRuntimeOptions(
 	}}, "", nil
 }
 
-func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) systembackup.Store {
+func (s *SystemService) backupStore() systembackup.Store {
 	toModel := func(dto *types.SystemBackupRun) SystemBackupRun {
 		return SystemBackupRun{ //exhaustruct:enforce
 			BaseModel: database.BaseModel{
@@ -664,13 +664,6 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 				s.db.WithContext(ctx).Table("project_backups").Where("status = ?", types.VolumeBackupStatusRunning).Count(&projectRuns).Error,
 			)
 			return volumeRuns + projectRuns, err
-		},
-		CheckScheduledRemote: func(ctx context.Context, destinationID string) error {
-			return backup.CheckScheduledRemote(ctx, s.db, s3Destinations, backup.ScheduledRemoteRequest{
-				DestinationID: destinationID,
-				Root:          "arcane-system-recovery",
-				Tables:        []string{"system_backup_runs"},
-			})
 		},
 		ListHistory: func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error) {
 			query := s.db.WithContext(ctx).Table("(?) AS backup_history", s.db.Raw(systemBackupHistoryUnion))
