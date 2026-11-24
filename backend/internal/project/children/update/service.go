@@ -57,24 +57,19 @@ type (
 		Credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
 		ProjectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
 		RestoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
-		// PersistEnv writes variable values to the project .env.
-		PersistEnv func(ctx context.Context, projectPath string, values map[string]string) error
+		PersistEnv      func(ctx context.Context, projectPath string, values map[string]string) error
 	}
 
-	// ImageEdits writes service image changes back to the project source.
 	ImageEdits struct {
-		Compose []byte
-		// Env holds new values for variables that set an image tag; their Compose images stay unchanged.
-		Env map[string]string
-		// Followers are services outside the changes whose image moves with Env.
+		Compose   []byte
+		Env       map[string]string
 		Followers map[string]ImageFollower
 		Services  []string
 	}
 
 	ImageFollower struct {
-		Variable string
-		Image    string
-		// LocallyBuilt followers build their image, so its tag is not looked up in a registry.
+		Variable     string
+		Image        string
 		LocallyBuilt bool
 	}
 
@@ -94,7 +89,6 @@ type (
 	}
 )
 
-// imageVariableMarker stands in for one variable to locate its value inside an interpolated image.
 const imageVariableMarker = "\x00"
 
 func New(p Params) *Service {
@@ -385,7 +379,6 @@ func PersistProjectServiceImages(ctx context.Context, projectPath, logical strin
 	return nil
 }
 
-// checkProjectServiceImagesSource refuses a symlinked or changed Compose source and returns its permissions.
 func checkProjectServiceImagesSource(ctx context.Context, projectPath, logical string, original []byte) (os.FileMode, error) {
 	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logical, acfstypes.StatOptions{})
 	if err != nil {
@@ -528,9 +521,7 @@ func PrepareProjectServiceImages(source []byte, effective *composeTypes.Project,
 	}, nil
 }
 
-// imageFollowers finds unchanged services whose image uses a variable in env, with the image it moves to.
 func imageFollowers(servicesNode *yaml.Node, effective *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange, env map[string]string) (map[string]ImageFollower, error) {
-	// Selecting the changed services disables the rest; ones outside the active profiles pick up the new value on their next deploy.
 	candidates := make(composeTypes.Services, len(effective.Services))
 	maps.Copy(candidates, effective.Services)
 	for name, service := range effective.DisabledServices {
@@ -559,7 +550,6 @@ func imageFollowers(servicesNode *yaml.Node, effective *composeTypes.Project, ch
 	return followers, nil
 }
 
-// substituteImage interpolates a Compose image as the loader does, with overrides replacing env values.
 func substituteImage(raw string, env composeTypes.Mapping, overrides map[string]string) (string, error) {
 	return template.SubstituteWithOptions(raw, func(name string) (string, bool) {
 		if value, ok := overrides[name]; ok {
@@ -570,7 +560,6 @@ func substituteImage(raw string, env composeTypes.Mapping, overrides map[string]
 	}, template.WithoutLogging)
 }
 
-// imageTagVariable finds the one variable holding the tag of raw and the value that interpolates raw to target.
 func imageTagVariable(raw string, env composeTypes.Mapping, target string) (variable, value string, found bool) {
 	parsed, err := refs.NormalizeReference(target)
 	if err != nil {
@@ -580,7 +569,6 @@ func imageTagVariable(raw string, env composeTypes.Mapping, target string) (vari
 	for name := range template.ExtractVariables(map[string]any{"image": raw}, nil) {
 		marked, markErr := substituteImage(raw, env, map[string]string{name: imageVariableMarker})
 		prefix, suffix, ok := strings.Cut(marked, imageVariableMarker)
-		// The value must reach into the tag and fill exactly the text between the literal prefix and suffix.
 		if markErr != nil || !ok || strings.Contains(suffix, imageVariableMarker) || len(suffix) >= len(parsed.Tag) ||
 			len(target) <= len(prefix)+len(suffix) || !strings.HasPrefix(target, prefix) || !strings.HasSuffix(target, suffix) {
 			continue
@@ -595,7 +583,6 @@ func imageTagVariable(raw string, env composeTypes.Mapping, target string) (vari
 	return variable, value, matches == 1
 }
 
-// retagImageSource replaces the literal tag of an image whose other parts use variables, keeping those variables.
 func retagImageSource(raw, current, target string, env composeTypes.Mapping) (string, error) {
 	currentRef, currentErr := refs.NormalizeReference(current)
 	targetRef, targetErr := refs.NormalizeReference(target)
@@ -695,7 +682,6 @@ func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, eff
 		return nil, followerErr
 	}
 	if len(edits.Env) > 0 {
-		// Refuse a symlinked or changed Compose source before .env is written.
 		if _, sourceErr := checkProjectServiceImagesSource(ctx, projectPath, logical, original); sourceErr != nil {
 			return nil, sourceErr
 		}
@@ -709,7 +695,6 @@ func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, eff
 	return edits.Services, nil
 }
 
-// checkFollowerImages refuses a variable update that would move another service to an unpublished tag.
 func (s *Service) checkFollowerImages(ctx context.Context, edits ImageEdits, changes map[string]updatertypes.ServiceImageChange) error {
 	checked := make([]string, 0, len(changes))
 	for _, change := range changes {
@@ -738,7 +723,6 @@ func (s *Service) checkFollowerImages(ctx context.Context, edits ImageEdits, cha
 	return nil
 }
 
-// imageTags parses a service image and lists the tags its registry publishes.
 func (s *Service) imageTags(ctx context.Context, name, image string) (*refs.Reference, []string, error) {
 	parsed, err := refs.NormalizeReference(image)
 	if err != nil {
