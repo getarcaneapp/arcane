@@ -626,6 +626,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	capture := backup.CapturePlan{
 		Inspect: s.deps.Volume,
 		Stop:    nil,
+		Verify:  nil,
 		// Recorded now, so a run resumed after a shutdown can't complete the rejected snapshot.
 		Rejected: func(ctx context.Context, err error) error { return s.fail(ctx, entry.ID, err.Error()) },
 		Mounts:   input.Mounts,
@@ -638,7 +639,14 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 				return s.deps.StartProject(ctx, entry.ProjectID, services, types.SystemUser)
 			}
 			entry.StoppedContainers = true
-			return start, s.stopProject(ctx, entry.ProjectID, project.ComposeName, active, types.SystemUser)
+			return start, backup.ProjectStop{
+				Docker:    s.deps.Docker,
+				Stop:      s.deps.StopProject,
+				User:      types.SystemUser,
+				ProjectID: entry.ProjectID,
+				Compose:   project.ComposeName,
+				Active:    active,
+			}.Run(ctx)
 		}
 	}
 	var snapshot backup.Snapshot
@@ -668,25 +676,6 @@ func (s *Service) containerUse(ctx context.Context, composeName string) (active 
 	}
 	active, inUse = projects.ProjectContainerUse(composeName, running)
 	return active, inUse, nil
-}
-
-// stopProject stops the project's active containers, then refuses any still running: Compose stops only the services
-// its files name, so a one-off run or a removed service keeps running.
-func (s *Service) stopProject(ctx context.Context, projectID, composeName string, active []container.Summary, user types.Actor) error {
-	if err := s.deps.StopProject(ctx, projectID, projects.ContainerServices(active), user); err != nil {
-		return err
-	}
-	still, _, err := s.containerUse(ctx, composeName)
-	if err != nil {
-		return err
-	}
-	if len(still) > 0 {
-		return common.Classify(common.ErrConflict, fmt.Errorf(
-			"%d container(s) of project %s are still running after its services stopped, such as one-off runs or removed services; nothing was written or copied",
-			len(still), composeName,
-		))
-	}
-	return nil
 }
 
 // checkPlanVolumes fails when the project's volumes changed after the backup was queued, for example by a compose edit
@@ -1705,8 +1694,11 @@ func (s *Service) restoreSteps(input restoreRun, activityID string, p restorePla
 		activity.AppendOrWarn(ctx, s.deps.Activities, activityID, activity.AppendMessageRequest{Level: types.ActivityMessageLevelInfo, Message: message})
 	}
 	return backup.RestoreSteps{
-		Report: report,
-		Hold:   s.deps.Repository.HoldLocal,
+		Docker:       s.deps.Docker,
+		DeleteVolume: s.deps.DeleteVolume,
+		User:         input.User,
+		Report:       report,
+		Hold:         s.deps.Repository.HoldLocal,
 		Stop: func(ctx context.Context, state backup.RestoreState) error {
 			active, _, err := s.containerUse(ctx, p.ComposeName)
 			switch {
@@ -1716,7 +1708,14 @@ func (s *Service) restoreSteps(input restoreRun, activityID string, p restorePla
 			case !state.MayStop:
 				return common.Classify(common.ErrConflict, fmt.Errorf("container %s was started during the restore", docker.ContainerNameFromNames(active[0].Names)))
 			}
-			return s.stopProject(ctx, p.ProjectID, p.ComposeName, active, input.User)
+			return backup.ProjectStop{
+				Docker:    s.deps.Docker,
+				Stop:      s.deps.StopProject,
+				User:      input.User,
+				ProjectID: p.ProjectID,
+				Compose:   p.ComposeName,
+				Active:    active,
+			}.Run(ctx)
 		},
 		Deploy: func(ctx context.Context) error {
 			return s.deps.Deploy(ctx, p.ProjectID, input.User, nil)
@@ -1732,27 +1731,14 @@ func (s *Service) restoreSteps(input restoreRun, activityID string, p restorePla
 			}
 			return s.volumesFree(ctx, project, p.volumeNames())
 		},
-		Create: func(ctx context.Context, options client.VolumeCreateOptions) error {
-			dockerClient, err := s.deps.Docker.GetClient(ctx)
-			if err != nil {
-				return err
-			}
-			return projects.CreateNewVolume(ctx, dockerClient, options)
-		},
 		Write: func(ctx context.Context, safetyID string) error {
 			if safetyID == "" {
 				return s.RestoreTo(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: p.BackupID, ProjectPath: p.ProjectPath, Volumes: p.Volumes, Report: report})
 			}
 			return s.RestoreTo(ctx, types.ProjectBackupRestore{ProjectID: p.ProjectID, BackupID: safetyID, ProjectPath: p.ProjectPath, Volumes: p.safetyVolumes(), Report: report})
 		},
-		Verify: func(ctx context.Context) error { return s.verifyRestore(ctx, p) },
-		Remove: func(ctx context.Context, names []string) error {
-			errs := make([]error, 0, len(names))
-			for _, name := range names {
-				errs = append(errs, s.deps.DeleteVolume(ctx, name, input.User))
-			}
-			return errors.Join(errs...)
-		},
+		Written: nil,
+		Verify:  func(ctx context.Context) error { return s.verifyRestore(ctx, p) },
 		Discard: nil,
 	}
 }

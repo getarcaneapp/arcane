@@ -94,11 +94,13 @@ type (
 		Body          *types.ExportProjectArchive
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ProjectID     string `path:"projectId" doc:"Project ID"`
+		Attached      bool   `query:"attached" doc:"Stop the export when the request ends, so a caller that gives up on it can clean up after it"`
 	}
 
 	ImportProjectArchiveInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		Body          types.ImportProjectArchive
+		Attached      bool `query:"attached" doc:"Stop and roll back the import when the request ends, so a caller that gives up on it can clean up after it"`
 	}
 
 	RestoreProjectBackupAsNewInput struct {
@@ -571,6 +573,9 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 
 	var proj *Project
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	if input.Attached {
+		runtimeCtx = ctx
+	}
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           types.ActivityTypeResourceAction,
@@ -667,6 +672,9 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 
 	var session *types.UploadSession
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	if input.Attached {
+		runtimeCtx = ctx
+	}
 	_, err = activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
 		Type:           types.ActivityTypeResourceAction,
