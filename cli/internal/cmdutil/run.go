@@ -136,16 +136,10 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 		var failures []error
 		for _, environment := range environments {
 			name := fmt.Sprintf("%s (%s)", cmp.Or(merged.names[environment.Environment.ID], environment.Environment.Name), environment.Environment.ID)
-			var data T
-			environmentErr := json.Unmarshal(environment.Data, &data)
-			if environmentErr == nil && !jsonMode {
+			if !jsonMode {
 				output.Header("%s", name)
-				environmentErr = spec.Render(data)
 			}
-			if environmentErr == nil && spec.Check != nil {
-				environmentErr = spec.Check(data)
-			}
-			if environmentErr != nil {
+			if environmentErr := handleData(spec, environment.Data, jsonMode); environmentErr != nil {
 				failures = append(failures, fmt.Errorf("%s: %w", name, environmentErr))
 			}
 		}
@@ -158,18 +152,36 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 		return PrintJSON(result)
 	}
 	if jsonMode {
+		var printErr error
 		if len(result.Data) == 0 {
-			return PrintJSON(nil)
+			printErr = PrintJSON(nil)
+		} else {
+			printErr = PrintRawJSON(result.Data)
 		}
-		return PrintRawJSON(result.Data)
+		if printErr != nil || spec.Check == nil {
+			return printErr
+		}
 	}
+	return handleData(spec, result.Data, jsonMode)
+}
+
+// handleData decodes one environment's response data, renders it outside JSON mode, and applies the spec's Check.
+func handleData[T any](spec Spec[T], raw jsontext.Value, jsonMode bool) error {
 	var data T
-	if len(result.Data) > 0 {
-		if decodeErr := json.Unmarshal(result.Data, &data); decodeErr != nil {
+	if len(raw) > 0 {
+		if decodeErr := json.Unmarshal(raw, &data); decodeErr != nil {
 			return fmt.Errorf("%s: failed to decode response: %w", spec.FailureMessage, decodeErr)
 		}
 	}
-	return spec.Render(data)
+	if !jsonMode {
+		if renderErr := spec.Render(data); renderErr != nil {
+			return renderErr
+		}
+	}
+	if spec.Check != nil {
+		return spec.Check(data)
+	}
+	return nil
 }
 
 func RunDelete(cmd *cobra.Command, c *client.Client, spec DeleteSpec) error {

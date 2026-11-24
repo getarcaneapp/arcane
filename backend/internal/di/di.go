@@ -218,10 +218,12 @@ var (
 					},
 					Host: localDocker.DockerHost,
 					NewSystemd: func(rootless bool) libpodman.Systemd {
+						// Podman detection resolved the host before it asks for systemd.
+						host, _ := localDocker.DockerHost()
 						return libpodman.NewSystemd(libpodman.SystemdConfig{
 							Getenv:   os.Getenv,
 							Stat:     os.Stat,
-							Host:     localDocker.DockerHost(),
+							Host:     host,
 							Rootless: rootless,
 						})
 					},
