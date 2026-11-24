@@ -45,6 +45,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/dhi"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -327,7 +328,10 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	}
 
 	var updateRecords []imageupdate.ImageUpdateRecord
-	if err := s.db.WithContext(ctx).Where("id = ? OR image_id = ?", inspect.ID, inspect.ID).Find(&updateRecords).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("id = ? OR image_id = ?", inspect.ID, inspect.ID).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
+		Find(&updateRecords).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch image update records: %w", err)
 	}
 
@@ -932,7 +936,10 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 	}
 
 	var updateRecords []imageupdate.ImageUpdateRecord
-	if err := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id IN ?", "", "", imageIDs).Find(&updateRecords).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("container_id = ? AND project_id = ? AND id IN ?", "", "", imageIDs).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
+		Find(&updateRecords).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch update records: %w", err)
 	}
 
@@ -1051,6 +1058,7 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 	var updateRecords []imageupdate.ImageUpdateRecord
 	if err := s.db.WithContext(ctx).
 		Where("container_id = ? AND project_id = ? AND tag IN ? AND repository IN ?", "", "", tags, repositoryCandidates).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
 		Order("check_time DESC").
 		Find(&updateRecords).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch update records by image refs: %w", err)

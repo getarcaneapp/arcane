@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,12 +46,18 @@ type (
 		BackfillProjectImageRefs(ctx context.Context) (int, error)
 	}
 
+	imageUpdateEnvironments interface {
+		ListDockerHostEnvironments(ctx context.Context) (map[string]string, error)
+	}
+
 	ImageUpdateWatcher struct {
-		imageUpdateService     imageUpdateScanner
-		settingsService        pollingSettingReader
-		dockerService          dockerEventBusProvider
-		projectService         projectImageRefsBackfiller
-		coordinator            *runs.Coordinator
+		imageUpdateService imageUpdateScanner
+		settingsService    pollingSettingReader
+		dockerService      dockerEventBusProvider
+		projectService     projectImageRefsBackfiller
+		coordinator        *runs.Coordinator
+		// environments reports the docker-host daemons this process polls besides its own.
+		environments           imageUpdateEnvironments
 		trigger                chan struct{}
 		scheduleRefresh        chan struct{}
 		cancel                 context.CancelFunc
@@ -80,6 +87,7 @@ type (
 		DockerService      *docker.DockerClientService
 		ProjectService     *project.ProjectService
 		Coordinator        *runs.Coordinator
+		Environments       imageUpdateEnvironments
 	}
 )
 
@@ -96,6 +104,7 @@ func NewImageUpdateWatcher(p ImageUpdateWatcherParams) *ImageUpdateWatcher {
 		dockerService:      p.DockerService,
 		projectService:     p.ProjectService,
 		coordinator:        p.Coordinator,
+		environments:       p.Environments,
 		debounce:           imageUpdateWatcherDebounce,
 		backfillRetry:      imageUpdateWatcherBackfillRetry,
 		metadataReady:      make(chan struct{}),
@@ -228,11 +237,36 @@ func (w *ImageUpdateWatcher) scanAdmissionReady(timer *time.Timer, ready, submit
 	return true
 }
 
+// scanEnvironmentIDs lists the daemons a scan must cover: the manager's own environment plus every
+// docker-host environment it serves in-process. A failure to list them must not block the local scan.
+func (w *ImageUpdateWatcher) scanEnvironmentIDs(ctx context.Context) []string {
+	ids := []string{"0"}
+	if w.environments == nil {
+		return ids
+	}
+	hosts, err := w.environments.ListDockerHostEnvironments(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to list docker-host environments for image polling", "error", err)
+		return ids
+	}
+	for environmentID := range hosts {
+		ids = append(ids, environmentID)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
 func (w *ImageUpdateWatcher) submitTriggeredScan(ctx context.Context, generation uint64, submitted chan<- error) {
 	var err error
 	func() {
 		defer concurrency.RecoverToError(&err, "image scan admission")
-		_, err = w.coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "watcher"})
+		for _, environmentID := range w.scanEnvironmentIDs(ctx) {
+			if _, submitErr := w.coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: environmentID, Trigger: "watcher"}); submitErr != nil {
+				// A busy or unavailable environment must not stop the others from scanning.
+				slog.WarnContext(ctx, "Failed to submit image scan", "environmentId", environmentID, "error", submitErr)
+				err = errors.Join(err, submitErr)
+			}
+		}
 	}()
 	if err == nil {
 		w.acknowledgedGeneration.Store(generation)

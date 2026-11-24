@@ -43,6 +43,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
@@ -255,7 +256,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	startTime := time.Now()
 	activityID := func() string {
 		localActivity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
-			EnvironmentID: "0",
+			EnvironmentID: envcontext.EnvironmentIDOrDefault(ctx),
 			Type:          types.ActivityTypeImageUpdateCheck,
 			Queue:         true,
 			ResourceType:  new("image"),
@@ -283,7 +284,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 			ResourceName:  imageRef,
 			UserID:        types.SystemUser.ID,
 			Username:      types.SystemUser.Username,
-			EnvironmentID: "0",
+			EnvironmentID: envcontext.EnvironmentIDOrDefault(ctx),
 			Metadata: database.JSON{
 				"action":         "check_update",
 				"imageRef":       imageRef,
@@ -345,7 +346,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 			ResourceName:  imageRef,
 			UserID:        types.SystemUser.ID,
 			Username:      types.SystemUser.Username,
-			EnvironmentID: "0",
+			EnvironmentID: envcontext.EnvironmentIDOrDefault(ctx),
 			Metadata: database.JSON{
 				"action":    "check_update",
 				"imageRef":  imageRef,
@@ -377,7 +378,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		ResourceName:  imageRef,
 		UserID:        types.SystemUser.ID,
 		Username:      types.SystemUser.Username,
-		EnvironmentID: "0",
+		EnvironmentID: envcontext.EnvironmentIDOrDefault(ctx),
 		Metadata: database.JSON{
 			"action":         "check_update",
 			"imageRef":       imageRef,
@@ -698,7 +699,7 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 			ResourceID:    imageID,
 			UserID:        types.SystemUser.ID,
 			Username:      types.SystemUser.Username,
-			EnvironmentID: "0",
+			EnvironmentID: envcontext.EnvironmentIDOrDefault(ctx),
 			Metadata: database.JSON{
 				"action":  "check_update_by_id",
 				"imageID": imageID,
@@ -787,7 +788,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 	tagID := fmt.Sprintf("tag::%s::%s@%s", local.ImageID, strings.ToLower(strings.TrimSpace(repository)), strings.TrimSpace(parts.Tag))
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var stored ImageUpdateRecord
-		if findErr := tx.Where("id = ?", local.ImageID).Limit(1).Find(&stored).Error; findErr != nil {
+		if findErr := tx.Where("id = ? AND environment_id = ?", local.ImageID, envcontext.EnvironmentIDOrDefault(ctx)).Limit(1).Find(&stored).Error; findErr != nil {
 			return findErr
 		}
 		primaryRepo, primaryTag := local.Repository, local.Tag
@@ -798,16 +799,16 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 			if saveErr := savePreparedUpdateResultWithTx(tx, local.ImageID, primaryRepo, primaryTag, result); saveErr != nil {
 				return saveErr
 			}
-			return tx.Where("id = ?", tagID).Delete(&ImageUpdateRecord{}).Error
+			return tx.Where("id = ? AND environment_id = ?", tagID, envcontext.EnvironmentIDOrDefault(ctx)).Delete(&ImageUpdateRecord{}).Error
 		}
 		if saveErr := savePreparedUpdateResultWithTx(tx, tagID, repository, parts.Tag, result); saveErr != nil {
 			return saveErr
 		}
-		return tx.Model(&ImageUpdateRecord{}).Where("id = ?", tagID).Update("image_id", local.ImageID).Error
+		return tx.Model(&ImageUpdateRecord{}).Where("id = ? AND environment_id = ?", tagID, envcontext.EnvironmentIDOrDefault(ctx)).Update("image_id", local.ImageID).Error
 	}); transactionErr != nil {
 		return transactionErr
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.eventService.PublishChange(envcontext.EnvironmentIDOrDefault(ctx), "image_update")
 	return nil
 }
 
@@ -839,9 +840,16 @@ func extractRepoAndTagFromImage(dockerImage image.InspectResponse, fallback *Ima
 	return "<none>", untagged
 }
 
-func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdateResponse, notificationSent bool, latestSeenAt *time.Time, carried, blocked *ImageUpdateRecord) *ImageUpdateRecord {
+func buildImageUpdateRecord(
+	environmentID, imageID, repo, tag string,
+	result *types.ImageUpdateResponse,
+	notificationSent bool,
+	latestSeenAt *time.Time,
+	carried, blocked *ImageUpdateRecord,
+) *ImageUpdateRecord {
 	sameCarriedDigest := carried != nil && (result.LatestDigest == "" || kit.FromPtr(carried.LatestDigest) == result.LatestDigest)
 	return &ImageUpdateRecord{ //exhaustruct:enforce
+		EnvironmentID: environmentID,
 		BaseModel: database.BaseModel{
 			ID:        "",
 			CreatedAt: time.Time{},
@@ -882,7 +890,7 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *types.ImageUpdate
 
 func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, result *types.ImageUpdateResponse) error {
 	var existingRecord ImageUpdateRecord
-	hasExisting := tx.Where("id = ?", imageID).First(&existingRecord).Error == nil
+	hasExisting := tx.Where("id = ? AND environment_id = ?", imageID, envcontext.EnvironmentIDOrDefault(tx.Statement.Context)).First(&existingRecord).Error == nil
 
 	// A registry rate limit is transient, so keep the previous good result.
 	if hasExisting &&
@@ -901,7 +909,7 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 	failed := !result.HasUpdate && strings.TrimSpace(result.Error) != "" && existingRecord.LatestSeenAt != nil
 
 	// Reset notification_sent only when the update state changed; latest_seen_at keeps the first-seen time.
-	record := buildImageUpdateRecord(imageID, repo, tag, result,
+	record := buildImageUpdateRecord(envcontext.EnvironmentIDOrDefault(tx.Statement.Context), imageID, repo, tag, result,
 		existingRecord.NotificationSent &&
 			(failed || hasExisting &&
 				existingRecord.HasUpdate == result.HasUpdate &&
@@ -956,7 +964,7 @@ func (s *ImageUpdateService) savePreparedUpdateResult(ctx context.Context, image
 	}); err != nil {
 		return err
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.eventService.PublishChange(envcontext.EnvironmentIDOrDefault(ctx), "image_update")
 	return nil
 }
 
@@ -976,6 +984,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		var records []ImageUpdateRecord
 		if findErr := s.db.WithContext(ctx).
 			Where("project_id <> '' AND update_type = ? AND tag = ? AND repository IN ?", UpdateTypeDigest, tag, slices.Collect(maps.Keys(repositoryCandidates))).
+			Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
 			Where("last_error IS NULL OR last_error = ''").Find(&records).Error; findErr != nil {
 			return nil, "", fmt.Errorf("load project update checks after pull: %w", findErr)
 		}
@@ -1005,6 +1014,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 			// Only clear synthetic ref:: records; clearing sha256 records marks old-image containers up to date (#2453).
 			if clearStaleUpdatesErr := tx.Model(&ImageUpdateRecord{}).
 				Where("id LIKE 'ref::%' AND tag = ? AND repository IN ?", tag, slices.Collect(maps.Keys(repositoryCandidates))).
+				Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
 				Updates(map[string]any{
 					"has_update":     false,
 					"latest_seen_at": nil,
@@ -1068,7 +1078,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 	}); transactionErr != nil {
 		return transactionErr
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.eventService.PublishChange(envcontext.EnvironmentIDOrDefault(ctx), "image_update")
 	return nil
 }
 
@@ -1087,7 +1097,7 @@ func (s *ImageUpdateService) MarkImageRefBlocked(ctx context.Context, imageRef s
 		}).Error; err != nil {
 		return fmt.Errorf("mark image updates blocked: %w", err)
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.eventService.PublishChange(envcontext.EnvironmentIDOrDefault(ctx), "image_update")
 	return nil
 }
 
@@ -1097,7 +1107,9 @@ func (s *ImageUpdateService) StoredUpdateByImageID(ctx context.Context, imageID 
 	}
 
 	var record ImageUpdateRecord
-	if err := s.db.WithContext(ctx).Where("id = ?", strings.TrimSpace(imageID)).First(&record).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND environment_id = ?", strings.TrimSpace(imageID), envcontext.EnvironmentIDOrDefault(ctx)).
+		First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, false, nil
 		}
@@ -1787,7 +1799,10 @@ func (s *ImageUpdateService) DeleteRecordsForImages(ctx context.Context, imageID
 	if len(imageIDs) == 0 {
 		return nil
 	}
-	if err := s.db.WithContext(ctx).Where("id IN ? OR image_id IN ?", imageIDs, imageIDs).Delete(&ImageUpdateRecord{}).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("id IN ? OR image_id IN ?", imageIDs, imageIDs).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
+		Delete(&ImageUpdateRecord{}).Error; err != nil {
 		return fmt.Errorf("failed to delete image update records: %w", err)
 	}
 	return nil
@@ -1803,7 +1818,9 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		dockerImageIDs = append(dockerImageIDs, img.ID)
 	}
 
-	imageScoped := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id NOT LIKE 'ref::%'", "", "")
+	imageScoped := s.db.WithContext(ctx).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
+		Where("container_id = ? AND project_id = ? AND id NOT LIKE 'ref::%'", "", "")
 	if len(dockerImageIDs) > 0 {
 		imageScoped = imageScoped.Where("id NOT IN ? AND image_id NOT IN ?", dockerImageIDs, dockerImageIDs)
 	}
@@ -1820,7 +1837,9 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 	for _, cnt := range containers {
 		containerIDs = append(containerIDs, cnt.ID)
 	}
-	containerScoped := s.db.WithContext(ctx).Where("container_id <> ?", "")
+	containerScoped := s.db.WithContext(ctx).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
+		Where("container_id <> ?", "")
 	if len(containerIDs) > 0 {
 		containerScoped = containerScoped.Where("container_id NOT IN ?", containerIDs)
 	}
@@ -1869,6 +1888,7 @@ func (s *ImageUpdateService) getUpdateSummaryForImageIDs(ctx context.Context, im
 			COUNT(DISTINCT CASE WHEN last_error IS NOT NULL AND last_error != '' THEN COALESCE(NULLIF(image_id, ''),id) END) AS errors_count
 		`, "digest").
 		Where("id IN ? OR image_id IN ?", imageIDs, imageIDs).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
 		Scan(&aggregate).Error; err != nil {
 		return nil, err
 	}
@@ -1934,6 +1954,6 @@ func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt con
 	}); transactionErr != nil {
 		return transactionErr
 	}
-	s.eventService.PublishChange("0", "image_update")
+	s.eventService.PublishChange(envcontext.EnvironmentIDOrDefault(ctx), "image_update")
 	return nil
 }

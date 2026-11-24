@@ -52,6 +52,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/notifications"
 	"getarcane.dev/types/v3"
@@ -1140,7 +1141,7 @@ func TestBuildImageUpdateRecord_CarriesLatestOnlyForSameDigest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			record := buildImageUpdateRecord("sha256:image", "team/app", "latest", &types.ImageUpdateResponse{
+			record := buildImageUpdateRecord("0", "sha256:image", "team/app", "latest", &types.ImageUpdateResponse{
 				UpdateType:   UpdateTypeDigest,
 				LatestDigest: tt.latestDigest,
 				Error:        "registry unavailable",
@@ -1149,6 +1150,38 @@ func TestBuildImageUpdateRecord_CarriesLatestOnlyForSameDigest(t *testing.T) {
 			assert.Equal(t, tt.wantLatestCreated, record.LatestCreated)
 		})
 	}
+}
+
+// Two daemons can run the same image and must track its update state separately: a record written
+// for a docker-host environment is invisible to the local environment and vice versa.
+func TestImageUpdateService_RecordsAreScopedToEnvironment(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	service := NewImageUpdateService(ImageUpdateServiceParams{DB: db, EventService: event.NewEventService(db, nil, nil)})
+
+	localCtx := t.Context()
+	dockerHostCtx := envcontext.WithTarget(t.Context(), envcontext.Target{EnvironmentID: "dh-1", DockerHost: "tcp://192.168.2.33:2375"})
+	result := &types.ImageUpdateResponse{UpdateType: UpdateTypeTag, LatestVersion: "2.0.0", CheckTime: time.Now().UTC()}
+
+	require.NoError(t, service.savePreparedUpdateResult(localCtx, "sha256:shared", "team/app", "latest", result))
+	require.NoError(t, service.savePreparedUpdateResult(dockerHostCtx, "sha256:shared", "team/app", "latest", result))
+
+	var rows []ImageUpdateRecord
+	require.NoError(t, db.WithContext(localCtx).Find(&rows).Error)
+	require.Len(t, rows, 2, "both daemons keep their own row for the same image")
+	environmentIDs := []string{rows[0].EnvironmentID, rows[1].EnvironmentID}
+	require.ElementsMatch(t, []string{"0", "dh-1"}, environmentIDs)
+
+	_, found, err := service.StoredUpdateByImageID(localCtx, "sha256:shared")
+	require.NoError(t, err)
+	require.True(t, found)
+	_, found, err = service.StoredUpdateByImageID(envcontext.WithTarget(t.Context(), envcontext.Target{EnvironmentID: "dh-2", DockerHost: "tcp://192.0.2.5:2375"}), "sha256:shared")
+	require.NoError(t, err)
+	require.False(t, found, "another environment must not see the local daemon's record")
+
+	require.NoError(t, service.DeleteRecordsForImages(dockerHostCtx, []string{"sha256:shared"}))
+	require.NoError(t, db.WithContext(localCtx).Find(&rows).Error)
+	require.Len(t, rows, 1, "deleting on one daemon keeps the other daemon's record")
+	require.Equal(t, "0", rows[0].EnvironmentID)
 }
 
 func TestImageUpdateService_CheckImages_UsesRegistryFallback(t *testing.T) {
