@@ -1288,7 +1288,7 @@ func TestContainerServiceGetContainerProcessesPodmanFallback(t *testing.T) {
 			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 			},
-			Host:       func() string { return server.URL },
+			Host:       func() (string, error) { return server.URL, nil },
 			NewSystemd: func(bool) libpodman.Systemd { return &quadletTestSystemd{} },
 		}),
 	})
