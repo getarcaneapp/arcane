@@ -240,6 +240,9 @@ func (s *Service) AggregateUpgradeChecks(ctx context.Context) (types.UpgradeChec
 
 func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
+	if errors.Is(err, common.ErrLocalDockerDisabled) {
+		return false, err
+	}
 	if err != nil {
 		return false, errors.New("docker socket is not accessible")
 	}
@@ -731,8 +734,14 @@ func (s *Service) StartUpgradeJob(ctx context.Context, user types.Actor, environ
 		return nil, fmt.Errorf("list remote environments: %w", err)
 	}
 	agents := make([]remoteAgent, len(remotes))
+	agentIDs := make([]string, len(remotes))
 	for i, remote := range remotes {
 		agents[i] = remoteAgent{ID: remote.ID, Name: remote.Name}
+		agentIDs[i] = remote.ID
+	}
+	if len(environmentIDs) == 0 && !s.dockerService.LocalDockerEnabled() {
+		// The manager cannot replace its own container without Docker, so "update all" means every agent.
+		environmentIDs = agentIDs
 	}
 	info := s.versionService.GetAppVersionInfo(ctx)
 	results, err := seedUpgradeResults(environmentIDs, UpgradeJobResult{
