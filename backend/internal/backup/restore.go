@@ -68,20 +68,20 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 		// A stopped container can be started on its own, without the project lock the restore holds, so any running one
 		// is stopped.
 		if err := r.Stop(ctx, state); err != nil {
-			return r.rollback(ctx, state, nil, fmt.Errorf("stop the project: %w", err))
+			return r.Rollback(ctx, state, nil, fmt.Errorf("stop the project: %w", err))
 		}
 	}
 	if r.Safety != nil {
 		r.report(ctx, "Taking a safety backup")
 		safetyID, err := r.Safety(ctx)
 		if err != nil {
-			return r.rollback(ctx, state, nil, fmt.Errorf("take a safety backup: %w", err))
+			return r.Rollback(ctx, state, nil, fmt.Errorf("take a safety backup: %w", err))
 		}
 		// A container started during the safety backup could be using a volume now; nothing has been written yet, so
 		// the rollback leaves the volumes alone.
 		if r.InUse != nil {
 			if err = r.InUse(ctx); err != nil {
-				return r.rollback(ctx, state, nil, err)
+				return r.Rollback(ctx, state, nil, err)
 			}
 		}
 		state.SafetyID = safetyID
@@ -91,7 +91,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	var created []string
 	for _, options := range state.Create {
 		if err := r.Create(ctx, options); err != nil {
-			return r.rollback(ctx, state, created, fmt.Errorf("create the missing volumes: %w", err))
+			return r.Rollback(ctx, state, created, fmt.Errorf("create the missing volumes: %w", err))
 		}
 		created = append(created, options.Name)
 	}
@@ -100,7 +100,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 		err = r.Verify(ctx)
 	}
 	if err != nil {
-		return r.rollback(ctx, state, created, err)
+		return r.Rollback(ctx, state, created, err)
 	}
 	// Deployed when asked, by default when it ran before the restore.
 	if !*cmp.Or(state.Redeploy, new(state.Running)) {
@@ -110,15 +110,15 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	// The project the restore deploys is its own to stop again on rollback.
 	state.MayStop = true
 	if err = r.Deploy(ctx); err != nil {
-		return r.rollback(ctx, state, created, fmt.Errorf("deploy the restored project: %w", err))
+		return r.Rollback(ctx, state, created, fmt.Errorf("deploy the restored project: %w", err))
 	}
 	return nil
 }
 
-// rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran; a
+// Rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran; a
 // project whose safety backup could not be restored is left down rather than started on half-restored data, and one
-// that could not be stopped is left as is. A new target is discarded.
-func (r RestoreSteps) rollback(ctx context.Context, state RestoreState, created []string, cause error) error {
+// that could not be stopped is left as is. A new target is discarded. Callers use it for failures before Apply.
+func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, created []string, cause error) error {
 	ctx = context.WithoutCancel(ctx)
 	if r.Discard != nil {
 		leftovers := r.removeAll(ctx, created)
