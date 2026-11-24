@@ -1277,7 +1277,6 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 			if saveErr != nil {
 				return saveErr
 			}
-			// A selective update also recreates services whose image follows an updated .env variable.
 			if len(options.Services) > 0 {
 				options.Services = slices.Compact(slices.Sorted(slices.Values(slices.Concat(options.Services, saved))))
 			}
@@ -3881,7 +3880,6 @@ func (s *ProjectService) saveProjectServiceImages(ctx context.Context, projectID
 	return services, nil
 }
 
-// persistServiceImageEnv writes image tag variables to the project .env once it is known to decide their values.
 func (s *ProjectService) persistServiceImageEnv(ctx context.Context, projectPath string, values map[string]string) error {
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
