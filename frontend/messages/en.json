@@ -4780,5 +4780,7 @@
   "discovered": "Discovered",
   "failed_to_load_diff_view": "Failed to load diff view",
   "failed_to_load_syntax_highlighting": "Failed to load syntax highlighting",
-  "local_docker_disabled_add_agent": "Local Docker is turned off on this manager. Add an agent to manage containers."
+  "local_docker_disabled_add_agent": "Local Docker is turned off on this manager. Add an agent to manage containers.",
+  "manager_update_manually": "Local Docker is disabled on the manager, so update its container yourself.",
+  "system_backups_local_docker_disabled": "System backups are stored in a local Docker volume, so they are unavailable while ARCANE_LOCAL_DOCKER_ENABLED=false. Existing backups stay listed."
 }

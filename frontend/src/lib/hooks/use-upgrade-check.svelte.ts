@@ -17,7 +17,7 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 
 	// Same permission the update-all endpoint enforces (PermSystemUpgrade).
 	const canInstallUpdates = $derived(hasPermission('system:upgrade', LOCAL_DOCKER_ENVIRONMENT_ID));
-	// Without local Docker the manager cannot replace its own container, so only agent updates count.
+	// Without local Docker the manager cannot replace its own container, so only agents can be updated from here.
 	const managerUpgradable = $derived(!isLocalDockerDisabled(environmentStore.getLocalEnvironment()));
 	const queryClient = useQueryClient();
 	const agentEnvironments = $derived(
@@ -41,7 +41,7 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 			data.updateAvailable && agentEnvironments.some((env) => env.id === environment.id) ? [data] : []
 		)
 	);
-	const updateCount = $derived(agentUpdates.length + (managerUpgradable && getVersionInformation()?.updateAvailable ? 1 : 0));
+	const updateCount = $derived(agentUpdates.length + (getVersionInformation()?.updateAvailable ? 1 : 0));
 	const shouldCheckUpgrade = $derived(
 		!!(updateCount > 0 && canInstallUpdates && hasPermission('system:read', LOCAL_DOCKER_ENVIRONMENT_ID) && !getDebug())
 	);

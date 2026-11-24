@@ -110,9 +110,8 @@
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	// System backups live in a local Docker volume, so they need the manager's own Docker.
-	const canCreateBackups = $derived(
-		hasPermission('system-backups:create', GLOBAL_SCOPE) && !isLocalDockerDisabled(environmentStore.getLocalEnvironment())
-	);
+	const localDockerDisabled = $derived(isLocalDockerDisabled(environmentStore.getLocalEnvironment()));
+	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && !localDockerDisabled);
 	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE));
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
 	const canDiscoverBackups = $derived(isGlobalAdmin());
@@ -874,6 +873,12 @@
 >
 	{#snippet mainContent()}
 		<div class="space-y-8">
+			{#if localDockerDisabled}
+				<Alert.Root variant="warning-subtle">
+					<InfoIcon class="size-4 text-warning" />
+					<Alert.Description>{m.system_backups_local_docker_disabled()}</Alert.Description>
+				</Alert.Root>
+			{/if}
 			{@render recoveryKeySummary()}
 
 			<SettingsSection title={m.system_backups_schedules()} variant="plain">
