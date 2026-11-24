@@ -48,6 +48,13 @@ type (
 		Kind     string
 		Filename string
 	}
+
+	// budgetWriter refuses a write that would leave less than the reserve free.
+	budgetWriter struct {
+		w       io.Writer
+		left    int64
+		reserve int64
+	}
 )
 
 const (
@@ -110,21 +117,41 @@ func (s *UploadService) validateSize(ctx context.Context, kind string, size int6
 			return fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
 		}
 	}
-	if kind != types.UploadKindProjectArchive {
-		return nil
-	}
-	if err := (acfs.Host{}).MkdirAll(ctx, s.root, 0o700); err != nil {
-		return fmt.Errorf("create upload root: %w", err)
-	}
-	budget, reserve, err := projects.FreeSpaceBudget(ctx, s.root)
-	if err != nil {
-		return fmt.Errorf("check free space for the upload: %w", err)
+	budget, reserve, limited, err := s.budget(ctx, kind)
+	if err != nil || !limited {
+		return err
 	}
 	if size > budget {
 		return fmt.Errorf("%w: the upload needs %s, more than can be stored while keeping %s free", common.ErrUploadSessionInvalid,
 			units.BytesSize(float64(size)), units.BytesSize(float64(reserve)))
 	}
 	return nil
+}
+
+// budget returns how much an upload may store while keeping a reserve of the disk free. Only project and volume
+// archives, which hold as much as the data they were made from, are limited.
+func (s *UploadService) budget(ctx context.Context, kind string) (budget, reserve int64, limited bool, err error) {
+	if kind != types.UploadKindProjectArchive && kind != types.UploadKindVolumeBackup {
+		return 0, 0, false, nil
+	}
+	if err = (acfs.Host{}).MkdirAll(ctx, s.root, 0o700); err != nil {
+		return 0, 0, false, fmt.Errorf("create upload root: %w", err)
+	}
+	budget, reserve, err = projects.FreeSpaceBudget(ctx, s.root)
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("check free space for the upload: %w", err)
+	}
+	return budget, reserve, true, nil
+}
+
+func (b *budgetWriter) Write(p []byte) (int, error) {
+	if int64(len(p)) > b.left {
+		return 0, common.Classify(common.ErrInsufficientStorage, fmt.Errorf(
+			"the upload needs more than the %s that can be stored while keeping %s free", units.BytesSize(float64(max(b.left, 0))), units.BytesSize(float64(b.reserve)),
+		))
+	}
+	b.left -= int64(len(p))
+	return b.w.Write(p)
 }
 
 func (s *UploadService) CreateSession(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (*types.UploadSession, error) {
@@ -304,10 +331,19 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 	})
 }
 
+// WriteSession stores what Write writes as a complete upload. A limited upload fails before Write runs when the disk
+// has no room for it, and as soon as it outgrows the room left.
 func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptions) (session *types.UploadSession, err error) {
 	filename, err := sessionFilename(opts.Kind, opts.Filename)
 	if err != nil {
 		return nil, err
+	}
+	budget, reserve, limited, err := s.budget(ctx, opts.Kind)
+	if err != nil {
+		return nil, err
+	}
+	if limited && budget <= 0 {
+		return nil, common.Classify(common.ErrInsufficientStorage, fmt.Errorf("no upload can be stored while keeping %s free", units.BytesSize(float64(reserve))))
 	}
 	sessionDir, err := s.createSessionDir(ctx)
 	if err != nil {
@@ -329,7 +365,11 @@ func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptio
 	if err != nil {
 		return nil, fmt.Errorf("create upload session data file: %w", err)
 	}
-	if writeErr := opts.Write(file); writeErr != nil {
+	var w io.Writer = file
+	if limited {
+		w = &budgetWriter{w: file, left: budget, reserve: reserve}
+	}
+	if writeErr := opts.Write(w); writeErr != nil {
 		return nil, errors.Join(writeErr, file.Close())
 	}
 	info, err := file.Stat()

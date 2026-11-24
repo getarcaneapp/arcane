@@ -75,7 +75,9 @@ type (
 		LastHeartbeat time.Time
 		Conn          TunnelConnection
 		HTTPClient    *http.Client
-		done          chan struct{}
+		// deadlineClient has no response header timeout, so a request's own deadline alone bounds the wait.
+		deadlineClient *http.Client
+		done           chan struct{}
 
 		mux           *muxSession
 		Host          *AgentHostInfo
