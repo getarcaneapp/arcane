@@ -14,6 +14,8 @@ import (
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 	"kit.getarcane.app/updater/refs"
+
+	"getarcane.dev/arcane/v3/pkg/containerlabel"
 )
 
 const (
@@ -39,17 +41,7 @@ const (
 // IsUpdateCheckDisabled reports whether labels opt the resource out of update
 // monitoring. Checks stay enabled unless the value parses as false.
 func IsUpdateCheckDisabled(labels map[string]string) bool {
-	value, ok := labels[UpdateCheckLabel]
-	if !ok {
-		// Other spellings are accepted; among conflicting ones the smallest key
-		// wins so the answer does not depend on map iteration order.
-		var matched string
-		for key, candidate := range labels {
-			if strings.EqualFold(strings.TrimSpace(key), UpdateCheckLabel) && (!ok || key < matched) {
-				matched, value, ok = key, candidate, true
-			}
-		}
-	}
+	value, ok := containerlabel.Value(labels, UpdateCheckLabel)
 	if !ok {
 		return false
 	}

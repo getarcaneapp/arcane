@@ -212,6 +212,19 @@ func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	fallback := discoveredVolumeBackup("d", "r", backup.DiscoveredSnapshot{ID: "x", Label: "vol"})
 	require.NotNil(t, fallback)
 	require.False(t, fallback.CreatedAt.IsZero())
+
+	local := discoveredVolumeBackup("", "", backup.DiscoveredSnapshot{ID: "abc123", Label: "app-data", Tags: []string{"daily", backup.RunSnapshotTag("backup-1")}})
+	require.NotNil(t, local)
+	require.Equal(t, "backup-1", local.ID)
+	require.Equal(t, types.VolumeBackupTriggerDiscovered, local.Trigger)
+	require.Equal(t, types.VolumeBackupDestinationLocal, local.Destination)
+	require.Equal(t, "abc123", local.LocalSnapshotID)
+	require.Empty(t, local.RemoteSnapshotID)
+	require.Empty(t, local.S3DestinationID)
+
+	untagged := discoveredVolumeBackup("", "", backup.DiscoveredSnapshot{ID: "def456", Label: "app-data"})
+	require.NotNil(t, untagged)
+	require.Equal(t, "local-def456", untagged.ID)
 }
 
 func TestDiscoveredSnapshotDecodesRusticLabel(t *testing.T) {
@@ -243,6 +256,7 @@ func TestOrphanedVolumeBackupIDs(t *testing.T) {
 		{ID: "manual-deleted-system-policy", VolumeName: "app-data", PolicyID: systemSeries("weekly"), Trigger: manual},
 		{ID: "removed-volume", VolumeName: "old-data", Trigger: manual},
 		{ID: "removed-volume-with-policy", VolumeName: "old-data", PolicyID: systemSeries("nightly"), Trigger: scheduled},
+		{ID: "discovered-removed-volume", VolumeName: "old-data", Trigger: types.VolumeBackupTriggerDiscovered},
 	}
 
 	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1"}, []string{"manual", "nightly"})

@@ -884,7 +884,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 	if job.Status != UpgradeJobStatusRunning {
 		return nil, nil
 	}
-	if allowed, authorizeErr := s.authorizeUpgradeJob(ctx, job, input.KeyID); !allowed {
+	if allowed, authorizeErr := s.authorizeUpgradeJob(ctx, job, input.KeyID, remote.ID); !allowed {
 		return nil, authorizeErr
 	}
 	index := upsertPendingResult(job, remote.ID, remote.Name)
@@ -1090,18 +1090,18 @@ func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, err
 	if err != nil {
 		return nil, err
 	}
+	manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
+		return r.EnvironmentID == environment.LocalEnvironmentID
+	})
 	allowed, err := func() (bool, error) {
-		if job.Status != UpgradeJobStatusRunning {
-			return false, nil
+		if job.Status != UpgradeJobStatusRunning || manager < 0 {
+			return job.Status == UpgradeJobStatusRunning, nil
 		}
-		return s.authorizeUpgradeJob(ctx, job, input.KeyID)
+		return s.authorizeUpgradeJob(ctx, job, input.KeyID, environment.LocalEnvironmentID)
 	}()
 	if err != nil {
 		return nil, err
 	}
-	manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
-		return r.EnvironmentID == environment.LocalEnvironmentID
-	})
 	if allowed && manager < 0 {
 		s.finalizeUpgradeJob(ctx, job, "", "")
 	}
@@ -1538,12 +1538,12 @@ func (s *Service) loadUpgradeJob(ctx context.Context, id string) (*UpgradeJob, e
 	return job, err
 }
 
-func (s *Service) authorizeUpgradeJob(ctx context.Context, job *UpgradeJob, keyID string) (bool, error) {
+func (s *Service) authorizeUpgradeJob(ctx context.Context, job *UpgradeJob, keyID, environmentID string) (bool, error) {
 	permissions, err := s.roles.ResolveExecutionPermissions(ctx, job.UserID, keyID)
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}
-	if err == nil && permissions.Allows(authz.PermSystemUpgrade, environment.LocalEnvironmentID) {
+	if err == nil && permissions.Allows(authz.PermSystemUpgrade, environmentID) {
 		return true, nil
 	}
 	s.markUpgradeJobFailed(ctx, job, "requesting user no longer has permission to upgrade")

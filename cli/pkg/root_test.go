@@ -14,6 +14,7 @@ func TestEveryRunnableCommandHasScope(t *testing.T) {
 	scopes := []string{
 		cmdutil.ScopeRead,
 		cmdutil.ScopeMerged,
+		cmdutil.ScopeMergedAction,
 		cmdutil.ScopeAll,
 		cmdutil.ScopeDestination,
 		cmdutil.ScopeResource,

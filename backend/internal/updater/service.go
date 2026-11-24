@@ -21,6 +21,8 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
@@ -44,7 +46,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/notification"
 	projectpkg "getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
@@ -58,18 +60,20 @@ import (
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/notifications"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	UpdaterService struct {
-		admission  *runs.Admission
-		engine     *updater.Service
-		execution  *execution.Service
-		recovery   *recovery.Service
-		autoUpdate *flow.Workflow
-		deps       updaterDependencies
+		admission       *runs.Admission
+		engine          *updater.Service
+		execution       *execution.Service
+		recovery        *recovery.Service
+		autoUpdate      *flow.Workflow
+		registryLimiter *registry.RegistryRateLimiter
+		deps            updaterDependencies
 	}
 
 	updaterDependencies struct {
@@ -79,7 +83,7 @@ type (
 		Projects               *projectpkg.ProjectService
 		ImagePuller            *image.ImageService
 		ImageUpdates           *imageupdate.ImageUpdateService
-		RegistryDigestResolver *registry.ContainerRegistryService
+		RegistryDigestResolver *registryInternal.ContainerRegistryService
 		Events                 *event.EventService
 		Notifications          *notification.NotificationService
 		SelfUpgrade            SelfUpgrader
@@ -140,7 +144,7 @@ type (
 		DockerService        *dockerInternal.DockerClientService
 		ProjectService       *projectpkg.ProjectService
 		ImageUpdateService   *imageupdate.ImageUpdateService
-		RegistryService      *registry.ContainerRegistryService
+		RegistryService      *registryInternal.ContainerRegistryService
 		EventService         *event.EventService
 		ImageService         *image.ImageService
 		NotificationService  *notification.NotificationService
@@ -151,6 +155,10 @@ type (
 		RoleService          *role.RoleService
 		VulnerabilityService VulnerabilityScanner
 	}
+)
+
+const (
+	projectCheckConcurrency = 24
 )
 
 var (
@@ -179,7 +187,8 @@ var (
 
 func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 	service := &UpdaterService{
-		admission: p.Admission,
+		admission:       p.Admission,
+		registryLimiter: registry.NewRegistryRateLimiter(),
 		deps: updaterDependencies{
 			DB:                     p.DB,
 			Docker:                 p.DockerService,
@@ -232,6 +241,7 @@ func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 		Settings:               service,
 		RegistryDigestResolver: p.RegistryService,
 		RegistryTagLister:      service,
+		TagCandidateFilter:     service,
 		ProjectUpdater:         service,
 		SelfUpdater:            service,
 		Notifier:               service,
@@ -791,6 +801,36 @@ func (s *UpdaterService) AggregateHistory(ctx context.Context, limit int) (types
 	}, nil
 }
 
+func (s *UpdaterService) AggregateApplyPending(ctx context.Context) (types.ApiResponse[*types.UpdaterResult], error) {
+	if scope, ok := httpx.EnvironmentScopeFromContext(ctx); ok && scope.Timeout == 0 {
+		ctx = httpx.WithEnvironmentScope(ctx, &httpx.EnvironmentScope{ //exhaustruct:enforce
+			Handler: scope.Handler,
+			Request: scope.Request,
+			Resolve: scope.Resolve,
+			Path:    scope.Path,
+			IDs:     scope.IDs,
+			Body:    scope.Body,
+			Timeout: timeouts.DefaultAutoUpdateApply,
+		})
+	}
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[*types.UpdaterResult]) *types.UpdaterResult {
+		result := types.UpdaterResult{Items: []types.UpdaterResourceResult{}, Success: true}
+		for _, environment := range environments {
+			data := kit.FromPtr(environment.Data)
+			result = types.UpdaterResult{
+				Items:     slices.Concat(result.Items, data.Items),
+				Checked:   result.Checked + data.Checked,
+				Updated:   result.Updated + data.Updated,
+				Restarted: result.Restarted + data.Restarted,
+				Skipped:   result.Skipped + data.Skipped,
+				Failed:    result.Failed + data.Failed,
+				Success:   result.Success && data.Success,
+			}
+		}
+		return &result
+	})
+}
+
 func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef, oldRefToNewRef map[string]string) ([]types.UpdaterResourceResult, error) {
 	results, err := s.engine.RestartContainersUsingOldImages(ctx, updater.RestartTargets{ByOldID: oldIDToNewRef, ByOldRef: oldRefToNewRef})
 	return resultFromModule(&updater.Result{Items: results}).Items, err
@@ -1256,8 +1296,39 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 	return query.Where("id = ? AND container_id = ?", record.ID, "").Updates(clearedImageUpdate).Error
 }
 
+// ExcludedContainers lists the containers the updater engine must skip. In include mode these are the
+// IDs and names of all containers that are neither listed nor labelled updater=true. The names keep a
+// container excluded when it is recreated with a new ID while the engine runs.
 func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, error) {
-	return kit.Unique(kit.TrimNonEmpty(strings.Split(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"), ","))), nil
+	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
+	if !policy.Include {
+		return slices.Sorted(maps.Keys(policy.Listed)), nil
+	}
+	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list containers for auto-update include mode: %w", err)
+	}
+	var excluded []string
+	for _, summary := range listResult.Items {
+		if !policy.Allows(summary.Labels, summary.Names) {
+			excluded = append(excluded, summary.ID)
+			for _, name := range summary.Names {
+				excluded = append(excluded, strings.TrimPrefix(name, "/"))
+			}
+		}
+	}
+	return excluded, nil
+}
+
+// skipReason rewords the engine's exclusion reason in include mode, where ExcludedContainers
+// holds the containers that are not included.
+func (s *UpdaterService) skipReason(ctx context.Context, reason string) string {
+	if reason == engineExcludedReason && s.deps.Settings.AutoUpdatePolicy(ctx).Include {
+		return "not included in automatic updates"
+	}
+	return reason
 }
 
 func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName string) (updater.ComposeProject, error) {
@@ -1641,7 +1712,7 @@ func (s *UpdaterService) logResultItems(ctx context.Context, result *types.Updat
 			"resourceId":   item.ResourceID,
 			"resourceName": item.ResourceName,
 			"status":       item.Status,
-			"error":        item.Error,
+			"error":        s.skipReason(ctx, item.Error),
 			"oldImages":    item.OldImages,
 			"newImages":    item.NewImages,
 		})
@@ -1676,7 +1747,7 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 }
 
 func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, out map[string]struct{}) error {
-	excludedContainers := docker.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers"))
+	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
 	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
 	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
@@ -1693,8 +1764,8 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 			continue
 		}
 
-		if !ignoreOptOuts && docker.ContainerNameExcluded(summary.Names, excludedContainers) {
-			slog.DebugContext(ctx, "collectUsedImagesFromContainers: skipping excluded container", "containerId", summary.ID, "names", summary.Names)
+		if !ignoreOptOuts && !policy.Allows(summary.Labels, summary.Names) {
+			slog.DebugContext(ctx, "collectUsedImagesFromContainers: skipping container that is excluded or not included", "containerId", summary.ID, "names", summary.Names)
 			continue
 		}
 
@@ -1712,7 +1783,7 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect failed", "containerId", summary.ID, "error", inspectErr)
 			continue
 		}
-		if !ignoreOptOuts && labels.IsUpdateDisabled(kit.FromPtr(inspectResult.Container.Config).Labels) {
+		if inspectLabels := kit.FromPtr(inspectResult.Container.Config).Labels; !ignoreOptOuts && (labels.IsUpdateDisabled(inspectLabels) || !policy.Allows(inspectLabels, summary.Names)) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect labels opted out", "containerId", summary.ID)
 			continue
 		}
@@ -1766,8 +1837,11 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 	}
 
 	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
+	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
 	for _, summary := range composeContainers {
-		if _, isActive := activeProjectNames[docker.ComposeProjectLabel(summary.Labels)]; !isActive || (!ignoreOptOuts && labels.IsUpdateDisabled(summary.Labels)) {
+		// The list has never excluded Compose services here, but include mode limits them.
+		skipped := labels.IsUpdateDisabled(summary.Labels) || (policy.Include && !policy.Allows(summary.Labels, summary.Names))
+		if _, isActive := activeProjectNames[docker.ComposeProjectLabel(summary.Labels)]; !isActive || (!ignoreOptOuts && skipped) {
 			continue
 		}
 		imageRef := strings.TrimSpace(summary.Image)
@@ -1802,6 +1876,7 @@ func (s *UpdaterService) PruneHistory(ctx context.Context, retentionDays int) (i
 
 func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.ResourceResult) error {
 	now := time.Now()
+	errorText := s.skipReason(ctx, result.Error)
 	_, blockedReason, blocked := strings.Cut(kit.Ternary(result.Status == updater.StatusFailed, result.Error, ""), vulnerabilityGateBlockedPrefix)
 	recordErr := s.deps.DB.WithContext(ctx).Create(&AutoUpdateRecord{
 		ResourceID:       result.ResourceID,
@@ -1814,7 +1889,7 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 		UpdateApplied:    result.UpdateApplied,
 		OldImageVersions: kit.Ternary(result.OldImage != "", database.JSON{"main": result.OldImage}, nil),
 		NewImageVersions: kit.Ternary(result.NewImage != "", database.JSON{"main": result.NewImage}, nil),
-		Error:            mo.EmptyableToOption(result.Error).ToPointer(),
+		Error:            mo.EmptyableToOption(errorText).ToPointer(),
 		Details:          kit.Ternary(len(result.Details) > 0, maps.Clone(result.Details), nil),
 	}).Error
 	name := cmp.Or(strings.TrimSpace(result.ResourceName), result.ResourceID)
@@ -1838,7 +1913,7 @@ func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.Res
 				return types.ActivityMessageLevelInfo
 			}(),
 			Message: func() string {
-				reason := strings.TrimSpace(result.Error)
+				reason := strings.TrimSpace(errorText)
 				if blocked {
 					return name + ": " + types.UpdaterStatusBlocked + " (" + blockedReason + ")"
 				}
@@ -1984,6 +2059,22 @@ func (s *UpdaterService) ListTags(ctx context.Context, imageRef string) ([]strin
 	return s.deps.RegistryDigestResolver.ListImageTags(ctx, imageRef, credentials)
 }
 
+func (s *UpdaterService) AcceptTag(ctx context.Context, candidate updatertypes.TagCandidate) (bool, error) {
+	dockerClient, err := s.DockerClient(ctx)
+	if err != nil {
+		return false, err
+	}
+	platform, err := registryInternal.ImagePlatform(ctx, dockerClient, candidate)
+	if err != nil {
+		return false, err
+	}
+	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
+	if err != nil {
+		return false, fmt.Errorf("resolve registry credentials: %w", err)
+	}
+	return s.deps.RegistryDigestResolver.HasImagePlatform(ctx, candidate.TargetRef, platform, credentials)
+}
+
 func (s *UpdaterService) UpdateServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) error {
 	s.appendAutoUpdateActivityMessage(ctx, activityIDFromContext(ctx), "Updating Compose image references", "Persisting image updates", 50)
 	return s.deps.Projects.UpdateProjectServiceImages(ctx, projectID, changes, projectpkg.ServiceUpdateOptions{
@@ -2000,12 +2091,63 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 	if len(details.Services) == 0 {
 		return nil, errors.New("project has no resolved Compose services to check")
 	}
-	records := make([]imageupdate.ImageUpdateRecord, 0, len(details.Services))
+	services := make([]composeTypes.ServiceConfig, 0, len(details.Services))
 	for _, service := range details.Services {
-		if strings.TrimSpace(service.Image) == "" {
-			continue
+		if strings.TrimSpace(service.Image) != "" {
+			services = append(services, service)
 		}
-		records = append(records, s.checkProjectService(ctx, projectID, service))
+	}
+
+	type cachedCheck struct {
+		err    error
+		result updatertypes.CheckResult
+	}
+	var (
+		flight singleflight.Group
+		mu     sync.Mutex
+		memo   = make(map[string]cachedCheck)
+	)
+	checkImage := func(checkCtx context.Context, registryHost, cacheKey string, req updatertypes.CheckRequest) (updatertypes.CheckResult, error) {
+		mu.Lock()
+		cached, ok := memo[cacheKey]
+		mu.Unlock()
+		if ok {
+			return cached.result, cached.err
+		}
+		shared, _, _ := flight.Do(cacheKey, func() (any, error) {
+			mu.Lock()
+			existing, hit := memo[cacheKey]
+			mu.Unlock()
+			if hit {
+				return existing, nil
+			}
+			if acquireErr := s.registryLimiter.Acquire(checkCtx, registryHost); acquireErr != nil {
+				return cachedCheck{err: acquireErr}, nil
+			}
+			defer s.registryLimiter.Release(registryHost)
+			res, resErr := s.engine.CheckImageUpdate(checkCtx, req)
+			outcome := cachedCheck{result: res, err: resErr}
+			mu.Lock()
+			memo[cacheKey] = outcome
+			mu.Unlock()
+			return outcome, nil
+		})
+		outcome := shared.(cachedCheck)
+		return outcome.result, outcome.err
+	}
+
+	records := make([]imageupdate.ImageUpdateRecord, len(services))
+	var g errgroup.Group
+	g.SetLimit(projectCheckConcurrency)
+	for i, service := range services {
+		g.Go(func() (workerErr error) {
+			defer concurrency.RecoverToError(&workerErr, "project service update check", "projectId", projectID, "service", service.Name)
+			records[i] = s.checkProjectService(ctx, projectID, service, checkImage)
+			return nil
+		})
+	}
+	if waitErr := g.Wait(); waitErr != nil {
+		return nil, fmt.Errorf("check project updates: %w", waitErr)
 	}
 	if transactionErr := s.deps.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var pending []imageupdate.ImageUpdateRecord
@@ -2049,7 +2191,12 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 	return projectpkg.BuildConfiguredUpdateInfo(projectID, details.Services, nil, records), nil
 }
 
-func (s *UpdaterService) checkProjectService(ctx context.Context, projectID string, service composeTypes.ServiceConfig) imageupdate.ImageUpdateRecord {
+func (s *UpdaterService) checkProjectService(
+	ctx context.Context,
+	projectID string,
+	service composeTypes.ServiceConfig,
+	checkImage func(context.Context, string, string, updatertypes.CheckRequest) (updatertypes.CheckResult, error),
+) imageupdate.ImageUpdateRecord {
 	checkTime := time.Now().UTC()
 	parsed, err := refs.NormalizeReference(service.Image)
 	if err != nil {
@@ -2068,10 +2215,15 @@ func (s *UpdaterService) checkProjectService(ctx context.Context, projectID stri
 		if service.Build != nil || parsed.RegistryHost == imageref.PodmanLocalRegistry || imageref.IsUpdateCheckDisabled(service.Labels) {
 			return updatertypes.CheckResult{}, nil
 		}
-		result, resultErr := s.engine.CheckImageUpdate(ctx, updatertypes.CheckRequest{
+		policy := updater.DefaultLabelPolicy().TagPolicy(service.Labels)
+		req := updatertypes.CheckRequest{
 			ImageRef: service.Image,
-			Policy:   updater.DefaultLabelPolicy().TagPolicy(service.Labels),
-		})
+			Policy:   policy,
+		}
+		if checkImage != nil {
+			return checkImage(ctx, parsed.RegistryHost, parsed.NormalizedRef+"\x00"+imageref.UpdatePolicyKey(service.Image, service.Labels), req)
+		}
+		result, resultErr := s.engine.CheckImageUpdate(ctx, req)
 		if resultErr != nil {
 			return updatertypes.CheckResult{}, resultErr
 		}
@@ -2124,8 +2276,8 @@ func (s *UpdaterService) checkProjectService(ctx context.Context, projectID stri
 func (s *UpdaterService) RegisterWorkflows(engine *flow.Engine) error {
 	autoUpdate, err := engine.Define(flow.Definition{
 		Name:        "auto-update",
-		Version:     5,
-		Fingerprint: "91e27dc48df6737110ec334dfa9c2e2e032a6cc4285e8f1dd08dc40741e6d5b9",
+		Version:     6,
+		Fingerprint: "d8d498483b96e0c4ae07c5b84f00961e28c8f27e0f10b999bb8d30d0ad7bf7a8",
 		Concurrency: 1,
 		Timeout:     2 * time.Hour,
 		Activity: activitylib.StartRequest{

@@ -20,6 +20,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
@@ -87,7 +88,7 @@ type (
 		DockerService      *docker.DockerClientService
 		ProjectService     *project.ProjectService
 		Coordinator        *runs.Coordinator
-		Environments       imageUpdateEnvironments
+		Environments       *environment.EnvironmentService
 	}
 )
 

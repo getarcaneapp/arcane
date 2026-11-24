@@ -62,11 +62,15 @@ var (
 			"image patching requires Docker's containerd image store; enable the containerd-snapshotter feature in daemon.json and restart Docker",
 		),
 	)
-	ErrPatchScanReportUnavailable              = Classify(ErrNotFound, errors.New("no stored scan report is available for this scan; re-scan the image or patch without a report"))
-	ErrPatchScanImageMismatch                  = Classify(ErrBadRequest, errors.New("the selected scan does not belong to this image"))
-	ErrContainerComposeManaged                 = Classify(ErrConflict, errors.New("container is managed by a compose project; edit it via the project editor"))
-	ErrContainerQuadletManaged                 = Classify(ErrConflict, errors.New("container is managed by a Podman quadlet; manage it through its systemd unit"))
-	ErrContainerNameTaken                      = Classify(ErrConflict, errors.New("a container with this name already exists"))
+	ErrPatchScanReportUnavailable         = Classify(ErrNotFound, errors.New("no stored scan report is available for this scan; re-scan the image or patch without a report"))
+	ErrPatchScanImageMismatch             = Classify(ErrBadRequest, errors.New("the selected scan does not belong to this image"))
+	ErrContainerComposeManaged            = Classify(ErrConflict, errors.New("container is managed by a compose project; edit it via the project editor"))
+	ErrContainerQuadletManaged            = Classify(ErrConflict, errors.New("container is managed by a Podman quadlet; manage it through its systemd unit"))
+	ErrContainerNameTaken                 = Classify(ErrConflict, errors.New("a container with this name already exists"))
+	ErrContainerAutoUpdateLabelControlled = Classify(
+		ErrConflict,
+		errors.New("Automatic updates for this container are set by its com.getarcaneapp.arcane.updater label. Change the label to change this setting."),
+	)
 	ErrInvalidBackupSelection                  = Classify(ErrBadRequest, errors.New("invalid backup file selection"))
 	ErrSwarmNotEnabled                         = Classify(ErrBadRequest, errors.New("Swarm mode is not enabled"))
 	ErrPodmanNotDetected                       = Classify(ErrBadRequest, errors.New("Podman was not detected on this environment"))

@@ -240,3 +240,24 @@ func TestAwaitRunWaitsForConflictingRun(t *testing.T) {
 		t.Fatal("scheduled run was not admitted after the conflicting run finished")
 	}
 }
+
+func TestRecordDiscoveredSkipsRecordedBackups(t *testing.T) {
+	var created []string
+	count, err := RecordDiscovered(t.Context(), DiscoveredRecords[*types.VolumeBackup]{
+		Entries: []*types.VolumeBackup{{ID: "running"}, {ID: "new"}, {ID: "new"}},
+		ID: func(entry *types.VolumeBackup) string {
+			return entry.ID
+		},
+		Existing: func(_ context.Context, ids []string) ([]*types.VolumeBackup, error) {
+			require.ElementsMatch(t, []string{"running", "new", "new"}, ids)
+			return []*types.VolumeBackup{{ID: "running"}}, nil
+		},
+		Create: func(_ context.Context, entry *types.VolumeBackup) error {
+			created = append(created, entry.ID)
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	require.Equal(t, []string{"new"}, created)
+}

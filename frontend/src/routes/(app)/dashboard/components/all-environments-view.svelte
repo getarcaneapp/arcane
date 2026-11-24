@@ -622,8 +622,12 @@
 			return;
 		}
 
-		const results = await Promise.all(
-			targets.map((target) => tryCatch(systemService.pruneAllForEnvironment(target.environment.id, pruneRequest)))
+		const result = await tryCatch(
+			readEachEnvironment(
+				targets.map((target) => target.environment),
+				(scope, config) => systemService.pruneAllForEnvironment(scope, pruneRequest, config),
+				{}
+			)
 		);
 		pruningEnvironmentId = null;
 		isPruneDialogOpen = false;
@@ -631,13 +635,15 @@
 		pruneDefaults = null;
 		void diskUsageQuery.refetch();
 
-		const failures = targets.flatMap((target, index) => {
-			const error = results[index]?.error;
-			return error ? [`${target.environment.name}: ${extractApiErrorMessage(error)}`] : [];
-		});
-		if (failures.length < targets.length) {
+		let succeeded = 0;
+		let failures = [extractApiErrorMessage(result.error)];
+		if (result.error === null) {
+			succeeded = result.data.byEnvironment.length;
+			failures = result.data.failedEnvironments.map(({ environment, message }) => `${environment.name}: ${message}`);
+		}
+		if (succeeded > 0) {
 			toast.success(successMessage, {
-				description: m.across_count_environments({ count: targets.length - failures.length })
+				description: m.across_count_environments({ count: succeeded })
 			});
 		}
 		if (failures.length > 0) {

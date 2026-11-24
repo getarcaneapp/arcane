@@ -118,9 +118,10 @@ func RequirePermissions(ctx context.Context, environmentID string, perms []strin
 
 func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {
 	if scope, scoped := httpx.EnvironmentScopeFromContext(ctx.Context()); scoped && authz.IsEnvScoped(perm) {
-		return slices.ContainsFunc(scope.IDs, func(id string) bool {
+		denied := slices.DeleteFunc(slices.Clone(scope.IDs), func(id string) bool {
 			return ps.Allows(perm, id)
 		})
+		return kit.Ternary(ctx.Method() == http.MethodGet, len(denied) < len(scope.IDs), len(denied) == 0)
 	}
 	envID := kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(ctx.URL().Path), "")
 	// A docker-host request is re-dispatched onto the local route set, whose path carries no

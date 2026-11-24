@@ -8,7 +8,7 @@ import { userService } from '#lib/services/user-service.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import type { AutoUpdateResourceType, UpdaterResult } from '#lib/types/updater.js';
 import { activityToastOptions } from '#lib/utils/activity-toast.js';
-import { acrossEnvironmentsNote, actionEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
+import { acrossEnvironmentsNote, actAcrossEnvironments, actionEnvironments } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export function applyScopedUpdate(
@@ -113,7 +113,7 @@ export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndA
 				if (restartsThisBackend) BaseAPIService.setUpgradeInProgress(true);
 				try {
 					const results = await tryCatch(
-						settleAcrossEnvironments(environments, (id) => imageService.runAutoUpdate(undefined, id))
+						actAcrossEnvironments(environments, (scope, config) => imageService.runAutoUpdate(undefined, scope, config))
 					);
 					if (results.error !== null) {
 						console.error('Update all failed:', results.error);

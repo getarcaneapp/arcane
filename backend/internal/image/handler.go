@@ -478,6 +478,13 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 }
 
 func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*handlerutil.Out[types.ImagePruneReport], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.imageService.AggregatePruneImages(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to prune images: " + err.Error())
+		}
+		return &handlerutil.Out[types.ImagePruneReport]{Body: body}, nil
+	}
 	report, err := h.imageService.PruneImages(ctx, types.PruneImagesOptions{
 		Mode: types.PruneImageMode(func() string {
 			if mode := strings.TrimSpace(kit.FromPtr(kit.FromPtr(input.Body).Mode)); mode != "" {

@@ -4,6 +4,8 @@ import type { LogRecord } from '@opentelemetry/api';
 import type { Resource } from '@opentelemetry/resources';
 import type { Metric } from 'web-vitals';
 
+import { streamCacheBuster } from '#lib/utils/streaming.js';
+
 type Signal = 'traces' | 'metrics' | 'logs';
 
 const SERVICE_NAME = 'arcane-frontend';
@@ -168,9 +170,8 @@ export function setTelemetry(enabled: Record<Signal, boolean>, version: string):
 	const loaded = (resource ??= Promise.all([
 		import('@opentelemetry/resources'),
 		import('@opentelemetry/semantic-conventions'),
-		import('@opentelemetry/opentelemetry-browser-detector'),
-		import('#lib/utils/streaming.js')
-	]).then(([resources, semconv, detector, streaming]) => {
+		import('@opentelemetry/opentelemetry-browser-detector')
+	]).then(([resources, semconv, detector]) => {
 		const flush = (event: Event) => {
 			if (event.type === 'pagehide') pageSpan?.end();
 			else if (document.visibilityState !== 'hidden') return;
@@ -183,7 +184,7 @@ export function setTelemetry(enabled: Record<Signal, boolean>, version: string):
 				[semconv.ATTR_SERVICE_NAME]: SERVICE_NAME,
 				[semconv.ATTR_SERVICE_VERSION]: version,
 				// Each page session owns its cumulative metric series, so tabs never overwrite each other.
-				[semconv.ATTR_SERVICE_INSTANCE_ID]: streaming.streamCacheBuster()
+				[semconv.ATTR_SERVICE_INSTANCE_ID]: streamCacheBuster()
 			})
 			.merge(resources.detectResources({ detectors: [detector.browserDetector] }));
 	}));

@@ -223,6 +223,9 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 		producers = append(producers, forwardStreamChannel(
 			types.StreamChannelUpgrade,
 			func(channel string, job types.UpgradeJob) types.StreamEvent {
+				job.Results = slices.DeleteFunc(slices.Clone(job.Results), func(r types.UpgradeJobResult) bool {
+					return !ps.Allows(authz.PermSystemRead, r.EnvironmentID)
+				})
 				return types.StreamEvent{Channel: channel, Upgrade: &job, Timestamp: time.Now()}
 			},
 			h.system.RunUpgradeStreamProducer,

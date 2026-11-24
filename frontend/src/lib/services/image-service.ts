@@ -202,8 +202,8 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/agents/${environmentId}/images/${imageId}`, { params: options }));
 	}
 
-	async pruneImages(options: PruneImagesOptions, environmentId: string): Promise<ImagePruneReport> {
-		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/prune`, options));
+	async pruneImages(options: PruneImagesOptions, environmentId: string, config?: APIRequestConfig): Promise<ImagePruneReport> {
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/prune`, options, config));
 	}
 
 	async patchImage(imageId: string, options: PatchOptions | undefined, environmentId: string): Promise<PatchRecord> {
@@ -229,8 +229,10 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/updates/check/${imageId}`, {}));
 	}
 
-	async checkAllImages(environmentId: string): Promise<Record<string, ImageUpdateResponse>> {
-		return this.handleResponse(this.api.post(`/agents/${environmentId}/images/updates/check`, {}, { params: { action: 'all' } }));
+	async checkAllImages(environmentId: string, config?: APIRequestConfig): Promise<Record<string, ImageUpdateResponse>> {
+		return this.handleResponse(
+			this.api.post(`/agents/${environmentId}/images/updates/check`, {}, { ...config, params: { action: 'all' } })
+		);
 	}
 
 	async checkMultipleImages(imageRefs: string[], environmentId: string): Promise<Record<string, ImageUpdateResponse>> {
@@ -239,8 +241,12 @@ class ImageService extends BaseAPIService {
 		);
 	}
 
-	async runAutoUpdate(options: UpdaterOptions | undefined, environmentId: string): Promise<UpdaterResult> {
-		return this.handleResponse(this.api.post(`/agents/${environmentId}/updater/run`, options));
+	async runAutoUpdate(
+		options: UpdaterOptions | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<UpdaterResult> {
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/updater/run`, options, config));
 	}
 
 	async uploadImage(file: File, environmentId: string, onProgress?: UploadProgressCallback): Promise<ImageLoadResult> {

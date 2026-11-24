@@ -608,7 +608,7 @@ func TestImageUpdateService_InspectLocalImageSnapshot_IsLocalBuild(t *testing.T)
 			}))
 			t.Cleanup(server.Close)
 
-			svc := &ImageUpdateService{dockerService: newImageUpdateTestDockerService(t, server)}
+			svc := NewImageUpdateService(ImageUpdateServiceParams{DockerService: newImageUpdateTestDockerService(t, server)})
 			snapshot, err := svc.inspectLocalImageSnapshot(t.Context(), "local-only:latest", map[string]struct{}{})
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, snapshot.IsLocalBuild)
@@ -2909,9 +2909,11 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 			if !assert.NoError(
 				t,
 				json.MarshalWrite(w, image.InspectResponse{
-					ID:          imageID,
-					RepoTags:    []string{imageRef},
-					RepoDigests: []string{registryURL.Host + "/team/app@" + imageID},
+					ID:           imageID,
+					RepoTags:     []string{imageRef},
+					RepoDigests:  []string{registryURL.Host + "/team/app@" + imageID},
+					Os:           "linux",
+					Architecture: "amd64",
 				}),
 			) {
 				return
@@ -2957,7 +2959,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		EventService:        event.NewEventService(db, &config.Config{}, nil),
 		NotificationService: newTestNotificationService(t, db),
 	})
-	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, checks, 2)
 	require.Equal(t, "1.1.0", checks["one"].LatestVersion)
@@ -2982,7 +2984,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 	// Changing one policy to an invalid expression clears its actionable state
 	// without overwriting the other container's result.
 	values["one"][labels.LabelUpdateConstraint] = "invalid"
-	checks, err = svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err = svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, checks["one"].Error)
 	require.False(t, checks["one"].HasUpdate)
@@ -3015,6 +3017,122 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 // issue #3532: a container excluded from automatic installation still gets a
 // tag check, while the update-check label skips the check and leaves the
 // container's stored result untouched for the installer.
+func TestContainerTagChecksSkipTagsWithoutPlatformManifest(t *testing.T) {
+	db := setupImageUpdateRegistryTestDB(t)
+	child := func(architecture string) map[string]any {
+		return map[string]any{
+			"mediaType": "application/vnd.oci.image.manifest.v1+json",
+			"digest":    digest.FromString(architecture).String(),
+			"size":      1,
+			"platform": map[string]string{
+				"os":           "linux",
+				"architecture": architecture,
+			},
+		}
+	}
+	indexes := map[string][]map[string]any{
+		"1.1.0": {child("amd64"), child("arm64")},
+		"1.2.0": {child("arm64")},
+		"1.3.0": {},
+	}
+	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if registryPing(w, r) {
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/tags/list") {
+			w.Header().Set("Content-Type", "application/json")
+			if !assert.NoError(t, json.MarshalWrite(w, map[string]any{"name": "team/app", "tags": []string{"1.0.0", "1.1.0", "1.2.0", "1.3.0"}})) {
+				return
+			}
+			return
+		}
+		manifests, ok := indexes[r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]]
+		if !ok || !strings.Contains(r.URL.Path, "/manifests/") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.oci.image.index.v1+json")
+		if !assert.NoError(t, json.MarshalWrite(w, map[string]any{
+			"schemaVersion": 2,
+			"mediaType":     "application/vnd.oci.image.index.v1+json",
+			"manifests":     manifests,
+		})) {
+			return
+		}
+	}))
+	defer registryServer.Close()
+	registryURL, err := url.Parse(registryServer.URL)
+	require.NoError(t, err)
+	imageRef := registryURL.Host + "/team/app:1.0.0"
+	imageID := digest.FromString("current").String()
+	containerLabels := map[string]string{labels.LabelUpdateStrategy: "auto"}
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+				{
+					ID:      "one",
+					Image:   imageRef,
+					ImageID: imageID,
+					Labels:  containerLabels,
+				},
+			})) {
+				return
+			}
+		case strings.Contains(r.URL.Path, "/images/"):
+			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+				ID:           imageID,
+				RepoTags:     []string{imageRef},
+				Os:           "linux",
+				Architecture: "amd64",
+			})) {
+				return
+			}
+		case strings.Contains(r.URL.Path, "/containers/"):
+			if !assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+				ID:    "one",
+				Image: imageID,
+				Config: &container.Config{
+					Image:  imageRef,
+					Labels: containerLabels,
+				},
+			})) {
+				return
+			}
+		default:
+			t.Errorf("unexpected Docker request %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer dockerServer.Close()
+	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		DB: db,
+		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				return client.DistributionInspectResult{}, errors.New("manifest not found")
+			}}, nil
+		},
+		KVService:       kv.NewKVService(db),
+		SettingsService: newImageUpdateDefaultSettingsService(t),
+		HTTPClient:      registryServer.Client(),
+	})
+	svc := NewImageUpdateService(ImageUpdateServiceParams{
+		DB:                  db,
+		ActivityService:     activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
+		SettingsService:     newImageUpdateDefaultSettingsService(t),
+		RegistryService:     registryService,
+		DockerService:       newImageUpdateTestDockerService(t, dockerServer),
+		EventService:        event.NewEventService(db, &config.Config{}, nil),
+		NotificationService: newTestNotificationService(t, db),
+	})
+	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, checks, 1)
+	require.True(t, checks["one"].HasUpdate)
+	require.Equal(t, "1.1.0", checks["one"].LatestVersion)
+}
+
 func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 	db := setupImageUpdateRegistryTestDB(t)
 	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3067,6 +3185,10 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 			) {
 				return
 			}
+		case strings.Contains(r.URL.Path, "/images/"):
+			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: imageID, Os: "linux", Architecture: "amd64"})) {
+				return
+			}
 		default:
 			t.Errorf("unexpected Docker request %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -3113,7 +3235,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&stale).Error)
 
-	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil)
+	checks, err := svc.checkContainerTagUpdates(t.Context(), []string{imageRef}, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, checks, 1)
 	require.True(t, checks["install-excluded"].HasUpdate, "updater=false and the UI exclusion do not block checks")
@@ -3210,7 +3332,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 
 	scanCtx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	_, err = svc.checkContainerTagUpdates(scanCtx, []string{imageRefs["fast"], imageRefs["slow"]}, nil)
+	_, err = svc.checkContainerTagUpdates(scanCtx, []string{imageRefs["fast"], imageRefs["slow"]}, nil, nil)
 	require.ErrorContains(t, err, context.DeadlineExceeded.Error())
 	var records []ImageUpdateRecord
 	require.NoError(t, db.Find(&records).Error)
@@ -3293,6 +3415,7 @@ func startCheckWorkflow(t *testing.T, svc *ImageUpdateService) *flowtest.Harness
 	harness := flowtest.New(t, activities)
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
+	t.Cleanup(func() { _ = svc.Stop(context.WithoutCancel(t.Context())) })
 	return harness
 }
 

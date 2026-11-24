@@ -14,6 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"kit.getarcane.app"
+
 	"getarcane.dev/cli/v3/internal/output"
 	"getarcane.dev/cli/v3/internal/prompt"
 	"getarcane.dev/cli/v3/internal/runtime"
@@ -27,6 +29,11 @@ type (
 	mergedScope struct {
 		names    map[string]string
 		failures []types.EnvironmentFailure
+		mutation bool
+	}
+
+	MergedOptions struct {
+		Mutation bool
 	}
 
 	environmentResult struct {
@@ -38,12 +45,13 @@ type (
 )
 
 const (
-	ScopeRead        = "read"
-	ScopeMerged      = "merged"
-	ScopeAll         = "all"
-	ScopeDestination = "destination"
-	ScopeResource    = "resource"
-	ScopeGlobal      = "global"
+	ScopeRead         = "read"
+	ScopeMerged       = "merged"
+	ScopeMergedAction = "merged-action"
+	ScopeAll          = "all"
+	ScopeDestination  = "destination"
+	ScopeResource     = "resource"
+	ScopeGlobal       = "global"
 )
 
 func SetResource[D, S any](ref ResourceRef[D, S], commands ...*cobra.Command) {
@@ -116,8 +124,9 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 	if scope == ScopeResource {
 		return run(cmd, args)
 	}
-	if scope == ScopeMerged {
-		return RunMerged(cmd, args, run)
+	actionFlag, _ := cmd.Flags().GetBool(cmd.Annotations["arcane:merged-action-flag"])
+	if mutation := scope == ScopeMergedAction || actionFlag; scope == ScopeMerged || mutation {
+		return RunMerged(cmd, args, run, MergedOptions{Mutation: mutation})
 	}
 	if scope != ScopeDestination {
 		return RunEnvironments(cmd, args, run, scope == ScopeAll)
@@ -145,18 +154,32 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 	return run(cmd, args)
 }
 
-func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error) error {
+func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error, opts MergedOptions) error {
 	app, _ := runtime.From(cmd.Context())
 	environments, discoveryErr := app.Environments(cmd.Context())
 	if discoveryErr != nil {
 		return discoveryErr
 	}
 	if len(environments) == 0 {
-		return RunEnvironments(cmd, args, run, false)
+		return RunEnvironments(cmd, args, run, opts.Mutation)
 	}
-	limit := 64
+	if opts.Mutation {
+		force, _ := cmd.Flags().GetBool("force")
+		confirmed, confirmErr := ConfirmOrCancel(cmd, ConfirmOptions{
+			Label: fmt.Sprintf("%s in all %d agents?", cmd.Short, len(environments)),
+			Force: force,
+		})
+		if confirmErr != nil || !confirmed {
+			return confirmErr
+		}
+		app.AllConfirmed = true
+		defer func() {
+			app.AllConfirmed = false
+		}()
+	}
+	limit := kit.Ternary(opts.Mutation, len(environments), 64)
 	// The limit is at least 2, so only more environments need it.
-	if len(environments) > 2 {
+	if !opts.Mutation && len(environments) > 2 {
 		c, clientErr := ClientFromCommand(cmd)
 		if clientErr != nil {
 			return clientErr
@@ -171,7 +194,10 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 			}
 		}
 	}
-	merged := &mergedScope{names: make(map[string]string, len(environments))}
+	merged := &mergedScope{
+		names:    make(map[string]string, len(environments)),
+		mutation: opts.Mutation,
+	}
 	ids := make([]string, 0, min(limit, len(environments)))
 	for i, env := range environments {
 		merged.names[env.ID] = cmp.Or(env.Name, env.ID)
@@ -189,9 +215,7 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 	defer cmd.SetContext(commandContext)
 	app.SelectEnvironment(strings.Join(ids, ","))
 	defer app.SelectEnvironment("")
-	if runErr := run(cmd, args); runErr != nil {
-		return runErr
-	}
+	runErr := run(cmd, args)
 	failures := make([]error, len(merged.failures))
 	for i, failure := range merged.failures {
 		failures[i] = fmt.Errorf("%s (%s): %s", cmp.Or(merged.names[failure.Environment.ID], failure.Environment.Name), failure.Environment.ID, failure.Message)
@@ -199,7 +223,7 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 			_, _ = fmt.Fprintln(output.Stderr(), failures[i])
 		}
 	}
-	return errors.Join(failures...)
+	return errors.Join(runErr, errors.Join(failures...))
 }
 
 func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error, mutation bool) error {
