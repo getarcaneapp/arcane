@@ -375,8 +375,7 @@ func restoreData(
 			}
 			return request.SafetyBackup.ID, nil
 		},
-		InUse:  nil,
-		Create: nil,
+		InUse: nil,
 		Write: func(ctx context.Context, safetyID string) error {
 			if safetyID == "" {
 				touched, err := runStages(ctx, request.Stages, rustic)
@@ -398,7 +397,6 @@ func restoreData(
 			return nil
 		},
 		Verify:  nil,
-		Remove:  nil,
 		Discard: nil,
 	}
 	// Arcane ran when the restore was requested; after a successful restore the caller recreates it instead.

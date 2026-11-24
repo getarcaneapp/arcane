@@ -14,6 +14,9 @@ import (
 	"github.com/moby/moby/client"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/types/v3"
 )
 
 type (
@@ -30,7 +33,11 @@ type (
 	// RestoreSteps are the operations a restore applies to its target, bound to its run; tests pass fakes. A restore
 	// into a new target has no Stop, Safety or InUse: a failure discards what it created instead of undoing it.
 	RestoreSteps struct {
-		Report func(ctx context.Context, message string)
+		// Docker creates the volumes the restore is missing.
+		Docker *dockerInternal.DockerClientService
+		// DeleteVolume removes a volume the restore created, as User.
+		DeleteVolume func(ctx context.Context, name string, user types.Actor) error
+		Report       func(ctx context.Context, message string)
 		// Hold waits for the repository the restore and its safety backup use, before the target stops, so the target
 		// stays stopped only for this restore's own copies; nil when nothing needs waiting for.
 		Hold   func(ctx context.Context) (context.Context, func(), error)
@@ -38,17 +45,17 @@ type (
 		Deploy func(ctx context.Context) error
 		Safety func(ctx context.Context) (string, error)
 		InUse  func(ctx context.Context) error
-		Create func(ctx context.Context, options client.VolumeCreateOptions) error
 		// Write restores the backup or, given a safety backup's ID, that safety backup.
-		Write  func(ctx context.Context, safetyID string) error
-		Verify func(ctx context.Context) error
-		// Remove removes the volumes the restore created.
-		Remove func(ctx context.Context, names []string) error
+		Write func(ctx context.Context, safetyID string) error
+		// Written names the volumes Write created itself, when it creates them, so a failure removes them too.
+		Written func() []string
+		Verify  func(ctx context.Context) error
 		// Discard removes the new target a failed restore leaves behind, reporting whether there was one and naming what
 		// it could not remove.
 		Discard func(ctx context.Context) (bool, []string)
 		// Subject names the target in messages; it defaults to "the project".
 		Subject string
+		User    types.Actor
 	}
 
 	// UnchangedError marks a Write that failed before it changed the target, so the rollback only starts it again.
@@ -106,12 +113,15 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	// Only the volumes this restore created are removed on rollback.
 	var created []string
 	for _, options := range state.Create {
-		if err = r.Create(held, options); err != nil {
+		if err = CreateVolume(held, r.Docker, options); err != nil {
 			return r.Rollback(held, state, created, fmt.Errorf("create the missing volumes: %w", err))
 		}
 		created = append(created, options.Name)
 	}
 	err = r.Write(held, "")
+	if r.Written != nil {
+		created = append(created, r.Written()...)
+	}
 	if err == nil && r.Verify != nil {
 		err = r.Verify(held)
 	}
@@ -179,8 +189,8 @@ func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, created 
 	}
 	undoErr := r.Write(held, state.SafetyID)
 	var removeErr error
-	if len(created) > 0 {
-		removeErr = r.Remove(held, created)
+	for _, name := range created {
+		removeErr = errors.Join(removeErr, r.DeleteVolume(held, name, r.User))
 	}
 	release()
 	if undoErr != nil {
@@ -208,7 +218,7 @@ func (r RestoreSteps) hold(ctx context.Context) (context.Context, func(), error)
 func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string {
 	var leftovers []string
 	for _, name := range created {
-		if err := r.Remove(ctx, []string{name}); err != nil {
+		if err := r.DeleteVolume(ctx, name, r.User); err != nil {
 			leftovers = append(leftovers, fmt.Sprintf("volume %s (%v)", name, err))
 		}
 	}
@@ -220,6 +230,14 @@ func (e UnchangedError) Error() string { return e.Err.Error() }
 func (e UnchangedError) Unwrap() error { return e.Err }
 
 func (r RestoreSteps) subject() string { return cmp.Or(r.Subject, "the project") }
+
+// CreateVolume creates a volume a restore writes into, refusing one that exists, within Docker's API timeout.
+func CreateVolume(ctx context.Context, dockerService *dockerInternal.DockerClientService, options client.VolumeCreateOptions) error {
+	_, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+		return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
+	})
+	return err
+}
 
 func (r RestoreSteps) report(ctx context.Context, message string) {
 	if r.Report != nil {

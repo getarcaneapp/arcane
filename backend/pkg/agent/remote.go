@@ -47,6 +47,8 @@ type (
 	DecodeError struct {
 		Err error
 	}
+
+	awaitDeadlineKey struct{}
 )
 
 const (
@@ -54,6 +56,12 @@ const (
 )
 
 var ErrEnvironmentUnavailable = errors.New("agent is not connected")
+
+// AwaitUntilDeadline lets Do wait for an agent that answers only when its work finishes until ctx's deadline,
+// instead of the proxy's response header timeout.
+func AwaitUntilDeadline(ctx context.Context) context.Context {
+	return context.WithValue(ctx, awaitDeadlineKey{}, true)
+}
 
 func (t *AgentTunnel) RetryAfterLoss(req *http.Request, err error) bool {
 	return (req.Method == http.MethodGet || req.Method == http.MethodHead) && req.ContentLength == 0 && req.Context().Err() == nil &&
@@ -76,7 +84,11 @@ func (r *TunnelRegistry) Do(ctx context.Context, req RemoteRequest) (*RemoteResp
 		}
 		maps.Copy(httpReq.Header, req.Headers.Clone())
 		failure := "tunnel request failed"
-		resp, err := tunnel.HTTPClient.Do(httpReq)
+		client := tunnel.HTTPClient
+		if _, awaits := ctx.Value(awaitDeadlineKey{}).(bool); awaits {
+			client = tunnel.deadlineClient
+		}
+		resp, err := client.Do(httpReq)
 		var body []byte
 		if err == nil {
 			failure = "read agent tunnel response"

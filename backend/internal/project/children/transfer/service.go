@@ -145,6 +145,7 @@ const (
 	admissionScope   = "project-transfer"
 	operationTimeout = 30 * time.Minute
 	maxChunkRetries  = 3
+	maxLockRetries   = 10
 	artifactFiles    = "project files"
 	artifactBundle   = "project and its volumes"
 )
@@ -779,13 +780,16 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 		}
 	}
 	artifact := kit.Ternary(withVolumes, artifactBundle, artifactFiles)
+	// The export and the import each get the time a separate copy of the files and of every volume had; one they give up
+	// on stops, as the agents tie them to the request, so the cleanup finds them ended.
+	budget := operationTimeout * time.Duration(1+len(request.Volumes))
 	source, err := s.resumedSource(ctx, r, types.UploadKindProjectArchive, artifact)
 	if err != nil {
 		return err
 	}
 	if source.ID == "" {
 		s.report(ctx, r, types.ActivityMessageLevelInfo, "Exporting the "+artifact+" on the source environment")
-		exportCtx, cancel := context.WithTimeout(ctx, operationTimeout)
+		exportCtx, cancel := context.WithTimeout(ctx, budget)
 		source, err = r.source.ExportProject(exportCtx, r.input.ProjectID, request, r.input.User)
 		cancel()
 		if err != nil {
@@ -807,7 +811,7 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 	if saveErr := s.save(ctx, r); saveErr != nil {
 		return saveErr
 	}
-	importCtx, cancel := context.WithTimeout(ctx, operationTimeout)
+	importCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	r.state.TargetProjectID, err = r.target.ImportProject(importCtx, types.ImportProjectArchive{
 		UploadID:  uploadID,
@@ -1023,8 +1027,7 @@ func (s *Service) settle(ctx context.Context, r *run, err error) error {
 	if ctx.Err() != nil && !errors.Is(context.Cause(ctx), activity.ErrCanceled) && !errors.Is(context.Cause(ctx), flow.ErrInstanceFinished) {
 		return err
 	}
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), operationTimeout)
-	defer cancel()
+	cleanupCtx := context.WithoutCancel(ctx)
 	cause := err
 	if errors.Is(context.Cause(ctx), activity.ErrCanceled) {
 		cause = activity.ErrCanceled
@@ -1034,11 +1037,23 @@ func (s *Service) settle(ctx context.Context, r *run, err error) error {
 	return errors.New(message)
 }
 
+// cleanup gives the source restart and the target cleanup separate deadlines, so a restart that waits on the source's
+// lock cannot use up the time needed to remove what the transfer created on the target.
 func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	var notes []string
 	switch {
 	case r.state.SourceStopped && r.state.SourceRunning:
-		if err := r.source.DeployProject(ctx, r.input.ProjectID, r.input.User); err != nil {
+		// An export the run gave up on holds the project's lock until it stops. Taking the source down again, as the run
+		// left it, waits for that, so the restart doesn't give up on the lock.
+		restartCtx, cancelRestart := context.WithTimeout(ctx, operationTimeout)
+		err := untilUnlocked(restartCtx, func(ctx context.Context) error {
+			return r.source.DownProject(ctx, r.input.ProjectID, r.input.User)
+		})
+		if err == nil {
+			err = r.source.DeployProject(restartCtx, r.input.ProjectID, r.input.User)
+		}
+		cancelRestart()
+		if err != nil {
 			notes = append(notes, fmt.Sprintf("The source project could not be restarted: %v.", err))
 		} else {
 			notes = append(notes, "The source project was restarted.")
@@ -1050,6 +1065,8 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	default:
 		notes = append(notes, "The source project was not changed.")
 	}
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
+	defer cancel()
 	current := r.state.Relay
 	r.state.Relay = relay{}
 	s.removeUpload(ctx, r, r.source, "source", current.Kind, current.SourceUploadID)
@@ -1058,13 +1075,9 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	name := r.input.Request.Name
 	targetProjectID := r.state.TargetProjectID
 	if targetProjectID == "" && r.state.Importing {
-		found, err := r.imported(ctx)
-		if err != nil {
-			leftover = append(leftover, fmt.Sprintf("project %s (%v)", name, err))
-		}
-		if found {
-			targetProjectID = r.input.TargetProjectID
-		}
+		// The import holds the lock of the project it creates from its start to its end, so removing that project waits
+		// for an import the run gave up on to stop, before the volumes it created are removed.
+		targetProjectID = r.input.TargetProjectID
 	}
 	keep := false
 	if r.state.Retargeting {
@@ -1084,8 +1097,15 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 			notes = append(notes, "Webhooks point at the source project again.")
 		}
 	}
+	removedProject := false
 	if targetProjectID != "" && !keep {
-		if err := r.target.DestroyProject(ctx, targetProjectID, r.input.User); err != nil {
+		err := untilUnlocked(ctx, func(ctx context.Context) error {
+			return r.target.DestroyProject(ctx, targetProjectID, r.input.User)
+		})
+		switch {
+		case err == nil:
+			removedProject = true
+		case !errors.Is(err, common.ErrNotFound):
 			leftover = append(leftover, fmt.Sprintf("project %s (%v)", name, err))
 		}
 	}
@@ -1100,7 +1120,7 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 			leftover = append(leftover, fmt.Sprintf("volume %s (%v)", volume, err))
 		}
 	}
-	created := targetProjectID != "" || removedVolume
+	created := removedProject || removedVolume
 	switch {
 	case len(leftover) > 0:
 		notes = append(notes, "Could not clean up: "+strings.Join(leftover, ", ")+".")
@@ -1115,13 +1135,16 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	return notes
 }
 
-// imported reports whether the target holds the project this run imports, matched by the ID the run chose, never by name.
-func (r *run) imported(ctx context.Context) (bool, error) {
-	existing, err := r.target.Projects(ctx, "")
-	if err != nil {
-		return false, fmt.Errorf("look up the imported project on the target environment: %w", err)
+// untilUnlocked retries an operation that gave up waiting for the project's lock while another operation held it.
+func untilUnlocked(ctx context.Context, op func(ctx context.Context) error) error {
+	err := op(ctx)
+	for attempt := 0; errors.Is(err, common.ErrProjectLocked) && attempt < maxLockRetries; attempt++ {
+		if sleepErr := chunkBackoff.Sleep(ctx, attempt); sleepErr != nil {
+			return errors.Join(err, sleepErr)
+		}
+		err = op(ctx)
 	}
-	return slices.ContainsFunc(existing, func(candidate types.Project) bool { return candidate.ID == r.input.TargetProjectID }), nil
+	return err
 }
 
 func (r *run) targetProject(ctx context.Context) (types.Project, error) {
