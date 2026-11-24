@@ -148,7 +148,17 @@ CREATE INDEX IF NOT EXISTS idx_image_updates_environment_id ON image_updates(env
 `
 	v122PostgresDown = `
 DROP INDEX IF EXISTS idx_image_updates_environment_id;
-ALTER TABLE image_updates DROP CONSTRAINT IF EXISTS image_updates_pkey;
+-- Rollback hits the same naming hazard as the upgrade: drop whatever primary key exists.
+DO $$
+DECLARE constraint_name text;
+BEGIN
+    FOR constraint_name IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'image_updates'::regclass AND contype = 'p'
+    LOOP
+        EXECUTE format('ALTER TABLE image_updates DROP CONSTRAINT %I', constraint_name);
+    END LOOP;
+END $$;
 ALTER TABLE image_updates ADD PRIMARY KEY (id);
 ALTER TABLE image_updates DROP COLUMN IF EXISTS environment_id;
 `
