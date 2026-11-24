@@ -28,7 +28,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "arcane.db")
 	db, settingsService := openJobScheduleTestDatabase(t, ctx, databasePath)
 
-	appConfig := &config.Config{Timezone: "UTC"}
+	appConfig := &config.Config{Timezone: "UTC", LocalDockerEnabled: true}
 	lifecycleCtx, cancelLifecycle := context.WithCancel(t.Context())
 	jobScheduler := newJobSchedulerForTest(t, lifecycleCtx, appConfig.GetLocation())
 

@@ -476,7 +476,7 @@ func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	fakeScheduler := newFakeJobScheduler()
-	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{LocalDockerEnabled: true}, fakeScheduler)
 	require.NoError(t, db.AutoMigrate(&userdomain.User{}, &role.Role{}, &role.UserRoleAssignment{}))
 	require.NoError(t, db.Create(&userdomain.User{Username: "operator", BaseModel: database.BaseModel{ID: "operator"}}).Error)
 	require.NoError(t, db.Create(&role.Role{

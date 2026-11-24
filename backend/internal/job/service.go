@@ -491,6 +491,9 @@ func (s *JobService) validateLocalJob(ctx context.Context, jobID string) error {
 		if s.cfg.AgentEnabled && metadata.ManagerOnly {
 			return errors.New("job is manager-only")
 		}
+		if jobID == "image-polling" && !s.cfg.LocalDockerEnabled {
+			return errors.New("job is disabled")
+		}
 		if metadata.EnabledKey != "" && !s.settings.GetBoolSetting(ctx, metadata.EnabledKey) {
 			return errors.New("job is disabled")
 		}
