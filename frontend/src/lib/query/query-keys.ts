@@ -123,6 +123,7 @@ export const queryKeys = {
 		all: ['environments'] as const,
 		list: (options: SearchPaginationSortRequest) => ['environments', stableSerialize(options)] as const,
 		detail: (environmentId: string) => ['environment', environmentId] as const,
+		settingsAll: ['environment-settings'] as const,
 		settings: (environmentId: string) => ['environment-settings', environmentId] as const,
 		settingsAcross: (scope: string) => ['environment-settings', scope, 'across'] as const,
 		enrollmentTokens: ['enrollment-tokens'] as const

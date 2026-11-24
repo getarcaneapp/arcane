@@ -72,7 +72,8 @@ type (
 	}
 
 	DiscoverVolumeBackupsRequest struct {
-		S3DestinationID string `json:"s3DestinationId" doc:"S3 destination to scan for existing volume backups"`
+		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3" doc:"Repository to scan; s3 when omitted"`
+		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"S3 destination to scan for existing volume backups"`
 	}
 
 	DiscoverVolumeBackupsResponse struct {

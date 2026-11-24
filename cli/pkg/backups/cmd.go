@@ -325,11 +325,12 @@ func newDiscoverCmd() *cobra.Command {
 	var opts struct {
 		s3Destination string
 		recoveryKey   string
+		local         bool
 	}
 	cmd := &cobra.Command{
 		Use:          "discover",
-		Short:        "Discover Arcane system backups stored in an S3 destination",
-		Long:         `Discover scans an S3 destination for backups and imports records for any not already known to this Arcane instance.`,
+		Short:        "Discover Arcane system backups in local storage or an S3 destination",
+		Long:         `Discover scans local backup storage or an S3 destination and imports records for backups this Arcane instance does not know, such as after its data volume was lost.`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -338,14 +339,20 @@ func newDiscoverCmd() *cobra.Command {
 				return err
 			}
 
-			resolved, _, err := s3DestinationRef.Resolve(cmd.Context(), c, opts.s3Destination, cmdutil.AllowPrompt(cmd))
-			if err != nil {
-				return err
-			}
-
 			req := types.DiscoverSystemBackupsRequest{
-				S3DestinationID: resolved.ID,
-				RecoveryKey:     opts.recoveryKey,
+				Destination: types.SystemBackupDestinationLocal,
+				RecoveryKey: opts.recoveryKey,
+			}
+			if !opts.local {
+				resolved, _, resolveErr := s3DestinationRef.Resolve(cmd.Context(), c, opts.s3Destination, cmdutil.AllowPrompt(cmd))
+				if resolveErr != nil {
+					return resolveErr
+				}
+				req = types.DiscoverSystemBackupsRequest{
+					Destination:     types.SystemBackupDestinationS3,
+					S3DestinationID: resolved.ID,
+					RecoveryKey:     opts.recoveryKey,
+				}
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[int]{
@@ -361,8 +368,10 @@ func newDiscoverCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.s3Destination, "s3-destination", "", "S3 destination name or ID to search")
+	cmd.Flags().BoolVar(&opts.local, "local", false, "Search local backup storage instead of an S3 destination")
 	cmd.Flags().StringVar(&opts.recoveryKey, "recovery-key", "", "Recovery key the backups were encrypted with")
-	_ = cmd.MarkFlagRequired("s3-destination")
+	cmd.MarkFlagsOneRequired("s3-destination", "local")
+	cmd.MarkFlagsMutuallyExclusive("s3-destination", "local")
 	return cmd
 }
 

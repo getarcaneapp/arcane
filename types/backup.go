@@ -137,8 +137,9 @@ type (
 	}
 
 	DiscoverSystemBackupsRequest struct {
-		S3DestinationID string `json:"s3DestinationId"`
-		RecoveryKey     string `json:"recoveryKey"`
+		Destination     SystemBackupDestination `json:"destination,omitempty" enum:"local,s3" doc:"Repository to scan; s3 when omitted"`
+		S3DestinationID string                  `json:"s3DestinationId"`
+		RecoveryKey     string                  `json:"recoveryKey"`
 	}
 
 	BackupManagementType string
@@ -276,12 +277,13 @@ const (
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
 	SystemVolumeSelectionBlocklist SystemVolumeSelectionMode = "blocklist"
 
-	VolumeBackupStatusRunning    = "running"
-	VolumeBackupStatusSucceeded  = "succeeded"
-	VolumeBackupStatusFailed     = "failed"
-	VolumeBackupTriggerManual    = "manual"
-	VolumeBackupTriggerScheduled = "scheduled"
-	VolumeBackupTriggerSafety    = "safety"
+	VolumeBackupStatusRunning     = "running"
+	VolumeBackupStatusSucceeded   = "succeeded"
+	VolumeBackupStatusFailed      = "failed"
+	VolumeBackupTriggerManual     = "manual"
+	VolumeBackupTriggerScheduled  = "scheduled"
+	VolumeBackupTriggerSafety     = "safety"
+	VolumeBackupTriggerDiscovered = "discovered"
 )
 
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {
