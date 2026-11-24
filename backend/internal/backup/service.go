@@ -154,10 +154,8 @@ type (
 		UpdateID func(U) string
 		// New returns the blank policy for created entries, pre-scoped by the
 		// caller (e.g. with the volume name set).
-		New   func() P
-		Build func(ctx context.Context, policy *P, update U) error
-		// Persist overrides the default GORM transaction for settings-backed policies.
-		Persist    func(ctx context.Context, policies []P) error
+		New        func() P
+		Build      func(ctx context.Context, policy *P, update U) error
 		Unregister func(ctx context.Context, policyID string)
 		Reschedule func(ctx context.Context, policy *P)
 		Domain     string
@@ -974,23 +972,17 @@ func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error 
 		return ok
 	})
 
-	var persistErr error
-	switch {
-	case r.Persist != nil:
-		persistErr = r.Persist(ctx, policies)
-	default:
-		persistErr = r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			for i := range policies {
-				if saveErr := tx.Save(&policies[i]).Error; saveErr != nil {
-					return saveErr
-				}
+	persistErr := r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i := range policies {
+			if saveErr := tx.Save(&policies[i]).Error; saveErr != nil {
+				return saveErr
 			}
-			if len(removed) == 0 {
-				return nil
-			}
-			return tx.Delete(&removed).Error
-		})
-	}
+		}
+		if len(removed) == 0 {
+			return nil
+		}
+		return tx.Delete(&removed).Error
+	})
 	if persistErr != nil {
 		return fmt.Errorf("failed to save %s backup policies: %w", r.Domain, persistErr)
 	}
@@ -1096,7 +1088,8 @@ func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemote
 
 func NewPolicies(db *database.DB) *Policies { return &Policies{db: db} }
 
-// List returns the subject's policies, oldest first; an empty subjectID lists the global project policies.
+// List returns the subject's policies, oldest first; an empty subjectID lists the kind's global policies, or every
+// system policy.
 func (p *Policies) List(ctx context.Context, kind, subjectID string) ([]Policy, error) {
 	var policies []Policy
 	if err := p.db.WithContext(ctx).Where("subject_kind = ? AND subject_id = ?", kind, subjectID).Order("created_at ASC").Find(&policies).Error; err != nil {

@@ -334,7 +334,7 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 		SubjectID:       volumeName,
 		Schedule:        policy.Schedule,
 		S3DestinationID: policy.S3DestinationID,
-		Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil},
+		Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil, VolumeNames: nil, IgnoreAnonymous: false},
 		RetentionCount:  policy.RetentionCount,
 		Enabled:         true,
 		StopContainers:  policy.StopContainers,
@@ -656,12 +656,12 @@ func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
 	if days <= 0 {
 		return nil
 	}
-	systemPolicies, err := s.deps.Settings.SystemVolumeBackupPolicies()
+	systemPolicies, err := s.deps.Policies.List(ctx, backup.PolicyVolume, "")
 	if err != nil {
 		return err
 	}
 	owners := []string{types.SystemVolumeManualSeriesOwner}
-	for _, policy := range systemPolicies.Policies {
+	for _, policy := range systemPolicies {
 		owners = append(owners, policy.ID)
 	}
 	now := time.Now()

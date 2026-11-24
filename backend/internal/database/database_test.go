@@ -1182,6 +1182,82 @@ func TestMigration122_MovesVolumePoliciesIntoBackupPolicies(t *testing.T) {
 	assert.Equal(t, 1, backups)
 }
 
+func TestMigration123_MovesSystemAndGlobalVolumeSchedulesIntoBackupPolicies(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-all-backup-policies.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 122))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO system_backup_policies
+		(id, enabled, schedule, retention_count, local_enabled, s3_enabled, s3_destination_id)
+		VALUES ('sp1', 1, '0 3 * * *', 5, 0, 1, 's3-1'), ('sp2', 0, '0 4 * * *', 7, 1, 0, NULL)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO settings (key, value, isInternal) VALUES ('systemVolumeBackupConfig',
+		'{"policies":[{"id":"g1","enabled":true,"schedule":"0 2 * * *","retentionCount":3,"stopContainers":true,"localEnabled":true,
+		"s3Enabled":false,"selectionMode":"allowlist","volumeNames":["data","logs"],"ignoreAnonymous":true},
+		{"id":"g2","enabled":false,"schedule":"0 1 * * *","retentionCount":7,"stopContainers":false,"localEnabled":false,
+		"s3Enabled":true,"s3DestinationId":"s3-2","selectionMode":"all","volumeNames":null,"ignoreAnonymous":false}]}', true)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO backup_policies (id, subject_kind, subject_id, schedule) VALUES ('vp1', 'volume', 'data', '0 2 * * *')`)
+	require.NoError(t, err)
+	type row struct {
+		Kind, Subject, Schedule, Destination, Options string
+		Retention                                     int
+		Enabled, Stop, Local, S3                      bool
+	}
+	policy := func(id string) row {
+		var r row
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT subject_kind, subject_id, schedule, s3_destination_id, enabled, stop_containers,
+			local_enabled, s3_enabled, retention_count, options FROM backup_policies WHERE id = ?`, id).
+			Scan(&r.Kind, &r.Subject, &r.Schedule, &r.Destination, &r.Enabled, &r.Stop, &r.Local, &r.S3, &r.Retention, &r.Options))
+		return r
+	}
+	count := func(query string) int {
+		var n int
+		require.NoError(t, rawDB.QueryRowContext(ctx, query).Scan(&n))
+		return n
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 123))
+	assert.Zero(t, count(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'system_backup_policies'`))
+	assert.Zero(t, count(`SELECT COUNT(*) FROM settings WHERE key = 'systemVolumeBackupConfig'`))
+	sp1 := policy("sp1")
+	assert.Equal(t, row{Kind: "system", Schedule: "0 3 * * *", Destination: "s3-1", Enabled: true, S3: true, Retention: 5, Options: "{}"}, sp1)
+	assert.Empty(t, policy("sp2").Destination)
+	g1 := policy("g1")
+	assert.JSONEq(t, `{"selectionMode":"allowlist","volumeNames":["data","logs"],"ignoreAnonymous":true}`, g1.Options)
+	g1.Options = ""
+	assert.Equal(t, row{Kind: "volume", Schedule: "0 2 * * *", Enabled: true, Stop: true, Local: true, Retention: 3}, g1)
+	g2 := policy("g2")
+	assert.JSONEq(t, `{"selectionMode":"all","volumeNames":null,"ignoreAnonymous":false}`, g2.Options)
+	assert.Equal(t, "s3-2", g2.Destination)
+	assert.Equal(t, 1, count(`SELECT COUNT(*) FROM backup_policies WHERE id = 'vp1' AND subject_id = 'data'`))
+	var order string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT group_concat(id, ',') FROM (SELECT id FROM backup_policies
+		WHERE subject_kind = 'volume' AND subject_id = '' ORDER BY created_at)`).Scan(&order))
+	assert.Equal(t, "g1,g2", order, "global volume policies keep their saved order")
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 122))
+	var systemRows []string
+	rows, err := rawDB.QueryContext(ctx, `SELECT id || ':' || enabled || ':' || retention_count || ':' || COALESCE(s3_destination_id, '-')
+		FROM system_backup_policies ORDER BY id`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var value string
+		require.NoError(t, rows.Scan(&value))
+		systemRows = append(systemRows, value)
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	assert.Equal(t, []string{"sp1:1:5:s3-1", "sp2:0:7:-"}, systemRows)
+	var config string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'systemVolumeBackupConfig' AND isInternal`).Scan(&config))
+	assert.JSONEq(t, `{"policies":[
+		{"id":"g1","enabled":true,"schedule":"0 2 * * *","retentionCount":3,"stopContainers":true,"localEnabled":true,"s3Enabled":false,
+		"s3DestinationId":"","selectionMode":"allowlist","volumeNames":["data","logs"],"ignoreAnonymous":true},
+		{"id":"g2","enabled":false,"schedule":"0 1 * * *","retentionCount":7,"stopContainers":false,"localEnabled":false,"s3Enabled":true,
+		"s3DestinationId":"s3-2","selectionMode":"all","volumeNames":null,"ignoreAnonymous":false}]}`, config)
+	assert.Equal(t, 1, count(`SELECT COUNT(*) FROM backup_policies`), "only the per-volume policy stays")
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := t.Context()
 	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-future.db")

@@ -91,6 +91,7 @@ type (
 		BackupEngine       *backup.Engine
 		S3Destinations     *s3.S3DestinationService
 		RecoveryKeys       *backup.RecoveryKeyStore
+		Policies           *backup.Policies
 		Actors             *francis.Runtime
 		Config             *config.Config
 		SettingsEnv        settings.Env
@@ -164,6 +165,7 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 	s.backup = systembackup.NewService(systembackup.Dependencies{
 		Store:                 s.backupStore(p.S3Destinations),
 		DB:                    p.DB,
+		Policies:              p.Policies,
 		SQLDB:                 p.DB.DB.DB,
 		ActorStore:            p.Actors.Store,
 		Docker:                p.DockerService,
@@ -596,7 +598,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			if err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).
 				Where("status <> ? AND trigger NOT IN ? AND COALESCE(policy_id, '') <> ''", SystemBackupStatusRunning,
 					[]SystemBackupTrigger{SystemBackupTriggerSafety, SystemBackupTriggerManual}).
-				Where("policy_id NOT IN (?)", s.db.Model(&SystemBackupPolicy{}).Select("id")).
+				Where("policy_id NOT IN (?)", s.db.Model(&backup.Policy{}).Where("subject_kind = ?", backup.PolicySystem).Select("id")).
 				Pluck("id", &orphanedIDs).Error; err != nil {
 				return nil, fmt.Errorf("failed to load orphaned system backups: %w", err)
 			}
@@ -662,80 +664,6 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 				s.db.WithContext(ctx).Table("project_backups").Where("status = ?", types.VolumeBackupStatusRunning).Count(&projectRuns).Error,
 			)
 			return volumeRuns + projectRuns, err
-		},
-		Policies: func(ctx context.Context) ([]types.SystemBackupPolicy, error) {
-			var policies []SystemBackupPolicy
-			if err := s.db.WithContext(ctx).Order("created_at ASC").Find(&policies).Error; err != nil {
-				return nil, fmt.Errorf("failed to load system backup policies: %w", err)
-			}
-			result := make([]types.SystemBackupPolicy, len(policies))
-			for i := range policies {
-				result[i] = policies[i].ToDTO()
-			}
-			return result, nil
-		},
-		Policy: func(ctx context.Context, id string) (*types.SystemBackupPolicy, error) {
-			if strings.TrimSpace(id) == "" {
-				return nil, nil
-			}
-			var policy SystemBackupPolicy
-			err := s.db.WithContext(ctx).Where("id = ?", id).First(&policy).Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil
-			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to load system backup policy: %w", err)
-			}
-			return new(policy.ToDTO()), nil
-		},
-		ReconcilePolicies: func(
-			ctx context.Context,
-			updates []types.UpdateBackupPolicy,
-			build func(context.Context, *types.SystemBackupPolicy, types.UpdateBackupPolicy) error,
-			unregister func(context.Context, string),
-			reschedule func(context.Context, *types.SystemBackupPolicy),
-		) error {
-			var existing []SystemBackupPolicy
-			if err := s.db.WithContext(ctx).Order("created_at ASC").Find(&existing).Error; err != nil {
-				return fmt.Errorf("failed to load system backup policies: %w", err)
-			}
-			return backup.PolicyReconciliation[SystemBackupPolicy, types.UpdateBackupPolicy]{
-				Domain:   "system",
-				DB:       s.db,
-				Existing: existing,
-				ID:       func(policy *SystemBackupPolicy) string { return policy.ID },
-				UpdateID: func(update types.UpdateBackupPolicy) string { return update.ID },
-				New:      func() SystemBackupPolicy { return SystemBackupPolicy{} },
-				Build: func(ctx context.Context, policy *SystemBackupPolicy, update types.UpdateBackupPolicy) error {
-					dto := policy.ToDTO()
-					if buildErr := build(ctx, &dto, update); buildErr != nil {
-						return buildErr
-					}
-					*policy = SystemBackupPolicy{ //exhaustruct:enforce
-						BaseModel:       policy.BaseModel,
-						Enabled:         dto.Enabled,
-						Schedule:        dto.Schedule,
-						RetentionCount:  dto.RetentionCount,
-						LocalEnabled:    dto.LocalEnabled,
-						S3Enabled:       dto.S3Enabled,
-						S3DestinationID: dto.S3DestinationID,
-					}
-					return nil
-				},
-				Unregister: unregister,
-				Reschedule: func(ctx context.Context, policy *SystemBackupPolicy) {
-					reschedule(ctx, new(policy.ToDTO()))
-				},
-			}.Run(ctx, updates)
-		},
-		DisablePolicyRemote: func(ctx context.Context, policy *types.SystemBackupPolicy, field string) (bool, error) {
-			return backup.DisableStoredRemote(ctx, s.db, backup.DisableRemoteRequest{
-				Model:         &SystemBackupPolicy{},
-				ID:            policy.ID,
-				DestinationID: policy.S3DestinationID,
-				LocalEnabled:  policy.LocalEnabled,
-				Field:         field,
-			})
 		},
 		CheckScheduledRemote: func(ctx context.Context, destinationID string) error {
 			return backup.CheckScheduledRemote(ctx, s.db, s3Destinations, backup.ScheduledRemoteRequest{
