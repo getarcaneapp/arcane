@@ -956,6 +956,10 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 }
 
 func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (syncResult *types.GitOpsSyncResult, syncErr error) {
+	// Webhooks and manual runs bypass ShouldRunFn, so local syncs (including push-mode backups) stop here too.
+	if req.EnvironmentID == "0" && !s.dockerService.LocalDockerEnabled() {
+		return nil, common.ErrLocalDockerDisabled
+	}
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitops.sync", trace.WithAttributes(
 		attribute.String("arcane.gitops.sync_id", req.SyncID),
 		attribute.String("arcane.environment.id", req.EnvironmentID),

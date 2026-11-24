@@ -743,12 +743,18 @@ func (s *Service) StartUpgradeJob(ctx context.Context, user types.Actor, environ
 		agents[i] = remoteAgent{ID: remote.ID, Name: remote.Name}
 		agentIDs[i] = remote.ID
 	}
-	if len(environmentIDs) == 0 && !s.dockerService.LocalDockerEnabled() {
-		// The manager cannot replace its own container without Docker, so "update all" means every agent.
-		if len(agentIDs) == 0 {
+	if !s.dockerService.LocalDockerEnabled() {
+		// The manager cannot replace its own container without Docker: "update all" means every agent, and explicit targets drop the manager.
+		if len(environmentIDs) == 0 {
+			environmentIDs = agentIDs
+		} else {
+			environmentIDs = slices.DeleteFunc(slices.Clone(environmentIDs), func(id string) bool {
+				return id == environment.LocalEnvironmentID
+			})
+		}
+		if len(environmentIDs) == 0 {
 			return nil, common.Classify(common.ErrValidation, errors.New("no environments to upgrade"))
 		}
-		environmentIDs = agentIDs
 	}
 	info := s.versionService.GetAppVersionInfo(ctx)
 	results, err := seedUpgradeResults(environmentIDs, UpgradeJobResult{
