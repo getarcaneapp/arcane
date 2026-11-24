@@ -745,6 +745,9 @@ func (s *Service) StartUpgradeJob(ctx context.Context, user types.Actor, environ
 	}
 	if len(environmentIDs) == 0 && !s.dockerService.LocalDockerEnabled() {
 		// The manager cannot replace its own container without Docker, so "update all" means every agent.
+		if len(agentIDs) == 0 {
+			return nil, common.Classify(common.ErrValidation, errors.New("no environments to upgrade"))
+		}
 		environmentIDs = agentIDs
 	}
 	info := s.versionService.GetAppVersionInfo(ctx)
