@@ -13,6 +13,7 @@ import type {
 	BackupTrigger,
 	S3Destination
 } from '#lib/types/backup.js';
+import type { ProjectBackupVolume, ProjectVolume } from '#lib/types/project.js';
 import type { BackupPolicy, BackupRun } from '#lib/types/ui/backup.js';
 import type { VolumeBackupDestination } from '#lib/types/volume.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -194,4 +195,11 @@ export async function runAutomaticBackupDiscovery(
 		])
 	]);
 	return localProjects > 0 || counts.some((count) => count > 0);
+}
+
+// restorableVolumes lists the volumes whose data a project backup holds, as the volume checklist shows them.
+export function restorableVolumes(volumes: ProjectBackupVolume[]): ProjectVolume[] {
+	return volumes
+		.filter((volume) => volume.included)
+		.map((volume) => ({ key: volume.key, name: volume.name, kind: volume.kind ?? 'named', included: true }));
 }

@@ -319,6 +319,10 @@ class ProjectService extends BaseAPIService {
 		return res.data;
 	}
 
+	async getBackup(projectId: string, backupId: string, environmentId: string): Promise<ProjectBackup> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}`));
+	}
+
 	async createBackup(projectId: string, request: CreateProjectBackupRequest, environmentId: string): Promise<ProjectBackup> {
 		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/backups`, request));
 	}

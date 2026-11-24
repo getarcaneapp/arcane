@@ -18,6 +18,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -43,7 +44,15 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
 	})
-	return NewS3DestinationService(&database.DB{DB: gormDB}, func(context.Context, string) error { return nil }), gormDB
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     &database.DB{DB: gormDB},
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return NewS3DestinationService(&database.DB{DB: gormDB}, settingsService, func(context.Context, string) error { return nil }), gormDB
 }
 
 func TestS3DestinationService_CRUD(t *testing.T) {

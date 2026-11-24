@@ -3,10 +3,10 @@ package s3
 import (
 	"cmp"
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"gorm.io/gorm"
@@ -17,6 +17,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/s3"
 	"getarcane.dev/arcane/v3/pkg/update"
@@ -26,6 +27,7 @@ import (
 type (
 	S3DestinationService struct {
 		db                    *database.DB
+		settings              *settings.SettingsService
 		checkRemoteReferences func(ctx context.Context, destinationID string) error
 	}
 )
@@ -36,8 +38,8 @@ var (
 	errS3SecretRequired      = errors.New("re-enter the secret access key when changing the endpoint, bucket, region, access key ID, SSL mode, or path style")
 )
 
-func NewS3DestinationService(db *database.DB, checkRemoteReferences func(context.Context, string) error) *S3DestinationService {
-	return &S3DestinationService{db: db, checkRemoteReferences: checkRemoteReferences}
+func NewS3DestinationService(db *database.DB, settingsService *settings.SettingsService, checkRemoteReferences func(context.Context, string) error) *S3DestinationService {
+	return &S3DestinationService{db: db, settings: settingsService, checkRemoteReferences: checkRemoteReferences}
 }
 
 func destinationConfiguration(id string, input types.S3Destination) s3.Configuration {
@@ -274,27 +276,13 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 		}
 	}
 	// Global volume backup schedules are stored in settings, not a table.
-	var values []string
-	if err := db.Table("settings").Where("key = ?", "systemVolumeBackupConfig").Pluck("value", &values).Error; err != nil {
+	global, err := s.settings.SystemVolumeBackupPolicies()
+	if err != nil {
 		return false, fmt.Errorf("failed to check S3 destination references: %w", err)
 	}
-	for _, value := range values {
-		var collection struct {
-			Policies []struct {
-				S3DestinationID string `json:"s3DestinationId"`
-				S3Enabled       bool   `json:"s3Enabled"`
-			} `json:"policies"`
-		}
-		if err := json.Unmarshal([]byte(cmp.Or(strings.TrimSpace(value), "{}")), &collection); err != nil {
-			return false, fmt.Errorf("failed to decode global backup policies: %w", err)
-		}
-		for _, policy := range collection.Policies {
-			if policy.S3Enabled && policy.S3DestinationID == id {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+	return slices.ContainsFunc(global.Policies, func(policy types.SystemVolumeBackupPolicy) bool {
+		return policy.S3Enabled && policy.S3DestinationID == id
+	}), nil
 }
 
 func (s *S3DestinationService) S3DestinationExists(ctx context.Context, id string) bool {

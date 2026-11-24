@@ -10,6 +10,7 @@
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectRestoreAsNewDialog from '#lib/components/dialogs/project-restore-as-new-dialog.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
@@ -49,6 +50,7 @@
 		SystemVolumeBackupOption,
 		SystemVolumeSelectionMode
 	} from '#lib/types/backup.js';
+	import type { ProjectBackup } from '#lib/types/project.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/ui/backup.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -128,13 +130,8 @@
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
 	let restoreAsNewOpen = $state(false);
-	let restoreAsNewTarget = $state<EnvironmentRow<SystemVolumeBackupHistoryEntry> | null>(null);
-	let restoreAsNewName = $state('');
-	let restoreAsNewStart = $state(false);
-	let restoringAsNew = $state(false);
-	const canStartRestoredAsNew = $derived(
-		restoreAsNewTarget !== null && hasPermission('projects:deploy', restoreAsNewTarget.environmentId)
-	);
+	let restoreAsNewBackup = $state<ProjectBackup | null>(null);
+	let restoreAsNewEnvironmentId = $state<string>(LOCAL_DOCKER_ENVIRONMENT_ID);
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE));
@@ -432,33 +429,15 @@
 		);
 	}
 
-	function openRestoreAsNew(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
-		restoreAsNewTarget = backup;
-		restoreAsNewName = `${backup.resourceName}-restored`;
-		restoreAsNewStart = false;
-		restoreAsNewOpen = true;
-	}
-
-	// Restores the files and every volume the backup includes, as the project's own restore-as-new does by default.
-	async function restoreProjectAsNew() {
-		if (!restoreAsNewTarget || restoringAsNew || !restoreAsNewName.trim()) return;
-		const environmentId = restoreAsNewTarget.environmentId;
-		restoringAsNew = true;
+	// The history row lacks the backup's volumes, which the dialog offers to restore.
+	async function openRestoreAsNew(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(
-				projectService.restoreBackupAsNew(
-					restoreAsNewTarget.resourceId ?? '',
-					restoreAsNewTarget.id,
-					{ name: restoreAsNewName.trim(), start: restoreAsNewStart && canStartRestoredAsNew },
-					environmentId
-				)
-			),
+			result: await tryCatch(projectService.getBackup(backup.resourceId ?? '', backup.id, backup.environmentId)),
 			message: m.failed_to_restore_backup(),
-			setLoadingState: (value) => (restoringAsNew = value),
-			onSuccess: async (restored) => {
-				restoreAsNewOpen = false;
-				toast.success(m.project_restored_from_backup({ name: restored.name }), activityToastOptions(restored.activityId));
-				await goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: restored.id }));
+			onSuccess: (loaded) => {
+				restoreAsNewBackup = loaded;
+				restoreAsNewEnvironmentId = backup.environmentId;
+				restoreAsNewOpen = true;
 			}
 		});
 	}
@@ -924,45 +903,6 @@
 	</ResponsiveDialog>
 {/snippet}
 
-{#snippet restoreAsNewDialog()}
-	<ResponsiveDialog
-		bind:open={restoreAsNewOpen}
-		title={m.restore_as_new_project()}
-		description={m.restore_backup_as_new_project_description()}
-		contentClass="sm:max-w-140"
-		dismissible={!restoringAsNew}
-	>
-		<div class="grid min-w-0 gap-y-4 py-2">
-			<TextInputWithLabel
-				id="system-backup-restore-name"
-				value={restoreAsNewName}
-				onChange={(value) => (restoreAsNewName = value)}
-				label={m.project_name()}
-				disabled={restoringAsNew}
-			/>
-			{#if canStartRestoredAsNew}
-				<LabeledSwitch
-					id="system-backup-restore-start"
-					checked={restoreAsNewStart}
-					label={m.start_after_restore()}
-					disabled={restoringAsNew}
-					onCheckedChange={(value) => (restoreAsNewStart = value)}
-				/>
-			{/if}
-		</div>
-		{#snippet footer()}
-			<ArcaneButton action="cancel" onclick={() => (restoreAsNewOpen = false)} disabled={restoringAsNew} />
-			<ArcaneButton
-				action="create"
-				customLabel={m.restore_as_new_project()}
-				onclick={restoreProjectAsNew}
-				loading={restoringAsNew}
-				disabled={restoringAsNew || !restoreAsNewName.trim()}
-			/>
-		{/snippet}
-	</ResponsiveDialog>
-{/snippet}
-
 {#snippet restoreFilesDialog()}
 	<ResponsiveDialog
 		bind:open={restoreFilesOpen}
@@ -1192,6 +1132,10 @@
 		{@render importKeyDialog()}
 		{@render actionDialog()}
 		{@render restoreFilesDialog()}
-		{@render restoreAsNewDialog()}
+		<ProjectRestoreAsNewDialog
+			bind:open={restoreAsNewOpen}
+			backup={restoreAsNewBackup}
+			environmentId={restoreAsNewEnvironmentId}
+		/>
 	{/snippet}
 </SettingsPageLayout>
