@@ -100,6 +100,8 @@ type (
 	SystemBackupPolicyCollection struct {
 		Policies          []SystemBackupPolicy `json:"policies"`
 		RecoveryKeyStored bool                 `json:"recoveryKeyStored"`
+		// Lets users who cannot list environments still see that system backups need the manager's Docker.
+		LocalDockerEnabled bool `json:"localDockerEnabled"`
 	}
 
 	UpdateSystemBackupPolicies struct {

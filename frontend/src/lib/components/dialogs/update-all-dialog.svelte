@@ -15,7 +15,7 @@
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import { clientStream } from '#lib/stores/client-stream.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, isLocalDockerDisabled } from '#lib/stores/environment.store.svelte.js';
 	import { MANAGER_ENVIRONMENT_ID, isActiveUpgradeJob, upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
 	import type { UpgradeJob, UpgradeJobResult, UpgradeJobResultStatus, UpgradeJobStage } from '#lib/types/system.js';
 	import type { VersionInfo } from '#lib/types/version.js';
@@ -179,9 +179,10 @@
 			return version?.updateAvailable ? [{ env, version }] : [];
 		})
 	);
+	const managerUpdatesManually = $derived(isLocalDockerDisabled(environmentStore.getLocalEnvironment()));
 	const planEnvironments = $derived([
 		...planUpdates.filter(({ env }) => env.id !== MANAGER_ENVIRONMENT_ID),
-		...planUpdates.filter(({ env }) => env.id === MANAGER_ENVIRONMENT_ID)
+		...planUpdates.filter(({ env }) => env.id === MANAGER_ENVIRONMENT_ID && !managerUpdatesManually)
 	]);
 
 	const results = $derived(job?.results ?? []);
@@ -566,7 +567,9 @@
 
 		<Dialog.Footer>
 			{#if phase === 'confirm'}
-				<p class="text-xs text-muted-foreground sm:mr-auto sm:self-center">{m.manager_updates_last()}</p>
+				<p class="text-xs text-muted-foreground sm:mr-auto sm:self-center">
+					{managerUpdatesManually ? m.manager_update_manually() : m.manager_updates_last()}
+				</p>
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 				{#if canConfirm}
 					<Button onclick={() => handleConfirm()}>{m.update_all()}</Button>

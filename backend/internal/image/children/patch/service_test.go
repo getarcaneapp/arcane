@@ -19,7 +19,6 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
-	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
@@ -77,7 +76,7 @@ func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 
 	svc := NewService(ServiceParams{
 		DB:              db,
-		DockerService:   docker.NewDockerClientService(ctx, nil, settingsSvc, bus.Config{}),
+		DockerService:   docker.NewDockerClientService(ctx, nil, settingsSvc, docker.ClientServiceOptions{}),
 		SettingsService: settingsSvc,
 	})
 
@@ -140,7 +139,7 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 	require.NoError(t, settingsSvc.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-feature-test.sock"}))
 	svc := NewService(ServiceParams{
 		DB:              db,
-		DockerService:   docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}),
+		DockerService:   docker.NewDockerClientService(t.Context(), nil, settingsSvc, docker.ClientServiceOptions{}),
 		SettingsService: settingsSvc,
 	})
 	_, err := svc.PatchImage(t.Context(), "0", "test-image", types.PatchOptions{ScanID: "test-image"}, types.Actor{})
@@ -206,7 +205,7 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, dockerClient.Close()) }()
 	svc := NewService(ServiceParams{
-		DockerService:        docker.NewDockerClientService(t.Context(), nil, settingsSvc, bus.Config{}).WithClient(dockerClient),
+		DockerService:        docker.NewDockerClientService(t.Context(), nil, settingsSvc, docker.ClientServiceOptions{}).WithClient(dockerClient),
 		SettingsService:      settingsSvc,
 		VulnerabilityService: &vulnerability.VulnerabilityService{},
 	})

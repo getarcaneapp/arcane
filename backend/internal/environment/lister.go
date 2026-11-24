@@ -9,6 +9,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/mapping"
 
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -20,12 +21,14 @@ import (
 type Lister struct {
 	db      *database.DB
 	tunnels *agent.TunnelRegistry
+	config  *config.Config
 }
 
-func NewLister(db *database.DB, tunnels *agent.TunnelRegistry) *Lister {
+func NewLister(db *database.DB, tunnels *agent.TunnelRegistry, cfg *config.Config) *Lister {
 	return &Lister{
 		db:      db,
 		tunnels: tunnels,
+		config:  cfg,
 	}
 }
 
@@ -185,7 +188,29 @@ func (l *Lister) ListEnvironmentsPaginated(ctx context.Context, params paginatio
 
 func (l *Lister) ApplyRuntimeState(env types.Environment) types.Environment {
 	if env.ID == LocalEnvironmentID {
-		return env
+		return types.Environment{ //exhaustruct:enforce
+			ID:                   env.ID,
+			Name:                 env.Name,
+			ApiUrl:               env.ApiUrl,
+			Status:               env.Status,
+			Enabled:              env.Enabled,
+			LastSeen:             env.LastSeen,
+			AgentTransport:       env.AgentTransport,
+			LastAgentTransport:   env.LastAgentTransport,
+			AgentSecurityMode:    env.AgentSecurityMode,
+			AgentSessionID:       env.AgentSessionID,
+			AgentInstance:        env.AgentInstance,
+			AgentCapabilities:    env.AgentCapabilities,
+			AgentRoundTripMs:     env.AgentRoundTripMs,
+			AgentOpenStreams:     env.AgentOpenStreams,
+			Connected:            env.Connected,
+			ConnectedAt:          env.ConnectedAt,
+			LastHeartbeat:        env.LastHeartbeat,
+			AgentMTLSCertificate: env.AgentMTLSCertificate,
+			AgentHost:            env.AgentHost,
+			AgentTunnelStats:     env.AgentTunnelStats,
+			LocalDockerEnabled:   new(l.config.LocalDockerEnabled),
+		}
 	}
 
 	runtimeState, connected := l.tunnels.RuntimeState(env.ID).Get()
@@ -222,5 +247,6 @@ func (l *Lister) ApplyRuntimeState(env types.Environment) types.Environment {
 		AgentMTLSCertificate: env.AgentMTLSCertificate,
 		AgentHost:            agentHostInfo(runtimeState),
 		AgentTunnelStats:     agentTunnelStats(runtimeState, l.tunnels.History(env.ID)),
+		LocalDockerEnabled:   nil,
 	}
 }

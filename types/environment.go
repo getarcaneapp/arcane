@@ -68,6 +68,9 @@ type (
 
 		AgentHost *AgentHostInfo `json:"agentHost,omitempty" readOnly:"true"`
 
+		// Set only on the local environment; false means the manager never connects to its own Docker.
+		LocalDockerEnabled *bool `json:"localDockerEnabled,omitempty" readOnly:"true"`
+
 		AgentTunnelStats  *AgentTunnelStats `json:"agentTunnelStats,omitempty" readOnly:"true"`
 		ID                string            `json:"id" readOnly:"true"`
 		Name              string            `json:"name,omitempty" unorm:"nfc" trim:"true"`

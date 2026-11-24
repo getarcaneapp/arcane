@@ -106,7 +106,7 @@ export function canReachShownAccessSurface(
 	surfaceId: string | undefined,
 	user: User
 ): boolean {
-	return [undefined, ...environmentStore.shown.map((env) => env.id)].some((id) =>
+	return [undefined, ...environmentStore.enabled.map((env) => env.id)].some((id) =>
 		canReachAccessSurface(accessManifest, surfaceId, user, id)
 	);
 }

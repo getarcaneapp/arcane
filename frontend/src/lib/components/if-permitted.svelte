@@ -22,7 +22,7 @@
 		if (adminOnly) return isGlobalAdmin();
 		if (perm === undefined) return true;
 		const perms = typeof perm === 'string' ? [perm] : perm;
-		const envIds = envId === undefined ? environmentStore.shown.map((env) => env.id) : [envId];
+		const envIds = envId === undefined ? environmentStore.enabled.map((env) => env.id) : [envId];
 		return envIds.some((id) => hasAnyPermission(perms, id));
 	});
 </script>

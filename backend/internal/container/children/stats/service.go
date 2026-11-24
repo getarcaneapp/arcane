@@ -37,7 +37,7 @@ type (
 	Service struct {
 		flight        singleflight.Group
 		getClient     func(context.Context) (*client.Client, error)
-		dockerHost    func() string
+		dockerHost    func() (string, error)
 		cache         *cache.Cache[string, cachedStats]
 		inspectCache  *cache.Cache[string, container.InspectResponse]
 		history       stats.Store
@@ -70,7 +70,7 @@ type (
 
 	Params struct {
 		GetClient     func(context.Context) (*client.Client, error)
-		DockerHost    func() string
+		DockerHost    func() (string, error)
 		CacheTTL      time.Duration
 		SampleTimeout time.Duration
 		BatchTimeout  time.Duration
@@ -107,6 +107,10 @@ func New(p Params) *Service {
 }
 
 func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan<- any) error {
+	dockerHost, err := s.dockerHost()
+	if err != nil {
+		return err
+	}
 	dockerClient, err := s.getClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
@@ -150,7 +154,7 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 		}
 		if historySent && statsData.PreCPUStats.SystemUsage != 0 {
 			s.cache.Set(cache.Entry[string, cachedStats]{
-				Key:   s.dockerHost() + "\x00" + containerID,
+				Key:   dockerHost + "\x00" + containerID,
 				Value: cachedStats{stats: statsData, fetchedAt: time.Now()},
 			})
 		}
@@ -224,7 +228,11 @@ func collect[T any](ctx context.Context, timeout time.Duration, ids []string, fe
 }
 
 func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Duration, waitForBaseline bool) (container.StatsResponse, error) {
-	key := s.dockerHost() + "\x00" + containerID
+	dockerHost, hostErr := s.dockerHost()
+	if hostErr != nil {
+		return container.StatsResponse{}, hostErr
+	}
+	key := dockerHost + "\x00" + containerID
 	if cached, ok, _ := s.cache.Get(key); ok && time.Since(cached.fetchedAt) < maxAge {
 		return cached.stats, nil
 	}
