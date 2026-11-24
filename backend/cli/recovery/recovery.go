@@ -117,11 +117,12 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		if trustErr != nil {
 			return trustErr
 		}
-		command := []string{"restore", "--delete"}
-		for _, glob := range stage.Globs {
-			command = append(command, "--glob", glob)
-		}
-		command = append(command, stage.SnapshotID+":"+stage.SourcePath, stage.Target.Path)
+		command := backup.RestoreCommand(stage.SnapshotID, stage.Target.Path, backup.RestoreOptions{
+			SourcePath:    stage.SourcePath,
+			Globs:         stage.Globs,
+			DeleteExtra:   true,
+			TrustExisting: true,
+		})
 		mounts := slices.Concat(stage.Repository.Mounts, stage.Target.Mounts, trust)
 		_, runErr := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode))
 		return runErr
@@ -221,9 +222,9 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	}
 	// The restored database keeps the current project folders and discovers later project backups on its next start.
 	for key, value := range map[string]string{
-		"projectsDirectory":             request.ProjectsSetting,
-		"projectsDirectories":           request.ProjectsDirectoriesSetting,
-		"projectBackupDiscoveryPending": "true",
+		"projectsDirectory":               request.ProjectsSetting,
+		"projectsDirectories":             request.ProjectsDirectoriesSetting,
+		backup.ProjectDiscoveryPendingKey: "true",
 	} {
 		if strings.TrimSpace(value) == "" {
 			continue
@@ -337,7 +338,7 @@ func failRestoredProjectRestores(db *gorm.DB) error {
 	}
 	const message = "Interrupted by a system restore; the project was left as it is"
 	for _, entry := range entries {
-		if action, _ := entry.Metadata["action"].(string); action != "restore_project_backup" {
+		if action, _ := entry.Metadata["action"].(string); action != backup.ProjectRestoreAction {
 			continue
 		}
 		now := time.Now().UTC()
@@ -425,20 +426,20 @@ func runStages(ctx context.Context, stages []types.RecoveryRestoreStage, rustic 
 			continue
 		}
 		directory := stage.Swap.Directory
-		if err := backup.RemoveSwapLeftovers(ctx, directory); err != nil {
+		if err := backup.RemoveSwapLeftovers(ctx, directory, backup.SwapStagingPrefix); err != nil {
 			return touched, fmt.Errorf("remove an earlier restore's staging folders: %w", err)
 		}
 		if err := rustic(ctx, stage); err != nil {
 			slog.ErrorContext(ctx, "Rustic system restore stage failed", "source", stage.SourcePath, "error", err)
-			return touched, errors.Join(fmt.Errorf("restore %s: %w", stage.SourcePath, err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory))
+			return touched, errors.Join(fmt.Errorf("restore %s: %w", stage.SourcePath, err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory, backup.SwapStagingPrefix))
 		}
 		plan, err := backup.PlanSwap(ctx, *stage.Swap)
 		if err != nil {
-			return touched, errors.Join(fmt.Errorf("check the restored data: %w", err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory))
+			return touched, errors.Join(fmt.Errorf("check the restored data: %w", err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory, backup.SwapStagingPrefix))
 		}
 		err = plan.Apply(ctx)
 		if errors.Is(err, backup.ErrSwapNotApplied) {
-			return touched, errors.Join(fmt.Errorf("swap the restored data into %s: %w", directory, err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory))
+			return touched, errors.Join(fmt.Errorf("swap the restored data into %s: %w", directory, err), backup.RemoveSwapLeftovers(context.WithoutCancel(ctx), directory, backup.SwapStagingPrefix))
 		}
 		touched = true
 		if err != nil {

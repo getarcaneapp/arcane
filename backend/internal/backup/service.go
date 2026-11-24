@@ -98,6 +98,8 @@ type (
 		// Globs filter what is restored; --delete still removes destination paths they exclude.
 		Globs       []string
 		DeleteExtra bool
+		// TrustExisting keeps an existing file whose size and modification time match without reading it.
+		TrustExisting bool
 	}
 
 	SourceMountOptions struct {
@@ -305,7 +307,11 @@ const (
 	ProjectSnapshotTag   = "arcane-kind:project"
 	volumeOwnerTagPrefix = "arcane-owner:"
 	// ProjectTargetType marks the run targets of project backups, whose recovery data checkpoints a backup.
-	ProjectTargetType              = "project_backup"
+	ProjectTargetType = "project_backup"
+	// ProjectRestoreAction is the activity action of an in-place project restore, which a system restore fails.
+	ProjectRestoreAction = "restore_project_backup"
+	// ProjectDiscoveryPendingKey is the setting a system restore sets so project backups are discovered on the next start.
+	ProjectDiscoveryPendingKey     = "projectBackupDiscoveryPending"
 	SystemAdmissionScope           = "system-backup"
 	SystemAdmissionID              = "system"
 	RecoveryKeyConfigID            = "system-recovery"
@@ -475,18 +481,25 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 }
 
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
-	command := []string{"restore", "--verify-existing"}
+	command := RestoreCommand(snapshotID, cmp.Or(options.DestinationPath, target.Target), options)
+	mounts := append([]mount.Mount{target}, options.ExtraMounts...)
+	_, err := e.run(ctx, dockerClient, repository, password, command, mounts...)
+	return err
+}
+
+// RestoreCommand is the Rustic command that restores options.SourcePath of the snapshot into destination.
+func RestoreCommand(snapshotID, destination string, options RestoreOptions) []string {
+	command := []string{"restore"}
+	if !options.TrustExisting {
+		command = append(command, "--verify-existing")
+	}
 	if options.DeleteExtra {
 		command = append(command, "--delete")
 	}
 	for _, glob := range options.Globs {
 		command = append(command, "--glob", glob)
 	}
-	source := snapshotID + ":/" + strings.TrimPrefix(options.SourcePath, "/")
-	command = append(command, "--", source, cmp.Or(options.DestinationPath, target.Target))
-	mounts := append([]mount.Mount{target}, options.ExtraMounts...)
-	_, err := e.run(ctx, dockerClient, repository, password, command, mounts...)
-	return err
+	return append(command, "--", snapshotID+":/"+strings.TrimPrefix(options.SourcePath, "/"), destination)
 }
 
 func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
