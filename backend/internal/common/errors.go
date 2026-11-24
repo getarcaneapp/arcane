@@ -71,6 +71,7 @@ var (
 	ErrSwarmNotEnabled                         = Classify(ErrBadRequest, errors.New("Swarm mode is not enabled"))
 	ErrPodmanNotDetected                       = Classify(ErrBadRequest, errors.New("Podman was not detected on this environment"))
 	ErrPodmanAPIUnavailable                    = Classify(ErrUnavailable, errors.New("the Podman libpod API is unreachable"))
+	ErrLocalDockerDisabled                     = Classify(ErrUnavailable, errors.New("local Docker is disabled on this manager (ARCANE_LOCAL_DOCKER_ENABLED=false)"))
 	ErrSwarmManagerRequired                    = Classify(ErrForbidden, errors.New("Swarm manager access required"))
 	ErrRoleNotFound                            = Classify(ErrNotFound, errors.New("Role not found"))
 	ErrRoleBuiltIn                             = Classify(ErrForbidden, errors.New("Built-in role cannot be modified"))

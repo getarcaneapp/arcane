@@ -544,7 +544,7 @@ func newDockerClientServiceForTest(t *testing.T, host string) *DockerClientServi
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	require.NoError(t, settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": host}))
-	return NewDockerClientService(t.Context(), db, settingsService, bus.Config{})
+	return NewDockerClientService(t.Context(), db, settingsService, ClientServiceOptions{})
 }
 
 func newDockerPingTestServer(t *testing.T, apiVersion func() string) *httptest.Server {

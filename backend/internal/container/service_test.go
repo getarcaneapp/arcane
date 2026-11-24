@@ -33,7 +33,6 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
-	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -2165,5 +2164,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
 }

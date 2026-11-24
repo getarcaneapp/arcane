@@ -9,6 +9,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/mapping"
 
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -20,12 +21,14 @@ import (
 type Lister struct {
 	db      *database.DB
 	tunnels *agent.TunnelRegistry
+	config  *config.Config
 }
 
-func NewLister(db *database.DB, tunnels *agent.TunnelRegistry) *Lister {
+func NewLister(db *database.DB, tunnels *agent.TunnelRegistry, cfg *config.Config) *Lister {
 	return &Lister{
 		db:      db,
 		tunnels: tunnels,
+		config:  cfg,
 	}
 }
 
@@ -185,6 +188,7 @@ func (l *Lister) ListEnvironmentsPaginated(ctx context.Context, params paginatio
 
 func (l *Lister) ApplyRuntimeState(env types.Environment) types.Environment {
 	if env.ID == LocalEnvironmentID {
+		env.LocalDockerEnabled = new(l.config.LocalDockerEnabled)
 		return env
 	}
 
@@ -222,5 +226,6 @@ func (l *Lister) ApplyRuntimeState(env types.Environment) types.Environment {
 		AgentMTLSCertificate: env.AgentMTLSCertificate,
 		AgentHost:            agentHostInfo(runtimeState),
 		AgentTunnelStats:     agentTunnelStats(runtimeState, l.tunnels.History(env.ID)),
+		LocalDockerEnabled:   nil,
 	}
 }
