@@ -593,20 +593,9 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options types.U
 		}
 	}
 
-	serviceOf := func(summary container.Summary) string {
-		return kit.Ternary(docker.ComposeServiceLabel(summary.Labels) != "", docker.ComposeProjectLabel(summary.Labels)+"/"+docker.ComposeServiceLabel(summary.Labels), "")
-	}
-	pendingServices := map[string]string{}
-	if !projectOrImage && len(pending) > 1 {
-		containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
-		if listErr != nil {
-			return fmt.Errorf("list containers: %w", listErr)
-		}
-		for _, summary := range containers {
-			if slices.Contains(pending, summary.ID) {
-				pendingServices[summary.ID] = serviceOf(summary)
-			}
-		}
+	pendingServices, err := s.composeServiceKeys(ctx, kit.Ternary(projectOrImage, nil, pending))
+	if err != nil {
+		return err
 	}
 
 	for index, containerID := range pending {
@@ -637,23 +626,11 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options types.U
 		}); progressErr != nil {
 			return progressErr
 		}
-		moduleResult, engineErr := s.engine.UpdateContainer(ctx, containerID, updater.Options{
+		moduleResult, engineErr := s.updatePendingContainer(ctx, containerID, pendingServices[containerID], updater.Options{
 			Force:                    options.ForceUpdate,
 			DryRun:                   options.DryRun,
 			IgnoreSettingsExclusions: options.IgnoreSettingsExclusions,
 		})
-		if service := pendingServices[containerID]; service != "" && errors.Is(engineErr, updater.ErrContainerNotFound) {
-			containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
-			if current := slices.IndexFunc(containers, func(summary container.Summary) bool {
-				return serviceOf(summary) == service
-			}); listErr == nil && current >= 0 {
-				moduleResult, engineErr = s.engine.UpdateContainer(ctx, containers[current].ID, updater.Options{
-					Force:                    options.ForceUpdate,
-					DryRun:                   options.DryRun,
-					IgnoreSettingsExclusions: options.IgnoreSettingsExclusions,
-				})
-			}
-		}
 		partial := resultFromModule(moduleResult)
 		checked += partial.Checked
 		updated += partial.Updated
@@ -719,6 +696,41 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options types.U
 		return nil
 	}
 	return errors.Join(engineErrs...)
+}
+
+func (s *UpdaterService) composeServiceKeys(ctx context.Context, containerIDs []string) (map[string]string, error) {
+	if len(containerIDs) < 2 {
+		return map[string]string{}, nil
+	}
+	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	keys := make(map[string]string, len(containerIDs))
+	for _, summary := range containers {
+		if slices.Contains(containerIDs, summary.ID) && docker.ComposeServiceLabel(summary.Labels) != "" {
+			keys[summary.ID] = docker.ComposeProjectLabel(summary.Labels) + "/" + docker.ComposeServiceLabel(summary.Labels)
+		}
+	}
+	return keys, nil
+}
+
+func (s *UpdaterService) updatePendingContainer(ctx context.Context, containerID, serviceKey string, options updater.Options) (*updater.Result, error) {
+	moduleResult, err := s.engine.UpdateContainer(ctx, containerID, options)
+	if serviceKey == "" || !errors.Is(err, updater.ErrContainerNotFound) {
+		return moduleResult, err
+	}
+	containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
+	if listErr != nil {
+		return moduleResult, err
+	}
+	current := slices.IndexFunc(containers, func(summary container.Summary) bool {
+		return docker.ComposeProjectLabel(summary.Labels)+"/"+docker.ComposeServiceLabel(summary.Labels) == serviceKey
+	})
+	if current < 0 {
+		return moduleResult, err
+	}
+	return s.engine.UpdateContainer(ctx, containers[current].ID, options)
 }
 
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *types.UpdaterResult, err error) {
