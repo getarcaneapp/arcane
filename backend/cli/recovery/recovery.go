@@ -37,6 +37,11 @@ import (
 	"getarcane.dev/types/v3"
 )
 
+type arcaneContainer struct {
+	stop  func(ctx context.Context) error
+	start func(ctx context.Context) error
+}
+
 const (
 	rusticImage = rusticruntime.DefaultImage
 )
@@ -94,10 +99,19 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		}
 		_ = reader.Close()
 	}
-	if _, containerStopErr := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)}); containerStopErr != nil {
-		return fmt.Errorf("stop Arcane container: %w", containerStopErr)
+	arcane := arcaneContainer{
+		stop: func(ctx context.Context) error {
+			if _, stopErr := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)}); stopErr != nil {
+				return fmt.Errorf("stop Arcane container: %w", stopErr)
+			}
+			return nil
+		},
+		start: func(ctx context.Context) error {
+			_, startErr := dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
+			return startErr
+		},
 	}
-	restart := func() { _, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{}) }
+	restart := func() { _ = arcane.start(ctx) }
 	rustic := func(ctx context.Context, stage types.RecoveryRestoreStage) error {
 		trust, trustErr := rusticruntime.TrustMounts(ctx, dockerClient, "/app/data", inspect.Container.Mounts)
 		if trustErr != nil {
@@ -112,7 +126,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		_, runErr := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode))
 		return runErr
 	}
-	if restoreErr := restoreData(ctx, request, rustic, restart); restoreErr != nil {
+	if restoreErr := restoreData(ctx, request, rustic, arcane); restoreErr != nil {
 		return restoreErr
 	}
 	if !request.ProjectsIncluded {
@@ -337,38 +351,61 @@ func failRestoredProjectRestores(db *gorm.DB) error {
 	return nil
 }
 
-// restoreData applies the restore stages. A failure before live data changed restarts Arcane; a later one rolls back to
-// the pre-restore backup and restarts Arcane only when that succeeds.
+// restoreData stops Arcane and applies the restore stages through the shared restore runner, with the pre-restore
+// system backup as its safety backup. A failure before live data changed starts Arcane again; a later one rolls back to
+// the pre-restore backup and starts Arcane only when that succeeds. On success Arcane stays stopped for the caller to
+// recreate with the recovered configuration.
 func restoreData(
 	ctx context.Context,
 	request types.RecoveryRestoreRequest,
 	rustic func(context.Context, types.RecoveryRestoreStage) error,
-	restart func(),
+	arcane arcaneContainer,
 ) error {
-	touched, err := runStages(ctx, request.Stages, rustic)
-	if err == nil {
-		return nil
+	steps := backup.RestoreSteps{
+		Subject: "Arcane",
+		Report: func(ctx context.Context, message string) {
+			slog.InfoContext(ctx, "System restore step", "step", message)
+		},
+		Stop:   func(ctx context.Context, _ backup.RestoreState) error { return arcane.stop(ctx) },
+		Deploy: arcane.start,
+		Safety: func(context.Context) (string, error) {
+			if request.SafetyBackup == nil || len(request.RollbackStages) == 0 {
+				return "", errors.New("no pre-restore system backup is available for rollback")
+			}
+			return request.SafetyBackup.ID, nil
+		},
+		InUse:  nil,
+		Create: nil,
+		Write: func(ctx context.Context, safetyID string) error {
+			if safetyID == "" {
+				touched, err := runStages(ctx, request.Stages, rustic)
+				if err != nil && !touched {
+					return backup.UnchangedError{Err: err}
+				}
+				return err
+			}
+			if _, err := runStages(ctx, request.RollbackStages, rustic); err != nil {
+				return fmt.Errorf("restore the pre-restore system backup: %w", err)
+			}
+			rollback, err := readRestoredManifest(ctx, "/app/data")
+			if err == nil {
+				err = francis.ClearRestoredHosts(ctx, rollback.Environment["ARCANE_DATABASE_URL"])
+			}
+			if err != nil {
+				return fmt.Errorf("clear restored actor ownership: %w", err)
+			}
+			return nil
+		},
+		Verify:  nil,
+		Remove:  nil,
+		Discard: nil,
 	}
-	err = fmt.Errorf("system restore failed: %w", err)
-	if !touched {
-		restart()
-		return fmt.Errorf("%w; Arcane's data was not changed and Arcane was restarted", err)
+	// Arcane ran when the restore was requested; after a successful restore the caller recreates it instead.
+	state := backup.RestoreState{Redeploy: new(false), SafetyID: "", Create: nil, MayStop: true, Running: true}
+	if err := steps.Apply(ctx, state); err != nil {
+		return fmt.Errorf("system restore failed: %w", err)
 	}
-	if len(request.RollbackStages) == 0 {
-		return errors.Join(err, errors.New("no pre-restore system backup is available for rollback; Arcane was left stopped"))
-	}
-	if _, rollbackErr := runStages(context.WithoutCancel(ctx), request.RollbackStages, rustic); rollbackErr != nil {
-		return errors.Join(err, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
-	}
-	rollback, readErr := readRestoredManifest(context.WithoutCancel(ctx), "/app/data")
-	if readErr == nil {
-		readErr = francis.ClearRestoredHosts(context.WithoutCancel(ctx), rollback.Environment["ARCANE_DATABASE_URL"])
-	}
-	if readErr != nil {
-		return errors.Join(err, fmt.Errorf("clear restored actor ownership; Arcane was left stopped: %w", readErr))
-	}
-	restart()
-	return fmt.Errorf("%w; the pre-restore system backup was restored", err)
+	return nil
 }
 
 // runStages applies stages in order and reports whether live data changed: a staged stage changes it only once its swap

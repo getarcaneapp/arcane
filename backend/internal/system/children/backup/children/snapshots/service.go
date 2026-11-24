@@ -1338,23 +1338,14 @@ func (s *Service) Create(
 	defer func() {
 		_ = acfs.Root{Path: layout.dataDirectory}.Remove(context.WithoutCancel(ctx), "/"+RecoveryManifestName)
 	}()
-	files, err := snapshotSourceFiles(ctx, layout)
-	if err != nil {
-		return backup.Snapshot{}, err
-	}
 	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	// Mount VACUUM INTO copies over the live databases so the snapshot is consistent.
 	snapshotMounts := slices.Clone(layout.mounts)
-	for name, db := range databases {
-		stagedDatabase := filepath.Join(stage, name)
-		if stageErr := stageDatabase(ctx, db, filepath.Join(layout.dataDirectory, name), stagedDatabase); stageErr != nil {
-			return backup.Snapshot{}, stageErr
-		}
+	for name := range databases {
 		stagedMounts, mountErr := backup.SourceMounts(backup.SourceMountOptions{
-			Mounts: mounts, ContainerPath: stagedDatabase, Target: filepath.Join(snapshotDataPath, name), InContainer: inContainer,
+			Mounts: mounts, ContainerPath: filepath.Join(stage, name), Target: filepath.Join(snapshotDataPath, name), InContainer: inContainer,
 		})
 		if mountErr != nil {
 			return backup.Snapshot{}, mountErr
@@ -1372,51 +1363,81 @@ func (s *Service) Create(
 	if layout.nestedDataPath != "" {
 		globs = append(globs, "!"+layout.nestedDataPath)
 	}
-	snapshot, err := s.engine.CreateSnapshot(ctx, dockerClient, repository, recoveryKey, "arcane-system-recovery", backup.CreateSnapshotInput{
-		Mounts:  snapshotMounts,
-		Sources: layout.sources,
-		Globs:   globs,
-	})
-	if err != nil {
-		return backup.Snapshot{}, err
-	}
-	after, err := snapshotSourceFiles(ctx, layout)
-	for filePath, original := range files {
-		if err != nil {
-			break
+	var snapshot backup.Snapshot
+	// Tagging changes the ID; only the original, unconfirmed snapshot is removed.
+	forget := func(ctx context.Context) error {
+		if snapshot.ID == "" {
+			return nil
 		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		if forgetErr := s.engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, recoveryKey, []string{snapshot.ID}); forgetErr != nil {
+			return fmt.Errorf("remove unconfirmed system snapshot %s: %w", snapshot.ID, forgetErr)
+		}
+		return nil
+	}
+	capture := backup.CapturePlan{
+		Inspect: nil,
+		// VACUUM INTO copies the live databases, so the snapshot holds a consistent copy of each.
+		Stop: func(ctx context.Context) (func(context.Context) error, error) {
+			for name, db := range databases {
+				if stageErr := stageDatabase(ctx, db, filepath.Join(layout.dataDirectory, name), filepath.Join(stage, name)); stageErr != nil {
+					return nil, stageErr
+				}
+			}
+			return nil, nil
+		},
+		Watch: func(ctx context.Context) (func(context.Context) error, error) {
+			files, filesErr := snapshotSourceFiles(ctx, layout)
+			if filesErr != nil {
+				return nil, filesErr
+			}
+			return func(ctx context.Context) error { return sourceFilesUnchanged(ctx, layout, files) }, nil
+		},
+		Rejected: func(ctx context.Context, _ error) error { return forget(ctx) },
+		Mounts:   snapshotMounts,
+		Volumes:  nil,
+	}
+	if captureErr := backup.Capture(ctx, capture, func(ctx context.Context, mounts []mount.Mount) error {
+		var createErr error
+		snapshot, createErr = s.engine.CreateSnapshot(ctx, dockerClient, repository, recoveryKey, "arcane-system-recovery", backup.CreateSnapshotInput{
+			Mounts:  mounts,
+			Sources: layout.sources,
+			Globs:   globs,
+		})
+		return createErr
+	}); captureErr != nil {
+		return backup.Snapshot{}, captureErr
+	}
+	confirmed, err := s.engine.ConfirmRunSnapshot(ctx, dockerClient, repository, recoveryKey, backupID, snapshot.ID)
+	if err != nil {
+		return backup.Snapshot{}, errors.Join(err, forget(ctx))
+	}
+	return confirmed, nil
+}
+
+// sourceFilesUnchanged refuses a capture during which a source file changed, appeared or went away.
+func sourceFilesUnchanged(ctx context.Context, layout backupSourceLayout, files map[string]acfstypes.Entry) error {
+	after, err := snapshotSourceFiles(ctx, layout)
+	if err != nil {
+		return err
+	}
+	for filePath, original := range files {
 		current, exists := after[filePath]
 		if !exists ||
 			original.Device != current.Device ||
 			original.Inode != current.Inode ||
 			original.UnixMode != current.UnixMode ||
 			(!original.IsDirectory && (original.Size != current.Size || original.ModTimeUnixNano != current.ModTimeUnixNano)) {
-			err = fmt.Errorf("system backup source %q changed during capture; retry when file updates finish", filePath)
+			return fmt.Errorf("system backup source %q changed during capture; retry when file updates finish", filePath)
 		}
 	}
 	for filePath := range after {
-		if err != nil {
-			break
-		}
 		if _, exists := files[filePath]; !exists {
-			err = fmt.Errorf("system backup source %q appeared during capture; retry when file updates finish", filePath)
+			return fmt.Errorf("system backup source %q appeared during capture; retry when file updates finish", filePath)
 		}
 	}
-	if err == nil {
-		confirmed, confirmErr := s.engine.ConfirmRunSnapshot(ctx, dockerClient, repository, recoveryKey, backupID, snapshot.ID)
-		if confirmErr == nil {
-			return confirmed, nil
-		}
-		err = confirmErr
-	}
-	// Tagging changes the ID; only remove the original, unconfirmed snapshot.
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
-	defer cancel()
-	cleanupErr := s.engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, recoveryKey, []string{snapshot.ID})
-	if cleanupErr != nil {
-		cleanupErr = fmt.Errorf("remove unconfirmed system snapshot %s: %w", snapshot.ID, cleanupErr)
-	}
-	return backup.Snapshot{}, errors.Join(err, cleanupErr)
+	return nil
 }
 
 func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[string]acfstypes.Entry, error) {

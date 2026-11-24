@@ -30,8 +30,12 @@ type (
 	CapturePlan struct {
 		// Inspect reports a Docker volume, so the capture can tell the volumes it read are the ones it planned.
 		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
-		// Stop quiesces the subject and returns what starts it again; nil when nothing needs stopping.
+		// Stop quiesces the subject, by stopping its containers or copying its live databases, and returns what starts it
+		// again, if anything; nil when nothing needs quiescing.
 		Stop func(ctx context.Context) (func(context.Context) error, error)
+		// Watch records the parts that aren't Docker volumes before the read and returns the check that they are unchanged
+		// after it; nil when there are none.
+		Watch func(ctx context.Context) (func(context.Context) error, error)
 		// Rejected records a read the capture rejects after it finished, before the error is returned.
 		Rejected func(ctx context.Context, err error) error
 		Mounts   []mount.Mount
@@ -73,8 +77,8 @@ func InspectVolume(ctx context.Context, dockerClient *client.Client, name string
 	return types.NewVolume(inspect.Volume), true, nil
 }
 
-// Capture quiesces the subject once, hands its mounted parts to read, and checks that every volume read is the one
-// planned, before the subject starts again.
+// Capture quiesces the subject once, hands its mounted parts to read, and checks that the other parts didn't change and
+// every volume read is the one planned, before the subject starts again.
 func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Context, mounts []mount.Mount) error) (err error) {
 	// A volume removed while the capture waited would be mounted, and so created, empty; one replaced during the read
 	// would be read empty too. Each must exist now and be the same volume after the read.
@@ -96,16 +100,26 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 			return stopErr
 		}
 	}
+	unchanged := func(context.Context) error { return nil }
+	if plan.Watch != nil {
+		if unchanged, err = plan.Watch(ctx); err != nil {
+			return err
+		}
+	}
 	if readErr := read(ctx, plan.Mounts); readErr != nil {
 		return readErr
 	}
-	// A shutdown can't cut the check short: a cancelled check would reject a read that finished. It is still bounded,
-	// since the subject stays stopped until it returns.
-	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
-	after, err := volumeIdentities(checkCtx, plan.Inspect, plan.Volumes)
-	cancelCheck()
-	if err == nil && !maps.Equal(before, after) {
-		err = errVolumeReplaced
+	err = unchanged(ctx)
+	if err == nil {
+		// A shutdown can't cut the check short: a cancelled check would reject a read that finished. It is still bounded,
+		// since the subject stays stopped until it returns.
+		checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
+		var after map[string]string
+		after, err = volumeIdentities(checkCtx, plan.Inspect, plan.Volumes)
+		cancelCheck()
+		if err == nil && !maps.Equal(before, after) {
+			err = errVolumeReplaced
+		}
 	}
 	if err != nil && plan.Rejected != nil {
 		return errors.Join(err, plan.Rejected(context.WithoutCancel(ctx), err))

@@ -48,6 +48,11 @@ type (
 		Subject string
 	}
 
+	// UnchangedError marks a Write that failed before it changed the target, so the rollback only starts it again.
+	UnchangedError struct {
+		Err error
+	}
+
 	// RestorePart pairs a part of a capture with the mount it is restored into.
 	RestorePart struct {
 		Key string
@@ -102,6 +107,10 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	if err == nil && r.Verify != nil {
 		err = r.Verify(ctx)
 	}
+	if unchanged := (UnchangedError{}); errors.As(err, &unchanged) {
+		// Nothing was written, so the safety backup has nothing to undo.
+		state.SafetyID = ""
+	}
 	if err != nil {
 		return r.rollback(ctx, state, created, err)
 	}
@@ -154,7 +163,10 @@ func (r RestoreSteps) rollback(ctx context.Context, state RestoreState, created 
 		return fmt.Errorf("%w; %s could not be stopped for the rollback (%w), so it was left as is; restore the safety backup %s by hand to undo the restore", cause, subject, err, state.SafetyID)
 	}
 	undoErr := r.Write(ctx, state.SafetyID)
-	removeErr := r.Remove(ctx, created)
+	var removeErr error
+	if len(created) > 0 {
+		removeErr = r.Remove(ctx, created)
+	}
 	if undoErr != nil {
 		return fmt.Errorf("%w; the rollback failed too (%w), so %s was left down; restore the safety backup %s to undo the restore", cause, errors.Join(undoErr, removeErr), subject, state.SafetyID)
 	}
@@ -178,6 +190,10 @@ func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string 
 	}
 	return leftovers
 }
+
+func (e UnchangedError) Error() string { return e.Err.Error() }
+
+func (e UnchangedError) Unwrap() error { return e.Err }
 
 func (r RestoreSteps) subject() string { return cmp.Or(r.Subject, "the project") }
 
