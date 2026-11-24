@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"regexp"
 	"slices"
@@ -211,8 +212,17 @@ func (s *VolumeService) CreateSystemManagedBackup(
 	return volumeBackupFromRecord(entry), err
 }
 
-func (s *VolumeService) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
-	return s.backup.ExportVolumeArchive(ctx, volumeName)
+// ArchiveVolumes tars captured volumes in one helper, each as a volume export archives it, and hands each archive to add.
+func (s *VolumeService) ArchiveVolumes(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error {
+	helperImage, err := s.getVolumeHelperImage(ctx)
+	if err != nil {
+		return err
+	}
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	return backup.ArchiveOutput{Add: add, Image: helperImage, Parts: parts}.Write(ctx, dockerClient)
 }
 
 func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {

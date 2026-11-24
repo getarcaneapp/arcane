@@ -45,15 +45,15 @@ type (
 		CreateVolume(ctx context.Context, volume types.Volume, user types.Actor) error
 		CreateNetwork(ctx context.Context, network types.Network, user types.Actor) error
 		ComposeProjectInUse(ctx context.Context, name string) (bool, error)
-		ExportProject(ctx context.Context, projectID string) (types.UploadSession, error)
+		// ExportProject exports the project's files, or with volumes a bundle of its files and their data.
+		ExportProject(ctx context.Context, projectID string, request types.ExportProjectArchive, user types.Actor) (types.UploadSession, error)
+		// ImportProject imports a project archive or bundle, restoring the bundle's volumes into new ones.
 		ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
 		CreateUpload(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (types.UploadSession, error)
 		Upload(ctx context.Context, kind, uploadID string) (types.UploadSession, error)
 		ReadChunk(ctx context.Context, kind, uploadID string, index int) ([]byte, error)
 		WriteChunk(ctx context.Context, kind, uploadID string, index int, data []byte) error
 		DeleteUpload(ctx context.Context, kind, uploadID string) error
-		ExportVolume(ctx context.Context, name string) (types.UploadSession, error)
-		RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
 		DeployProject(ctx context.Context, projectID string, user types.Actor) error
 		DownProject(ctx context.Context, projectID string, user types.Actor) error
 		DestroyProject(ctx context.Context, projectID string, user types.Actor) error
@@ -146,6 +146,7 @@ const (
 	operationTimeout = 30 * time.Minute
 	maxChunkRetries  = 3
 	artifactFiles    = "project files"
+	artifactBundle   = "project and its volumes"
 )
 
 var (
@@ -673,7 +674,7 @@ func (s *Service) execute(ctx context.Context, t flow.Task) (any, error) {
 
 func (s *Service) transfer(ctx context.Context, r *run) error {
 	err := s.authorize(ctx, r.input.Requesters)
-	for _, phase := range []func(context.Context, *run) error{s.prepare, s.copyFiles, s.copyVolumes, s.restartSource, s.deployTarget, s.completeMove} {
+	for _, phase := range []func(context.Context, *run) error{s.prepare, s.copyProject, s.restartSource, s.deployTarget, s.completeMove} {
 		if err = cmp.Or(err, ctx.Err()); err == nil {
 			err = phase(ctx, r)
 		}
@@ -736,62 +737,22 @@ func (s *Service) prepare(ctx context.Context, r *run) error {
 	return s.save(ctx, r)
 }
 
-func (s *Service) copyFiles(ctx context.Context, r *run) error {
+// copyProject exports the project, with its volumes when asked, relays the archive to the target environment and
+// imports it there, as an export and an import by hand would. The source is stopped first, so the volume data is
+// consistent, and an import interrupted by a restart is not resumed: the cleanup removes what it may have created.
+func (s *Service) copyProject(ctx context.Context, r *run) error {
 	if r.state.TargetProjectID != "" {
+		// A run started by an earlier Arcane copied the volumes after the import, one at a time.
+		if r.input.Request.IncludeVolumes && len(r.state.CopiedVolumes) < len(r.state.Volumes) {
+			return errors.New("the transfer was interrupted while it copied the volumes; start it again")
+		}
 		return nil
 	}
-	name := r.input.Request.Name
 	if r.state.Importing {
-		found, err := r.imported(ctx)
-		if err != nil {
-			return err
-		}
-		if found {
-			r.state.TargetProjectID = r.input.TargetProjectID
-		}
+		return errors.New("the transfer was interrupted while the target environment imported the project; start it again")
 	}
-	if r.state.TargetProjectID == "" {
-		source, err := s.resumedSource(ctx, r, types.UploadKindProjectArchive, artifactFiles)
-		if err != nil {
-			return err
-		}
-		if source.ID == "" {
-			s.report(ctx, r, types.ActivityMessageLevelInfo, "Packaging the project files on the source environment")
-			exportCtx, cancel := context.WithTimeout(ctx, operationTimeout)
-			source, err = r.source.ExportProject(exportCtx, r.input.ProjectID)
-			cancel()
-			if err != nil {
-				return fmt.Errorf("export project files: %w", err)
-			}
-		}
-		uploadID, err := s.relay(ctx, r, types.UploadKindProjectArchive, artifactFiles, source)
-		if err != nil {
-			return err
-		}
-		r.state.Importing = true
-		if saveErr := s.save(ctx, r); saveErr != nil {
-			return saveErr
-		}
-		importCtx, cancel := context.WithTimeout(ctx, operationTimeout)
-		defer cancel()
-		r.state.TargetProjectID, err = r.target.ImportProject(importCtx, types.ImportProjectArchive{
-			UploadID:  uploadID,
-			Name:      name,
-			ProjectID: r.input.TargetProjectID,
-		}, r.input.User)
-		if err != nil {
-			return fmt.Errorf("import project on the target environment: %w", err)
-		}
-	}
-	s.report(ctx, r, types.ActivityMessageLevelInfo, fmt.Sprintf("Project %s created on the target environment (stopped)", name))
-	return s.finishRelay(ctx, r)
-}
-
-func (s *Service) copyVolumes(ctx context.Context, r *run) error {
-	if !r.input.Request.IncludeVolumes || len(r.state.Volumes) == len(r.state.CopiedVolumes) {
-		return nil
-	}
-	if r.state.SourceRunning {
+	withVolumes := r.input.Request.IncludeVolumes && len(r.state.Volumes) > 0
+	if withVolumes && r.state.SourceRunning && !r.state.SourceStopped {
 		r.state.SourceStopped = true
 		if err := s.save(ctx, r); err != nil {
 			return err
@@ -804,100 +765,64 @@ func (s *Service) copyVolumes(ctx context.Context, r *run) error {
 			return fmt.Errorf("stop the source project: %w", err)
 		}
 	}
-	current, err := r.source.Project(ctx, r.input.ProjectID)
-	if err != nil {
-		return fmt.Errorf("check the source project: %w", err)
-	}
-	if current.RunningCount > 0 {
-		return fmt.Errorf("%d source container(s) are still running; volume data was not copied", current.RunningCount)
-	}
-	targetProject, err := r.targetProject(ctx)
-	if err != nil {
-		return err
-	}
-	for _, volume := range r.state.Volumes {
-		if slices.Contains(r.state.CopiedVolumes, volume.Key) {
-			continue
+	request := types.ExportProjectArchive{Volumes: nil, StopProject: false}
+	if withVolumes {
+		current, err := r.source.Project(ctx, r.input.ProjectID)
+		if err != nil {
+			return fmt.Errorf("check the source project: %w", err)
 		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
+		if current.RunningCount > 0 {
+			return fmt.Errorf("%d source container(s) are still running; volume data was not copied", current.RunningCount)
 		}
-		config, ok := targetProject.Volumes[volume.Key]
-		if !ok || bool(config.External) || len(config.DriverOpts) > 0 || cmp.Or(config.Driver, "local") != "local" {
-			return fmt.Errorf("volume %s is not a Docker-managed named volume of the imported project on the target environment", volume.Key)
-		}
-		if copyErr := s.copyVolume(ctx, r, volume, config, targetProject.ComposeName); copyErr != nil {
-			return copyErr
+		for _, volume := range r.state.Volumes {
+			request.Volumes = append(request.Volumes, volume.Key)
 		}
 	}
-	return nil
-}
-
-func (s *Service) copyVolume(ctx context.Context, r *run, volume types.ProjectTransferVolume, config composeTypes.VolumeConfig, composeName string) error {
-	artifact := "volume " + volume.Key
-	existing, exists, err := r.target.Volume(ctx, config.Name)
-	if err != nil {
-		return fmt.Errorf("inspect target volume %s: %w", config.Name, err)
-	}
-	if exists && (!slices.Contains(r.state.CreatedVolumes, config.Name) || composeName == "" || docker.ComposeProjectLabel(existing.Labels) != composeName) {
-		return s.disown(ctx, r, config.Name, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created on the target environment by something other than this transfer", config.Name)))
-	}
-	if exists {
-		if deleteErr := r.target.DeleteVolume(ctx, config.Name, r.input.User); deleteErr != nil {
-			return fmt.Errorf("remove the partly restored volume %s on the target environment: %w", config.Name, deleteErr)
-		}
-	}
-	source, err := s.resumedSource(ctx, r, types.UploadKindVolumeBackup, artifact)
+	artifact := kit.Ternary(withVolumes, artifactBundle, artifactFiles)
+	source, err := s.resumedSource(ctx, r, types.UploadKindProjectArchive, artifact)
 	if err != nil {
 		return err
 	}
 	if source.ID == "" {
-		s.report(ctx, r, types.ActivityMessageLevelInfo, fmt.Sprintf("Exporting volume %s on the source environment", volume.SourceName))
+		s.report(ctx, r, types.ActivityMessageLevelInfo, "Exporting the "+artifact+" on the source environment")
 		exportCtx, cancel := context.WithTimeout(ctx, operationTimeout)
-		source, err = r.source.ExportVolume(exportCtx, volume.SourceName)
+		source, err = r.source.ExportProject(exportCtx, r.input.ProjectID, request, r.input.User)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("export volume %s: %w", volume.SourceName, err)
+			return fmt.Errorf("export the %s: %w", artifact, err)
 		}
 	}
-	uploadID, err := s.relay(ctx, r, types.UploadKindVolumeBackup, artifact, source)
+	uploadID, err := s.relay(ctx, r, types.UploadKindProjectArchive, artifact, source)
 	if err != nil {
 		return err
 	}
-	if !slices.Contains(r.state.CreatedVolumes, config.Name) {
-		r.state.CreatedVolumes = append(r.state.CreatedVolumes, config.Name)
+	// Recorded before the import, so the cleanup can remove the volumes a failed or interrupted import leaves behind.
+	r.state.Importing = true
+	r.state.TargetCompose = projects.NormalizeProjectName(r.input.Request.Name)
+	if withVolumes {
+		for _, volume := range r.state.Volumes {
+			r.state.CreatedVolumes = append(r.state.CreatedVolumes, volume.TargetName)
+		}
 	}
 	if saveErr := s.save(ctx, r); saveErr != nil {
 		return saveErr
 	}
-	restoreCtx, cancel := context.WithTimeout(ctx, operationTimeout)
+	importCtx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
-	restoreErr := r.target.RestoreVolume(restoreCtx, config.Name, types.RestoreVolumeUploadRequest{
-		ComposeVolume: &types.ComposeVolumeTarget{
-			Labels:  config.Labels,
-			Project: composeName,
-			Key:     volume.Key,
-			Driver:  config.Driver,
-		},
-		UploadID: uploadID,
+	r.state.TargetProjectID, err = r.target.ImportProject(importCtx, types.ImportProjectArchive{
+		UploadID:  uploadID,
+		Name:      r.input.Request.Name,
+		ProjectID: r.input.TargetProjectID,
 	}, r.input.User)
-	if errors.Is(restoreErr, common.ErrConflict) {
-		return s.disown(ctx, r, config.Name, fmt.Errorf("restore volume %s on the target environment: %w", config.Name, restoreErr))
+	if err != nil {
+		r.state.TargetProjectID = ""
+		return fmt.Errorf("import project on the target environment: %w", err)
 	}
-	if restoreErr != nil {
-		return fmt.Errorf("restore volume %s on the target environment: %w", config.Name, restoreErr)
+	if withVolumes {
+		r.state.CopiedVolumes = request.Volumes
 	}
-	r.state.CopiedVolumes = append(r.state.CopiedVolumes, volume.Key)
-	if saveErr := s.save(ctx, r); saveErr != nil {
-		return saveErr
-	}
+	s.report(ctx, r, types.ActivityMessageLevelInfo, fmt.Sprintf("Project %s created on the target environment (stopped)", r.input.Request.Name))
 	return s.finishRelay(ctx, r)
-}
-
-// disown records that a target volume is not this run's before failing, so cleanup never deletes it.
-func (s *Service) disown(ctx context.Context, r *run, name string, cause error) error {
-	r.state.CreatedVolumes = slices.DeleteFunc(r.state.CreatedVolumes, func(created string) bool { return created == name })
-	return errors.Join(cause, s.save(context.WithoutCancel(ctx), r))
 }
 
 func (s *Service) restartSource(ctx context.Context, r *run) error {

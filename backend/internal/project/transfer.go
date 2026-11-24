@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
@@ -15,6 +17,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -28,16 +31,19 @@ type (
 		Backups          *backup.Engine
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
-		ExportVolume     func(ctx context.Context, volumeName string) (*types.UploadSession, error)
-		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
-		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
-		CreateVolume     func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
-		CreateNetwork    func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
+		// ArchiveVolumes tars captured volumes in one helper, each as a volume export archives it.
+		ArchiveVolumes func(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error
+		RestoreVolume  func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
+		DeleteVolume   func(ctx context.Context, name string, force bool, user types.Actor) error
+		CreateVolume   func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
+		CreateNetwork  func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
 	}
 
 	localTransferEnvironment struct {
 		projects *ProjectService
-		deps     TransferDependencies
+		// bundles exports and imports a project with its volumes, as the agent's export and import endpoints do.
+		bundles *bundle.Service
+		deps    TransferDependencies
 	}
 )
 
@@ -119,20 +125,17 @@ func (e localTransferEnvironment) ComposeProjectInUse(ctx context.Context, name 
 	return len(found.Items) > 0, err
 }
 
-func (e localTransferEnvironment) ExportProject(ctx context.Context, projectID string) (types.UploadSession, error) {
-	session, err := e.projects.ExportProjectArchive(ctx, projectID)
+func (e localTransferEnvironment) ExportProject(ctx context.Context, projectID string, request types.ExportProjectArchive, user types.Actor) (types.UploadSession, error) {
+	session, err := e.bundles.Export(ctx, bundle.ExportOptions{User: user, ProjectID: projectID, Request: request})
 	if err != nil {
 		return types.UploadSession{}, err
 	}
 	return *session, nil
 }
 
+// ImportProject imports a transfer's archive; the transfer checked the rights to restore its volumes before it started.
 func (e localTransferEnvironment) ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
-	imported, err := e.projects.ImportProjectArchive(ctx, request, user)
-	if err != nil {
-		return "", err
-	}
-	return imported.ID, nil
+	return e.bundles.Import(ctx, bundle.ImportOptions{User: user, Request: request, RestoreVolumes: true})
 }
 
 func (e localTransferEnvironment) CreateUpload(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (types.UploadSession, error) {
@@ -166,18 +169,6 @@ func (e localTransferEnvironment) DeleteUpload(ctx context.Context, kind, upload
 		return nil
 	}
 	return err
-}
-
-func (e localTransferEnvironment) ExportVolume(ctx context.Context, name string) (types.UploadSession, error) {
-	session, err := e.deps.ExportVolume(ctx, name)
-	if err != nil {
-		return types.UploadSession{}, err
-	}
-	return *session, nil
-}
-
-func (e localTransferEnvironment) RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
-	return e.deps.RestoreVolume(ctx, name, request, user)
 }
 
 func (e localTransferEnvironment) DeployProject(ctx context.Context, projectID string, user types.Actor) error {

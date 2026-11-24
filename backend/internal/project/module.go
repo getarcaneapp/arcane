@@ -108,43 +108,51 @@ func New(p ModuleParams) *Module {
 	})
 	// A deleted project's policies stop running, and their backups age out as unmanaged ones.
 	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
+	local.bundles = bundle.New(bundle.Dependencies{
+		Backups:             backups,
+		Docker:              p.Service.dockerService,
+		Uploads:             p.Service.uploads,
+		BackupStore:         p.Backups.Repository.StorageVolume,
+		Project:             local.Project,
+		Volume:              local.Volume,
+		ComposeProjectInUse: local.ComposeProjectInUse,
+		ExportProject:       p.Service.ExportProjectArchive,
+		ImportProject: func(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
+			imported, err := p.Service.ImportProjectArchive(ctx, request, user)
+			if err != nil {
+				return "", err
+			}
+			return imported.ID, nil
+		},
+		LockProject:    p.Service.LockProject,
+		StopProject:    p.Service.stopProject,
+		StartProject:   p.Service.startProject,
+		DeployProject:  p.Service.deployProject,
+		RemoveProject:  p.Service.destroyProject,
+		LockVolumes:    p.Backups.LockVolumes,
+		ArchiveVolumes: p.Transfer.ArchiveVolumes,
+		RestoreVolume:  p.Transfer.RestoreVolume,
+		DeleteVolume:   local.DeleteVolume,
+		// A restore as a new project fills the project directory from the backup's snapshot.
+		CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
+			proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
+				Restore:   project.Fill,
+				Actor:     project.User,
+				Name:      project.Name,
+				ID:        project.ID,
+				ExactName: true,
+			})
+			if err != nil {
+				return "", err
+			}
+			return proj.ID, nil
+		},
+		Activities: p.Activity,
+	})
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles: bundle.New(bundle.Dependencies{
-			Backups:             backups,
-			Docker:              p.Service.dockerService,
-			Uploads:             p.Service.uploads,
-			BackupStore:         p.Backups.Repository.StorageVolume,
-			Project:             local.Project,
-			Volume:              local.Volume,
-			ComposeProjectInUse: local.ComposeProjectInUse,
-			ExportProject:       p.Service.ExportProjectArchive,
-			ImportProject:       local.ImportProject,
-			LockProject:         p.Service.LockProject,
-			StopProject:         p.Service.stopProject,
-			StartProject:        p.Service.startProject,
-			DeployProject:       p.Service.deployProject,
-			RemoveProject:       p.Service.destroyProject,
-			ExportVolume:        p.Transfer.ExportVolume,
-			RestoreVolume:       p.Transfer.RestoreVolume,
-			DeleteVolume:        local.DeleteVolume,
-			// A restore as a new project fills the project directory from the backup's snapshot.
-			CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
-				proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
-					Restore:   project.Fill,
-					Actor:     project.User,
-					Name:      project.Name,
-					ID:        project.ID,
-					ExactName: true,
-				})
-				if err != nil {
-					return "", err
-				}
-				return proj.ID, nil
-			},
-			Activities: p.Activity,
-		}),
+		bundles:  local.bundles,
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
 				Local:     local,

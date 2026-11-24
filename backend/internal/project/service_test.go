@@ -32,6 +32,7 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/mount"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
@@ -11230,11 +11231,19 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	)
 	module := New(ModuleParams{
 		Service: svc,
-		Backups: BackupDependencies{Repository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: svc.dockerService, BackupVolumeName: "arcane-backups"})},
+		Backups: BackupDependencies{
+			Repository:  backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: svc.dockerService, BackupVolumeName: "arcane-backups"}),
+			LockVolumes: func(context.Context, []string) (func(), error) { return func() {}, nil },
+		},
 		Transfer: TransferDependencies{
-			ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
-				exports = append(exports, name)
-				return uploads.IngestSession(ctx, types.UploadKindVolumeBackup, name+".tar.gz", int64(data.Len()), strings.NewReader(data.String()))
+			ArchiveVolumes: func(ctx context.Context, parts []mount.Mount, add func(context.Context, mount.Mount, int64, io.Reader) error) error {
+				for _, part := range parts {
+					exports = append(exports, part.Source)
+					if addErr := add(ctx, part, int64(data.Len()), strings.NewReader(data.String())); addErr != nil {
+						return addErr
+					}
+				}
+				return nil
 			},
 			RestoreVolume: func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
 				restored = append(restored, name)

@@ -115,8 +115,8 @@ func (e remoteEnvironment) ComposeProjectInUse(ctx context.Context, name string)
 	return len(response.Data) > 0, err
 }
 
-func (e remoteEnvironment) ExportProject(ctx context.Context, projectID string) (types.UploadSession, error) {
-	response, err := e.decode[types.ApiResponse[types.UploadSession]](ctx, http.MethodPost, "/projects/"+url.PathEscape(projectID)+"/export", nil)
+func (e remoteEnvironment) ExportProject(ctx context.Context, projectID string, request types.ExportProjectArchive, _ types.Actor) (types.UploadSession, error) {
+	response, err := e.decode[types.ApiResponse[types.UploadSession]](ctx, http.MethodPost, "/projects/"+url.PathEscape(projectID)+"/export", request)
 	return response.Data, err
 }
 
@@ -153,16 +153,6 @@ func (e remoteEnvironment) DeleteUpload(ctx context.Context, kind, uploadID stri
 	if statusErr, ok := errors.AsType[*agent.StatusError](err); ok && statusErr.StatusCode == http.StatusNotFound {
 		return nil
 	}
-	return err
-}
-
-func (e remoteEnvironment) ExportVolume(ctx context.Context, name string) (types.UploadSession, error) {
-	response, err := e.decode[types.ApiResponse[types.UploadSession]](ctx, http.MethodPost, "/volumes/"+url.PathEscape(name)+"/export", nil)
-	return response.Data, err
-}
-
-func (e remoteEnvironment) RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
-	_, err := e.decode[types.ApiResponse[types.MessageResponse]](ctx, http.MethodPost, "/volumes/"+url.PathEscape(name)+"/backups/upload", request)
 	return err
 }
 

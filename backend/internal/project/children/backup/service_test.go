@@ -403,13 +403,22 @@ func TestRestoreEnvPutsBackAnExternalEnv(t *testing.T) {
 	}
 }
 
+// restoreParts pairs each target with the part of the capture it restores, as RestoreTo does.
+func restoreParts(targets []types.ProjectBackupRestoreVolume) []backup.RestorePart {
+	parts := make([]backup.RestorePart, 0, len(targets))
+	for _, target := range targets {
+		parts = append(parts, backup.RestorePart{Key: target.Key, Snapshot: target.Snapshot, Target: target.Name})
+	}
+	return parts
+}
+
 func TestRestoreInputRestoresOnlyTheTargets(t *testing.T) {
 	projectMounts := []mount.Mount{{Type: mount.TypeBind, Source: "/host/projects/web", Target: "/dest/project"}}
 	targets := []types.ProjectBackupRestoreVolume{
 		{Key: "data", Snapshot: "web_data", Name: "shop_data"},
 		{Key: "alias", Snapshot: "web_data", Name: "shop_data"},
 	}
-	target, options, err := restoreInput(projectMounts, targets, []string{"shared", "web_cache", "web_data"})
+	target, options, err := backup.RestoreLayout(projectMounts, restoreParts(targets), []string{"shared", "web_cache", "web_data"})
 	require.NoError(t, err)
 	// /dest holds only the restored project directory and targets, each volume under its name in the snapshot.
 	require.Equal(t, projectMounts[0], target)
@@ -419,7 +428,7 @@ func TestRestoreInputRestoresOnlyTheTargets(t *testing.T) {
 	require.True(t, options.DeleteExtra)
 	require.Equal(t, []string{"!/meta", "!/meta/**", "!/volumes/shared", "!/volumes/shared/**", "!/volumes/web_cache", "!/volumes/web_cache/**"}, options.Globs)
 
-	target, options, err = restoreInput(nil, targets[:1], []string{"web_data"})
+	target, options, err = backup.RestoreLayout(nil, restoreParts(targets[:1]), []string{"web_data"})
 	require.NoError(t, err)
 	require.Equal(t, mount.Mount{Type: mount.TypeVolume, Source: "shop_data", Target: "/dest/volumes/web_data"}, target)
 	require.Empty(t, options.ExtraMounts)
@@ -430,7 +439,7 @@ func TestRestoreInputRestoresOnlyTheTargets(t *testing.T) {
 		"into two targets":    {{Key: "data", Snapshot: "web_data", Name: "a"}, {Key: "alias", Snapshot: "web_data", Name: "b"}},
 		"two into one volume": {{Key: "data", Snapshot: "web_data", Name: "a"}, {Key: "other", Snapshot: "shared", Name: "a"}},
 	} {
-		_, _, err = restoreInput(nil, invalid, []string{"shared", "web_data"})
+		_, _, err = backup.RestoreLayout(nil, restoreParts(invalid), []string{"shared", "web_data"})
 		require.ErrorIs(t, err, common.ErrValidation, name)
 	}
 }
@@ -543,53 +552,58 @@ func (f *fakeRestore) step(name string) error {
 	return f.fail[name]
 }
 
-func (f *fakeRestore) steps() restoreSteps {
-	return restoreSteps{
-		report: func(_ context.Context, message string) {
+func (f *fakeRestore) steps(p restorePlan) backup.RestoreSteps {
+	write := func(backupID string, volumes []types.ProjectBackupRestoreVolume) error {
+		names := make([]string, 0, len(volumes))
+		for _, volume := range volumes {
+			names = append(names, volume.Snapshot+">"+volume.Name)
+		}
+		return f.step("restore " + backupID + " " + p.ProjectPath + " " + strings.Join(names, ","))
+	}
+	return backup.RestoreSteps{
+		Report: func(_ context.Context, message string) {
 			if message == "Rolling back to the safety backup" {
 				f.calls = append(f.calls, "rolling back")
 			}
 		},
-		stop: func(_ context.Context, p restorePlan) error {
-			f.mayStop = append(f.mayStop, p.MayStop)
+		Stop: func(_ context.Context, state backup.RestoreState) error {
+			f.mayStop = append(f.mayStop, state.MayStop)
 			return f.step("stop")
 		},
-		deploy: func(context.Context) error { return f.step("deploy") },
-		safety: func(context.Context, restorePlan) (string, error) { return "s1", f.step("safety") },
-		inUse:  func(context.Context, restorePlan) error { return f.step("in use") },
-		create: func(_ context.Context, options client.VolumeCreateOptions) error {
+		Deploy: func(context.Context) error { return f.step("deploy") },
+		Safety: func(context.Context) (string, error) { return "s1", f.step("safety") },
+		InUse:  func(context.Context) error { return f.step("in use") },
+		Create: func(_ context.Context, options client.VolumeCreateOptions) error {
 			return f.step("create " + options.Name)
 		},
-		restore: func(_ context.Context, opts types.ProjectBackupRestore) error {
-			names := make([]string, 0, len(opts.Volumes))
-			for _, volume := range opts.Volumes {
-				names = append(names, volume.Snapshot+">"+volume.Name)
+		Write: func(_ context.Context, safetyID string) error {
+			if safetyID == "" {
+				return write(p.BackupID, p.Volumes)
 			}
-			return f.step("restore " + opts.BackupID + " " + opts.ProjectPath + " " + strings.Join(names, ","))
+			return write(safetyID, p.safetyVolumes())
 		},
-		verify: func(context.Context, restorePlan) error { return f.step("verify") },
-		remove: func(_ context.Context, names []string) error { return f.step("remove " + strings.Join(names, ",")) },
+		Verify:  func(context.Context) error { return f.step("verify") },
+		Remove:  func(_ context.Context, names []string) error { return f.step("remove " + strings.Join(names, ",")) },
+		Discard: nil,
 	}
 }
 
 func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	plan := func(running bool) restorePlan {
 		return restorePlan{
-			ID:          "r1",
-			BackupID:    "b1",
-			ProjectID:   "p1",
-			ProjectPath: "/projects/web",
-			Volumes:     []types.ProjectBackupRestoreVolume{{Key: "data", Snapshot: "web_data", Name: "shop_data"}, {Key: "cache", Snapshot: "web_cache", Name: "shop_cache"}},
-			Create:      []client.VolumeCreateOptions{{Name: "shop_cache"}},
-			Files:       true,
-			MayStop:     running,
-			Running:     running,
+			RestoreState: backup.RestoreState{Create: []client.VolumeCreateOptions{{Name: "shop_cache"}}, MayStop: running, Running: running},
+			ID:           "r1",
+			BackupID:     "b1",
+			ProjectID:    "p1",
+			ProjectPath:  "/projects/web",
+			Volumes:      []types.ProjectBackupRestoreVolume{{Key: "data", Snapshot: "web_data", Name: "shop_data"}, {Key: "cache", Snapshot: "web_cache", Name: "shop_cache"}},
+			Files:        true,
 		}
 	}
 	restoreErr := errors.New("rustic failed")
 
 	running := &fakeRestore{fail: map[string]error{"restore b1 /projects/web web_data>shop_data,web_cache>shop_cache": restoreErr}}
-	err := running.steps().apply(t.Context(), plan(true))
+	err := running.steps(plan(true)).Apply(t.Context(), plan(true).RestoreState)
 	require.ErrorIs(t, err, restoreErr)
 	require.ErrorContains(t, err, "rolled back to the safety backup s1")
 	// The volume the restore created is removed; the one that existed comes back from the safety backup.
@@ -599,7 +613,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	}, running.calls)
 
 	stopped := &fakeRestore{fail: map[string]error{"verify": restoreErr}}
-	err = stopped.steps().apply(t.Context(), plan(false))
+	err = stopped.steps(plan(false)).Apply(t.Context(), plan(false).RestoreState)
 	require.ErrorIs(t, err, restoreErr)
 	require.NotContains(t, stopped.calls, "deploy", "a project that did not run is not deployed")
 	require.Contains(t, stopped.calls, "restore s1 /projects/web shop_data>shop_data")
@@ -609,7 +623,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	redeploy := &fakeRestore{fail: map[string]error{"deploy": restoreErr}}
 	redeployPlan := plan(false)
 	redeployPlan.Redeploy = new(true)
-	err = redeploy.steps().apply(t.Context(), redeployPlan)
+	err = redeploy.steps(redeployPlan).Apply(t.Context(), redeployPlan.RestoreState)
 	require.ErrorContains(t, err, "rolled back to the safety backup s1")
 	require.Equal(t, []string{
 		"stop", "safety", "in use", "create shop_cache", "restore b1 /projects/web web_data>shop_data,web_cache>shop_cache", "verify", "deploy",
@@ -619,7 +633,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 
 	// A safety backup that cannot be restored leaves the project down instead of starting it on half-restored data.
 	undoFailed := &fakeRestore{fail: map[string]error{"verify": restoreErr, "restore s1 /projects/web shop_data>shop_data": errors.New("disk full")}}
-	err = undoFailed.steps().apply(t.Context(), plan(true))
+	err = undoFailed.steps(plan(true)).Apply(t.Context(), plan(true).RestoreState)
 	require.ErrorContains(t, err, "the rollback failed too")
 	require.ErrorContains(t, err, "the project was left down; restore the safety backup s1")
 	require.Equal(t, "remove shop_cache", undoFailed.calls[len(undoFailed.calls)-1])
@@ -627,7 +641,7 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 	// A container that started using a volume after the checks stops the restore before anything is written, so the
 	// volume it uses is left alone and the project is deployed again.
 	inUse := &fakeRestore{fail: map[string]error{"in use": common.Classify(common.ErrConflict, errors.New("volume shop_data is mounted"))}}
-	err = inUse.steps().apply(t.Context(), plan(true))
+	err = inUse.steps(plan(true)).Apply(t.Context(), plan(true).RestoreState)
 	require.ErrorIs(t, err, common.ErrConflict)
 	require.ErrorContains(t, err, "nothing was restored")
 	require.Equal(t, []string{"stop", "safety", "in use", "deploy"}, inUse.calls)
@@ -635,15 +649,15 @@ func TestRestoreRollsBackToTheSafetyBackup(t *testing.T) {
 
 func TestRestoreRemovesTheVolumesItCreates(t *testing.T) {
 	p := restorePlan{
-		ID:        "r1",
-		BackupID:  "b1",
-		ProjectID: "p1",
-		Volumes:   []types.ProjectBackupRestoreVolume{{Key: "cache", Snapshot: "web_cache", Name: "shop_cache"}, {Key: "logs", Snapshot: "web_logs", Name: "shop_logs"}},
-		Create:    []client.VolumeCreateOptions{{Name: "shop_cache"}, {Name: "shop_logs"}},
+		RestoreState: backup.RestoreState{Create: []client.VolumeCreateOptions{{Name: "shop_cache"}, {Name: "shop_logs"}}},
+		ID:           "r1",
+		BackupID:     "b1",
+		ProjectID:    "p1",
+		Volumes:      []types.ProjectBackupRestoreVolume{{Key: "cache", Snapshot: "web_cache", Name: "shop_cache"}, {Key: "logs", Snapshot: "web_logs", Name: "shop_logs"}},
 	}
 	createErr := errors.New("disk full")
 	failed := &fakeRestore{fail: map[string]error{"create shop_logs": createErr}}
-	err := failed.steps().apply(t.Context(), p)
+	err := failed.steps(p).Apply(t.Context(), p.RestoreState)
 	require.ErrorIs(t, err, createErr)
 	// The volume created before the failure is removed; the one that failed is not, since it may be someone else's.
 	require.Equal(t, []string{"stop", "safety", "in use", "create shop_cache", "create shop_logs", "rolling back", "stop", "restore s1  ", "remove shop_cache"}, failed.calls)
@@ -772,7 +786,7 @@ func TestSafetyBackupRecordsExternalVolumeLabels(t *testing.T) {
 			{Key: "shared", Snapshot: "shared", Name: "shared"},
 			{Key: "cache", Snapshot: "web_cache", Name: "web_cache"},
 		},
-		Create: []client.VolumeCreateOptions{{Name: "web_cache"}},
+		RestoreState: backup.RestoreState{Create: []client.VolumeCreateOptions{{Name: "web_cache"}}},
 	})
 	require.ErrorContains(t, err, "write project backup manifest")
 	included := map[string]bool{}
@@ -1398,9 +1412,9 @@ func TestRestoreNeedsTheRightsToStopAndDeployTheProject(t *testing.T) {
 		want []string
 		plan restorePlan
 	}{
-		{name: "a running project is stopped and deployed again", plan: restorePlan{MayStop: true}, want: []string{authz.PermProjectsDown, authz.PermProjectsDeploy}},
-		{name: "a stopped project asked to start is deployed", plan: restorePlan{Redeploy: new(true)}, want: []string{authz.PermProjectsDeploy}},
-		{name: "a stopped project left stopped needs nothing more", plan: restorePlan{Redeploy: new(false)}},
+		{name: "a running project is stopped and deployed again", plan: restorePlan{RestoreState: backup.RestoreState{MayStop: true}}, want: []string{authz.PermProjectsDown, authz.PermProjectsDeploy}},
+		{name: "a stopped project asked to start is deployed", plan: restorePlan{RestoreState: backup.RestoreState{Redeploy: new(true)}}, want: []string{authz.PermProjectsDeploy}},
+		{name: "a stopped project left stopped needs nothing more", plan: restorePlan{RestoreState: backup.RestoreState{Redeploy: new(false)}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, test.want, test.plan.extraPermissions())
@@ -1410,23 +1424,29 @@ func TestRestoreNeedsTheRightsToStopAndDeployTheProject(t *testing.T) {
 
 func TestBackupRefusesVolumesRemovedOrReplacedSinceItWasQueued(t *testing.T) {
 	created := map[string]string{"web_data": "2026-11-20T09:00:00Z"}
-	service := NewService(Dependencies{BackupStore: noBackupStore, Volume: func(_ context.Context, name string) (types.Volume, bool, error) {
+	inspect := func(_ context.Context, name string) (types.Volume, bool, error) {
 		at, exists := created[name]
 		return types.Volume{Name: name, CreatedAt: at}, exists, nil
-	}})
-	before, err := service.volumeIdentities(t.Context(), []string{"web_data"})
-	require.NoError(t, err)
+	}
+	read := func(context.Context, []mount.Mount) error { return nil }
 
 	// Mounting a volume removed while the backup waited would create it empty, so the backup stops instead.
-	_, err = service.volumeIdentities(t.Context(), []string{"web_data", "web_cache"})
+	err := backup.Capture(t.Context(), backup.CapturePlan{Inspect: inspect, Volumes: []string{"web_data", "web_cache"}}, read)
 	require.ErrorIs(t, err, common.ErrConflict)
 	require.ErrorContains(t, err, "volume web_cache was removed after the backup was queued")
 
 	// A volume removed and created again during the copy is a different volume, which capture refuses to keep.
-	created["web_data"] = "2026-11-20T09:05:00Z"
-	after, err := service.volumeIdentities(t.Context(), []string{"web_data"})
-	require.NoError(t, err)
-	require.NotEqual(t, before, after)
+	var rejected error
+	err = backup.Capture(t.Context(), backup.CapturePlan{
+		Inspect:  inspect,
+		Volumes:  []string{"web_data"},
+		Rejected: func(_ context.Context, err error) error { rejected = err; return nil },
+	}, func(context.Context, []mount.Mount) error {
+		created["web_data"] = "2026-11-20T09:05:00Z"
+		return nil
+	})
+	require.ErrorIs(t, err, common.ErrConflict)
+	require.ErrorIs(t, rejected, common.ErrConflict)
 }
 
 // noBackupStore is a Docker host without a backup volume.
