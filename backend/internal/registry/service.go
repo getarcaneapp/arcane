@@ -1673,31 +1673,45 @@ func (s *ContainerRegistryService) HasImagePlatform(ctx context.Context, imageRe
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 	defer cancel()
-	desc, _, err := registryOperationWithCredentials(ctx, s, parsedRef.Context().RegistryStr(), parsedRef.Name(), "manifest fetch for "+strings.TrimSpace(imageRef), externalCreds,
-		func(ctx context.Context, credential *resolvedRegistryCredential) (*remote.Descriptor, error) {
+	matcher := platforms.Only(platform)
+	matched, _, err := registryOperationWithCredentials(ctx, s, parsedRef.Context().RegistryStr(), parsedRef.Name(), "manifest fetch for "+strings.TrimSpace(imageRef), externalCreds,
+		func(ctx context.Context, credential *resolvedRegistryCredential) (bool, error) {
 			tr, transportErr := s.authorizedTransport(ctx, parsedRef.Context(), credential)
 			if transportErr != nil {
-				return nil, transportErr
+				return false, transportErr
 			}
-			return remote.Get(parsedRef, remote.WithContext(ctx), remote.WithTransport(tr))
+			desc, getErr := remote.Get(parsedRef, remote.WithContext(ctx), remote.WithTransport(tr))
+			if getErr != nil {
+				return false, getErr
+			}
+			if !desc.MediaType.IsIndex() {
+				img, imageErr := desc.Image()
+				if imageErr != nil {
+					return false, imageErr
+				}
+				cfg, configErr := img.ConfigFile()
+				if configErr != nil {
+					return false, configErr
+				}
+				return cfg.Architecture == "" || matcher.Match(ocispec.Platform{
+					OS:           cfg.OS,
+					Architecture: cfg.Architecture,
+					OSVersion:    cfg.OSVersion,
+					Variant:      cfg.Variant,
+				}), nil
+			}
+			index, parseErr := v1.ParseIndexManifest(bytes.NewReader(desc.Manifest))
+			if parseErr != nil {
+				return false, fmt.Errorf("parse image index for %s: %w", strings.TrimSpace(imageRef), parseErr)
+			}
+			return slices.ContainsFunc(index.Manifests, func(child v1.Descriptor) bool {
+				return child.Platform != nil && matcher.Match(ocispec.Platform{
+					OS:           child.Platform.OS,
+					Architecture: child.Platform.Architecture,
+					OSVersion:    child.Platform.OSVersion,
+					Variant:      child.Platform.Variant,
+				})
+			}), nil
 		})
-	if err != nil {
-		return false, err
-	}
-	if !desc.MediaType.IsIndex() {
-		return true, nil
-	}
-	index, err := v1.ParseIndexManifest(bytes.NewReader(desc.Manifest))
-	if err != nil {
-		return false, fmt.Errorf("parse image index for %s: %w", strings.TrimSpace(imageRef), err)
-	}
-	matcher := platforms.Only(platform)
-	return slices.ContainsFunc(index.Manifests, func(child v1.Descriptor) bool {
-		return child.Platform != nil && matcher.Match(ocispec.Platform{
-			OS:           child.Platform.OS,
-			Architecture: child.Platform.Architecture,
-			OSVersion:    child.Platform.OSVersion,
-			Variant:      child.Platform.Variant,
-		})
-	}), nil
+	return matched, err
 }
