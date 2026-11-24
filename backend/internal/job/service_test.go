@@ -523,9 +523,9 @@ func TestJobService_Submit_RejectsImagePollingWithoutLocalDocker(t *testing.T) {
 		RequestedBy:   "operator",
 	})
 	require.ErrorContains(t, err, "job is disabled")
-	runs, err := jobSvc.runs.List(ctx, "0", "image-polling", 1, 10)
+	runList, err := jobSvc.runs.List(ctx, "0", "image-polling", 1, 10)
 	require.NoError(t, err)
-	require.Empty(t, runs.Runs)
+	require.Empty(t, runList.Runs)
 	require.Empty(t, fakeScheduler.busWatcherRuns)
 }
 
