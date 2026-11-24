@@ -31,6 +31,7 @@ import (
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater"
+	updaterdigest "kit.getarcane.app/updater/digest"
 	"kit.getarcane.app/updater/labels"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 	"kit.getarcane.app/updater/refs"
@@ -1277,7 +1278,11 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 		"blocked_reason": nil,
 		"blocked_policy": nil,
 	}
-	query := s.deps.DB.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{})
+	// Leave records from a newer check targeting a different digest or version untouched.
+	query := s.deps.DB.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{}).Where(
+		"COALESCE(latest_digest, '') = ? AND COALESCE(latest_version, '') = ?",
+		kit.FromPtr(record.LatestDigest), kit.FromPtr(record.LatestVersion),
+	)
 	if record.ContainerID == "" || strings.HasPrefix(record.ID, "container::") {
 		query = query.Where("container_id = ?", record.ContainerID)
 		if record.ID != "" {
@@ -2128,7 +2133,7 @@ func (s *UpdaterService) UpdateServiceImages(ctx context.Context, projectID stri
 }
 
 func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID string) (*types.ProjectUpdateInfo, error) {
-	details, err := s.deps.Projects.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true})
+	details, err := s.deps.Projects.GetProjectDetails(ctx, projectID, types.ProjectDetailsOptions{IncludeServiceConfigs: true, IncludeRuntimeServices: true})
 	if err != nil {
 		return nil, err
 	}
@@ -2141,6 +2146,9 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 			services = append(services, service)
 		}
 	}
+	// A project check is asked for (UI, webhook, CLI), often right after a push, so it reads current
+	// registry digests instead of ones cached or being loaded by an earlier check.
+	ctx = registryInternal.WithFreshImageDigests(ctx)
 
 	type cachedCheck struct {
 		err    error
@@ -2186,7 +2194,7 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 	for i, service := range services {
 		g.Go(func() (workerErr error) {
 			defer concurrency.RecoverToError(&workerErr, "project service update check", "projectId", projectID, "service", service.Name)
-			records[i] = s.checkProjectService(ctx, projectID, service, checkImage)
+			records[i] = s.checkProjectService(ctx, projectID, service, details.RuntimeServices, checkImage)
 			return nil
 		})
 	}
@@ -2239,19 +2247,32 @@ func (s *UpdaterService) checkProjectService(
 	ctx context.Context,
 	projectID string,
 	service composeTypes.ServiceConfig,
+	runtime []types.ProjectRuntimeService,
 	checkImage func(context.Context, string, string, updatertypes.CheckRequest) (updatertypes.CheckResult, error),
 ) imageupdate.ImageUpdateRecord {
 	checkTime := time.Now().UTC()
+	policyKey := imageref.UpdatePolicyKey(service.Image, service.Labels)
 	parsed, err := refs.NormalizeReference(service.Image)
 	if err != nil {
 		return imageupdate.ImageUpdateRecord{
 			ProjectID:   projectID,
 			ServiceName: service.Name,
-			PolicyKey:   imageref.UpdatePolicyKey(service.Image, service.Labels),
+			PolicyKey:   policyKey,
 			CheckTime:   checkTime,
 			LastError:   new(err.Error()),
 			ID:          "project::" + projectID + "::" + service.Name,
 		}
+	}
+	policy := updater.DefaultLabelPolicy().TagPolicy(service.Labels)
+	runCheck := func(cacheSuffix string, req updatertypes.CheckRequest) (updatertypes.CheckResult, error) {
+		if checkImage != nil {
+			return checkImage(ctx, parsed.RegistryHost, parsed.NormalizedRef+"\x00"+policyKey+cacheSuffix, req)
+		}
+		result, resultErr := s.engine.CheckImageUpdate(ctx, req)
+		if resultErr != nil {
+			return updatertypes.CheckResult{}, resultErr
+		}
+		return result, nil
 	}
 	check, checkErr := func() (updatertypes.CheckResult, error) {
 		// Disabling automatic installation keeps the preview check; only the
@@ -2259,20 +2280,50 @@ func (s *UpdaterService) checkProjectService(
 		if service.Build != nil || parsed.RegistryHost == imageref.PodmanLocalRegistry || imageref.IsUpdateCheckDisabled(service.Labels) {
 			return updatertypes.CheckResult{}, nil
 		}
-		policy := updater.DefaultLabelPolicy().TagPolicy(service.Labels)
-		req := updatertypes.CheckRequest{
+		return runCheck("", updatertypes.CheckRequest{
 			ImageRef: service.Image,
 			Policy:   policy,
-		}
-		if checkImage != nil {
-			return checkImage(ctx, parsed.RegistryHost, parsed.NormalizedRef+"\x00"+imageref.UpdatePolicyKey(service.Image, service.Labels), req)
-		}
-		result, resultErr := s.engine.CheckImageUpdate(ctx, req)
-		if resultErr != nil {
-			return updatertypes.CheckResult{}, resultErr
-		}
-		return result, nil
+		})
 	}()
+	var (
+		staleDigest string
+		stale       bool
+		inspectErr  error
+	)
+	switch {
+	case errdefs.IsNotFound(checkErr):
+		// A running container can still be checked against the registry even when its local tag was removed.
+		runningImages, runningErr := s.runningServiceImages(ctx, service, runtime)
+		if runningErr != nil {
+			inspectErr = runningErr
+			break
+		}
+		if len(runningImages) == 0 {
+			break
+		}
+		probeDigest := slices.Concat(imageref.RepositoryDigests(runningImages[0].RepoDigests, service.Image), []string{runningImages[0].ID})[0]
+		if _, normErr := updaterdigest.Normalize(probeDigest); normErr != nil {
+			probeDigest = "sha256:" + strings.Repeat("0", 64)
+		}
+		check, checkErr = runCheck("\x00running", updatertypes.CheckRequest{
+			ImageRef:      service.Image,
+			Policy:        policy,
+			CurrentDigest: probeDigest,
+		})
+		if checkErr == nil && check.TargetDigest != "" {
+			staleDigest, stale = staleDigestInImages(runningImages, service.Image, check.TargetDigest)
+			check.UpdateAvailable = stale
+			check.CurrentDigest = cmp.Or(staleDigest, check.TargetDigest)
+		}
+	case checkErr == nil && !check.UpdateAvailable && check.TargetDigest != "":
+		// The local tag can already be current while running containers still use an older image.
+		runningImages, runningErr := s.runningServiceImages(ctx, service, runtime)
+		if runningErr != nil {
+			inspectErr = runningErr
+			break
+		}
+		staleDigest, stale = staleDigestInImages(runningImages, service.Image, check.TargetDigest)
+	}
 	latestVersion, targetErr := func() (*string, error) {
 		if check.TargetRef == "" {
 			return nil, nil
@@ -2286,15 +2337,17 @@ func (s *UpdaterService) checkProjectService(
 	return imageupdate.ImageUpdateRecord{
 		ProjectID:     projectID,
 		ServiceName:   service.Name,
-		PolicyKey:     imageref.UpdatePolicyKey(service.Image, service.Labels),
+		PolicyKey:     policyKey,
 		CheckTime:     checkTime,
 		LatestVersion: latestVersion,
-		CurrentDigest: mo.EmptyableToOption(check.CurrentDigest).ToPointer(),
+		CurrentDigest: mo.EmptyableToOption(cmp.Or(staleDigest, check.CurrentDigest)).ToPointer(),
 		LatestDigest:  mo.EmptyableToOption(check.TargetDigest).ToPointer(),
 		LastError: func() *string {
 			switch {
 			case checkErr != nil && !errdefs.IsNotFound(checkErr):
 				return new(checkErr.Error())
+			case inspectErr != nil:
+				return new(inspectErr.Error())
 			case targetErr != nil:
 				return new(targetErr.Error())
 			}
@@ -2313,8 +2366,48 @@ func (s *UpdaterService) checkProjectService(
 			return check.UpdateType
 		}(),
 		CurrentVersion: cmp.Or(check.CurrentVersion, parsed.Tag),
-		HasUpdate:      check.UpdateAvailable && targetErr == nil,
+		HasUpdate:      (check.UpdateAvailable || stale) && targetErr == nil,
 	}
+}
+
+// runningServiceImages inspects the running images of service replicas whose configured image matches service.Image.
+func (s *UpdaterService) runningServiceImages(ctx context.Context, service composeTypes.ServiceConfig, runtime []types.ProjectRuntimeService) ([]client.ImageInspectResult, error) {
+	var images []client.ImageInspectResult
+	for _, replica := range runtime {
+		if replica.Name != service.Name || replica.ContainerID == "" || replica.Status != string(container.StateRunning) {
+			continue
+		}
+		inspected, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, replica.ContainerID, client.ContainerInspectOptions{})
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "failed to inspect project container for update check", "containerId", replica.ContainerID, "service", service.Name, "error", err)
+			return nil, fmt.Errorf("inspect container %s: %w", replica.ContainerID, err)
+		}
+		// A container created from another reference is recreated by a deploy, not an image update.
+		if refs.NormalizeImageUpdateRef(kit.FromPtr(inspected.Container.Config).Image) != refs.NormalizeImageUpdateRef(service.Image) {
+			continue
+		}
+		running, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			return dockerClient.ImageInspect(ctx, inspected.Container.Image)
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "failed to inspect project container image for update check", "containerId", replica.ContainerID, "service", service.Name, "error", err)
+			return nil, fmt.Errorf("inspect container %s image: %w", replica.ContainerID, err)
+		}
+		images = append(images, running)
+	}
+	return images, nil
+}
+
+// staleDigestInImages returns the digest of the first running image lacking targetDigest.
+func staleDigestInImages(images []client.ImageInspectResult, imageRef, targetDigest string) (string, bool) {
+	for _, running := range images {
+		if digests := imageref.RepositoryDigests(running.RepoDigests, imageRef); !slices.Contains(digests, targetDigest) {
+			return slices.Concat(digests, []string{running.ID})[0], true
+		}
+	}
+	return "", false
 }
 
 func (s *UpdaterService) RegisterWorkflows(engine *flow.Engine) error {
