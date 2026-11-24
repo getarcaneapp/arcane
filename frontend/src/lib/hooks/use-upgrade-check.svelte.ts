@@ -43,11 +43,17 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 	);
 	const updateCount = $derived(agentUpdates.length + (getVersionInformation()?.updateAvailable ? 1 : 0));
 	const shouldCheckUpgrade = $derived(
-		!!(updateCount > 0 && canInstallUpdates && hasPermission('system:read', LOCAL_DOCKER_ENVIRONMENT_ID) && !getDebug())
+		!!(
+			updateCount > 0 &&
+			managerUpgradable &&
+			canInstallUpdates &&
+			hasPermission('system:read', LOCAL_DOCKER_ENVIRONMENT_ID) &&
+			!getDebug()
+		)
 	);
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		...upgradeAvailableQuery(queryScope),
-		enabled: shouldCheckUpgrade && managerUpgradable,
+		enabled: shouldCheckUpgrade,
 		staleTime: 0
 	}));
 
