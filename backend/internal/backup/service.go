@@ -179,6 +179,11 @@ type (
 		Tables        []string
 	}
 
+	// Policies stores the backup policies of every subject kind; each domain schedules and runs its own.
+	Policies struct {
+		db *database.DB
+	}
+
 	// VolumeRepository is the volumes data repository that volume and project backups share.
 	VolumeRepository struct {
 		deps           VolumeRepositoryDependencies
@@ -232,6 +237,9 @@ const (
 	localVolumeRepositoryID  = "volumes:local"
 	legacyVolumePasswordSalt = "arcane-volume-backups:"
 	legacyEncryptionKey      = "arcane-dev-key-32-characters!!!"
+
+	// defaultPolicySchedule runs a policy whose row can no longer be read; its job is unregistered soon after.
+	defaultPolicySchedule = "0 2 * * *"
 
 	containerRecoveryTimeout  = 30 * time.Second
 	containerRecoveryInterval = 500 * time.Millisecond
@@ -1083,6 +1091,106 @@ func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemote
 		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", req.ID, req.DestinationID, true, true, req.LocalEnabled).
 		Update(req.Field, false)
 	return result.Error == nil && result.RowsAffected > 0, result.Error
+}
+
+func NewPolicies(db *database.DB) *Policies { return &Policies{db: db} }
+
+// List returns the subject's policies, oldest first; an empty subjectID lists the global project policies.
+func (p *Policies) List(ctx context.Context, kind, subjectID string) ([]Policy, error) {
+	var policies []Policy
+	if err := p.db.WithContext(ctx).Where("subject_kind = ? AND subject_id = ?", kind, subjectID).Order("created_at ASC").Find(&policies).Error; err != nil {
+		return nil, fmt.Errorf("failed to load %s backup policies: %w", kind, err)
+	}
+	return policies, nil
+}
+
+// Get returns the subject's policy with the ID, or nil when it has none.
+func (p *Policies) Get(ctx context.Context, kind, subjectID, id string) (*Policy, error) {
+	return p.first(ctx, p.db.Where("id = ? AND subject_kind = ? AND subject_id = ?", id, kind, subjectID))
+}
+
+// Enabled returns the policy while it is enabled, or nil once it was disabled or deleted.
+func (p *Policies) Enabled(ctx context.Context, id string) (*Policy, error) {
+	return p.first(ctx, p.db.Where("id = ? AND enabled = ?", id, true))
+}
+
+func (p *Policies) first(ctx context.Context, query *gorm.DB) (*Policy, error) {
+	var policy Policy
+	err := query.WithContext(ctx).First(&policy).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load backup policy: %w", err)
+	}
+	return &policy, nil
+}
+
+// AllEnabled returns the enabled policies of every subject of the kind, which startup schedules.
+func (p *Policies) AllEnabled(ctx context.Context, kind string) ([]Policy, error) {
+	var policies []Policy
+	if err := p.db.WithContext(ctx).Where("subject_kind = ? AND enabled = ?", kind, true).Find(&policies).Error; err != nil {
+		return nil, fmt.Errorf("failed to load %s backup policies: %w", kind, err)
+	}
+	return policies, nil
+}
+
+// HasEnabled reports whether the subject has an enabled policy of its own, which replaces the global ones for it.
+func (p *Policies) HasEnabled(ctx context.Context, kind, subjectID string) (bool, error) {
+	var count int64
+	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ? AND subject_id = ? AND enabled = ?", kind, subjectID, true).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("failed to load %s backup policies: %w", kind, err)
+	}
+	return count > 0, nil
+}
+
+// IDs returns the IDs of the kind's policies, global ones included.
+func (p *Policies) IDs(ctx context.Context, kind string) ([]string, error) {
+	var ids []string
+	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ?", kind).Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("failed to load %s backup policy IDs: %w", kind, err)
+	}
+	return ids, nil
+}
+
+// Remove deletes the subject's policies and returns them, so the caller can unschedule them.
+func (p *Policies) Remove(ctx context.Context, kind, subjectID string) ([]Policy, error) {
+	policies, err := p.List(ctx, kind, subjectID)
+	if err != nil || len(policies) == 0 {
+		return nil, err
+	}
+	if deleteErr := p.db.WithContext(ctx).Where("subject_kind = ? AND subject_id = ?", kind, subjectID).Delete(&Policy{}).Error; deleteErr != nil {
+		return nil, fmt.Errorf("failed to delete %s backup policies: %w", kind, deleteErr)
+	}
+	return policies, nil
+}
+
+// Rename moves the subject's policies to its new ID inside the caller's transaction.
+func (p *Policies) Rename(tx *gorm.DB, kind, oldID, newID string) error {
+	return tx.Model(&Policy{}).Where("subject_kind = ? AND subject_id = ?", kind, oldID).Update("subject_id", newID).Error
+}
+
+// DisableRemote turns off the field of a policy whose S3 repository is missing, unless the policy changed since it was read.
+func (p *Policies) DisableRemote(ctx context.Context, policy *Policy, field string) (bool, error) {
+	return DisableStoredRemote(ctx, p.db, DisableRemoteRequest{
+		Model:         &Policy{},
+		ID:            policy.ID,
+		DestinationID: policy.S3DestinationID,
+		LocalEnabled:  policy.LocalEnabled,
+		Field:         field,
+	})
+}
+
+// Schedule reads the policy's schedule each time its job is scheduled, so an edit applies from the next run.
+func (p *Policies) Schedule(policyID string) func(context.Context) string {
+	return func(ctx context.Context) string {
+		var policy Policy
+		if err := p.db.WithContext(ctx).Where("id = ?", policyID).First(&policy).Error; err != nil {
+			return defaultPolicySchedule
+		}
+		return policy.Schedule
+	}
 }
 
 // CheckScheduledRemote treats a missing repository as a first backup only when none of the tables retains a snapshot in it.

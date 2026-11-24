@@ -23,6 +23,7 @@ import (
 	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -81,6 +82,7 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 	volumeService := volume.NewVolumeService(volume.VolumeServiceParams{
 		Config:        &config.Config{},
 		DB:            db,
+		Policies:      backup.NewPolicies(db),
 		DockerService: dockerService,
 		EventService:  event.NewEventService(db, &config.Config{}, nil),
 	})
@@ -154,6 +156,7 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 	volumeService := volume.NewVolumeService(volume.VolumeServiceParams{
 		Config:        &config.Config{},
 		DB:            db,
+		Policies:      backup.NewPolicies(db),
 		DockerService: dockerService,
 		EventService:  event.NewEventService(db, &config.Config{}, nil),
 	})
@@ -353,6 +356,7 @@ func newVolumeFallbackService(t *testing.T) (*Service, func() []string) {
 		VolumeService: volume.NewVolumeService(volume.VolumeServiceParams{
 			Config:        &config.Config{},
 			DB:            db,
+			Policies:      backup.NewPolicies(db),
 			DockerService: dockerService,
 			EventService:  event.NewEventService(db, &config.Config{}, nil),
 		}),

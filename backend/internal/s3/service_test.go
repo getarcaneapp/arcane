@@ -38,9 +38,8 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_runs (s3_destination_id text, remote_snapshot_id text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text)").Error)
-	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
-	require.NoError(t, gormDB.Exec("CREATE TABLE project_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
@@ -115,7 +114,7 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 		UseSSL:          true,
 	})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (s3_destination_id, s3_enabled) VALUES (?, 1)", destination.ID).Error)
+	require.NoError(t, gormDB.Exec("INSERT INTO backup_policies (s3_destination_id, s3_enabled) VALUES (?, 1)", destination.ID).Error)
 
 	err = service.DeleteS3Destination(ctx, destination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
@@ -149,7 +148,7 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 	err = service.DeleteS3Destination(ctx, runningDestination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
 
-	// The global project and volume backup policies keep their destinations in settings.
+	// The global volume backup policies keep their destinations in settings.
 	globalDestination, err := service.CreateS3Destination(ctx, types.S3Destination{
 		Name:            "Global backups",
 		Bucket:          "global-backups",
@@ -160,11 +159,8 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 	})
 	require.NoError(t, err)
 	globalConfig := fmt.Sprintf(`{"policies":[{"id":"g1","s3DestinationId":%q,"s3Enabled":true,"localEnabled":true}]}`, globalDestination.ID)
-	for _, key := range []string{"projectBackupConfig", "systemVolumeBackupConfig"} {
-		require.NoError(t, gormDB.Where("key IN ?", []string{"projectBackupConfig", "systemVolumeBackupConfig"}).Delete(&settings.SettingVariable{}).Error)
-		require.NoError(t, gormDB.Create(&settings.SettingVariable{Key: key, Value: globalConfig}).Error)
-		require.ErrorIs(t, service.DeleteS3Destination(ctx, globalDestination.ID), ErrS3DestinationInUse, key)
-	}
+	require.NoError(t, gormDB.Create(&settings.SettingVariable{Key: "systemVolumeBackupConfig", Value: globalConfig}).Error)
+	require.ErrorIs(t, service.DeleteS3Destination(ctx, globalDestination.ID), ErrS3DestinationInUse)
 }
 
 func TestS3DestinationService_UpdateRejectsLocationChangeWhileInUse(t *testing.T) {

@@ -128,6 +128,7 @@ type (
 		Networks  *network.NetworkService
 
 		Repository     *backup.VolumeRepository
+		Policies       *backup.Policies
 		S3Destinations *s3.S3DestinationService
 	}
 
@@ -205,6 +206,7 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Admission:      p.Admission,
 			Engine:         p.Backups,
 			Repository:     p.Repository,
+			Policies:       p.Policies,
 			S3Destinations: p.S3Destinations,
 			LockVolumes:    p.Volumes.LockVolumes,
 		},

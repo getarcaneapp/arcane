@@ -64,6 +64,7 @@ type (
 		helperByVolume   map[string]*volumeHelper
 		backup           *volumebackup.Service
 		repository       *backup.VolumeRepository
+		policies         *backup.Policies
 		workspace        *workspace.Service
 		backupVolumeName string
 		helperMu         sync.Mutex
@@ -83,6 +84,7 @@ type (
 		S3Destinations  *s3.S3DestinationService
 		Config          *config.Config
 		RecoveryKeys    *backup.RecoveryKeyStore
+		Policies        *backup.Policies
 		Uploads         *upload.UploadService
 		Ctx             context.Context
 		Scheduler       types.DynamicScheduler
@@ -116,11 +118,13 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		imageService:     p.ImageService,
 		backupVolumeName: backupVolumeName,
 		repository:       p.Repository,
+		policies:         p.Policies,
 		helperByVolume:   make(map[string]*volumeHelper),
 	}
 	backupDeps := volumebackup.Dependencies{
 		Store:            service.backupStore(),
 		DB:               p.DB,
+		Policies:         p.Policies,
 		Docker:           p.DockerService,
 		Events:           p.EventService,
 		Settings:         p.SettingsService,
@@ -188,7 +192,7 @@ func (s *VolumeService) BackupStorageMount(ctx context.Context, dockerClient *cl
 
 // HasEnabledBackupPolicy reports whether a volume-level schedule takes precedence over centralized backups.
 func (s *VolumeService) HasEnabledBackupPolicy(ctx context.Context, volumeName string) (bool, error) {
-	return s.backup.HasEnabledBackupPolicy(ctx, volumeName)
+	return s.policies.HasEnabled(ctx, backup.PolicyVolume, volumeName)
 }
 
 // CreateSystemManagedBackup runs the existing volume backup workflow with a transient centralized policy.
@@ -1144,7 +1148,7 @@ func (s *VolumeService) renameVolumeMetadata(ctx context.Context, oldName, newNa
 		if err := tx.Model(&VolumeBackup{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error; err != nil {
 			return fmt.Errorf("rename volume backup history: %w", err)
 		}
-		if err := s.backup.RenamePolicies(tx, oldName, newName); err != nil {
+		if err := s.policies.Rename(tx, backup.PolicyVolume, oldName, newName); err != nil {
 			return fmt.Errorf("rename volume backup policies: %w", err)
 		}
 		return nil

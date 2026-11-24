@@ -44,6 +44,7 @@ type (
 		Admission      *runs.Admission
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
+		Policies       *backup.Policies
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
 	}
@@ -59,6 +60,7 @@ func New(p ModuleParams) *Module {
 		Docker:         p.Service.dockerService,
 		Engine:         p.Backups.Engine,
 		Repository:     p.Backups.Repository,
+		Policies:       p.Backups.Policies,
 		S3Destinations: p.Backups.S3Destinations,
 		Settings:       p.Service.settingsService,
 		LockVolumes:    p.Backups.LockVolumes,

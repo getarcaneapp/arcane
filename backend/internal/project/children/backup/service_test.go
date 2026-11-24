@@ -846,6 +846,7 @@ func newPolicyFixture(t *testing.T) policyFixture {
 			Docker: dockerService, Engine: engine, Settings: settingsService, S3Destinations: destinationService,
 			RecoveryKeys: backup.NewRecoveryKeyStore(db), BackupVolumeName: "arcane-backups",
 		}),
+		Policies:       backup.NewPolicies(db),
 		S3Destinations: destinationService,
 		Settings:       settingsService,
 		LockVolumes:    lockingWith(&concurrency.KeyedMutex{}),
@@ -868,7 +869,7 @@ func newPolicyFixture(t *testing.T) policyFixture {
 	return policyFixture{db: db, engine: engine, service: service, jobs: jobs, projects: references, destination: destination.ID}
 }
 
-func (f policyFixture) policy(t *testing.T, policy ProjectBackupPolicy) ProjectBackupPolicy {
+func (f policyFixture) policy(t *testing.T, policy backup.Policy) backup.Policy {
 	t.Helper()
 	require.NoError(t, f.db.Create(&policy).Error)
 	return policy
@@ -936,13 +937,13 @@ func TestUpdatePoliciesSavesAndSchedulesPolicies(t *testing.T) {
 	f.service.RemovePolicies(t.Context(), "p1")
 	require.Empty(t, f.jobs.jobs)
 	var remaining int64
-	require.NoError(t, f.db.Model(&ProjectBackupPolicy{}).Count(&remaining).Error)
+	require.NoError(t, f.db.Model(&backup.Policy{}).Where("subject_kind = ?", backup.PolicyProject).Count(&remaining).Error)
 	require.Zero(t, remaining)
 }
 
 func TestScheduledBackupWaitsForTheAdmissionAndReadsThePolicyAgain(t *testing.T) {
 	f := newPolicyFixture(t)
-	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, StopContainers: true, LocalEnabled: true})
+	policy := f.policy(t, backup.Policy{SubjectKind: backup.PolicyProject, SubjectID: "p1", Schedule: "0 2 * * *", Enabled: true, StopContainers: true, LocalEnabled: true})
 	held := f.hold(t, admissionScope, "p1")
 	done := make(chan admittedRun, 1)
 	go func() {
@@ -959,8 +960,8 @@ func TestScheduledBackupWaitsForTheAdmissionAndReadsThePolicyAgain(t *testing.T)
 	}
 
 	// The run waits instead of failing, then backs up with the policy as it stands once admitted.
-	require.NoError(t, f.db.Model(&ProjectBackupPolicy{}).Where("id = ?", policy.ID).
-		Updates(map[string]any{"stop_containers": false, "volumes": `["data"]`}).Error)
+	require.NoError(t, f.db.Model(&backup.Policy{}).Where("id = ?", policy.ID).
+		Updates(map[string]any{"stop_containers": false, "options": `{"volumes":["data"]}`}).Error)
 	held.Release(t.Context())
 	var admitted admittedRun
 	select {
@@ -978,8 +979,8 @@ func TestScheduledBackupWaitsForTheAdmissionAndReadsThePolicyAgain(t *testing.T)
 
 func TestRetentionKeepsTheNewestBackupsOfThePolicy(t *testing.T) {
 	f := newPolicyFixture(t)
-	policy := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 2})
-	other := f.policy(t, ProjectBackupPolicy{ProjectID: "p1", Schedule: "0 3 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 1})
+	policy := f.policy(t, backup.Policy{SubjectKind: backup.PolicyProject, SubjectID: "p1", Schedule: "0 2 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 2})
+	other := f.policy(t, backup.Policy{SubjectKind: backup.PolicyProject, SubjectID: "p1", Schedule: "0 3 * * *", Enabled: true, LocalEnabled: true, RetentionCount: 1})
 	for i, age := range []time.Duration{time.Hour, 2 * time.Hour, 3 * time.Hour, 4 * time.Hour} {
 		f.remoteBackup(t, fmt.Sprintf("s%d", i+1), types.VolumeBackupTriggerScheduled, policy.ID, age)
 	}
@@ -996,7 +997,7 @@ func TestRetentionKeepsTheNewestBackupsOfThePolicy(t *testing.T) {
 	releaseBackups(t.Context())
 
 	// Only the policy's own backups beyond its count go; manual, safety and other schedules' backups stay.
-	require.NoError(t, f.service.retain(t.Context(), policy.ID))
+	require.NoError(t, f.service.retain(t.Context(), &policy, policy.ID))
 	require.Equal(t, []string{"manual", "other", "s1", "s2", "safety"}, f.backupIDs(t))
 }
 
@@ -1072,7 +1073,8 @@ func TestGlobalPolicySelection(t *testing.T) {
 		types.SystemVolumeSelectionBlocklist: {"p1", "p3"},
 	} {
 		selected := []string{}
-		for _, project := range selectProjects(types.GlobalProjectBackupPolicy{SelectionMode: mode, ProjectIDs: []string{"p2"}}, references) {
+		policy := backup.Policy{Options: backup.PolicyOptions{SelectionMode: mode, ProjectIDs: []string{"p2"}}}
+		for _, project := range selectProjects(policy, references) {
 			selected = append(selected, project.ID)
 		}
 		require.Equal(t, expected, selected, mode)
@@ -1088,7 +1090,7 @@ func TestGlobalRunBacksUpSelectedProjectsAndAppliesRetention(t *testing.T) {
 		StopContainers:     new(false),
 	})[0]
 	// p2's own enabled policy replaces the global one.
-	f.policy(t, ProjectBackupPolicy{ProjectID: "p2", Schedule: "0 3 * * *", Enabled: true, LocalEnabled: true})
+	f.policy(t, backup.Policy{SubjectKind: backup.PolicyProject, SubjectID: "p2", Schedule: "0 3 * * *", Enabled: true, LocalEnabled: true})
 	series := types.GlobalProjectPolicyPrefix + policy.ID + ":p1"
 	// Earlier runs saved their snapshot in the fixture's missing S3 repository, then failed.
 	for i, age := range []time.Duration{time.Hour, 2 * time.Hour} {
@@ -1130,7 +1132,7 @@ func TestGlobalRetentionKeepsEachProjectsNewestAndManagedSeries(t *testing.T) {
 	f.remoteBackup(t, "deleted-policy", types.VolumeBackupTriggerScheduled, series(removed, "p1"), time.Hour)
 
 	// Retention keeps the policy's newest backups per project.
-	require.NoError(t, f.service.retain(t.Context(), series(kept, "p1")))
+	require.NoError(t, f.service.retain(t.Context(), &backup.Policy{BaseModel: database.BaseModel{ID: kept.ID}, SubjectKind: backup.PolicyProject}, series(kept, "p1")))
 	require.Equal(t, []string{"deleted-policy", "shop", "web-new", "wiki"}, f.backupIDs(t))
 
 	// A series stays managed while its policy exists and selects its project.

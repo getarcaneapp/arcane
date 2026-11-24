@@ -130,6 +130,7 @@ var (
 			provideWithWorkflows(gitops.NewGitOpsSyncService),
 			fx.Annotate(variable.NewVariableService, fx.As(fx.Self()), fx.As(new(environment.VariableSyncer))),
 			backup.NewRecoveryKeyStore,
+			backup.NewPolicies,
 			upload.NewUploadService,
 			health.NewService,
 			fx.Annotate(auth.NewTokenCache, fx.OnStop((*auth.TokenCache).Stop)),
