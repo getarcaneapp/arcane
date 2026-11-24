@@ -800,11 +800,11 @@ func remoteWebhookRequest(wh *Webhook, actionType string) ([]remoteWebhookCall, 
 		containerPath := apiPrefix + "/containers/" + url.PathEscape(ref)
 		switch actionType {
 		case WebhookActionTypeUpdate:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/update", Body: nil, WantResult: true, WantCheck: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/update", WantResult: true}}, nil
 		case WebhookActionTypeStart, WebhookActionTypeStop, WebhookActionTypeRestart:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "?action=" + actionType, Body: nil, WantResult: false, WantCheck: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "?action=" + actionType}}, nil
 		case WebhookActionTypeRedeploy:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/redeploy", Body: nil, WantResult: false, WantCheck: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/redeploy"}}, nil
 		}
 		return nil, ErrWebhookInvalidAction
 	case WebhookTargetTypeProject:
@@ -817,25 +817,25 @@ func remoteWebhookRequest(wh *Webhook, actionType string) ([]remoteWebhookCall, 
 				return nil, fmt.Errorf("encode project update request: %w", err)
 			}
 			return []remoteWebhookCall{
-				{Method: http.MethodPost, Path: apiPrefix + "/updater/projects/" + url.PathEscape(wh.TargetID) + "/check", Body: nil, WantResult: false, WantCheck: true},
-				{Method: http.MethodPost, Path: apiPrefix + "/updater/run", Body: body, WantResult: true, WantCheck: false},
+				{Method: http.MethodPost, Path: apiPrefix + "/updater/projects/" + url.PathEscape(wh.TargetID) + "/check", WantCheck: true},
+				{Method: http.MethodPost, Path: apiPrefix + "/updater/run", Body: body, WantResult: true},
 			}, nil
 		case WebhookActionTypeDown, WebhookActionTypeRestart:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "?action=" + actionType, Body: nil, WantResult: false, WantCheck: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "?action=" + actionType}}, nil
 		case WebhookActionTypeUp, WebhookActionTypeRedeploy:
-			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "/deploy?action=" + actionType, Body: nil, WantResult: false, WantCheck: false}}, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "/deploy?action=" + actionType}}, nil
 		}
 		return nil, ErrWebhookInvalidAction
 	case WebhookTargetTypeUpdater:
 		if actionType != WebhookActionTypeRun {
 			return nil, ErrWebhookInvalidAction
 		}
-		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/updater/run?automatic=true", Body: nil, WantResult: true, WantCheck: false}}, nil
+		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/updater/run?automatic=true", WantResult: true}}, nil
 	case WebhookTargetTypeGitOps:
 		if actionType != WebhookActionTypeSync {
 			return nil, ErrWebhookInvalidAction
 		}
-		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/gitops/syncs/" + url.PathEscape(wh.TargetID) + "?action=sync", Body: nil, WantResult: false, WantCheck: false}}, nil
+		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/gitops/syncs/" + url.PathEscape(wh.TargetID) + "?action=sync"}}, nil
 	default:
 		return nil, ErrWebhookInvalidType
 	}
