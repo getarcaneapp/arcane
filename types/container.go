@@ -295,6 +295,9 @@ type (
 		RedeployDisabled bool  `json:"redeployDisabled,omitempty"`
 
 		AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
+		// AutoUpdateInclude reports that the environment's auto-update mode is include, so only
+		// listed containers and those labelled updater=true are updated.
+		AutoUpdateInclude bool `json:"autoUpdateInclude,omitempty"`
 		Hidden            bool `json:"hidden,omitempty"`
 	}
 
@@ -333,6 +336,9 @@ type (
 		RedeployDisabled bool                  `json:"redeployDisabled,omitempty"`
 
 		AutoUpdateEnabled bool `json:"autoUpdateEnabled"`
+		// AutoUpdateInclude reports that the environment's auto-update mode is include, so only
+		// listed containers and those labelled updater=true are updated.
+		AutoUpdateInclude bool `json:"autoUpdateInclude,omitempty"`
 	}
 
 	ContainerCreated struct {

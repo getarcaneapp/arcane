@@ -9,8 +9,12 @@ class JobScheduleService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/jobs/schedules`, config));
 	}
 
-	async updateJobSchedules(update: JobScheduleConfigUpdate, environmentId: string = '0'): Promise<JobScheduleConfig> {
-		return this.handleResponse(this.api.patch(`/agents/${environmentId}/jobs/schedules`, update));
+	async updateJobSchedules(
+		update: JobScheduleConfigUpdate,
+		environmentId: string = '0',
+		config?: APIRequestConfig
+	): Promise<JobScheduleConfig> {
+		return this.handleResponse(this.api.patch(`/agents/${environmentId}/jobs/schedules`, update, config));
 	}
 
 	async listJobs(environmentId: string = '0', config?: APIRequestConfig): Promise<JobListResponse> {

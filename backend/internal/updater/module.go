@@ -52,9 +52,10 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/updater/run",
 		Summary:     "Run updater",
-		Description: "Apply pending container updates",
+		Description: "Apply pending container updates; a comma-separated environment list requires image-updates:apply in every one",
 		Tags:        []string{"Updater"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermImageUpdatesApply, h.RunUpdater)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

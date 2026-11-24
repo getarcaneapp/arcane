@@ -177,6 +177,14 @@ func (c *Client) ContainerConmonPID(ctx context.Context, nameOrID string) (uint3
 	return inspect.State.ConmonPid, err
 }
 
+func (c *Client) ContainerTop(ctx context.Context, nameOrID string) (types.ContainerProcesses, error) {
+	return c.doJSON[types.ContainerProcesses](ctx, request{
+		method: http.MethodGet,
+		path:   "/containers/" + url.PathEscape(nameOrID) + "/top",
+		query:  url.Values{"stream": {"false"}},
+	})
+}
+
 func (c *Client) doJSON[T any](ctx context.Context, req request) (T, error) {
 	var out T
 	body, err := c.do(ctx, req)

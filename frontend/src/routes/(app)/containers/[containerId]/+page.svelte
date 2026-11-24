@@ -37,6 +37,7 @@
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerDetailQuery } from '#lib/query/containers.js';
+	import { refetchEnvironmentSettings } from '#lib/query/environments.js';
 	import { projectDetailQuery } from '#lib/query/projects.js';
 	import { projectListForEnvironmentQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -51,7 +52,7 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { runContainerLifecycleAction, confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
-	import { isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update.js';
+	import { autoUpdateLabelControl } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { createDashboardWidget, pinDashboardAction } from '#lib/utils/dashboard-layout.js';
 	import { calculateMemoryUsage, getCustomHostname, getThemedIconUrl } from '#lib/utils/docker.js';
@@ -91,11 +92,17 @@
 	let hasInitialStatsLoaded = $state(false);
 	let statsError = $state(false);
 
-	// Auto-update: the Docker label controls the state when set (not toggleable via UI).
+	// Auto-update: the Docker label controls the state when it decides (not toggleable via UI).
 	// The status itself comes from the container response; older agents omit it.
-	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelDisabled(container?.labels));
+	const autoUpdateLabelControlled = $derived(container ? autoUpdateLabelControl(container) : undefined);
 	const autoUpdateStatusAvailable = $derived(typeof container?.autoUpdateEnabled === 'boolean');
 	const autoUpdateEnabled = $derived(container?.autoUpdateEnabled === true);
+
+	// The toggle edits the environment's container lists, so its cached settings must reload too.
+	async function refreshAfterAutoUpdateChange() {
+		await refetchEnvironmentSettings(queryClient, currentEnvId);
+		await refreshContainerDetails();
+	}
 
 	async function refreshContainerDetails() {
 		const [, result] = await Promise.all([
@@ -605,7 +612,7 @@
 			{autoUpdateEnabled}
 			{autoUpdateLabelControlled}
 			{autoUpdateStatusAvailable}
-			onAutoUpdateChange={refreshContainerDetails}
+			onAutoUpdateChange={refreshAfterAutoUpdateChange}
 			onViewPortMappings={showNetworkTab ? navigateToNetworkPortMappings : undefined}
 			onViewStorage={hasMounts ? () => onTabChange('storage') : undefined}
 			onViewNetworks={showNetworkTab ? () => onTabChange('network') : undefined}

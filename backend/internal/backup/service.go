@@ -98,6 +98,12 @@ type (
 		ReadOnly bool
 	}
 
+	// DestinationOptions describes which backup destinations hold snapshots.
+	DestinationOptions struct {
+		Local  bool
+		Remote bool
+	}
+
 	CreateSnapshotInput struct {
 		Mounts  []mount.Mount
 		Sources []string
@@ -129,6 +135,13 @@ type (
 		Summary struct {
 			TotalBytesProcessed int64 `json:"total_bytes_processed"`
 		} `json:"summary"`
+	}
+
+	DiscoveredRecords[T any] struct {
+		ID       func(entry T) string
+		Existing func(ctx context.Context, ids []string) ([]T, error)
+		Create   func(ctx context.Context, entry T) error
+		Entries  []T
 	}
 
 	RecoveryKeyStore struct {
@@ -461,6 +474,45 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
+func (s DiscoveredSnapshot) LocalRunID() string {
+	for _, tag := range s.Tags {
+		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok && runID != "" {
+			return runID
+		}
+	}
+	return "local-" + s.ID
+}
+
+func RecordDiscovered[T any](ctx context.Context, records DiscoveredRecords[T]) (int, error) {
+	if len(records.Entries) == 0 {
+		return 0, nil
+	}
+	ids := make([]string, len(records.Entries))
+	for index, entry := range records.Entries {
+		ids[index] = records.ID(entry)
+	}
+	existing, err := records.Existing(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	recorded := make(map[string]bool, len(existing))
+	for _, entry := range existing {
+		recorded[records.ID(entry)] = true
+	}
+	created := 0
+	for _, entry := range records.Entries {
+		if recorded[records.ID(entry)] {
+			continue
+		}
+		if createErr := records.Create(ctx, entry); createErr != nil {
+			return created, fmt.Errorf("failed to save discovered backup: %w", createErr)
+		}
+		recorded[records.ID(entry)] = true
+		created++
+	}
+	return created, nil
+}
+
 func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, error) {
 	if !fullSnapshotID(snapshotID) {
 		return Snapshot{}, errors.New("a full snapshot ID is required")
@@ -647,7 +699,7 @@ func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *cli
 
 func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *client.Client, repository Repository, newPassword string, currentPasswords ...string) (string, error) {
 	_, err := e.ListSnapshots(ctx, dockerClient, repository, newPassword)
-	if err == nil || strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+	if err == nil || errors.Is(err, ErrRepositoryMissing) {
 		return "", nil
 	}
 	for _, candidate := range currentPasswords {
@@ -1123,11 +1175,11 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 }
 
 // Destination names where a backup's snapshots are kept.
-func Destination(local, remote bool) types.VolumeBackupDestination {
+func Destination(opts DestinationOptions) types.VolumeBackupDestination {
 	switch {
-	case local && remote:
+	case opts.Local && opts.Remote:
 		return types.VolumeBackupDestinationLocalS3
-	case remote:
+	case opts.Remote:
 		return types.VolumeBackupDestinationS3
 	default:
 		return types.VolumeBackupDestinationLocal

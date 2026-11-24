@@ -53,7 +53,7 @@ type (
 func (ProjectBackup) TableName() string { return "project_backups" }
 
 func (b *ProjectBackup) DTO(opts DTOOptions) types.ProjectBackup {
-	return types.ProjectBackup{
+	return types.ProjectBackup{ //exhaustruct:enforce
 		ActivityID:        opts.ActivityID,
 		S3DestinationName: opts.S3DestinationName,
 		CreatedAt:         b.CreatedAt,

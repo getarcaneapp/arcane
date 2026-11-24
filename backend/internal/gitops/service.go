@@ -329,11 +329,21 @@ func (s *GitOpsSyncService) RegisterWorkflows(engine *flow.Engine) error {
 func (s *GitOpsSyncService) registerSyncJob(ctx context.Context, syncID, environmentID string, intervalMinutes int) {
 	schedule := fmt.Sprintf("@every %dm", max(intervalMinutes, 1))
 	s.jobs.Add(ctx, &flow.Job{
-		Engine:     s.engine,
-		Workflow:   s.syncWorkflow,
-		JobName:    s.jobs.JobName(syncID),
-		Payload:    syncTarget{EnvironmentID: environmentID, SyncID: syncID},
-		ScheduleFn: func(context.Context) string { return schedule },
+		Engine:   s.engine,
+		Workflow: s.syncWorkflow,
+		JobName:  s.jobs.JobName(syncID),
+		Payload:  syncTarget{EnvironmentID: environmentID, SyncID: syncID},
+		ScheduleFn: func(context.Context) string {
+			return schedule
+		},
+		SkipRunFn: func(runCtx context.Context) string {
+			run, _ := jobcontext.Run(runCtx)
+			syncRecord, err := s.GetSyncByID(runCtx, environmentID, syncID)
+			if err != nil || len(run.Outcome.Targets) > 0 || !s.sync.Unchanged(runCtx, syncRecord) {
+				return ""
+			}
+			return "Branch " + syncRecord.Branch + " is unchanged at " + kit.FromPtr(syncRecord.LastSyncCommit)
+		},
 	})
 }
 
@@ -769,29 +779,32 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 
 	updates := make(map[string]any)
+	changed := []bool{kit.FromPtr(kit.Ternary(change.Submitted["envContent"], envContent, syncRecord.EnvContent)) != kit.FromPtr(syncRecord.EnvContent)}
 	for field, update := range map[string]struct {
-		value  any
-		column string
+		value   any
+		current any
+		column  string
 	}{
 		"name":                {column: "name", value: change.Request.Name},
-		"repositoryId":        {column: "repository_id", value: change.Request.RepositoryID},
-		"branch":              {column: "branch", value: change.Request.Branch},
-		"composePath":         {column: "compose_path", value: change.Request.ComposePath},
-		"composeOverridePath": {column: "compose_override_path", value: strings.TrimSpace(change.Request.ComposeOverridePath)},
+		"repositoryId":        {column: "repository_id", value: change.Request.RepositoryID, current: syncRecord.RepositoryID},
+		"branch":              {column: "branch", value: change.Request.Branch, current: syncRecord.Branch},
+		"composePath":         {column: "compose_path", value: change.Request.ComposePath, current: syncRecord.ComposePath},
+		"composeOverridePath": {column: "compose_override_path", value: strings.TrimSpace(change.Request.ComposeOverridePath), current: syncRecord.ComposeOverridePath},
 		"envContent":          {column: "env_content", value: envContent},
-		"targetType":          {column: "target_type", value: change.Request.TargetType},
-		"projectName":         {column: "project_name", value: change.Request.ProjectName},
+		"targetType":          {column: "target_type", value: change.Request.TargetType, current: syncRecord.TargetType},
+		"projectName":         {column: "project_name", value: change.Request.ProjectName, current: syncRecord.ProjectName},
 		"autoSync":            {column: "auto_sync", value: change.Request.AutoSync},
 		"syncInterval":        {column: "sync_interval", value: change.Request.SyncInterval},
-		"syncDirectory":       {column: "sync_directory", value: change.Request.SyncDirectory},
-		"pullImageAfterSync":  {column: "pull_image_after_sync", value: change.Request.PullImageAfterSync},
-		"redeployAfterSync":   {column: "redeploy_after_sync", value: change.Request.RedeployAfterSync},
-		"maxSyncFiles":        {column: "max_sync_files", value: change.Request.MaxSyncFiles},
-		"maxSyncTotalSize":    {column: "max_sync_total_size", value: change.Request.MaxSyncTotalSize},
-		"maxSyncBinarySize":   {column: "max_sync_binary_size", value: change.Request.MaxSyncBinarySize},
+		"syncDirectory":       {column: "sync_directory", value: change.Request.SyncDirectory, current: syncRecord.SyncDirectory},
+		"pullImageAfterSync":  {column: "pull_image_after_sync", value: change.Request.PullImageAfterSync, current: syncRecord.PullImageAfterSync},
+		"redeployAfterSync":   {column: "redeploy_after_sync", value: change.Request.RedeployAfterSync, current: syncRecord.RedeployAfterSync},
+		"maxSyncFiles":        {column: "max_sync_files", value: change.Request.MaxSyncFiles, current: syncRecord.MaxSyncFiles},
+		"maxSyncTotalSize":    {column: "max_sync_total_size", value: change.Request.MaxSyncTotalSize, current: syncRecord.MaxSyncTotalSize},
+		"maxSyncBinarySize":   {column: "max_sync_binary_size", value: change.Request.MaxSyncBinarySize, current: syncRecord.MaxSyncBinarySize},
 	} {
 		if change.Submitted[field] {
 			updates[update.column] = update.value
+			changed = append(changed, update.value != cmp.Or(update.current, update.value))
 		}
 	}
 
@@ -813,21 +826,32 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 		return nil, lifecycleErr
 	}
 	// A nil field stays unchanged; an empty one clears the column, or resets the network mode to "none".
-	for column, value := range map[string]*string{
-		"pre_deploy_script_path":  lifecycleCfg.scriptPath,
-		"pre_deploy_runner_image": lifecycleCfg.runnerImage,
-		"pre_deploy_env":          lifecycleCfg.env,
-		"pre_deploy_extra_mounts": lifecycleCfg.extraMounts,
+	for column, value := range map[string][2]*string{
+		"pre_deploy_script_path":  {lifecycleCfg.scriptPath, syncRecord.PreDeployScriptPath},
+		"pre_deploy_runner_image": {lifecycleCfg.runnerImage, syncRecord.PreDeployRunnerImage},
+		"pre_deploy_env":          {lifecycleCfg.env, syncRecord.PreDeployEnv},
+		"pre_deploy_extra_mounts": {lifecycleCfg.extraMounts, syncRecord.PreDeployExtraMounts},
 	} {
-		if value != nil {
-			updates[column] = nullableTrimmedString(value)
+		if value[0] != nil {
+			updates[column] = nullableTrimmedString(value[0])
+			changed = append(changed, strings.TrimSpace(*value[0]) != kit.FromPtr(value[1]))
 		}
 	}
 	if lifecycleCfg.timeoutSec != nil {
 		updates["pre_deploy_timeout_sec"] = *lifecycleCfg.timeoutSec
+		changed = append(changed, *lifecycleCfg.timeoutSec != syncRecord.PreDeployTimeoutSec)
 	}
 	if lifecycleCfg.networkMode != nil {
 		updates["pre_deploy_network_mode"] = cmp.Or(strings.TrimSpace(*lifecycleCfg.networkMode), "none")
+		changed = append(changed, updates["pre_deploy_network_mode"] != syncRecord.PreDeployNetworkMode)
+	}
+	if slices.Contains(changed, true) && !slices.Contains(projectpkg.GitOpsPushModes, syncRecord.Mode) {
+		lease, leaseErr := s.jobs.Acquire(ctx, syncRecord.ID)
+		if leaseErr != nil {
+			return nil, fmt.Errorf("failed to wait for the running GitOps sync: %w", leaseErr)
+		}
+		defer lease.Release(ctx)
+		updates["last_sync_status"] = "pending"
 	}
 
 	if len(updates) > 0 {
@@ -974,7 +998,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 	if syncRecord.Mode == types.GitOpsSyncModeBackup {
 		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.Resolve == types.GitOpsBackupConflictUseArcane})
 	}
-	if syncRecord.Mode == types.GitOpsSyncModeBidirectional {
+	if syncRecord.Mode == types.GitOpsSyncModeBidirectional && kit.FromPtr(syncRecord.ProjectID) != "" {
 		return s.performBidirectional(ctx, syncCtx, syncRecord, req, result)
 	}
 

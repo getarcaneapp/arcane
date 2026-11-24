@@ -15,7 +15,7 @@
 	import type { PodCreateRequest } from '#lib/types/podman.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { acrossEnvironmentsNote, settleAcrossEnvironments } from '#lib/utils/environments.js';
+	import { acrossEnvironmentsNote, actAcrossEnvironments } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { ResourceListPageState, scopedQueryOptions } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -53,7 +53,8 @@
 
 	const prunePodsMutation = createMutation(() => ({
 		mutationKey: ['podman-pods', 'prune', pageState.scope],
-		mutationFn: (environments: EnvironmentRef[]) => settleAcrossEnvironments(environments, (id) => podmanService.prunePods(id)),
+		mutationFn: (environments: EnvironmentRef[]) =>
+			actAcrossEnvironments(environments, (scope, config) => podmanService.prunePods(scope, config)),
 		onSuccess: async (results) => {
 			const count = results.reduce((total, { value }) => total + (value?.length ?? 0), 0);
 			toast.success(m.podman_pods_prune_success({ count }));

@@ -41,10 +41,11 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Method:        http.MethodPost,
 		Path:          "/agents/{id}/system/upgrade/jobs",
 		Summary:       "Start upgrade job",
-		Description:   "Upgrade the requested environments, or every enabled environment when none are given, with the manager last",
+		Description:   "Upgrade the environments in the path (comma-separated), with the manager last; requires system:upgrade in every one",
 		DefaultStatus: http.StatusAccepted,
 		Tags:          []string{"System"},
 		Security:      handlerutil.DefaultOperationSecurity(),
+		Metadata:      map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermSystemUpgrade, h.StartUpgradeJob)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

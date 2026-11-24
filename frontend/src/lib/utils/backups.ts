@@ -1,6 +1,7 @@
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
+import { APIError } from '#lib/services/api-service.js';
 import { systemBackupService } from '#lib/services/system-backup-service.js';
 import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
@@ -13,6 +14,7 @@ import type {
 	S3Destination
 } from '#lib/types/backup.js';
 import type { BackupPolicy, BackupRun } from '#lib/types/ui/backup.js';
+import type { VolumeBackupDestination } from '#lib/types/volume.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -31,6 +33,7 @@ export function backupStatusVariant(status: BackupStatus): 'green' | 'red' | 'bl
 export function backupTriggerLabel(trigger: BackupTrigger): string {
 	if (trigger === 'scheduled') return m.backups_trigger_scheduled();
 	if (trigger === 'safety') return m.backups_trigger_safety();
+	if (trigger === 'discovered') return m.discovered();
 	if (trigger === 'manager') return m.manager();
 	return m.backups_trigger_manual();
 }
@@ -162,21 +165,33 @@ export async function runAutomaticBackupDiscovery(
 ): Promise<boolean> {
 	const discover = (found: Promise<number>, failed: () => string) =>
 		found.catch((error: unknown) => {
-			toast.error(failed(), { description: extractApiErrorMessage(error) });
+			if (!(error instanceof APIError && error.status === 409)) {
+				toast.error(failed(), { description: extractApiErrorMessage(error) });
+			}
 			return 0;
 		});
-	const localCount = local
+	const discoverVolumes = (destinationId: string, destination: Exclude<VolumeBackupDestination, 'local_s3'>) =>
+		discover(
+			volumeBackupService.discoverBackups(destinationId, LOCAL_DOCKER_ENVIRONMENT_ID, destination).then((result) => result.count),
+			m.volume_backups_discover_failed
+		);
+	const discoverSystem = async () => {
+		let found = local ? await discover(systemBackupService.discover('', '', 'local'), m.system_backups_discover_failed) : 0;
+		for (const item of destinations) {
+			found += await discover(systemBackupService.discover(item.id, ''), m.system_backups_discover_failed);
+		}
+		return found;
+	};
+	const localProjects = local
 		? await discover(systemBackupService.discoverProjectBackups('', 'local'), m.failed_to_discover_project_backups)
 		: 0;
-	const counts = await Promise.all(
-		destinations.flatMap((item) => [
-			discover(systemBackupService.discover(item.id, ''), m.system_backups_discover_failed),
+	const counts = await Promise.all([
+		discoverSystem(),
+		...(local ? [discoverVolumes('', 'local')] : []),
+		...destinations.flatMap((item) => [
 			discover(systemBackupService.discoverProjectBackups(item.id), m.failed_to_discover_project_backups),
-			discover(
-				volumeBackupService.discoverBackups(item.id, LOCAL_DOCKER_ENVIRONMENT_ID).then((result) => result.count),
-				m.volume_backups_discover_failed
-			)
+			discoverVolumes(item.id, 's3')
 		])
-	);
-	return localCount > 0 || counts.some((count) => count > 0);
+	]);
+	return localProjects > 0 || counts.some((count) => count > 0);
 }

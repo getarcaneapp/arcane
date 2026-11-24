@@ -330,10 +330,6 @@ type (
 		Results               []UpgradeJobResult `json:"results,omitempty"`
 	}
 
-	StartUpgradeJobRequest struct {
-		EnvironmentIDs []string `json:"environmentIds,omitempty" doc:"Environments to upgrade; empty upgrades every enabled environment"`
-	}
-
 	UpgradeProgressEvent struct {
 		At          time.Time `json:"at"`
 		Type        string    `json:"type" enum:"stage,progress,log,done"`

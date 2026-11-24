@@ -129,7 +129,7 @@ func TestPermissionMatcherCollectsEnvironmentAggregation(t *testing.T) {
 	m.CollectFromHumaAPI(api)
 
 	require.True(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/containers"))
-	require.False(t, m.SupportsEnvironmentAggregation(http.MethodPost, "/projects"), "only GET operations aggregate")
+	require.True(t, m.SupportsEnvironmentAggregation(http.MethodPost, "/projects"), "non-GET operations aggregate when they opt in")
 	require.False(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/images"), "operations must opt in")
 	require.False(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/containers/abc"), "suffix must match exactly")
 	perm, ok := m.Lookup(http.MethodGet, "/containers", nil).Get()

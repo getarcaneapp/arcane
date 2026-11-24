@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '../fixtures/test.fixture';
+import { expect, test, type APIResponse, type Page, type Route } from '../fixtures/test.fixture';
 import { setCodeMirrorValue } from '../utils/playwright.util';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
@@ -1006,6 +1006,20 @@ test.describe('S3 storage', () => {
 
 	// Backups run Rustic in a helper container, so the request returns before the
 	// snapshot finishes. Poll the record until it leaves the running state.
+	// MinIO/rustic roundtrips occasionally return a transient 5xx; retry those while
+	// still failing fast on any 4xx or assertion so real backend bugs are not masked.
+	async function requestWithTransientRetry(
+		send: () => Promise<APIResponse>,
+		attempts = 3
+	): Promise<APIResponse> {
+		let response = await send();
+		for (let attempt = 1; attempt < attempts && response.status() >= 500; attempt++) {
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+			response = await send();
+		}
+		return response;
+	}
+
 	async function waitForBackup(page: Page, volumeName: string, backupId: string) {
 		let last: BackupEntry | undefined;
 		await expect
@@ -1212,7 +1226,9 @@ test.describe('S3 storage', () => {
 
 					// Rustic can only list these paths by reading the repository back out
 					// of the bucket, so this proves the snapshot really landed in MinIO.
-					const files = await page.request.get(`/api/agents/0/volumes/backups/${created.id}/files`);
+					const files = await requestWithTransientRetry(() =>
+						page.request.get(`/api/agents/0/volumes/backups/${created.id}/files`)
+					);
 					expect(files.status(), await files.text()).toBe(200);
 					expect(JSON.stringify((await files.json())?.data ?? [])).toContain('payload.txt');
 
@@ -1220,9 +1236,11 @@ test.describe('S3 storage', () => {
 					await writeVolumeFile(page, volumeName, 'payload.txt', replacementContent, 'update_file');
 					expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(replacementContent);
 
-					const restore = await page.request.post(
-						`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}?action=restore`,
-						{ data: {}, timeout: 180000 }
+					const restore = await requestWithTransientRetry(() =>
+						page.request.post(
+							`/api/agents/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}?action=restore`,
+							{ data: {}, timeout: 180000 }
+						)
 					);
 					expect(restore.status(), await restore.text()).toBe(200);
 					expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(fileContent);

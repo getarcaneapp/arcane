@@ -47,6 +47,13 @@ type (
 )
 
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*handlerutil.Out[*types.UpdaterResult], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.updaterService.AggregateApplyPending(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to run updater: " + err.Error())
+		}
+		return &handlerutil.Out[*types.UpdaterResult]{Body: body}, nil
+	}
 	out, err := h.updaterService.ApplyPending(activitylib.ActivityRuntimeContext(ctx, h.appCtx), types.UpdaterOptions{
 		Type:                     kit.FromPtr(input.Body).Type,
 		ResourceIds:              kit.FromPtr(input.Body).ResourceIds,

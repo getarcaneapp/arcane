@@ -213,6 +213,14 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 	}, nil
 }
 
+func ReleaseLinkFromLabels(labels map[string]string) string {
+	source := sourceLabel(labels)
+	if repo, ok := parseGitHubRepo(source); ok {
+		return githubURLBase + repo + "/releases"
+	}
+	return externalLink(source)
+}
+
 func (s *Service) ReleaseLink(ctx context.Context, imageRef string) string {
 	inspected, err := s.docker.Call(ctx, func(ctx context.Context, c *client.Client) (client.ImageInspectResult, error) {
 		return c.ImageInspect(ctx, strings.TrimSpace(imageRef))
@@ -220,11 +228,7 @@ func (s *Service) ReleaseLink(ctx context.Context, imageRef string) string {
 	if err != nil {
 		slog.DebugContext(ctx, "Failed to inspect local image for release link", "imageRef", imageRef, "error", err)
 	}
-	source := sourceLabel(kit.FromPtr(inspected.Config).Labels)
-	if repo, ok := parseGitHubRepo(source); ok {
-		return githubURLBase + repo + "/releases"
-	}
-	return externalLink(source)
+	return ReleaseLinkFromLabels(kit.FromPtr(inspected.Config).Labels)
 }
 
 func (s *Service) findRelease(ctx context.Context, req findRequest) (githubRelease, string, error) {

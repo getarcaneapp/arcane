@@ -2,6 +2,7 @@ import type {
 	BackupFileEntry,
 	BackupRestoreSelection,
 	CreateSystemBackupRequest,
+	SystemBackupDestination,
 	SystemVolumeBackupHistoryEntry,
 	SystemBackupPolicyCollection,
 	SystemBackupRecoveryKey,
@@ -153,8 +154,12 @@ class SystemBackupService extends BaseAPIService {
 		await this.handleResponse(this.api.delete(`/agents/${environmentId}/backups/${id}`, { data: { recoveryKey } }));
 	}
 
-	async discover(s3DestinationId: string, recoveryKey: string): Promise<number> {
-		return this.handleResponse(this.api.post('/backups/discover', { s3DestinationId, recoveryKey }));
+	async discover(
+		s3DestinationId: string,
+		recoveryKey: string,
+		destination: Exclude<SystemBackupDestination, 'local_s3'> = 's3'
+	): Promise<number> {
+		return this.handleResponse(this.api.post('/backups/discover', { destination, s3DestinationId, recoveryKey }));
 	}
 }
 

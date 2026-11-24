@@ -50,6 +50,13 @@ func (h *Handler) GetDiskUsage(ctx context.Context, input *types.EnvironmentInpu
 }
 
 func (h *Handler) PruneAll(ctx context.Context, input *PruneAllInput) (*handlerutil.Out[types.PruneAllResult], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.AggregatePruneAll(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to prune: " + err.Error())
+		}
+		return &handlerutil.Out[types.PruneAllResult]{Body: body}, nil
+	}
 	slog.InfoContext(ctx, "System prune operation initiated",
 		"containers", input.Body.Containers,
 		"images", input.Body.Images,
