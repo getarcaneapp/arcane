@@ -4,9 +4,12 @@ import (
 	"context"
 	"net/http"
 	"net/http/pprof"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
+
+	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/middleware"
@@ -70,11 +73,24 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 			return nil
 		}},
 	}
+	idParam := &huma.Param{
+		Name:     "id",
+		In:       "path",
+		Required: true,
+		Schema:   &huma.Schema{Type: huma.TypeString},
+	}
+	nameParam := &huma.Param{
+		Name:     "name",
+		In:       "path",
+		Required: true,
+		Schema:   &huma.Schema{Type: huma.TypeString},
+	}
 	for _, r := range pprofRoutes {
 		middleware.RegisterWithPermission(api, huma.Operation{
 			OperationID: r.id,
 			Method:      r.method,
 			Path:        r.path,
+			Parameters:  kit.Ternary(strings.HasSuffix(r.path, "{name}"), []*huma.Param{idParam, nameParam}, []*huma.Param{idParam}),
 			Tags:        []string{"Diagnostics"},
 			Security:    handlerutil.DefaultOperationSecurity(),
 		}, authz.PermDiagnosticsProfile, middleware.EchoHandler(r.handler))

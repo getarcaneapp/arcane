@@ -224,7 +224,6 @@ func applicationOptions(
 		di.ServiceOptions,
 		di.JobOptions,
 		serverOptions(cfg.AgentEnabled),
-		managerOptions(cfg.AgentEnabled),
 		fx.Invoke(
 			func(lc fx.Lifecycle) {
 				lc.Append(fx.Hook{
@@ -235,6 +234,9 @@ func applicationOptions(
 				})
 			},
 			initializeStartupState,
+		),
+		managerOptions(cfg.AgentEnabled),
+		fx.Invoke(
 			startJobScheduler,
 			registerJobs,
 			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, systemService *system.SystemService, _ *http.Server) {

@@ -57,13 +57,6 @@ type (
 		Stream      bool
 	}
 
-	commandRoute struct {
-		Method      string
-		PathPattern string
-		CommandName string
-		Stream      bool
-	}
-
 	commandRouteKey struct {
 		Method string
 		Stream bool
@@ -72,7 +65,7 @@ type (
 	commandRouteNode struct {
 		static map[string]*commandRouteNode
 		param  *commandRouteNode
-		route  *commandRoute
+		route  *CommandRoute
 	}
 
 	commandRouteIndex map[commandRouteKey]*commandRouteNode

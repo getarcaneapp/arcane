@@ -226,39 +226,50 @@
 		if (!ws?.refresh()) error = m.disconnected();
 	}
 
-	let profileEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
+	let selectedProfileEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
 	const profileEnvironments = $derived(
 		environmentStore.available.filter((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID || isEnvironmentOnline(env))
 	);
+	const profileEnvId = $derived(
+		profileEnvironments.some((env) => env.id === selectedProfileEnvId) ? selectedProfileEnvId : LOCAL_DOCKER_ENVIRONMENT_ID
+	);
 
+	let dumpEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
 	const dumpOpen = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
 	const dumpText = $state<{ goroutine: string; heap: string }>({ goroutine: '', heap: '' });
 	const dumpLoading = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
 
-	function onProfileEnvChange(nextId: string) {
-		if (nextId === profileEnvId) return;
-		profileEnvId = nextId;
+	function resetDumps(envId: string) {
+		dumpEnvId = envId;
 		dumpText.goroutine = '';
 		dumpText.heap = '';
+		dumpLoading.goroutine = false;
+		dumpLoading.heap = false;
 		dumpOpen.goroutine = false;
 		dumpOpen.heap = false;
 	}
 
+	function onProfileEnvChange(nextId: string) {
+		if (nextId === profileEnvId) return;
+		selectedProfileEnvId = nextId;
+		resetDumps(nextId);
+	}
+
 	async function loadDump(name: 'goroutine' | 'heap') {
+		const envId = profileEnvId;
 		dumpLoading[name] = true;
-		try {
-			const dump = await tryCatch(diagnosticsService.getProfileDumpForEnvironment(profileEnvId, name));
-			if (dump.error !== null) {
-				dumpText[name] = extractApiErrorMessage(dump.error) || m.diagnostics_error_dump();
-				return;
-			}
-			dumpText[name] = dump.data;
-		} finally {
-			dumpLoading[name] = false;
+		const dump = await tryCatch(diagnosticsService.getProfileDumpForEnvironment(envId, name));
+		if (envId !== dumpEnvId) return;
+		dumpLoading[name] = false;
+		if (dump.error !== null) {
+			dumpText[name] = extractApiErrorMessage(dump.error) || m.diagnostics_error_dump();
+			return;
 		}
+		dumpText[name] = dump.data;
 	}
 
 	function onDumpToggle(name: 'goroutine' | 'heap', open: boolean) {
+		if (dumpEnvId !== profileEnvId) resetDumps(profileEnvId);
 		dumpOpen[name] = open;
 		if (open && !dumpText[name] && !dumpLoading[name]) loadDump(name);
 	}
@@ -553,7 +564,10 @@
 								</div>
 								<div class="space-y-2">
 									{#each dumps as d (d.id)}
-										<Collapsible.Root open={dumpOpen[d.id]} onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}>
+										<Collapsible.Root
+											open={dumpEnvId === profileEnvId && dumpOpen[d.id]}
+											onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}
+										>
 											<Collapsible.Trigger>
 												{#snippet child({ props })}
 													<button

@@ -3,6 +3,7 @@ package agent
 import (
 	"cmp"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/samber/mo"
@@ -11,7 +12,7 @@ import (
 )
 
 var (
-	commandRoutes = []commandRoute{
+	commandRoutes = []CommandRoute{
 		{Method: http.MethodGet, PathPattern: "/api/health", CommandName: "system.health"},
 		{Method: http.MethodHead, PathPattern: "/api/health", CommandName: "system.health"},
 		{Method: http.MethodGet, PathPattern: "/api/app/version", CommandName: "system.version"},
@@ -306,11 +307,7 @@ var (
 )
 
 func CommandRoutes() []CommandRoute {
-	routes := make([]CommandRoute, len(commandRoutes))
-	for i, route := range commandRoutes {
-		routes[i] = CommandRoute(route)
-	}
-	return routes
+	return slices.Clone(commandRoutes)
 }
 
 func ResolveCommandName(method, requestPath string, stream bool) mo.Option[string] {
@@ -323,7 +320,7 @@ func ResolveCommandName(method, requestPath string, stream bool) mo.Option[strin
 	return mo.Some(route.CommandName)
 }
 
-func (n *commandRouteNode) match(parts []string) *commandRoute {
+func (n *commandRouteNode) match(parts []string) *CommandRoute {
 	if n == nil {
 		return nil
 	}
@@ -339,7 +336,7 @@ func (n *commandRouteNode) match(parts []string) *commandRoute {
 	return n.param.match(parts[1:])
 }
 
-func buildCommandRouteIndex(routes []commandRoute) commandRouteIndex {
+func buildCommandRouteIndex(routes []CommandRoute) commandRouteIndex {
 	index := make(commandRouteIndex)
 	for i := range routes {
 		route := &routes[i]
