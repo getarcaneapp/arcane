@@ -22,6 +22,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"go.yaml.in/yaml/v4"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
@@ -250,6 +251,19 @@ func ProjectContainerUse(composeName string, containers []container.Summary) ([]
 		}
 	}
 	return active, inUse
+}
+
+// NewComposeVolumeTarget describes how to recreate a project volume for the Compose project: as Compose would, or, for
+// an external volume, with the Docker labels recorded with its data.
+func NewComposeVolumeTarget(composeName string, volume types.ProjectVolume, recordedLabels map[string]string) types.ComposeVolumeTarget {
+	external := volume.Kind == types.ProjectVolumeExternal
+	return types.ComposeVolumeTarget{ //exhaustruct:enforce
+		Labels:   kit.Ternary(external, recordedLabels, volume.Labels),
+		Project:  composeName,
+		Key:      volume.Key,
+		Driver:   volume.Driver,
+		External: external,
+	}
 }
 
 // ComposeVolumeTargetCreateOptions creates a restore target as Compose would, or as its own volume when it is external.

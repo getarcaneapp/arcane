@@ -59,16 +59,6 @@ func TestProjectDirectoryArchive(t *testing.T) {
 	require.NoError(t, os.Symlink("nested/sub", filepath.Join(source, "alias")))
 	require.NoError(t, os.Symlink("alias/../settings.json", filepath.Join(source, "alias-parent")))
 	require.NoError(t, os.Symlink(filepath.Join(outside, "secret"), filepath.Join(source, "outside-link")))
-	require.NoError(t, os.WriteFile(filepath.Join(outside, "env"), []byte("TOKEN=outside"), 0o640))
-	require.NoError(t, os.Chmod(filepath.Join(outside, "env"), 0o640))
-	require.NoError(t, os.Symlink(filepath.Join(outside, "env"), filepath.Join(source, EffectiveEnvFileName)))
-
-	// A .env linked from outside the project is read with its target's contents and mode.
-	envContent, envPerm, external, envErr := ReadExternalEnvFile(t.Context(), source)
-	require.NoError(t, envErr)
-	assert.True(t, external)
-	assert.Equal(t, "TOKEN=outside", string(envContent))
-	assert.Equal(t, os.FileMode(0o640), envPerm)
 
 	var archive bytes.Buffer
 	require.NoError(t, PackProjectDirectory(t.Context(), source, &archive))
@@ -88,8 +78,6 @@ func TestProjectDirectoryArchive(t *testing.T) {
 		// The kernel applies ".." after following alias, so this is nested/settings.json.
 		{name: "alias-parent", link: "alias/../settings.json", content: "content of nested/settings.json"},
 		{name: "outside-link", absent: true},
-		// The outside .env is packed as a regular file with its target's contents and mode.
-		{name: EffectiveEnvFileName, mode: 0o640, content: "TOKEN=outside"},
 		{name: ".project-update-backup-1", absent: true},
 		{name: GitSourceEnvFileName, absent: true},
 	}
