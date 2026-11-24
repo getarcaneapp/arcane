@@ -227,7 +227,6 @@ type (
 
 		SystemBackupsCategoryPlaceholder SettingVariable `key:"systemBackupsCategory,internal" default:"" meta:"label=Backups;type=internal;keywords=backup,recovery,restore,configuration,secrets;category=systembackups;description=Back up and restore this Arcane instance" catmeta:"id=systembackups;title=Backups;icon=backup;url=/system/backups;description=Create encrypted recovery backups of Arcane data and configuration"`
 		SystemVolumeBackupConfig         SettingVariable `key:"systemVolumeBackupConfig,internal" default:"{\"policies\":[]}"`
-		ProjectBackupConfig              SettingVariable `key:"projectBackupConfig,internal" default:"{\"policies\":[]}"`
 		// ProjectBackupDiscoveryPending is set by a system restore so project backups are discovered on the next start.
 		ProjectBackupDiscoveryPending SettingVariable `key:"projectBackupDiscoveryPending,internal" default:"false"`
 

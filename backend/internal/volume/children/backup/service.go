@@ -72,6 +72,7 @@ type (
 	Dependencies struct {
 		Store            Store
 		DB               *database.DB
+		Policies         *backup.Policies
 		Docker           *docker.DockerClientService
 		Events           *event.EventService
 		Settings         *settings.SettingsService
@@ -105,11 +106,11 @@ type (
 
 	// backupPlan is one run's resolved destinations; it doubles as the run's recovery checkpoint.
 	backupPlan struct {
-		Policy          *policies.VolumeBackupPolicy `json:"policy,omitempty"`
-		BackupID        string                       `json:"backupId"`
-		S3DestinationID string                       `json:"s3DestinationId"`
-		LocalEnabled    bool                         `json:"localEnabled"`
-		S3Enabled       bool                         `json:"s3Enabled"`
+		Policy          *backup.Policy `json:"policy,omitempty"`
+		BackupID        string         `json:"backupId"`
+		S3DestinationID string         `json:"s3DestinationId"`
+		LocalEnabled    bool           `json:"localEnabled"`
+		S3Enabled       bool           `json:"s3Enabled"`
 	}
 
 	// manualBackupInput is a manual backup's workflow payload; the row and plan are frozen before it starts.
@@ -144,6 +145,7 @@ func NewService(deps Dependencies) *Service {
 	s := &Service{deps: deps}
 	s.policies = policies.NewService(policies.Dependencies{
 		DB:             deps.DB,
+		Policies:       deps.Policies,
 		S3Destinations: deps.S3Destinations,
 		Settings:       deps.Settings,
 		Ctx:            deps.Ctx,
@@ -228,18 +230,8 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	s.policies.RegisterJobsOnStartup(ctx)
 }
 
-// HasEnabledBackupPolicy reports whether a volume-level schedule takes precedence over centralized backups.
-func (s *Service) HasEnabledBackupPolicy(ctx context.Context, volumeName string) (bool, error) {
-	return s.policies.HasEnabledBackupPolicy(ctx, volumeName)
-}
-
 func (s *Service) RemovePolicies(ctx context.Context, volumeName string) {
 	s.policies.Remove(ctx, volumeName)
-}
-
-// RenamePolicies moves a renamed volume's backup policies inside the caller's transaction.
-func (s *Service) RenamePolicies(tx *gorm.DB, oldName, newName string) error {
-	return s.policies.Rename(tx, oldName, newName)
 }
 
 func (s *Service) List(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
@@ -266,7 +258,7 @@ func (s *Service) List(ctx context.Context, volumeName string, params pagination
 	return backups, page, nil
 }
 
-func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger string, request types.CreateVolumeBackupRequest, policy *policies.VolumeBackupPolicy) (backupPlan, error) {
+func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger string, request types.CreateVolumeBackupRequest, policy *backup.Policy) (backupPlan, error) {
 	destination := request.Destination
 	validDestinations := []types.VolumeBackupDestination{types.VolumeBackupDestinationLocal, types.VolumeBackupDestinationS3, types.VolumeBackupDestinationLocalS3}
 	if destination != "" && !slices.Contains(validDestinations, destination) {
@@ -274,8 +266,10 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	}
 	if trigger != types.VolumeBackupTriggerSafety && policy == nil {
 		var err error
-		if policy, err = s.policies.Policy(ctx, volumeName, request.PolicyID); err != nil {
-			return backupPlan{}, err
+		if request.PolicyID != "" {
+			if policy, err = s.deps.Policies.Get(ctx, backup.PolicyVolume, volumeName, request.PolicyID); err != nil {
+				return backupPlan{}, err
+			}
 		}
 		// A scheduled run resolves under its admission, after its policy may have been disabled.
 		if request.PolicyID != "" && (policy == nil || (trigger == types.VolumeBackupTriggerScheduled && !policy.Enabled)) {
@@ -335,21 +329,23 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 		return nil, common.Classify(common.ErrBadRequest, errors.New("invalid system-managed volume backup policy id"))
 	}
 	trigger = cmp.Or(trigger, types.VolumeBackupTriggerManual)
-	transient := &policies.VolumeBackupPolicy{
-		ID:              policyID,
-		VolumeName:      volumeName,
-		Enabled:         true,
+	transient := &backup.Policy{ //exhaustruct:enforce
+		BaseModel:       database.BaseModel{ID: policyID, CreatedAt: time.Time{}, UpdatedAt: nil},
+		SubjectKind:     backup.PolicyVolume,
+		SubjectID:       volumeName,
 		Schedule:        policy.Schedule,
+		S3DestinationID: policy.S3DestinationID,
+		Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil},
 		RetentionCount:  policy.RetentionCount,
+		Enabled:         true,
 		StopContainers:  policy.StopContainers,
 		LocalEnabled:    policy.LocalEnabled,
 		S3Enabled:       policy.S3Enabled,
-		S3DestinationID: policy.S3DestinationID,
 	}
 	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, trigger, policyID, func() (backupPlan, error) {
 		// A volume-level policy enabled while a scheduled run waited takes precedence over it.
 		if trigger == types.VolumeBackupTriggerScheduled {
-			overridden, err := s.policies.HasEnabledBackupPolicy(ctx, volumeName)
+			overridden, err := s.deps.Policies.HasEnabled(ctx, backup.PolicyVolume, volumeName)
 			if err != nil {
 				return backupPlan{}, err
 			}
@@ -777,7 +773,7 @@ func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.Unm
 	for _, item := range listed.Items {
 		volumeNames = append(volumeNames, item.Name)
 	}
-	policyIDs, err := s.policies.IDs(ctx)
+	policyIDs, err := s.deps.Policies.IDs(ctx, backup.PolicyVolume)
 	if err != nil {
 		return nil, err
 	}

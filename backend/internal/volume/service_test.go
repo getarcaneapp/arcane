@@ -26,6 +26,7 @@ import (
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -119,17 +120,18 @@ func newVolumeBackupTestDB(t *testing.T, name string) *gorm.DB {
 
 func TestRenameVolumeMetadataPreservesPoliciesAndHistory(t *testing.T) {
 	gormDB := newVolumeBackupTestDB(t, "volume-rename-metadata")
-	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES (?, ?, ?)", "policy-1", "source-data", "0 2 * * *").Error)
+	require.NoError(t, gormDB.Exec("INSERT INTO backup_policies (id, subject_kind, subject_id, schedule) VALUES (?, ?, ?, ?)", "policy-1", "volume", "source-data", "0 2 * * *").Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "source-data", PolicyID: "policy-1"}).Error)
 
 	service := NewVolumeService(VolumeServiceParams{
-		Config: &config.Config{},
-		DB:     &database.DB{DB: gormDB},
+		Config:   &config.Config{},
+		DB:       &database.DB{DB: gormDB},
+		Policies: backup.NewPolicies(&database.DB{DB: gormDB}),
 	})
 	require.NoError(t, service.renameVolumeMetadata(t.Context(), "source-data", "renamed-data"))
 
 	var renamedPolicy string
-	require.NoError(t, gormDB.Raw("SELECT volume_name FROM volume_backup_policies WHERE id = ?", "policy-1").Scan(&renamedPolicy).Error)
+	require.NoError(t, gormDB.Raw("SELECT subject_id FROM backup_policies WHERE id = ?", "policy-1").Scan(&renamedPolicy).Error)
 	require.Equal(t, "renamed-data", renamedPolicy)
 
 	var backupEntry VolumeBackup
