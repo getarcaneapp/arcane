@@ -116,6 +116,23 @@ func New(p Params) *Service {
 	}
 }
 
+func (s *Service) Unchanged(ctx context.Context, sync *projectpkg.GitOpsSync) bool {
+	if slices.Contains(projectpkg.GitOpsPushModes, sync.Mode) || sync.PendingRedeploy || kit.FromPtr(sync.LastSyncStatus) != "success" || sync.Repository == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	authConfig, err := s.repoService.GetAuthConfig(ctx, sync.Repository)
+	if err != nil {
+		return false
+	}
+	head, exists, err := s.repoService.RemoteBranchHead(ctx, sync.Repository.URL, sync.Branch, authConfig)
+	if err != nil || !exists || head != kit.FromPtr(sync.LastSyncCommit) {
+		return false
+	}
+	return s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", sync.ID).Update("last_sync_at", time.Now()).Error == nil
+}
+
 func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult) (*types.GitOpsSyncResult, error) {
 	pinned := ""
 	if run, ok := jobcontext.Run(ctx); ok {
@@ -481,11 +498,12 @@ func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSy
 
 	// The non-suffixing create: a name collision means the binding is broken, never a "-N" duplicate.
 	project, err := s.projectService.CreateProject(ctx, projectpkg.CreateProjectOptions{
-		EnvContent:     source.envContent,
-		Actor:          actor,
-		Name:           sync.ProjectName,
-		ComposeContent: source.composeContent,
-		ExactName:      true,
+		EnvContent:      source.envContent,
+		Actor:           actor,
+		Name:            sync.ProjectName,
+		ComposeContent:  source.composeContent,
+		ComposeFileName: kit.Ternary(sync.Mode == types.GitOpsSyncModeBidirectional, filepath.Base(sync.ComposePath), ""),
+		ExactName:       true,
 	})
 	if errors.Is(err, projects.ErrProjectDirExists) || errors.Is(err, common.ErrProjectWorkspaceConflict) {
 		err = common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s cannot create project %q: a project or directory with that name "+

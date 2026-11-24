@@ -115,7 +115,7 @@
 		};
 	};
 
-	async function handleConfirm(environmentIds?: string[]) {
+	async function handleConfirm(environmentIds: string[] = environmentStore.shown.map((env) => env.id)) {
 		const attempt = ++startAttempt;
 		starting = true;
 

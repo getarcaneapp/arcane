@@ -150,6 +150,17 @@ export async function settleAcrossEnvironments<T>(
 	return values;
 }
 
+export async function actAcrossEnvironments<C extends object>(
+	environments: EnvironmentRef[],
+	run: (scope: string, config?: APIRequestConfig) => Promise<C>
+): Promise<{ environment: EnvironmentRef; value: C }[]> {
+	const [only] = environments;
+	if (environments.length === 1 && only) return [{ environment: only, value: await run(only.id) }];
+	const { byEnvironment, failedEnvironments } = await readEachEnvironment(environments, run, {} as C);
+	toastEnvironmentFailures(failedEnvironments);
+	return byEnvironment.map(({ environment, data }) => ({ environment, value: data }));
+}
+
 export function toastEnvironmentFailures(failures: EnvironmentFailure[]) {
 	for (const { environment, message } of failures) {
 		toast.error(m.all_environments_request_failed({ environment: environment.name }), {

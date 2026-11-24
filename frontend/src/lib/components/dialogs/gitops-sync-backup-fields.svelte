@@ -62,6 +62,14 @@
 	}: Props = $props();
 
 	const inputs = $derived(form.inputs);
+
+	const newProjectOption = '__new__';
+	const projectOptions = $derived(
+		bidirectional && !isEditMode
+			? [{ value: newProjectOption, label: m.create_new_project() }, ...backupProjectOptions]
+			: backupProjectOptions
+	);
+	const isNewProject = $derived(bidirectional && !isEditMode && !selectedProjectId);
 </script>
 
 {#snippet envFileBadge(entry: WorkspaceDisplayEntry)}
@@ -76,21 +84,22 @@
 	<SelectWithLabel
 		id="backupProject"
 		label={m.project()}
-		value={selectedProjectId}
-		options={backupProjectOptions}
+		value={selectedProjectId || newProjectOption}
+		options={projectOptions}
 		disabled={isEditMode}
 		error={inputs.projectId.error}
 		onValueChange={(value) => {
 			if (!value) return;
-			if (value !== selectedProjectId) inputs.includeEnvFile.value = false;
-			inputs.projectId.value = value;
+			const projectId = value === newProjectOption ? '' : value;
+			if (projectId !== selectedProjectId) inputs.includeEnvFile.value = false;
+			inputs.projectId.value = projectId;
 		}}
 	/>
 
 	<FormInput label={m.git_sync_name()} type="text" placeholder={backupNamePlaceholder} bind:input={inputs.name} />
 </div>
 
-{@render source(false)}
+{@render source(isNewProject)}
 
 <div class="space-y-2">
 	<Label for="backupDirectory">{m.destination_folder()}</Label>
@@ -112,7 +121,7 @@
 	{/if}
 </div>
 
-<div class="space-y-2">
+<div class={isNewProject ? 'hidden' : 'space-y-2'}>
 	<div class="flex h-56 flex-col overflow-hidden rounded-md border border-border/50">
 		{#if !selectedProjectId}
 			<p class="px-3 py-2 text-xs text-muted-foreground">{m.project_required()}</p>

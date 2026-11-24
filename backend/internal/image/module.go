@@ -229,9 +229,10 @@ func RegisterImages(
 		Method:      http.MethodPost,
 		Path:        "/agents/{id}/images/prune",
 		Summary:     "Prune unused images",
-		Description: "Remove unused Docker images",
+		Description: "Remove unused Docker images; a comma-separated environment list requires images:prune in every one",
 		Tags:        []string{"Images"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermImagesPrune, h.PruneImages)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

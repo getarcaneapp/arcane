@@ -9,7 +9,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/middleware"
-	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/logging"
@@ -19,19 +18,17 @@ type (
 	Module struct {
 		service         *ContainerService
 		dockerService   *docker.DockerClientService
-		settingsService *settings.SettingsService
 		activityService *activity.ActivityService
 	}
 )
 
-func New(service *ContainerService, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, activityService *activity.ActivityService) *Module {
+func New(service *ContainerService, dockerService *docker.DockerClientService, activityService *activity.ActivityService) *Module {
 	if err := service.stats.ObserveResources(otel.Meter(logging.InstrumentationName), service.dockerService.ListContainers); err != nil {
 		otel.Handle(err)
 	}
 	return &Module{
 		service:         service,
 		dockerService:   dockerService,
-		settingsService: settingsService,
 		activityService: activityService,
 	}
 }
@@ -45,24 +42,22 @@ func (m *Module) Service() *ContainerService {
 
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
-		RegisterContainers(api, nil, nil, nil, nil, appCtx)
+		RegisterContainers(api, nil, nil, nil, appCtx)
 		return
 	}
-	RegisterContainers(api, m.service, m.dockerService, m.settingsService, m.activityService, appCtx)
+	RegisterContainers(api, m.service, m.dockerService, m.activityService, appCtx)
 }
 
 func RegisterContainers(
 	api huma.API,
 	containerSvc *ContainerService,
 	dockerSvc *docker.DockerClientService,
-	settingsSvc *settings.SettingsService,
 	activitySvc *activity.ActivityService,
 	appCtx handlerutil.ActivityAppContext,
 ) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
 		dockerService:    dockerSvc,
-		settingsService:  settingsSvc,
 		activityService:  activitySvc,
 		appCtx:           appCtx.Context(),
 	}

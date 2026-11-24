@@ -630,6 +630,7 @@ func (s *Service) AggregateDiskUsage(ctx context.Context) (types.ApiResponse[typ
 			Resolve: scope.Resolve,
 			Path:    scope.Path,
 			IDs:     scope.IDs,
+			Body:    scope.Body,
 			Timeout: timeouts.DefaultDockerDiskUsage,
 		})
 	}
@@ -644,6 +645,12 @@ func (s *Service) AggregateDiskUsage(ctx context.Context) (types.ApiResponse[typ
 			}
 		}
 		return usage
+	})
+}
+
+func (s *Service) AggregatePruneAll(ctx context.Context) (types.ApiResponse[types.PruneAllResult], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.PruneAllResult]) types.PruneAllResult {
+		return types.PruneAllResult{Success: len(environments) > 0}
 	})
 }
 

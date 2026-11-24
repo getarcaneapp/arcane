@@ -33,6 +33,7 @@ type (
 	Spec[T any] struct {
 		Body                         any
 		Render                       func(T) error
+		Check                        func(T) error
 		Method, Path, FailureMessage string
 		Timeout                      time.Duration
 	}
@@ -126,6 +127,32 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 	merged, isMerged := cmd.Context().Value(mergedScopeKey{}).(*mergedScope)
 	if isMerged {
 		merged.failures = append(merged.failures, result.FailedEnvironments...)
+	}
+	if isMerged && merged.mutation {
+		environments := result.Environments
+		if len(environments) == 0 && len(result.FailedEnvironments) == 0 {
+			environments = []types.EnvironmentData[jsontext.Value]{{Environment: types.EnvironmentRef{ID: c.EnvID()}, Data: result.Data}}
+		}
+		var failures []error
+		for _, environment := range environments {
+			name := fmt.Sprintf("%s (%s)", cmp.Or(merged.names[environment.Environment.ID], environment.Environment.Name), environment.Environment.ID)
+			var data T
+			environmentErr := json.Unmarshal(environment.Data, &data)
+			if environmentErr == nil && !jsonMode {
+				output.Header("%s", name)
+				environmentErr = spec.Render(data)
+			}
+			if environmentErr == nil && spec.Check != nil {
+				environmentErr = spec.Check(data)
+			}
+			if environmentErr != nil {
+				failures = append(failures, fmt.Errorf("%s: %w", name, environmentErr))
+			}
+		}
+		if jsonMode {
+			failures = append(failures, PrintJSON(result))
+		}
+		return errors.Join(failures...)
 	}
 	if jsonMode && isMerged {
 		return PrintJSON(result)

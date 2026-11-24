@@ -29,7 +29,6 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/middleware"
@@ -237,22 +236,27 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	if err != nil {
 		return types.ProjectBackup{}, err
 	}
-	entry := &ProjectBackup{
-		BaseModel:       database.BaseModel{ID: uuid.New().String(), CreatedAt: time.Now()},
-		ProjectID:       project.ID,
-		ProjectName:     project.Name,
-		ComposeName:     project.ComposeName,
-		Status:          types.VolumeBackupStatusRunning,
-		Trigger:         types.VolumeBackupTriggerManual,
-		Destination:     backup.Destination(p.LocalEnabled, p.S3Enabled),
-		S3DestinationID: p.S3DestinationID,
-		Volumes:         backupVolumes(p.Volumes),
+	entry := &ProjectBackup{ //exhaustruct:enforce
+		BaseModel:         database.BaseModel{ID: p.BackupID, CreatedAt: time.Now(), UpdatedAt: nil},
+		CompletedAt:       nil,
+		ProjectID:         project.ID,
+		ProjectName:       project.Name,
+		ComposeName:       project.ComposeName,
+		Status:            types.VolumeBackupStatusRunning,
+		Trigger:           types.VolumeBackupTriggerManual,
+		Destination:       backup.Destination(backup.DestinationOptions{Local: p.LocalEnabled, Remote: p.S3Enabled}),
+		LocalSnapshotID:   "",
+		RemoteSnapshotID:  "",
+		S3DestinationID:   p.S3DestinationID,
+		Error:             "",
+		Volumes:           backupVolumes(p.Volumes),
+		Size:              0,
+		StoppedContainers: false,
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		release(ctx, leases)
 		return types.ProjectBackup{}, fmt.Errorf("failed to save project backup: %w", createErr)
 	}
-	p.BackupID = entry.ID
 	releaseHeld := s.hold(keys, entry.ID, leases)
 	activityID, err := s.flow.Submit(ctx, s.workflow, runInput{Requester: requester, Plan: p}, activity.StartRequest{
 		EnvironmentID: opts.EnvironmentID, ResourceType: new("project"), ResourceID: new(project.ID), ResourceName: new(project.Name), StartedBy: &opts.User,
@@ -295,7 +299,8 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 	if err != nil {
 		return plan{}, err
 	}
-	return plan{
+	return plan{ //exhaustruct:enforce
+		BackupID:        uuid.New().String(),
 		ProjectID:       project.ID,
 		S3DestinationID: s3DestinationID,
 		Volumes:         planned,
@@ -326,7 +331,7 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 		case wanted && requested != nil && !volume.Included:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s keeps its data outside Docker (%s), so it cannot be backed up", volume.Key, volume.Kind))
 		}
-		inspected = append(inspected, types.ProjectVolume{
+		inspected = append(inspected, types.ProjectVolume{ //exhaustruct:enforce
 			Labels: volume.Labels,
 			// A restore recreates a missing external volume with its own labels, not Compose's.
 			DockerLabels: kit.Ternary(volume.Kind == types.ProjectVolumeExternal && volume.Included, dockerVolumes[volume.Name].Labels, nil),
@@ -334,8 +339,10 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 			Name:         volume.Name,
 			Kind:         volume.Kind,
 			Driver:       volume.Driver,
+			Archive:      volume.Archive,
 			Included:     volume.Included && wanted,
 			Missing:      volume.Missing,
+			InUse:        volume.InUse,
 			BackupStore:  volume.BackupStore,
 		})
 	}
@@ -345,43 +352,6 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 		}
 	}
 	return inspected, nil
-}
-
-// mountedVolumeNames are every volume of the project, captured or not, so no volume backup or restore starts or stops
-// the project's containers during the capture.
-func (p plan) mountedVolumeNames() []string {
-	var names []string
-	for _, volume := range p.Volumes {
-		if volume.Name != "" {
-			names = append(names, volume.Name)
-		}
-	}
-	slices.Sort(names)
-	return slices.Compact(names)
-}
-
-func (p plan) volumeNames() []string {
-	var names []string
-	for _, volume := range p.Volumes {
-		if volume.Included {
-			names = append(names, volume.Name)
-		}
-	}
-	slices.Sort(names)
-	return slices.Compact(names)
-}
-
-// admissions are the project's run and a volume-backup run for each volume, in the order every run takes them.
-func admissions(projectID string, volumeNames []string) []types.SchedulerAdmissionKey {
-	return append([]types.SchedulerAdmissionKey{{Scope: admissionScope, ID: projectID}}, volumeAdmissions(volumeNames)...)
-}
-
-func volumeAdmissions(names []string) []types.SchedulerAdmissionKey {
-	keys := make([]types.SchedulerAdmissionKey, 0, len(names))
-	for _, name := range names {
-		keys = append(keys, types.SchedulerAdmissionKey{Scope: backup.VolumeAdmissionScope, ID: name})
-	}
-	return keys
 }
 
 // admit takes every admission without waiting; run takes over the leases a start parked for it.
@@ -415,12 +385,6 @@ func (s *Service) hold(keys []types.SchedulerAdmissionKey, run string, leases []
 		for _, releaseLease := range releases {
 			releaseLease(ctx)
 		}
-	}
-}
-
-func release(ctx context.Context, leases []*runs.Lease) {
-	for _, lease := range leases {
-		lease.Release(ctx)
 	}
 }
 
@@ -526,7 +490,7 @@ func (s *Service) adopt(ctx context.Context, previous types.SchedulerRun, entry 
 		if *recorded != "" || !kit.Ternary(remote, p.S3Enabled, p.LocalEnabled) || !attempted(kit.Ternary(remote, "remote", "local")) {
 			continue
 		}
-		repository, repoErr := s.repository(ctx, dockerClient, p, remote)
+		repository, repoErr := s.repository(ctx, dockerClient, p.S3DestinationID, remote)
 		if repoErr != nil {
 			return repoErr
 		}
@@ -545,9 +509,9 @@ func (s *Service) adopt(ctx context.Context, previous types.SchedulerRun, entry 
 	return s.deps.DB.WithContext(ctx).Save(entry).Error
 }
 
-func (s *Service) repository(ctx context.Context, dockerClient *client.Client, p plan, remote bool) (backup.Repository, error) {
+func (s *Service) repository(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool) (backup.Repository, error) {
 	if remote {
-		return s.deps.Repository.Remote(ctx, p.S3DestinationID, "")
+		return s.deps.Repository.Remote(ctx, s3DestinationID, "")
 	}
 	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 }
@@ -654,7 +618,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan) (e
 		return err
 	}
 	remote := !p.LocalEnabled
-	repository, err := s.repository(ctx, dockerClient, p, remote)
+	repository, err := s.repository(ctx, dockerClient, p.S3DestinationID, remote)
 	if err != nil {
 		return err
 	}
@@ -774,96 +738,12 @@ func (s *Service) checkPlanVolumes(ctx context.Context, project types.Project, p
 	return nil
 }
 
-// markInUse returns the volumes with InUse set on each included one that a container outside the project mounts.
-func markInUse(planned []types.ProjectVolume, inUse map[string]bool) []types.ProjectVolume {
-	marked := make([]types.ProjectVolume, 0, len(planned))
-	for _, volume := range planned {
-		marked = append(marked, types.ProjectVolume{
-			Labels:       volume.Labels,
-			DockerLabels: volume.DockerLabels,
-			Key:          volume.Key,
-			Name:         volume.Name,
-			Kind:         volume.Kind,
-			Driver:       volume.Driver,
-			Archive:      volume.Archive,
-			Included:     volume.Included,
-			Missing:      volume.Missing,
-			InUse:        volume.Included && inUse[volume.Name],
-			BackupStore:  volume.BackupStore,
-		})
-	}
-	return marked
-}
-
 func (s *Service) record(ctx context.Context, p plan) error {
 	checkpoint, err := json.Marshal(p)
 	if err != nil {
 		return err
 	}
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: targetType, ID: p.ProjectID, Status: types.RunStatusRunning, RecoveryData: checkpoint})
-}
-
-func snapshotTags(projectID, backupID string) []string {
-	return []string{backup.ProjectSnapshotTag, "arcane-project:" + projectID, backup.RunSnapshotTag(backupID)}
-}
-
-// snapshotInput lays the project out under /snapshot: its files at project/, each captured volume at
-// volumes/<name>/, and the manifest at meta/.
-func snapshotInput(projectMounts []mount.Mount, metaVolume, backupID string, p plan) backup.CreateSnapshotInput {
-	mounts := slices.Clone(projectMounts)
-	for _, name := range p.volumeNames() {
-		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: name, Target: path.Join(snapshotRoot, "volumes", name), ReadOnly: true})
-	}
-	mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: metaVolume, Target: path.Join(snapshotRoot, "meta"), ReadOnly: true})
-	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{snapshotRoot}, AsPath: "/", Tags: snapshotTags(p.ProjectID, backupID)}
-}
-
-// nestedTargets names the mounts inside a project folder, given the folder's own mount first.
-func nestedTargets(mounts []mount.Mount) []string {
-	targets := make([]string, 0, len(mounts)-1)
-	for _, nested := range mounts[1:] {
-		targets = append(targets, nested.Target)
-	}
-	return targets
-}
-
-// projectSourceMounts resolves the host mounts behind the project directory source names.
-func projectSourceMounts(ctx context.Context, dockerClient *client.Client, source backup.SourceMountOptions) ([]mount.Mount, error) {
-	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
-	if err != nil {
-		return nil, err
-	}
-	resolved, err := backup.SourceMounts(backup.SourceMountOptions{
-		Mounts:        mounts,
-		ContainerPath: source.ContainerPath,
-		Target:        source.Target,
-		InContainer:   inContainer,
-		Writable:      source.Writable,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return volumes.BindSubpaths(ctx, dockerClient, resolved)
-}
-
-func backupManifest(project types.Project, p plan, externalEnv bool) types.ProjectManifest {
-	// A directory that doesn't resolve has only its configured path; the snapshot then fails to copy it anyway.
-	resolved, _ := filepath.EvalSymlinks(project.Path)
-	return types.ProjectManifest{
-		CreatedAt:     time.Now().UTC(),
-		Kind:          types.ProjectManifestKindBackup,
-		ArcaneVersion: config.Version,
-		Project: types.ProjectManifestProject{
-			ID:          project.ID,
-			Name:        project.Name,
-			ComposeName: project.ComposeName,
-		},
-		ProjectDirs:   slices.Compact([]string{project.Path, cmp.Or(resolved, project.Path)}),
-		Volumes:       p.Volumes,
-		FormatVersion: types.ProjectManifestFormatVersion,
-		Consistent:    p.StopContainers && !slices.ContainsFunc(p.Volumes, func(volume types.ProjectVolume) bool { return volume.InUse }),
-		ExternalEnv:   externalEnv,
-	}
 }
 
 // writeManifest stores the manifest, and any external .env, in a new volume. The holder mounts only that volume and
@@ -1028,7 +908,7 @@ func (s *Service) Delete(ctx context.Context, projectID, backupID string) error 
 	}
 	if entry.RemoteSnapshotID != "" {
 		if forgetErr := s.forget(ctx, dockerClient, entry, true); forgetErr != nil {
-			entry.Destination = backup.Destination(entry.LocalSnapshotID != "", entry.RemoteSnapshotID != "")
+			entry.Destination = backup.Destination(backup.DestinationOptions{Local: entry.LocalSnapshotID != "", Remote: entry.RemoteSnapshotID != ""})
 			return errors.Join(fmt.Errorf("failed to delete the S3 project snapshot: %w", forgetErr), s.deps.DB.WithContext(ctx).Save(entry).Error)
 		}
 	}
@@ -1047,7 +927,7 @@ func (s *Service) forget(ctx context.Context, dockerClient *client.Client, entry
 			return nil
 		}
 	}
-	repository, err := s.repository(ctx, dockerClient, plan{S3DestinationID: entry.S3DestinationID}, remote)
+	repository, err := s.repository(ctx, dockerClient, entry.S3DestinationID, remote)
 	if err != nil {
 		return err
 	}
@@ -1056,14 +936,6 @@ func (s *Service) forget(ctx context.Context, dockerClient *client.Client, entry
 		return err
 	}
 	return s.deps.Engine.ForgetSnapshots(ctx, dockerClient, repository, password, []string{kit.Ternary(remote, entry.RemoteSnapshotID, entry.LocalSnapshotID)})
-}
-
-func backupVolumes(classified []types.ProjectVolume) []types.ProjectBackupVolume {
-	captured := make([]types.ProjectBackupVolume, 0, len(classified))
-	for _, volume := range classified {
-		captured = append(captured, types.ProjectBackupVolume{Key: volume.Key, Name: volume.Name, Included: volume.Included})
-	}
-	return captured
 }
 
 // StartRestore checks an in-place restore against the backup, admits it, and hands it to the workflow, which checks the
@@ -1812,7 +1684,7 @@ func (s *Service) restorable(ctx context.Context, projectID, backupID string) (*
 // source opens the repository holding the backup's snapshot, preferring the local copy.
 func (s *Service) source(ctx context.Context, dockerClient *client.Client, entry *ProjectBackup) (snapshotSource, error) {
 	remote := entry.LocalSnapshotID == ""
-	repository, err := s.repository(ctx, dockerClient, plan{S3DestinationID: entry.S3DestinationID}, remote)
+	repository, err := s.repository(ctx, dockerClient, entry.S3DestinationID, remote)
 	if err != nil {
 		return snapshotSource{}, err
 	}
