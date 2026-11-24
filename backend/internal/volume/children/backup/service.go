@@ -17,7 +17,6 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"gorm.io/gorm"
@@ -448,26 +447,30 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	if err != nil {
 		return err
 	}
-	var stopped []container.Summary
+	capture := backup.CapturePlan{
+		Inspect: func(ctx context.Context, name string) (types.Volume, bool, error) {
+			return backup.InspectVolume(ctx, dockerClient, name)
+		},
+		Stop:     nil,
+		Rejected: nil,
+		// Volume snapshots keep the volume's contents at their root, as every earlier volume backup does.
+		Mounts:  []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true}},
+		Volumes: []string{volumeName},
+	}
 	if plan.Policy != nil && plan.Policy.StopContainers {
-		stopped, err = s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}}, user)
-		defer func() {
-			if len(stopped) > 0 {
-				_, restartErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user)
-				err = errors.Join(err, restartErr)
+		capture.Stop = func(ctx context.Context) (func(context.Context) error, error) {
+			stopped, stopErr := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}}, user)
+			start := func(ctx context.Context) error {
+				_, startErr := s.deps.Containers.StartContainers(ctx, stopped, user)
+				return startErr
 			}
-		}()
-		if err != nil {
-			return err
+			return start, stopErr
 		}
 	}
-	if snapshotErr := s.createSnapshots(ctx, dockerClient, entry, plan); snapshotErr != nil {
-		return snapshotErr
-	}
-	if len(stopped) > 0 {
-		if stopped, err = s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, user); err != nil {
-			return err
-		}
+	if captureErr := backup.Capture(ctx, capture, func(ctx context.Context, mounts []mount.Mount) error {
+		return s.createSnapshots(ctx, dockerClient, entry, plan, mounts[0])
+	}); captureErr != nil {
+		return captureErr
 	}
 	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
 	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
@@ -496,9 +499,8 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	return ctx.Err()
 }
 
-// createSnapshots writes the plan's missing snapshots; S3 replicates the local snapshot when both are enabled.
-func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan) error {
-	source := mount.Mount{Type: mount.TypeVolume, Source: entry.VolumeName, Target: "/volume", ReadOnly: true}
+// createSnapshots writes the plan's missing snapshots of the mounted volume; S3 replicates the local snapshot when both are enabled.
+func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, source mount.Mount) error {
 	input := backup.RootSnapshotInput(source, backup.RunSnapshotTag(entry.ID))
 	if plan.LocalEnabled && entry.LocalSnapshotID == "" {
 		repository, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})

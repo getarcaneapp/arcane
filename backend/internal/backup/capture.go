@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -60,6 +61,18 @@ func VolumePart(name string) mount.Mount {
 	return mount.Mount{Type: mount.TypeVolume, Source: name, Target: path.Join(SnapshotRoot, "volumes", name), ReadOnly: true}
 }
 
+// InspectVolume reports the Docker volume, or that it does not exist.
+func InspectVolume(ctx context.Context, dockerClient *client.Client, name string) (types.Volume, bool, error) {
+	inspect, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if errdefs.IsNotFound(err) {
+		return types.Volume{}, false, nil
+	}
+	if err != nil {
+		return types.Volume{}, false, err
+	}
+	return types.NewVolume(inspect.Volume), true, nil
+}
+
 // Capture quiesces the subject once, hands its mounted parts to read, and checks that every volume read is the one
 // planned, before the subject starts again.
 func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Context, mounts []mount.Mount) error) (err error) {
@@ -75,7 +88,7 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 			// Started again however the capture ends.
 			defer func() {
 				if startErr := start(context.WithoutCancel(ctx)); startErr != nil {
-					err = errors.Join(err, fmt.Errorf("restart project containers: %w", startErr))
+					err = errors.Join(err, fmt.Errorf("start the stopped containers again: %w", startErr))
 				}
 			}()
 		}

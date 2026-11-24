@@ -68,14 +68,7 @@ func (e localTransferEnvironment) Volume(ctx context.Context, name string) (type
 	if err != nil {
 		return types.Volume{}, false, err
 	}
-	inspect, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
-	if errdefs.IsNotFound(err) {
-		return types.Volume{}, false, nil
-	}
-	if err != nil {
-		return types.Volume{}, false, err
-	}
-	return types.NewVolume(inspect.Volume), true, nil
+	return backup.InspectVolume(ctx, dockerClient, name)
 }
 
 func (e localTransferEnvironment) Network(ctx context.Context, name string) (types.NetworkInspect, bool, error) {

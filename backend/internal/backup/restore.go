@@ -44,6 +44,8 @@ type (
 		// Discard removes the new target a failed restore leaves behind, reporting whether there was one and naming what
 		// it could not remove.
 		Discard func(ctx context.Context) (bool, []string)
+		// Subject names the target in messages; it defaults to "the project".
+		Subject string
 	}
 
 	// RestorePart pairs a part of a capture with the mount it is restored into.
@@ -61,14 +63,15 @@ const RestoreRoot = "/dest"
 // Apply stops the target, takes a safety backup and restores the backup; on any failure the target is rolled back and
 // deployed again if it ran, or discarded when the restore created it.
 func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
+	subject := r.subject()
 	if r.Stop != nil {
 		if state.Running {
-			r.report(ctx, "Stopping the project")
+			r.report(ctx, "Stopping "+subject)
 		}
 		// A stopped container can be started on its own, without the project lock the restore holds, so any running one
 		// is stopped.
 		if err := r.Stop(ctx, state); err != nil {
-			return r.rollback(ctx, state, nil, fmt.Errorf("stop the project: %w", err))
+			return r.rollback(ctx, state, nil, fmt.Errorf("stop %s: %w", subject, err))
 		}
 	}
 	if r.Safety != nil {
@@ -106,20 +109,21 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	if !*cmp.Or(state.Redeploy, new(state.Running)) {
 		return nil
 	}
-	r.report(ctx, "Deploying the project")
+	r.report(ctx, "Deploying "+subject)
 	// The project the restore deploys is its own to stop again on rollback.
 	state.MayStop = true
 	if err = r.Deploy(ctx); err != nil {
-		return r.rollback(ctx, state, created, fmt.Errorf("deploy the restored project: %w", err))
+		return r.rollback(ctx, state, created, fmt.Errorf("start %s again: %w", subject, err))
 	}
 	return nil
 }
 
-// rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran; a
-// project whose safety backup could not be restored is left down rather than started on half-restored data, and one
+// rollback restores the safety backup, removes the volumes the restore created, and deploys the target if it ran; a
+// target whose safety backup could not be restored is left down rather than started on half-restored data, and one
 // that could not be stopped is left as is. A new target is discarded.
 func (r RestoreSteps) rollback(ctx context.Context, state RestoreState, created []string, cause error) error {
 	ctx = context.WithoutCancel(ctx)
+	subject := r.subject()
 	if r.Discard != nil {
 		leftovers := r.removeAll(ctx, created)
 		discarded, left := r.Discard(ctx)
@@ -133,30 +137,35 @@ func (r RestoreSteps) rollback(ctx context.Context, state RestoreState, created 
 		return fmt.Errorf("%w; the new project and its volumes were removed", cause)
 	}
 	if state.SafetyID == "" {
+		// Without a safety backup, only volumes this restore created can have been written; removing them undoes it.
+		leftovers := r.removeAll(ctx, created)
 		if state.Running {
 			if err := r.Deploy(ctx); err != nil {
-				return fmt.Errorf("%w; nothing was restored, but the project could not be deployed again: %w", cause, err)
+				leftovers = append(leftovers, fmt.Sprintf("%s could not be started again (%v)", subject, err))
 			}
+		}
+		if len(leftovers) > 0 {
+			return fmt.Errorf("%w; nothing was restored, but %s", cause, strings.Join(leftovers, ", "))
 		}
 		return fmt.Errorf("%w; nothing was restored", cause)
 	}
 	r.report(ctx, "Rolling back to the safety backup")
 	if err := r.Stop(ctx, state); err != nil {
-		return fmt.Errorf("%w; the project could not be stopped for the rollback (%w), so it was left as is; restore the safety backup %s by hand to undo the restore", cause, err, state.SafetyID)
+		return fmt.Errorf("%w; %s could not be stopped for the rollback (%w), so it was left as is; restore the safety backup %s by hand to undo the restore", cause, subject, err, state.SafetyID)
 	}
 	undoErr := r.Write(ctx, state.SafetyID)
 	removeErr := r.Remove(ctx, created)
 	if undoErr != nil {
-		return fmt.Errorf("%w; the rollback failed too (%w), so the project was left down; restore the safety backup %s to undo the restore", cause, errors.Join(undoErr, removeErr), state.SafetyID)
+		return fmt.Errorf("%w; the rollback failed too (%w), so %s was left down; restore the safety backup %s to undo the restore", cause, errors.Join(undoErr, removeErr), subject, state.SafetyID)
 	}
 	var deployErr error
 	if state.Running {
 		deployErr = r.Deploy(ctx)
 	}
 	if failed := errors.Join(removeErr, deployErr); failed != nil {
-		return fmt.Errorf("%w; the project was rolled back to the safety backup %s, but the rollback hit errors: %w", cause, state.SafetyID, failed)
+		return fmt.Errorf("%w; %s was rolled back to the safety backup %s, but the rollback hit errors: %w", cause, subject, state.SafetyID, failed)
 	}
-	return fmt.Errorf("%w; the project was rolled back to the safety backup %s", cause, state.SafetyID)
+	return fmt.Errorf("%w; %s was rolled back to the safety backup %s", cause, subject, state.SafetyID)
 }
 
 // removeAll removes the volumes the restore created one by one and names those it could not remove.
@@ -169,6 +178,8 @@ func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string 
 	}
 	return leftovers
 }
+
+func (r RestoreSteps) subject() string { return cmp.Or(r.Subject, "the project") }
 
 func (r RestoreSteps) report(ctx context.Context, message string) {
 	if r.Report != nil {
