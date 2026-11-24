@@ -38,7 +38,6 @@ type AgentRouterParams struct {
 	HandlerDeps    api.HandlerDeps
 	AuthMiddleware *auth.AuthMiddleware
 	TunnelRegistry *agent.TunnelRegistry
-	TunnelServer   *agent.TunnelServer
 }
 
 var loggerSkipPatterns = []string{
@@ -63,17 +62,12 @@ func newAgentRouter(p AgentRouterParams) *echo.Echo {
 
 	apiGroup := e.Group("/api")
 
-	if p.TunnelServer != nil {
-		middleware.RegisterEchoRoutes(apiGroup, tunnelRoutes(p.TunnelServer))
-	}
-
 	api.SetupAPI(api.SetupParams{
 		Echo:       e,
 		Group:      apiGroup,
 		AppContext: handlerutil.NewActivityAppContext(p.Context),
 		Config:     p.Config,
 		Deps:       p.HandlerDeps,
-		Tunnel:     p.TunnelServer,
 	})
 
 	return finishRouter(e, apiGroup, p)

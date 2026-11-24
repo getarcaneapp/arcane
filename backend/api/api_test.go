@@ -21,7 +21,6 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/health"
-	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
@@ -463,31 +462,4 @@ func TestSchemaRegistry_RawJSONIsUntyped(t *testing.T) {
 	schema := registry.Schema(reflect.TypeFor[jsontext.Value](), true, "")
 	require.Empty(t, schema.Type)
 	require.Empty(t, schema.ContentEncoding)
-}
-
-func TestAgentModeRegistersEveryAllowlistedHTTPRoute(t *testing.T) {
-	router := echo.New()
-	agentAPI := SetupAPI(SetupParams{
-		Echo:       router,
-		Group:      router.Group("/api"),
-		AppContext: handlerutil.NewActivityAppContext(t.Context()),
-		Config:     &config.Config{AgentEnabled: true},
-		Deps:       HandlerDeps{Health: health.New(&health.Service{})},
-	})
-
-	paramPattern := regexp.MustCompile(`\{[^}]+\}`)
-	normalize := func(p string) string { return paramPattern.ReplaceAllString(p, "{}") }
-
-	registered := make(map[string]struct{})
-	for _, endpoint := range authz.BuildPermissionExport(agentAPI, nil).Endpoints {
-		registered[endpoint.Method+" /api"+normalize(endpoint.Path)] = struct{}{}
-	}
-	for _, route := range agent.CommandRoutes() {
-		if route.Stream {
-			continue
-		}
-		key := route.Method + " " + normalize(route.PathPattern)
-		_, ok := registered[key]
-		assert.True(t, ok, "allowlisted agent route %s %s (%s) is not registered in agent mode", route.Method, route.PathPattern, route.CommandName)
-	}
 }

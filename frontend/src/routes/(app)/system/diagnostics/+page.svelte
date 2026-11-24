@@ -229,13 +229,14 @@
 	const DIAGNOSTICS_PROFILING_CAPABILITY = 'diagnostics-profiling-v1';
 
 	let selectedProfileEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
-	const profileEnvironments = $derived(
-		environmentStore.available.filter((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID || isEnvironmentOnline(env))
+	const profileAgents = $derived(
+		environmentStore.available.filter((env) => env.id !== LOCAL_DOCKER_ENVIRONMENT_ID && isEnvironmentOnline(env))
 	);
+	const profileEnvironments = $derived([{ id: LOCAL_DOCKER_ENVIRONMENT_ID, name: m.manager() }, ...profileAgents]);
 	const profileEnvId = $derived(
-		profileEnvironments.some((env) => env.id === selectedProfileEnvId) ? selectedProfileEnvId : LOCAL_DOCKER_ENVIRONMENT_ID
+		profileAgents.some((env) => env.id === selectedProfileEnvId) ? selectedProfileEnvId : LOCAL_DOCKER_ENVIRONMENT_ID
 	);
-	const selectedProfileEnv = $derived(profileEnvironments.find((env) => env.id === profileEnvId));
+	const selectedProfileEnv = $derived(profileAgents.find((env) => env.id === profileEnvId));
 	const selectedProfileEnvSupportsProfiling = $derived(
 		profileEnvId === LOCAL_DOCKER_ENVIRONMENT_ID ||
 			(selectedProfileEnv?.agentCapabilities?.includes(DIAGNOSTICS_PROFILING_CAPABILITY) ?? false)
@@ -271,6 +272,9 @@
 	function onProfileEnvChange(nextId: string) {
 		if (nextId === profileEnvId) return;
 		selectedProfileEnvId = nextId;
+		downloadController?.abort();
+		downloadController = null;
+		downloading = null;
 		resetDumps(nextId);
 	}
 
@@ -323,22 +327,24 @@
 	}
 
 	let downloading = $state<string | null>(null);
+	let downloadController: AbortController | null = null;
 	const canProfile = $derived(hasPermission('diagnostics:profile', GLOBAL_SCOPE));
 
 	async function download(p: PprofProfile) {
 		if (!selectedProfileEnvSupportsProfiling) return;
+		const controller = new AbortController();
+		downloadController = controller;
 		downloading = p;
 		error = null;
-		try {
-			const downloaded = await tryCatch(diagnosticsService.getProfileForEnvironment(profileEnvId, p));
-			if (downloaded.error !== null) {
-				error = extractApiErrorMessage(downloaded.error) || m.diagnostics_error_download();
-				return;
-			}
-			downloadBlob(downloaded.data, `${p}.${p === 'trace' ? 'out' : 'pprof'}`);
-		} finally {
-			downloading = null;
+		const downloaded = await tryCatch(diagnosticsService.getProfileForEnvironment(profileEnvId, p, controller.signal));
+		if (controller !== downloadController) return;
+		downloadController = null;
+		downloading = null;
+		if (downloaded.error !== null) {
+			error = extractApiErrorMessage(downloaded.error) || m.diagnostics_error_download();
+			return;
 		}
+		downloadBlob(downloaded.data, `${p}.${p === 'trace' ? 'out' : 'pprof'}`);
 	}
 
 	onMount(() => {
@@ -348,6 +354,7 @@
 		ws.connect();
 		return () => {
 			abortDumps();
+			downloadController?.abort();
 			ws?.close();
 			ws = null;
 		};

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/pprof"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -29,6 +30,8 @@ type (
 		Body types.GoroutineProfile
 	}
 )
+
+const maxProfileSeconds = 120
 
 func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	h := &DiagnosticsHandler{diag: diag}
@@ -59,13 +62,15 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 		method  string
 		path    string
 	}{
-		{id: "pprof-index", method: http.MethodGet, path: "/agents/{id}/debug/pprof", handler: echo.WrapHandler(http.HandlerFunc(pprof.Index))},
+		{id: "pprof-index", method: http.MethodGet, path: "/agents/{id}/debug/pprof", handler: func(c *echo.Context) error {
+			return c.Redirect(http.StatusMovedPermanently, "pprof/")
+		}},
 		{id: "pprof-index-slash", method: http.MethodGet, path: "/agents/{id}/debug/pprof/", handler: echo.WrapHandler(http.HandlerFunc(pprof.Index))},
 		{id: "pprof-cmdline", method: http.MethodGet, path: "/agents/{id}/debug/pprof/cmdline", handler: echo.WrapHandler(http.HandlerFunc(pprof.Cmdline))},
-		{id: "pprof-profile", method: http.MethodGet, path: "/agents/{id}/debug/pprof/profile", handler: echo.WrapHandler(http.HandlerFunc(pprof.Profile))},
+		{id: "pprof-profile", method: http.MethodGet, path: "/agents/{id}/debug/pprof/profile", handler: capProfileSeconds(pprof.Profile)},
 		{id: "pprof-symbol-lookup", method: http.MethodPost, path: "/agents/{id}/debug/pprof/symbol", handler: echo.WrapHandler(http.HandlerFunc(pprof.Symbol))},
 		{id: "pprof-symbol", method: http.MethodGet, path: "/agents/{id}/debug/pprof/symbol", handler: echo.WrapHandler(http.HandlerFunc(pprof.Symbol))},
-		{id: "pprof-trace", method: http.MethodGet, path: "/agents/{id}/debug/pprof/trace", handler: echo.WrapHandler(http.HandlerFunc(pprof.Trace))},
+		{id: "pprof-trace", method: http.MethodGet, path: "/agents/{id}/debug/pprof/trace", handler: capProfileSeconds(pprof.Trace)},
 		{id: "pprof-named-profile", method: http.MethodGet, path: "/agents/{id}/debug/pprof/{name}", handler: func(c *echo.Context) error {
 			pprof.Handler(c.Param("name")).ServeHTTP(c.Response(), c.Request())
 			return nil
@@ -96,6 +101,21 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 			Tags:        []string{"Diagnostics"},
 			Security:    handlerutil.DefaultOperationSecurity(),
 		}, authz.PermDiagnosticsProfile, middleware.EchoHandler(r.handler))
+	}
+}
+
+func capProfileSeconds(handler http.HandlerFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		req := c.Request()
+		query := req.URL.Query()
+		if seconds, err := strconv.Atoi(query.Get("seconds")); err == nil && seconds > maxProfileSeconds {
+			query.Set("seconds", strconv.Itoa(maxProfileSeconds))
+			req = req.Clone(req.Context())
+			req.URL.RawQuery = query.Encode()
+			req.Form = nil
+		}
+		handler(c.Response(), req)
+		return nil
 	}
 }
 

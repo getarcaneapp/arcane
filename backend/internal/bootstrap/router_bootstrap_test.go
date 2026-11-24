@@ -1,11 +1,13 @@
 package bootstrap
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -247,6 +249,21 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	slices.Sort(missing)
 	assert.Empty(t, slices.Compact(missing),
 		"proxied environment routes missing from the agent command allowlist; add them to pkg/agent/commands.go or classify them in middleware.IsManagerLocalPath")
+
+	echoParam := regexp.MustCompile(`:[^/]+`)
+	commandParam := regexp.MustCompile(`\{[^}]+\}`)
+	installed := make(map[string]struct{})
+	for _, route := range router.Router().Routes() {
+		installed[route.Method+" "+echoParam.ReplaceAllString(route.Path, "{}")] = struct{}{}
+	}
+	var unrouted []string
+	for _, route := range agent.CommandRoutes() {
+		key := cmp.Or(route.Method, http.MethodGet) + " " + commandParam.ReplaceAllString(route.PathPattern, "{}")
+		if _, ok := installed[key]; !ok {
+			unrouted = append(unrouted, key+" ("+route.CommandName+")")
+		}
+	}
+	assert.Empty(t, unrouted, "agent command allowlist entries with no route installed on the agent router")
 }
 
 func TestEveryAPIRouteIsInPermissionExport(t *testing.T) {

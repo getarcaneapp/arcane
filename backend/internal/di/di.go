@@ -129,7 +129,6 @@ var (
 			fx.Annotate(settings.NewSettingsService, fx.OnStop(func(ctx context.Context, service *settings.SettingsService) error { return service.Stop(ctx) })),
 			provideVolumeService,
 			fx.Annotate(webhook.NewWebhookService,
-				fx.OnStart(func(ctx context.Context, service *webhook.WebhookService) error { return service.LoadTokenHashes(ctx) }),
 				fx.OnStop(func(ctx context.Context, service *webhook.WebhookService) {
 					if err := service.DrainActions(ctx); err != nil {
 						slog.WarnContext(ctx, "shutdown proceeding with webhook actions still in flight", "error", err)

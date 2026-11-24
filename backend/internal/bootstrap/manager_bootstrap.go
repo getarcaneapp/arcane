@@ -245,7 +245,6 @@ func newRouter(p RouterParams) *echo.Echo {
 		HandlerDeps:    p.HandlerDeps,
 		AuthMiddleware: p.AuthMiddleware,
 		TunnelRegistry: p.TunnelRegistry,
-		TunnelServer:   p.TunnelServer,
 	})
 }
 

@@ -16,12 +16,13 @@ class DiagnosticsService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getProfileForEnvironment(environmentId: string, name: PprofProfile): Promise<Blob> {
+	async getProfileForEnvironment(environmentId: string, name: PprofProfile, signal?: AbortSignal): Promise<Blob> {
 		const timed = name === 'profile' || name === 'trace';
 		const res = await this.api.get<Blob>(`/agents/${environmentId}/debug/pprof/${name}`, {
 			params: timed ? { seconds: 30 } : undefined,
 			responseType: 'blob',
-			timeout: timed ? 90_000 : undefined
+			timeout: timed ? 90_000 : undefined,
+			signal
 		});
 		return res.data;
 	}
