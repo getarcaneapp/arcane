@@ -463,9 +463,13 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		slog.DebugContext(ctx, "Mounting /app/data into upgrader container", "type", appDataMount.Type, "source", appDataMount.Source)
 	}
 
+	dockerHost, err := s.dockerService.DockerHost()
+	if err != nil {
+		return "", err
+	}
 	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(
 		ctx,
-		s.dockerService.DockerHost(),
+		dockerHost,
 		&prepared.current,
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)

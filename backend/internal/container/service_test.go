@@ -2012,8 +2012,8 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 			},
-			Host: func() string {
-				return libpodServer.URL
+			Host: func() (string, error) {
+				return libpodServer.URL, nil
 			},
 			NewSystemd: func(bool) libpodman.Systemd {
 				return systemd

@@ -1214,7 +1214,11 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), requestFile)
 		}
 	}()
-	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(ctx, s.dockerService.DockerHost(), current,
+	dockerHost, err := s.dockerService.DockerHost()
+	if err != nil {
+		return err
+	}
+	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(ctx, dockerHost, current,
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},

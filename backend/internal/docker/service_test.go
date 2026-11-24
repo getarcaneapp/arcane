@@ -178,7 +178,9 @@ func TestDockerClientService_GetClientRebuildsClientWhenDockerHostChanges(t *tes
 		cli, getErr := svc.GetClient(t.Context())
 		return getErr == nil && cli.DaemonHost() == newServer.URL
 	}, time.Second, 10*time.Millisecond)
-	assert.Equal(t, newServer.URL, svc.DockerHost())
+	host, err := svc.DockerHost()
+	require.NoError(t, err)
+	assert.Equal(t, newServer.URL, host)
 }
 
 func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testing.T) {

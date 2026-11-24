@@ -136,10 +136,10 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 // RefreshClient probes the Docker daemon and recreates the cached client when
 // the daemon's effective API version changed.
 func (s *DockerClientService) RefreshClient(ctx context.Context) error {
-	if s.localDockerDisabled {
-		return common.ErrLocalDockerDisabled
+	host, err := s.DockerHost()
+	if err != nil {
+		return err
 	}
-	host := s.DockerHost()
 	probeClient, err := client.New(client.WithHost(host))
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: failed to create Docker probe client: %w", err)
@@ -187,7 +187,7 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
-	if host != s.DockerHost() {
+	if current, _ := s.DockerHost(); host != current {
 		s.mu.Unlock()
 		closeDockerClient(ctx, cli, "stale host after settings change")
 		return s.RefreshClient(ctx)
@@ -244,11 +244,15 @@ func (s *DockerClientService) LocalDockerEnabled() bool {
 	return !s.localDockerDisabled
 }
 
-func (s *DockerClientService) DockerHost() string {
-	if s.boundHost != "" {
-		return s.boundHost
+// DockerHost fails with common.ErrLocalDockerDisabled so no caller reaches the local socket while it is turned off.
+func (s *DockerClientService) DockerHost() (string, error) {
+	if s.localDockerDisabled {
+		return "", common.ErrLocalDockerDisabled
 	}
-	return startup.ResolveDockerHost(s.settingsService.GetSettingsConfig().DockerHost.Value, os.Stat)
+	if s.boundHost != "" {
+		return s.boundHost, nil
+	}
+	return startup.ResolveDockerHost(s.settingsService.GetSettingsConfig().DockerHost.Value, os.Stat), nil
 }
 
 func (s *DockerClientService) Close() {

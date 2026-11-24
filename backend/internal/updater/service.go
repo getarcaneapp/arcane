@@ -1798,7 +1798,11 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 	}
 
 	composeContainers, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
-		return projects.ListGlobalComposeContainers(ctx, dockerClient, s.deps.Docker.DockerHost())
+		dockerHost, hostErr := s.deps.Docker.DockerHost()
+		if hostErr != nil {
+			return nil, hostErr
+		}
+		return projects.ListGlobalComposeContainers(ctx, dockerClient, dockerHost)
 	})
 	if err != nil {
 		return err
