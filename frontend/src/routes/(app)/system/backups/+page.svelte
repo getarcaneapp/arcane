@@ -110,7 +110,10 @@
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	// System backups live in a local Docker volume, so they need the manager's own Docker.
-	const localDockerDisabled = $derived(isLocalDockerDisabled(environmentStore.getLocalEnvironment()));
+	// The policies response carries the flag for users whose environment list lacks the manager.
+	const localDockerDisabled = $derived(
+		!policyCollection.localDockerEnabled || isLocalDockerDisabled(environmentStore.getLocalEnvironment())
+	);
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && !localDockerDisabled);
 	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE) && !localDockerDisabled);
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
@@ -877,7 +880,7 @@
 			{#if localDockerDisabled}
 				<Alert.Root variant="warning-subtle">
 					<InfoIcon class="size-4 text-warning" />
-					<Alert.Description>{m.system_backups_local_docker_disabled()}</Alert.Description>
+					<Alert.Description>{m.local_docker_disabled_backups_unavailable()}</Alert.Description>
 				</Alert.Root>
 			{/if}
 			{@render recoveryKeySummary()}
@@ -932,6 +935,7 @@
 			<SystemBackupTable
 				emptyState={backupsEmptyState}
 				{backups}
+				{localDockerDisabled}
 				bind:requestOptions={pageState.requestOptions}
 				onRetry={() => backupsQuery.refetch()}
 				onRestore={(item) => openAction('restore', item)}
