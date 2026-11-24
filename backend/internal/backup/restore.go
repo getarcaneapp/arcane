@@ -31,6 +31,9 @@ type (
 	// into a new target has no Stop, Safety or InUse: a failure discards what it created instead of undoing it.
 	RestoreSteps struct {
 		Report func(ctx context.Context, message string)
+		// Hold waits for the repository the restore and its safety backup use, before the target stops, so the target
+		// stays stopped only for this restore's own copies; nil when nothing needs waiting for.
+		Hold   func(ctx context.Context) (context.Context, func(), error)
 		Stop   func(ctx context.Context, state RestoreState) error
 		Deploy func(ctx context.Context) error
 		Safety func(ctx context.Context) (string, error)
@@ -68,52 +71,58 @@ const RestoreRoot = "/dest"
 // Apply stops the target, takes a safety backup and restores the backup; on any failure the target is rolled back and
 // deployed again if it ran, or discarded when the restore created it.
 func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
+	held, release, err := r.hold(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	subject := r.subject()
 	if r.Stop != nil {
 		if state.Running {
-			r.report(ctx, "Stopping "+subject)
+			r.report(held, "Stopping "+subject)
 		}
 		// A stopped container can be started on its own, without the project lock the restore holds, so any running one
 		// is stopped.
-		if err := r.Stop(ctx, state); err != nil {
-			return r.Rollback(ctx, state, nil, fmt.Errorf("stop %s: %w", subject, err))
+		if err = r.Stop(held, state); err != nil {
+			return r.Rollback(held, state, nil, fmt.Errorf("stop %s: %w", subject, err))
 		}
 	}
 	if r.Safety != nil {
-		r.report(ctx, "Taking a safety backup")
-		safetyID, err := r.Safety(ctx)
-		if err != nil {
-			return r.Rollback(ctx, state, nil, fmt.Errorf("take a safety backup: %w", err))
+		r.report(held, "Taking a safety backup")
+		var safetyID string
+		if safetyID, err = r.Safety(held); err != nil {
+			return r.Rollback(held, state, nil, fmt.Errorf("take a safety backup: %w", err))
 		}
 		// A container started during the safety backup could be using a volume now; nothing has been written yet, so
 		// the rollback leaves the volumes alone.
 		if r.InUse != nil {
-			if err = r.InUse(ctx); err != nil {
-				return r.Rollback(ctx, state, nil, err)
+			if err = r.InUse(held); err != nil {
+				return r.Rollback(held, state, nil, err)
 			}
 		}
 		state.SafetyID = safetyID
 	}
-	r.report(ctx, "Restoring the backup")
+	r.report(held, "Restoring the backup")
 	// Only the volumes this restore created are removed on rollback.
 	var created []string
 	for _, options := range state.Create {
-		if err := r.Create(ctx, options); err != nil {
-			return r.Rollback(ctx, state, created, fmt.Errorf("create the missing volumes: %w", err))
+		if err = r.Create(held, options); err != nil {
+			return r.Rollback(held, state, created, fmt.Errorf("create the missing volumes: %w", err))
 		}
 		created = append(created, options.Name)
 	}
-	err := r.Write(ctx, "")
+	err = r.Write(held, "")
 	if err == nil && r.Verify != nil {
-		err = r.Verify(ctx)
+		err = r.Verify(held)
 	}
 	if unchanged := (UnchangedError{}); errors.As(err, &unchanged) {
 		// Nothing was written, so the safety backup has nothing to undo.
 		state.SafetyID = ""
 	}
 	if err != nil {
-		return r.Rollback(ctx, state, created, err)
+		return r.Rollback(held, state, created, err)
 	}
+	release()
 	// Deployed when asked, by default when it ran before the restore.
 	if !*cmp.Or(state.Redeploy, new(state.Running)) {
 		return nil
@@ -159,14 +168,21 @@ func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, created 
 		return fmt.Errorf("%w; nothing was restored", cause)
 	}
 	r.report(ctx, "Rolling back to the safety backup")
-	if err := r.Stop(ctx, state); err != nil {
+	// As in Apply, the repository is waited for before the target stops; a caller holding it keeps it.
+	held, release, err := r.hold(ctx)
+	if err != nil {
+		return fmt.Errorf("%w; the rollback could not start (%w); restore the safety backup %s by hand to undo the restore", cause, err, state.SafetyID)
+	}
+	defer release()
+	if err = r.Stop(held, state); err != nil {
 		return fmt.Errorf("%w; %s could not be stopped for the rollback (%w), so it was left as is; restore the safety backup %s by hand to undo the restore", cause, subject, err, state.SafetyID)
 	}
-	undoErr := r.Write(ctx, state.SafetyID)
+	undoErr := r.Write(held, state.SafetyID)
 	var removeErr error
 	if len(created) > 0 {
-		removeErr = r.Remove(ctx, created)
+		removeErr = r.Remove(held, created)
 	}
+	release()
 	if undoErr != nil {
 		return fmt.Errorf("%w; the rollback failed too (%w), so %s was left down; restore the safety backup %s to undo the restore", cause, errors.Join(undoErr, removeErr), subject, state.SafetyID)
 	}
@@ -178,6 +194,14 @@ func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, created 
 		return fmt.Errorf("%w; %s was rolled back to the safety backup %s, but the rollback hit errors: %w", cause, subject, state.SafetyID, failed)
 	}
 	return fmt.Errorf("%w; %s was rolled back to the safety backup %s", cause, subject, state.SafetyID)
+}
+
+// hold takes Hold, or passes the context through when the restore waits for nothing.
+func (r RestoreSteps) hold(ctx context.Context) (context.Context, func(), error) {
+	if r.Hold == nil {
+		return ctx, func() {}, nil
+	}
+	return r.Hold(ctx)
 }
 
 // removeAll removes the volumes the restore created one by one and names those it could not remove.
