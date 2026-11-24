@@ -1264,6 +1264,7 @@ func (s *ImageUpdateService) MarkImageRefBlocked(ctx context.Context, imageRef s
 	}
 	if err := s.db.WithContext(ctx).Model(&ImageUpdateRecord{}).
 		Where("has_update = ? AND repository IN ?", true, slices.Collect(maps.Keys(repositoryCandidates))).
+		Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
 		Where("(update_type = ? AND latest_version = ?) OR (update_type <> ? AND tag = ?)", UpdateTypeTag, tag, UpdateTypeTag, tag).
 		Where("latest_digest = ? OR latest_digest IS NULL OR latest_digest = ''", block.Digest).
 		Updates(map[string]any{
@@ -1319,6 +1320,7 @@ func (s *ImageUpdateService) MarkUpdatesAsNotified(ctx context.Context, records 
 			if err := tx.Model(&ImageUpdateRecord{}).
 				Where(map[string]any{
 					"id":             record.ID,
+					"environment_id": record.EnvironmentID,
 					"check_time":     record.CheckTime,
 					"latest_digest":  record.LatestDigest,
 					"latest_version": record.LatestVersion,
@@ -2275,7 +2277,10 @@ func (s *ImageUpdateService) checkContainerTagUpdates(
 		ClearDigestTracked: func(deleteCtx context.Context, containerIDs []string) error {
 			// Clear the stored results of containers whose policy no longer tracks tags, in bounded IN-list chunks.
 			for chunk := range slices.Chunk(containerIDs, staleDigestRecordDeleteChunk) {
-				if deleteErr := s.db.WithContext(deleteCtx).Where("container_id IN ?", chunk).Delete(&ImageUpdateRecord{}).Error; deleteErr != nil {
+				if deleteErr := s.db.WithContext(deleteCtx).
+					Where("container_id IN ?", chunk).
+					Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(deleteCtx)).
+					Delete(&ImageUpdateRecord{}).Error; deleteErr != nil {
 					return deleteErr
 				}
 			}
@@ -2293,6 +2298,7 @@ func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt con
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// A previous good result must not survive a rate limit under a different policy.
 		if deleteStaleUpdatesErr := tx.Where("id = ? AND policy_key <> ?", "container::"+cnt.ID, imageref.UpdatePolicyKey(cnt.Image, cnt.Labels)).
+			Where("environment_id = ?", envcontext.EnvironmentIDOrDefault(ctx)).
 			Delete(&ImageUpdateRecord{}).Error; deleteStaleUpdatesErr != nil {
 			return deleteStaleUpdatesErr
 		}
@@ -2305,11 +2311,13 @@ func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt con
 		); savePreparedUpdateResultWithTxErr != nil {
 			return savePreparedUpdateResultWithTxErr
 		}
-		return tx.Model(&ImageUpdateRecord{}).Where("id = ?", "container::"+cnt.ID).Updates(map[string]any{
-			"container_id": cnt.ID,
-			"image_id":     cnt.ImageID,
-			"policy_key":   imageref.UpdatePolicyKey(cnt.Image, cnt.Labels),
-		}).Error
+		return tx.Model(&ImageUpdateRecord{}).
+			Where("id = ? AND environment_id = ?", "container::"+cnt.ID, envcontext.EnvironmentIDOrDefault(ctx)).
+			Updates(map[string]any{
+				"container_id": cnt.ID,
+				"image_id":     cnt.ImageID,
+				"policy_key":   imageref.UpdatePolicyKey(cnt.Image, cnt.Labels),
+			}).Error
 	}); transactionErr != nil {
 		return transactionErr
 	}

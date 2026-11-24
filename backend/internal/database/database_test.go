@@ -961,6 +961,37 @@ func TestMigration120_HardensPostgresSchema(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// The per-environment image update key is (id, environment_id): after 122 the same image id must
+// coexist for two environments, and rows written before the migration belong to the local one.
+func TestMigration122_ScopesImageUpdatesByEnvironment(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-image-updates-env.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 121))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO image_updates (id, repository, tag, current_version, check_time)
+		VALUES ('sha256:shared', 'team/app', 'latest', '1.0.0', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 122))
+
+	var environmentID string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT environment_id FROM image_updates WHERE id = 'sha256:shared'`).Scan(&environmentID))
+	require.Equal(t, "0", environmentID, "rows written before the migration belong to the local environment")
+
+	// The same image on a docker-host environment is a separate row.
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO image_updates (id, environment_id, repository, tag, current_version, check_time)
+		VALUES ('sha256:shared', 'dh-1', 'team/app', 'latest', '1.0.0', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+
+	var count int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM image_updates WHERE id = 'sha256:shared'`).Scan(&count))
+	require.Equal(t, 2, count)
+
+	// And the key still rejects a duplicate of the same pair.
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO image_updates (id, environment_id, repository, tag, current_version, check_time)
+		VALUES ('sha256:shared', 'dh-1', 'team/app', 'latest', '1.0.0', CURRENT_TIMESTAMP)`)
+	require.Error(t, err)
+}
+
 func TestMigration121_GrantsProjectsExport(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-projects-export.db")

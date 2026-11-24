@@ -26,6 +26,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/types/v3"
 )
 
@@ -334,7 +335,9 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 	if w.scanRunning.Load() {
 		return common.Classify(common.ErrImageScanInProgress, errors.New("an image update check is already in progress"))
 	}
-	run, err := w.coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "manual"})
+	// A manual check runs against the environment the request was made for, so triggering it from a
+	// docker-host environment's page scans that daemon instead of the manager's own.
+	run, err := w.coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: envcontext.EnvironmentIDOrDefault(ctx), Trigger: "manual"})
 	if err != nil {
 		return err
 	}
