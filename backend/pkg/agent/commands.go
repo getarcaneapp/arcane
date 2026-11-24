@@ -212,6 +212,11 @@ var (
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/system/upgrade/progress", CommandName: "system.upgrade.progress"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/diagnostics/actors", CommandName: "diagnostics.actors"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/diagnostics/goroutines", CommandName: "diagnostics.goroutines"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/debug/pprof/profile", CommandName: "diagnostics.pprof.cpu"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/debug/pprof/trace", CommandName: "diagnostics.pprof.trace"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/debug/pprof/{name}", CommandName: "diagnostics.pprof.named"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/debug/pprof", CommandName: "diagnostics.pprof.index"},
+		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/debug/pprof/symbol", CommandName: "diagnostics.pprof.symbol"},
 
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/swarm/services", CommandName: "swarm.service.list"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/swarm/services", CommandName: "swarm.service.create"},
@@ -299,6 +304,14 @@ var (
 
 	commandRoutesIndex = buildCommandRouteIndex(commandRoutes)
 )
+
+func CommandRoutes() []CommandRoute {
+	routes := make([]CommandRoute, len(commandRoutes))
+	for i, route := range commandRoutes {
+		routes[i] = CommandRoute(route)
+	}
+	return routes
+}
 
 func ResolveCommandName(method, requestPath string, stream bool) mo.Option[string] {
 	requestPath, _, _ = strings.Cut(strings.TrimSpace(requestPath), "?")

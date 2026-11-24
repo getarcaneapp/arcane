@@ -58,14 +58,14 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 		method  string
 		path    string
 	}{
-		{id: "pprof-index", method: http.MethodGet, path: "/debug/pprof", handler: echo.WrapHandler(http.HandlerFunc(pprof.Index))},
-		{id: "pprof-index-slash", method: http.MethodGet, path: "/debug/pprof/", handler: echo.WrapHandler(http.HandlerFunc(pprof.Index))},
-		{id: "pprof-cmdline", method: http.MethodGet, path: "/debug/pprof/cmdline", handler: echo.WrapHandler(http.HandlerFunc(pprof.Cmdline))},
-		{id: "pprof-profile", method: http.MethodGet, path: "/debug/pprof/profile", handler: echo.WrapHandler(http.HandlerFunc(pprof.Profile))},
-		{id: "pprof-symbol-lookup", method: http.MethodPost, path: "/debug/pprof/symbol", handler: echo.WrapHandler(http.HandlerFunc(pprof.Symbol))},
-		{id: "pprof-symbol", method: http.MethodGet, path: "/debug/pprof/symbol", handler: echo.WrapHandler(http.HandlerFunc(pprof.Symbol))},
-		{id: "pprof-trace", method: http.MethodGet, path: "/debug/pprof/trace", handler: echo.WrapHandler(http.HandlerFunc(pprof.Trace))},
-		{id: "pprof-named-profile", method: http.MethodGet, path: "/debug/pprof/{name}", handler: func(c *echo.Context) error {
+		{id: "pprof-index", method: http.MethodGet, path: "/agents/{id}/debug/pprof", handler: echo.WrapHandler(http.HandlerFunc(pprof.Index))},
+		{id: "pprof-index-slash", method: http.MethodGet, path: "/agents/{id}/debug/pprof/", handler: echo.WrapHandler(http.HandlerFunc(pprof.Index))},
+		{id: "pprof-cmdline", method: http.MethodGet, path: "/agents/{id}/debug/pprof/cmdline", handler: echo.WrapHandler(http.HandlerFunc(pprof.Cmdline))},
+		{id: "pprof-profile", method: http.MethodGet, path: "/agents/{id}/debug/pprof/profile", handler: echo.WrapHandler(http.HandlerFunc(pprof.Profile))},
+		{id: "pprof-symbol-lookup", method: http.MethodPost, path: "/agents/{id}/debug/pprof/symbol", handler: echo.WrapHandler(http.HandlerFunc(pprof.Symbol))},
+		{id: "pprof-symbol", method: http.MethodGet, path: "/agents/{id}/debug/pprof/symbol", handler: echo.WrapHandler(http.HandlerFunc(pprof.Symbol))},
+		{id: "pprof-trace", method: http.MethodGet, path: "/agents/{id}/debug/pprof/trace", handler: echo.WrapHandler(http.HandlerFunc(pprof.Trace))},
+		{id: "pprof-named-profile", method: http.MethodGet, path: "/agents/{id}/debug/pprof/{name}", handler: func(c *echo.Context) error {
 			pprof.Handler(c.Param("name")).ServeHTTP(c.Response(), c.Request())
 			return nil
 		}},
@@ -76,7 +76,6 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 			Method:      r.method,
 			Path:        r.path,
 			Tags:        []string{"Diagnostics"},
-			Hidden:      true,
 			Security:    handlerutil.DefaultOperationSecurity(),
 		}, authz.PermDiagnosticsProfile, middleware.EchoHandler(r.handler))
 	}

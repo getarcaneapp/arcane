@@ -3,6 +3,7 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
@@ -25,10 +26,15 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { SettingsStatCard } from '#lib/layouts/types.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { downloadBlob } from '#lib/utils/browser-download.js';
+	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { createDiagnosticsWebSocket, type DiagnosticsWebSocket } from '#lib/utils/ws.js';
@@ -220,23 +226,33 @@
 		if (!ws?.refresh()) error = m.disconnected();
 	}
 
+	let profileEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
+	const profileEnvironments = $derived(
+		environmentStore.available.filter((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID || isEnvironmentOnline(env))
+	);
+
 	const dumpOpen = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
 	const dumpText = $state<{ goroutine: string; heap: string }>({ goroutine: '', heap: '' });
 	const dumpLoading = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
 
+	function onProfileEnvChange(nextId: string) {
+		if (nextId === profileEnvId) return;
+		profileEnvId = nextId;
+		dumpText.goroutine = '';
+		dumpText.heap = '';
+		dumpOpen.goroutine = false;
+		dumpOpen.heap = false;
+	}
+
 	async function loadDump(name: 'goroutine' | 'heap') {
 		dumpLoading[name] = true;
 		try {
-			if (!ws) {
-				dumpText[name] = m.disconnected();
-				return;
-			}
-			const dump = await tryCatch(ws.request({ type: 'dump', name }));
+			const dump = await tryCatch(diagnosticsService.getProfileDumpForEnvironment(profileEnvId, name));
 			if (dump.error !== null) {
-				dumpText[name] = dump.error.message || m.diagnostics_error_dump();
+				dumpText[name] = extractApiErrorMessage(dump.error) || m.diagnostics_error_dump();
 				return;
 			}
-			dumpText[name] = dump.data.text ?? '';
+			dumpText[name] = dump.data;
 		} finally {
 			dumpLoading[name] = false;
 		}
@@ -275,15 +291,14 @@
 
 	async function download(p: PprofProfile) {
 		downloading = p;
+		error = null;
 		try {
-			if (!ws) {
-				error = m.disconnected();
+			const downloaded = await tryCatch(diagnosticsService.getProfileForEnvironment(profileEnvId, p));
+			if (downloaded.error !== null) {
+				error = extractApiErrorMessage(downloaded.error) || m.diagnostics_error_download();
 				return;
 			}
-			const downloaded = await tryCatch(ws.downloadProfile(p));
-			if (downloaded.error !== null) {
-				error = downloaded.error.message || m.diagnostics_error_download();
-			}
+			downloadBlob(downloaded.data, `${p}.${p === 'trace' ? 'out' : 'pprof'}`);
 		} finally {
 			downloading = null;
 		}
@@ -526,7 +541,16 @@
 
 						{#if canProfile}
 							<section class="space-y-4 border-t border-border/50 pt-8">
-								{@render sectionHeading(m.diagnostics_section_dumps())}
+								<div class="flex flex-wrap items-end justify-between gap-4">
+									{@render sectionHeading(m.diagnostics_section_dumps())}
+									<div class="w-full max-w-xs">
+										<EnvironmentDestinationSelect
+											bind:value={() => profileEnvId, onProfileEnvChange}
+											environments={profileEnvironments}
+											variant="field"
+										/>
+									</div>
+								</div>
 								<div class="space-y-2">
 									{#each dumps as d (d.id)}
 										<Collapsible.Root open={dumpOpen[d.id]} onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}>

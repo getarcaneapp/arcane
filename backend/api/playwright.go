@@ -15,15 +15,15 @@ func init() {
 }
 
 func registerPlaywright(api huma.API, p SetupParams) {
-	if p.Config.Environment == "production" {
+	if p.Config.Environment == "production" || p.Config.AgentEnabled {
 		return
 	}
 	playwright.RegisterRoutes(api, playwright.NewPlaywrightService(playwright.PlaywrightServiceParams{
-		APIKeyService:     p.Deps.ApiKey.Service(),
-		UserService:       p.Deps.User.Service(),
+		APIKeyService:     p.ManagerDeps.ApiKey.Service(),
+		UserService:       p.ManagerDeps.User.Service(),
 		RepositoryService: p.Deps.GitRepository.Service(),
 		SyncService:       p.Deps.GitOpsSync.Service(),
 		ProjectService:    p.Deps.Project.Service(),
-	}), p.Deps.Federated)
+	}), p.ManagerDeps.Federated)
 	slog.InfoContext(p.AppContext.Context(), "Playwright routes registered for E2E testing")
 }

@@ -40,7 +40,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/webhook"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/francis"
-	"getarcane.dev/arcane/v3/pkg/oidc"
 	"getarcane.dev/types/v3"
 )
 
@@ -292,12 +291,6 @@ func provideUpdaterService(p updater.UpdaterServiceParams, engine *flow.Engine) 
 		return nil, registerWorkflowsErr
 	}
 	return service, nil
-}
-
-func provideJWKSetManager(ctx context.Context, lc fx.Lifecycle) *oidc.KeySetManager {
-	manager := oidc.NewKeySetManager(ctx)
-	lc.Append(fx.Hook{OnStop: manager.Shutdown})
-	return manager
 }
 
 func provideAuthMiddleware(p authMiddlewareParams) *auth.AuthMiddleware {

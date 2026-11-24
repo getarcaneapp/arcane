@@ -135,10 +135,8 @@ type (
 	}
 
 	DiagnosticsCommand struct {
-		ID      string `json:"id"`
-		Type    string `json:"type"`
-		Name    string `json:"name,omitempty"`
-		Seconds int    `json:"seconds,omitempty"`
+		ID   string `json:"id"`
+		Type string `json:"type"`
 	}
 
 	DiagnosticsMessage struct {
@@ -146,9 +144,7 @@ type (
 		LeakReport *GoroutineLeakReport `json:"leakReport,omitempty"`
 		Type       string               `json:"type"`
 		ID         string               `json:"id,omitempty"`
-		Text       string               `json:"text,omitempty"`
 		Error      string               `json:"error,omitempty"`
-		Data       []byte               `json:"data,omitempty"`
 	}
 
 	DockerRunCommand struct {

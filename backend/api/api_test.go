@@ -21,6 +21,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/health"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
@@ -328,20 +329,20 @@ func TestSetupAPIForSpec_HiddenOperationsKeepAccess(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
-		"POST /events":                   authz.EndpointAccessAgentToken,
-		"POST /tunnel/mtls/enroll":       authz.EndpointAccessAgentToken,
-		"POST /webhooks/trigger/{token}": authz.EndpointAccessWebhookToken,
-		"POST /auth/federated/token":     authz.EndpointAccessSubjectToken,
-		"POST /telemetry/{signal}":       authz.EndpointAccessPublic,
-		"GET /docs":                      authz.EndpointAccessPublic,
-		"GET /docs/scalar.js":            authz.EndpointAccessPublic,
-		"GET /debug/pprof/{name}":        authz.EndpointAccessPermission,
-		"POST /debug/pprof/symbol":       authz.EndpointAccessPermission,
+		"POST /events":                         authz.EndpointAccessAgentToken,
+		"POST /tunnel/mtls/enroll":             authz.EndpointAccessAgentToken,
+		"POST /webhooks/trigger/{token}":       authz.EndpointAccessWebhookToken,
+		"POST /auth/federated/token":           authz.EndpointAccessSubjectToken,
+		"POST /telemetry/{signal}":             authz.EndpointAccessPublic,
+		"GET /docs":                            authz.EndpointAccessPublic,
+		"GET /docs/scalar.js":                  authz.EndpointAccessPublic,
+		"GET /agents/{id}/debug/pprof/{name}":  authz.EndpointAccessPermission,
+		"POST /agents/{id}/debug/pprof/symbol": authz.EndpointAccessPermission,
 	} {
 		require.Equal(t, want, access[key].Access, key)
 	}
-	require.Equal(t, authz.PermDiagnosticsProfile, access["GET /debug/pprof/{name}"].Permission)
-	require.Equal(t, authz.PermDiagnosticsProfile, access["POST /debug/pprof/symbol"].Permission)
+	require.Equal(t, authz.PermDiagnosticsProfile, access["GET /agents/{id}/debug/pprof/{name}"].Permission)
+	require.Equal(t, authz.PermDiagnosticsProfile, access["POST /agents/{id}/debug/pprof/symbol"].Permission)
 	require.Nil(t, api.OpenAPI().Paths["/docs"])
 	require.Nil(t, api.OpenAPI().Paths["/webhooks/trigger/{token}"])
 }
@@ -462,4 +463,31 @@ func TestSchemaRegistry_RawJSONIsUntyped(t *testing.T) {
 	schema := registry.Schema(reflect.TypeFor[jsontext.Value](), true, "")
 	require.Empty(t, schema.Type)
 	require.Empty(t, schema.ContentEncoding)
+}
+
+func TestAgentModeRegistersEveryAllowlistedHTTPRoute(t *testing.T) {
+	router := echo.New()
+	agentAPI := SetupAPI(SetupParams{
+		Echo:       router,
+		Group:      router.Group("/api"),
+		AppContext: handlerutil.NewActivityAppContext(t.Context()),
+		Config:     &config.Config{AgentEnabled: true},
+		Deps:       HandlerDeps{Health: health.New(&health.Service{})},
+	})
+
+	paramPattern := regexp.MustCompile(`\{[^}]+\}`)
+	normalize := func(p string) string { return paramPattern.ReplaceAllString(p, "{}") }
+
+	registered := make(map[string]struct{})
+	for _, endpoint := range authz.BuildPermissionExport(agentAPI, nil).Endpoints {
+		registered[endpoint.Method+" /api"+normalize(endpoint.Path)] = struct{}{}
+	}
+	for _, route := range agent.CommandRoutes() {
+		if route.Stream {
+			continue
+		}
+		key := route.Method + " " + normalize(route.PathPattern)
+		_, ok := registered[key]
+		assert.True(t, ok, "allowlisted agent route %s %s (%s) is not registered in agent mode", route.Method, route.PathPattern, route.CommandName)
+	}
 }

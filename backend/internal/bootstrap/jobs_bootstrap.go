@@ -12,7 +12,6 @@ import (
 	"go.uber.org/fx"
 
 	"getarcane.dev/arcane/v3/internal/activity"
-	"getarcane.dev/arcane/v3/internal/apns"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/gitops"
@@ -41,28 +40,24 @@ type (
 		Settings    *settings.SettingsService
 		Volume      *volume.VolumeService
 		System      *system.SystemService
-		Apns        *apns.ApnsService
 
-		AutoUpdate             *flow.Job `name:"auto-update"`
-		ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
-		DockerClientRefresh    *scheduler.DockerClientRefreshJob
-		Analytics              *scheduler.AnalyticsJob
-		UpgradeLogCleanup      types.SchedulerJob `name:"upgrade-log-cleanup"`
-		EventCleanup           *scheduler.EventCleanupJob
-		PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
-		ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
-		ScheduledPrune         *scheduler.ScheduledPruneJob
-		FilesystemWatcher      *scheduler.FilesystemWatcherJob
-		VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
-		VulnerabilityRisk      *scheduler.VulnerabilityRiskJob
-		AutoPatch              *flow.Job `name:"auto-patch"`
-		AutoHeal               *scheduler.AutoHealJob
-		ActivitySweep          *scheduler.ActivitySweepJob
-		UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
-		GitCloneCleanup        *scheduler.GitCloneCleanupJob
-		BackupRepositoryPrune  *scheduler.BackupRepositoryPruneJob
-		ApnsOutbox             *scheduler.ApnsOutboxJob
-		LdapSync               *scheduler.LdapSyncJob
+		AutoUpdate            *flow.Job `name:"auto-update"`
+		ImageUpdateWatcher    *scheduler.ImageUpdateWatcher
+		DockerClientRefresh   *scheduler.DockerClientRefreshJob
+		Analytics             *scheduler.AnalyticsJob
+		UpgradeLogCleanup     types.SchedulerJob `name:"upgrade-log-cleanup"`
+		EventCleanup          *scheduler.EventCleanupJob
+		PruningVolumeHelper   *scheduler.PruningVolumeHelperJob
+		ScheduledPrune        *scheduler.ScheduledPruneJob
+		FilesystemWatcher     *scheduler.FilesystemWatcherJob
+		VulnerabilityScan     *flow.Job `name:"vulnerability-scan"`
+		VulnerabilityRisk     *scheduler.VulnerabilityRiskJob
+		AutoPatch             *flow.Job `name:"auto-patch"`
+		AutoHeal              *scheduler.AutoHealJob
+		ActivitySweep         *scheduler.ActivitySweepJob
+		UploadSessionsCleanup *scheduler.UploadSessionsCleanupJob
+		GitCloneCleanup       *scheduler.GitCloneCleanupJob
+		BackupRepositoryPrune *scheduler.BackupRepositoryPruneJob
 	}
 
 	dynamicJobsParams struct {
@@ -107,9 +102,6 @@ type (
 		VulnerabilityRisk  *scheduler.VulnerabilityRiskJob
 		AutoPatch          *flow.Job
 		AutoHeal           *scheduler.AutoHealJob
-		Apns               *apns.ApnsService
-		ApnsOutbox         *scheduler.ApnsOutboxJob
-		LdapSync           *scheduler.LdapSyncJob
 	}
 
 	settingsChangeSubscriber interface {
@@ -258,9 +250,6 @@ func registerJobs(params registerJobsParams) error {
 		params.BackupRepositoryPrune,
 		params.UpgradeLogCleanup,
 	}
-	if !params.Config.AgentEnabled {
-		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync)
-	}
 	for _, job := range jobs {
 		if err := params.Scheduler.RegisterJob(job); err != nil {
 			return err
@@ -291,9 +280,6 @@ func registerJobs(params registerJobsParams) error {
 		VulnerabilityRisk:  params.VulnerabilityRisk,
 		AutoPatch:          params.AutoPatch,
 		AutoHeal:           params.AutoHeal,
-		Apns:               params.Apns,
-		ApnsOutbox:         params.ApnsOutbox,
-		LdapSync:           params.LdapSync,
 	}); err != nil {
 		return err
 	}
@@ -336,15 +322,6 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
 	})
-
-	if !params.Config.AgentEnabled {
-		subscribe([]string{"apnsEnabled"}, func(updates []types.SettingUpdate) {
-			params.Apns.ApplyEnabledUpdates(params.LifecycleCtx, updates, func() error {
-				return params.Scheduler.AddJob(params.LifecycleCtx, params.ApnsOutbox)
-			})
-		})
-		rescheduleOn([]string{"ldapEnabled", "ldapSyncInterval"}, params.LdapSync)
-	}
 
 	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)
 

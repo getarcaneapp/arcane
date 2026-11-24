@@ -50,6 +50,13 @@ type (
 		websocket bool
 	}
 
+	CommandRoute struct {
+		Method      string
+		PathPattern string
+		CommandName string
+		Stream      bool
+	}
+
 	commandRoute struct {
 		Method      string
 		PathPattern string

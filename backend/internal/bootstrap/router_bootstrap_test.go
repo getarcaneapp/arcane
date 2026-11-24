@@ -135,7 +135,6 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 
 func TestNewRouter_StrictTransportSecurity(t *testing.T) {
 	cfg := &config.Config{
-		AgentEnabled:   true,
 		AppUrl:         "http://localhost:3552",
 		Environment:    config.AppEnvironmentTest,
 		TrustedProxies: "10.0.0.0/8",
