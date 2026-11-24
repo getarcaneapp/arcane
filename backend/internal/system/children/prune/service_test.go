@@ -85,6 +85,7 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 		Policies:      backup.NewPolicies(db),
 		DockerService: dockerService,
 		EventService:  event.NewEventService(db, &config.Config{}, nil),
+		Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 	})
 	service := NewService(ServiceParams{
 		Location:      time.UTC,
@@ -124,9 +125,12 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 				`{"ID":"idle","InUse":false,"Size":10},`+
 				`{"ID":"busy","InUse":true,"Size":20}]}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
-			mu.Lock()
-			containerQuery = r.URL.Query()
-			mu.Unlock()
+			// Finding the volume that holds backups lists Arcane's own container, so only the stopped-container listing is kept.
+			if strings.Contains(r.URL.Query().Get("filters"), "status") {
+				mu.Lock()
+				containerQuery = r.URL.Query()
+				mu.Unlock()
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `[{"Id":"stopped","State":"exited","SizeRw":30}]`)
 		default:
@@ -159,6 +163,7 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 		Policies:      backup.NewPolicies(db),
 		DockerService: dockerService,
 		EventService:  event.NewEventService(db, &config.Config{}, nil),
+		Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 	})
 	service := NewService(ServiceParams{
 		Location:      time.UTC,
@@ -359,6 +364,7 @@ func newVolumeFallbackService(t *testing.T) (*Service, func() []string) {
 			Policies:      backup.NewPolicies(db),
 			DockerService: dockerService,
 			EventService:  event.NewEventService(db, &config.Config{}, nil),
+			Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
 	})
 	return service, func() []string {
