@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -262,11 +261,25 @@ func (s *Service) snapshotSource(ctx context.Context, dockerClient *client.Clien
 
 // restoreSnapshot replaces the volume's contents with the snapshot's.
 func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Client, volumeName string, source snapshotSource) error {
+	snapshot, _, err := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, source.repository, source.password, "", source.snapshotID)
+	if err != nil {
+		return err
+	}
 	target := mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume"}
-	if err := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.snapshotID, target, backup.RestoreOptions{DeleteExtra: true}); err != nil {
+	if err = s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.snapshotID, target, backup.RestoreOptions{DeleteExtra: true}); err != nil {
 		return fmt.Errorf("failed to restore Rustic snapshot: %w", err)
 	}
-	return nil
+	// Rustic restores every file's owner and mode but not the root's, which the snapshot records in a tag.
+	owner, recorded := backup.VolumeOwnerFromTags(snapshot.Tags)
+	if !recorded {
+		return nil
+	}
+	containerID, release, err := s.deps.AcquireHelper(ctx, volumeName)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return owner.Apply(ctx, s.deps.Exec, containerID)
 }
 
 func (s *Service) resolveRestoreSelection(
@@ -623,11 +636,9 @@ func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, 
 		}
 	}
 	if upload.newVolume && upload.archiveRoot {
-		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", upload.root.Uid, upload.root.Gid), "/volume"}); err != nil {
-			return fmt.Errorf("failed to restore volume root ownership: %w", err)
-		}
-		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"chmod", strconv.FormatInt(upload.root.Mode&0o7777, 8), "/volume"}); err != nil {
-			return fmt.Errorf("failed to restore volume root mode: %w", err)
+		owner := backup.VolumeOwner{UID: upload.root.Uid, GID: upload.root.Gid, Mode: upload.root.Mode}
+		if applyErr := owner.Apply(ctx, s.deps.Exec, containerID); applyErr != nil {
+			return applyErr
 		}
 	}
 

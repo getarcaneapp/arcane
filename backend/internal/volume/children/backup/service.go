@@ -468,7 +468,17 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 		}
 	}
 	if captureErr := backup.Capture(ctx, capture, func(ctx context.Context, mounts []mount.Mount) error {
-		return s.createSnapshots(ctx, dockerClient, entry, plan, mounts[0])
+		// Read in the capture, so the snapshot records the root's owner and mode as of its contents.
+		containerID, release, helperErr := s.deps.AcquireHelper(ctx, volumeName)
+		if helperErr != nil {
+			return helperErr
+		}
+		ownerTag, ownerErr := backup.ReadVolumeOwnerTag(ctx, s.deps.Exec, containerID)
+		release()
+		if ownerErr != nil {
+			return ownerErr
+		}
+		return s.createSnapshots(ctx, dockerClient, entry, plan, mounts[0], ownerTag)
 	}); captureErr != nil {
 		return captureErr
 	}
@@ -500,8 +510,8 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 }
 
 // createSnapshots writes the plan's missing snapshots of the mounted volume; S3 replicates the local snapshot when both are enabled.
-func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, source mount.Mount) error {
-	input := backup.RootSnapshotInput(source, backup.RunSnapshotTag(entry.ID))
+func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, source mount.Mount, ownerTag string) error {
+	input := backup.RootSnapshotInput(source, backup.RunSnapshotTag(entry.ID), ownerTag)
 	if plan.LocalEnabled && entry.LocalSnapshotID == "" {
 		repository, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 		if err != nil {
@@ -547,7 +557,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 		if localErr != nil {
 			return localErr
 		}
-		snapshot, err = s.deps.Engine.Replicate(ctx, dockerClient, localRepository, entry.LocalSnapshotID, remoteRepository, password, entry.VolumeName, backup.RunSnapshotTag(entry.ID))
+		snapshot, err = s.deps.Engine.Replicate(ctx, dockerClient, localRepository, entry.LocalSnapshotID, remoteRepository, password, entry.VolumeName, backup.RunSnapshotTag(entry.ID), ownerTag)
 	} else {
 		snapshot, err = s.deps.Engine.CreateSnapshot(ctx, dockerClient, remoteRepository, password, entry.VolumeName, input)
 	}
@@ -961,6 +971,11 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 		}
 		scratchMount := mount.Mount{Type: mount.TypeVolume, Source: scratchVolume, Target: "/volume"}
 		restoreOptions := backup.RestoreOptions{DeleteExtra: true}
+		snapshot, _, findErr := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, repository, password, "", entry.LocalSnapshotID)
+		if findErr != nil {
+			removeScratch()
+			return nil, 0, findErr
+		}
 		if restoreErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, repository, password, entry.LocalSnapshotID, scratchMount, restoreOptions); restoreErr != nil {
 			removeScratch()
 			return nil, 0, fmt.Errorf("failed to restore Rustic snapshot for download: %w", restoreErr)
@@ -974,9 +989,17 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 			removeContainer()
 			removeScratch()
 		}
-		if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"tar", "-czf", archivePath, "-C", "/volume", "."}); err != nil {
+		// The archive's root entry carries the volume root's owner and mode, as a volume export's does.
+		if owner, recorded := backup.VolumeOwnerFromTags(snapshot.Tags); recorded {
+			err = owner.Apply(ctx, s.deps.Exec, containerID)
+		}
+		if err == nil {
+			if _, _, err = s.deps.Exec(ctx, containerID, "", []string{"tar", "-czf", archivePath, "-C", "/volume", "."}); err != nil {
+				err = fmt.Errorf("failed to package Rustic snapshot for download: %w", err)
+			}
+		}
+		if err != nil {
 			cleanup()
-			err = fmt.Errorf("failed to package Rustic snapshot for download: %w", err)
 		}
 	}
 	if err != nil {
