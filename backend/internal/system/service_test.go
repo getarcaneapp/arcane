@@ -167,7 +167,7 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	service := NewSystemService(SystemServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		S3Destinations:  s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		S3Destinations:  s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil }),
 		Config:          &config.Config{},
 	})
 
@@ -289,7 +289,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	crypto.InitEncryption(crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
-	s3Destinations := s3.NewS3DestinationService(db, func(context.Context, string) error { return nil })
+	s3Destinations := s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil })
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    t.Context(),
 		DB:     db,
@@ -397,7 +397,7 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 	db := &database.DB{DB: gormDB}
 	service := NewSystemService(SystemServiceParams{
 		DB:             db,
-		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		S3Destinations: s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil }),
 		RecoveryKeys:   backup.NewRecoveryKeyStore(db),
 		Config:         &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
 	})

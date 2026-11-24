@@ -194,6 +194,14 @@ type (
 		db *database.DB
 	}
 
+	// RemoteCheck is what checking a scheduled policy's S3 repository needs.
+	RemoteCheck struct {
+		S3Destinations *s3.S3DestinationService
+		Settings       *settings.SettingsService
+		// Reschedule applies the policy once S3, or the policy, was disabled.
+		Reschedule func(ctx context.Context, policy *Policy)
+	}
+
 	// VolumeRepository is the volumes data repository that volume and project backups share.
 	VolumeRepository struct {
 		deps           VolumeRepositoryDependencies
@@ -280,8 +288,10 @@ type (
 )
 
 const (
-	VolumeAdmissionScope           = "volume-backup"
-	ProjectSnapshotTag             = "arcane-kind:project"
+	VolumeAdmissionScope = "volume-backup"
+	ProjectSnapshotTag   = "arcane-kind:project"
+	// ProjectTargetType marks the run targets of project backups, whose recovery data checkpoints a backup.
+	ProjectTargetType              = "project_backup"
 	SystemAdmissionScope           = "system-backup"
 	SystemAdmissionID              = "system"
 	RecoveryKeyConfigID            = "system-recovery"
@@ -314,7 +324,9 @@ var (
 	RecoveryKeyFormat           = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
-	ErrRepositoryMissing       = errors.New("the backup repository does not exist")
+	// ErrRemoteOnlyDisabled stops a scheduled run whose only destination, S3, was just disabled for a missing repository.
+	ErrRemoteOnlyDisabled = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
+	ErrRepositoryMissing  = errors.New("the backup repository does not exist")
 
 	// VolumeRepositoryTables record the snapshots that volume and project backups write under VolumeRoot.
 	VolumeRepositoryTables = []string{"volume_backups", "project_backups"}
@@ -1234,6 +1246,15 @@ func (p *Policies) IDs(ctx context.Context, kind string) ([]string, error) {
 	return ids, nil
 }
 
+// Subjects returns the subjects that have policies of the kind, global ones left out.
+func (p *Policies) Subjects(ctx context.Context, kind string) ([]string, error) {
+	var subjects []string
+	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ? AND subject_id <> ''", kind).Distinct().Pluck("subject_id", &subjects).Error; err != nil {
+		return nil, fmt.Errorf("failed to load %s backup policy subjects: %w", kind, err)
+	}
+	return subjects, nil
+}
+
 // Remove deletes the subject's policies and returns them, so the caller can unschedule them.
 func (p *Policies) Remove(ctx context.Context, kind, subjectID string) ([]Policy, error) {
 	policies, err := p.List(ctx, kind, subjectID)
@@ -1260,6 +1281,38 @@ func (p *Policies) DisableRemote(ctx context.Context, policy *Policy, field stri
 		LocalEnabled:  policy.LocalEnabled,
 		Field:         field,
 	})
+}
+
+// CheckRemote checks the S3 repository of a scheduled policy about to back up and reports whether it disabled S3. A
+// missing repository disables S3, or the policy with ErrRemoteOnlyDisabled when S3 is its only destination, so the
+// backup never recreates it. A policy edited during the check is left as it is and the missing repository returned, so
+// this run backs nothing up and the next one checks again.
+func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check RemoteCheck) (bool, error) {
+	var remoteErr error
+	if policy.S3Enabled {
+		remoteErr = CheckScheduledRemote(ctx, p.db, check.S3Destinations, ScheduledRemoteRequest{
+			DestinationID: policy.S3DestinationID,
+			Root:          path.Join(VolumeRoot, check.Settings.GetSettingsConfig().InstanceID.Value),
+			Tables:        VolumeRepositoryTables,
+		})
+	}
+	disabled, err := DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
+		return p.DisableRemote(ctx, policy, field)
+	})
+	switch {
+	case err != nil:
+		return false, err
+	case !disabled && errors.Is(remoteErr, ErrRemoteRepositoryMissing):
+		return false, remoteErr
+	case !disabled:
+		return false, nil
+	}
+	// Rescheduled before the backup runs, so a later edit of the policy is not undone afterwards.
+	check.Reschedule(ctx, policy)
+	if !policy.LocalEnabled {
+		return true, ErrRemoteOnlyDisabled
+	}
+	return true, nil
 }
 
 // Schedule reads the policy's schedule each time its job is scheduled, so an edit applies from the next run.
