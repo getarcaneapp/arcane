@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"strings"
 	"time"
 )
@@ -16,6 +17,12 @@ type (
 		Search    string   `json:"search,omitempty"`
 		Paths     []string `json:"paths,omitempty"`
 		SelectAll bool     `json:"selectAll,omitempty"`
+	}
+
+	// DiscoverBackupsRequest selects the repository a backup discovery scans.
+	DiscoverBackupsRequest struct {
+		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3" doc:"Repository to scan; s3 when omitted"`
+		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"S3 destination to scan for this instance's existing backups"`
 	}
 
 	BackupRepositoryObservation struct {
@@ -289,6 +296,14 @@ const (
 	VolumeBackupTriggerSafety     = "safety"
 	VolumeBackupTriggerDiscovered = "discovered"
 )
+
+// Validate refuses an S3 discovery that names no S3 destination.
+func (r DiscoverBackupsRequest) Validate() error {
+	if r.Destination != VolumeBackupDestinationLocal && strings.TrimSpace(r.S3DestinationID) == "" {
+		return &FieldError{Field: "s3DestinationId", Err: errors.New("select an S3 destination to discover")}
+	}
+	return nil
+}
 
 // Valid reports whether m is all, allowlist or blocklist.
 func (m SystemVolumeSelectionMode) Valid() bool {

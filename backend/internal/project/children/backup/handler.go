@@ -3,7 +3,6 @@ package backup
 import (
 	"cmp"
 	"context"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -43,7 +42,7 @@ type (
 	}
 
 	DiscoverInput struct {
-		Body types.DiscoverProjectBackupsRequest
+		Body types.DiscoverBackupsRequest
 	}
 
 	RestoreInput struct {
@@ -122,10 +121,10 @@ func (h *Handler) Discover(ctx context.Context, input *DiscoverInput) (*handleru
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
-	local := input.Body.Destination == types.VolumeBackupDestinationLocal
-	if !local && strings.TrimSpace(input.Body.S3DestinationID) == "" {
-		return nil, huma.Error400BadRequest("select an S3 destination to discover")
+	if err := input.Body.Validate(); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
 	}
+	local := input.Body.Destination == types.VolumeBackupDestinationLocal
 	var destinationIDs []string
 	if !local {
 		destinationIDs = []string{input.Body.S3DestinationID}

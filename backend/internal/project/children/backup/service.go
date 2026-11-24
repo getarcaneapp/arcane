@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -104,6 +105,8 @@ type (
 		workflow *flow.Workflow
 		restores *flow.Workflow
 		watch    backup.RunWatch
+		// discovery serializes recording found backups, so concurrent discoveries never record a row twice.
+		discovery sync.Mutex
 	}
 
 	StartOptions struct {
@@ -209,8 +212,6 @@ const (
 	projectTagPrefix = "arcane-project:"
 	triggerTagPrefix = "arcane-trigger:"
 	policyTagPrefix  = "arcane-policy:"
-	// discoveryPendingKey is set by a system restore and cleared once discovery searched every repository.
-	discoveryPendingKey = "projectBackupDiscoveryPending"
 )
 
 var (
@@ -1222,7 +1223,7 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 // DiscoverAfterRestore runs the discovery a system restore asked for, after syncing the restored projects with their
 // folders. Only it searches the local repository, so the request is cleared only on success and a later start retries.
 func (s *Service) DiscoverAfterRestore(ctx context.Context) error {
-	if !s.deps.Settings.GetBoolSetting(ctx, discoveryPendingKey) {
+	if !s.deps.Settings.GetBoolSetting(ctx, backup.ProjectDiscoveryPendingKey) {
 		return nil
 	}
 	if err := s.deps.SyncProjects(ctx); err != nil {
@@ -1241,7 +1242,7 @@ func (s *Service) DiscoverAfterRestore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.deps.Settings.UpdateSetting(ctx, discoveryPendingKey, "false")
+	return s.deps.Settings.UpdateSetting(ctx, backup.ProjectDiscoveryPendingKey, "false")
 }
 
 // importSnapshots records a row, read from the backup's manifest, for each found backup whose row is missing, adds the
@@ -1262,11 +1263,13 @@ func (s *Service) importSnapshots(
 		return 0, nil
 	}
 	backupIDs := slices.Sorted(maps.Keys(groups))
-	var stored []ProjectBackup
-	if err := s.deps.DB.WithContext(ctx).Select("id", "status", "local_snapshot_id", "remote_snapshot_id").Where("id IN ?", backupIDs).Find(&stored).Error; err != nil {
+	s.discovery.Lock()
+	defer s.discovery.Unlock()
+	stored, err := s.backupsByID(ctx, backupIDs)
+	if err != nil {
 		return 0, err
 	}
-	existing := make(map[string]ProjectBackup, len(stored))
+	existing := make(map[string]*ProjectBackup, len(stored))
 	for _, entry := range stored {
 		existing[entry.ID] = entry
 	}
@@ -1298,7 +1301,7 @@ func (s *Service) importSnapshots(
 			return cmp.Compare(a.snapshot.Summary.TotalBytesProcessed, b.snapshot.Summary.TotalBytesProcessed)
 		})
 		if entry, recordedBefore := existing[backupID]; recordedBefore {
-			filled, fillErr := s.addFoundCopies(ctx, entry, localSnapshot, remoteSnapshot, largest.snapshot.Summary.TotalBytesProcessed)
+			filled, fillErr := s.addFoundCopies(ctx, *entry, localSnapshot, remoteSnapshot, largest.snapshot.Summary.TotalBytesProcessed)
 			importErr = errors.Join(importErr, fillErr)
 			recorded += int(filled)
 			continue
@@ -1450,7 +1453,7 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	activityID, err := s.flow.Submit(ctx, s.restores, restoreRun{Requester: requester, User: opts.User, Plan: p}, activity.StartRequest{
 		EnvironmentID: opts.EnvironmentID, ResourceType: new("project"), ResourceID: new(project.ID), ResourceName: new(project.Name), StartedBy: &opts.User,
 		Step: "Restoring backup", LatestMessage: "Restoring project backup",
-		Metadata: database.JSON{"action": "restore_project_backup", "backupId": entry.ID},
+		Metadata: database.JSON{"action": backup.ProjectRestoreAction, "backupId": entry.ID},
 	})
 	if err != nil {
 		releaseHeld(ctx)
