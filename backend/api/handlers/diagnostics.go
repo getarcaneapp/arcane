@@ -9,8 +9,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
 
-	"kit.getarcane.app"
-
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -86,11 +84,15 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 		Schema:   &huma.Schema{Type: huma.TypeString},
 	}
 	for _, r := range pprofRoutes {
+		params := []*huma.Param{idParam}
+		if strings.HasSuffix(r.path, "{name}") {
+			params = append(params, nameParam)
+		}
 		middleware.RegisterWithPermission(api, huma.Operation{
 			OperationID: r.id,
 			Method:      r.method,
 			Path:        r.path,
-			Parameters:  kit.Ternary(strings.HasSuffix(r.path, "{name}"), []*huma.Param{idParam, nameParam}, []*huma.Param{idParam}),
+			Parameters:  params,
 			Tags:        []string{"Diagnostics"},
 			Security:    handlerutil.DefaultOperationSecurity(),
 		}, authz.PermDiagnosticsProfile, middleware.EchoHandler(r.handler))

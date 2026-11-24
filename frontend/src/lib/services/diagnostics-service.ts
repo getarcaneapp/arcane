@@ -7,10 +7,11 @@ class DiagnosticsService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/diagnostics/goroutines`));
 	}
 
-	async getProfileDumpForEnvironment(environmentId: string, name: 'goroutine' | 'heap'): Promise<string> {
+	async getProfileDumpForEnvironment(environmentId: string, name: 'goroutine' | 'heap', signal?: AbortSignal): Promise<string> {
 		const res = await this.api.get<string>(`/agents/${environmentId}/debug/pprof/${name}`, {
 			params: { debug: 2 },
-			responseType: 'text'
+			responseType: 'text',
+			signal
 		});
 		return res.data;
 	}

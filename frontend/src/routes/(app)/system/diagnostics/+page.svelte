@@ -238,8 +238,20 @@
 	const dumpOpen = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
 	const dumpText = $state<{ goroutine: string; heap: string }>({ goroutine: '', heap: '' });
 	const dumpLoading = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
+	const dumpControllers: Partial<Record<'goroutine' | 'heap', AbortController>> = {};
+	const dumpRequestId = { goroutine: 0, heap: 0 };
+
+	function abortDumps() {
+		dumpControllers.goroutine?.abort();
+		dumpControllers.heap?.abort();
+		delete dumpControllers.goroutine;
+		delete dumpControllers.heap;
+		dumpRequestId.goroutine++;
+		dumpRequestId.heap++;
+	}
 
 	function resetDumps(envId: string) {
+		abortDumps();
 		dumpEnvId = envId;
 		dumpText.goroutine = '';
 		dumpText.heap = '';
@@ -257,9 +269,14 @@
 
 	async function loadDump(name: 'goroutine' | 'heap') {
 		const envId = profileEnvId;
+		dumpControllers[name]?.abort();
+		const controller = new AbortController();
+		dumpControllers[name] = controller;
+		const requestId = ++dumpRequestId[name];
 		dumpLoading[name] = true;
-		const dump = await tryCatch(diagnosticsService.getProfileDumpForEnvironment(envId, name));
-		if (envId !== dumpEnvId) return;
+		const dump = await tryCatch(diagnosticsService.getProfileDumpForEnvironment(envId, name, controller.signal));
+		if (requestId !== dumpRequestId[name] || envId !== dumpEnvId) return;
+		delete dumpControllers[name];
 		dumpLoading[name] = false;
 		if (dump.error !== null) {
 			dumpText[name] = extractApiErrorMessage(dump.error) || m.diagnostics_error_dump();
@@ -321,6 +338,7 @@
 		});
 		ws.connect();
 		return () => {
+			abortDumps();
 			ws?.close();
 			ws = null;
 		};
