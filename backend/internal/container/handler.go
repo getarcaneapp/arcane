@@ -371,7 +371,8 @@ func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *Get
 func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[types.ContainerGenerateComposeResponse], error) {
 	dockerHost, err := h.dockerService.DockerHost()
 	if err != nil {
-		return nil, err
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	composeContent, err := projects.ComposeGenerate(ctx, dockerHost, "", input.Body.ContainerIDs)
 	if err != nil {

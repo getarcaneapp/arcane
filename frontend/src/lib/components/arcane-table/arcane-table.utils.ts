@@ -1,6 +1,7 @@
 import type { RowData } from '@tanstack/table-core';
 import type { ColumnFiltersState } from '@tanstack/table-core';
 
+import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import type { TableDisplayEntry } from '#lib/types/ui/tabledisplay.js';
 import type { PersistedPreferencesSnapshot } from '#lib/types/ui/tablepreferences.js';
@@ -32,14 +33,14 @@ export function toFilterMap(filters: ColumnFiltersState): FilterMap {
 	return out;
 }
 
-export function fromFilterMap(map?: FilterMap): ColumnFiltersState {
+export function fromFilterMap(map?: FilterMap, environmentScope?: EnvironmentRef[]): ColumnFiltersState {
 	if (!map) return [];
 	const out: ColumnFiltersState = [];
 	for (const [id, value] of Object.entries(map)) {
 		if (value === undefined || value === null) continue;
 		if (Array.isArray(value) && value.length === 0) continue;
 		if (id === ENVIRONMENT_FILTER) {
-			const environmentIds = environmentFilterIds(value);
+			const environmentIds = environmentFilterIds(value, environmentScope);
 			if (environmentIds.length > 0) out.push({ id, value: environmentIds });
 			continue;
 		}

@@ -63,7 +63,7 @@
 	const canUploadBackups = $derived(hasPermission('system-backups:upload', GLOBAL_SCOPE));
 	const canDeleteBackups = $derived(hasPermission('system-backups:delete', GLOBAL_SCOPE));
 	const canRestoreBackups = $derived(isGlobalAdmin());
-	const columns = [
+	const columns = $derived<ColumnSpec<BackupRow>[]>([
 		...environmentColumns<BackupRow>(environmentStore.enabled),
 		{ accessorKey: 'id', title: m.system_backups_id(), sortable: false, cell: IdCell },
 		{ accessorKey: 'resourceName', title: m.backups_resource(), sortable: true, cell: ResourceCell },
@@ -77,7 +77,7 @@
 		...backupRunColumns({ status: StatusCell, trigger: TriggerCell, destination: DestinationCell, size: SizeCell }),
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cellComponent: CreatedAtCell },
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell }
-	] satisfies ColumnSpec<BackupRow>[];
+	]);
 	const mobileFields = [{ id: 'resourceName', label: m.backups_resource(), defaultVisible: true }, ...backupRunMobileFields()];
 </script>
 

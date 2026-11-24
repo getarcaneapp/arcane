@@ -17,14 +17,18 @@ export function systemBackupHistoryQuery(scope: string, requestOptions: SearchPa
 			// Saved backup records need no Docker, so the manager stays listed even when its local Docker is off.
 			const environments = environmentStore.enabled.filter((env) => hasPermission('volumes:read', env.id));
 			if (environments.length > 0) {
-				return fetchAcrossEnvironments(environments, requestOptions, (id, request, config) =>
-					systemBackupService.listHistory(id, request, config)
+				return fetchAcrossEnvironments(
+					environments,
+					requestOptions,
+					(id, request, config) => systemBackupService.listHistory(id, request, config),
+					environmentStore.enabled
 				);
 			}
 			return fetchAcrossEnvironments(
 				environmentStore.available.filter((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID),
 				requestOptions,
-				(_id, request, config) => systemBackupService.listManagerHistory(request, config)
+				(_id, request, config) => systemBackupService.listManagerHistory(request, config),
+				environmentStore.enabled
 			);
 		}
 	});

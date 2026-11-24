@@ -156,7 +156,7 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 		Scheduled: true,
 	}
 
-	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{LocalDockerEnabled: true}, fakeScheduler)
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
@@ -506,7 +506,7 @@ func TestJobService_Submit_RejectsImagePollingWithoutLocalDocker(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "pollingEnabled", true))
 	fakeScheduler := newFakeJobScheduler()
-	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{LocalDockerEnabled: false}, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, fakeScheduler)
 	require.NoError(t, db.AutoMigrate(&userdomain.User{}, &role.Role{}, &role.UserRoleAssignment{}))
 	require.NoError(t, db.Create(&userdomain.User{Username: "operator", BaseModel: database.BaseModel{ID: "operator"}}).Error)
 	require.NoError(t, db.Create(&role.Role{

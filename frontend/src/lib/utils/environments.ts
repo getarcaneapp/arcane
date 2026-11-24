@@ -56,8 +56,7 @@ export function environmentName(environmentId: string): string {
 /** Filter key of the environment facet; fetchAcrossEnvironments consumes it, so the backend never sees it. */
 export const ENVIRONMENT_FILTER = 'environment';
 
-// Enabled, not shown: backups still list a manager without local Docker.
-export function environmentFilterIds(value: unknown, environments: EnvironmentRef[] = environmentStore.enabled): string[] {
+export function environmentFilterIds(value: unknown, environments: EnvironmentRef[] = environmentStore.shown): string[] {
 	if (!Array.isArray(value)) return [];
 	return value.map(String).filter((id) => environments.some((env) => env.id === id));
 }
@@ -290,11 +289,12 @@ export async function fetchAcrossEnvironments<
 >(
 	environments: EnvironmentRef[],
 	options: O,
-	fetch: (scope: string, options: O, config: APIRequestConfig) => Promise<P>
+	fetch: (scope: string, options: O, config: APIRequestConfig) => Promise<P>,
+	filterEnvironments: EnvironmentRef[] = environmentStore.shown
 ): Promise<EnvironmentPage<P>> {
 	const { [ENVIRONMENT_FILTER]: environmentFilter, ...filters } = options.filters ?? {};
-	// Picks are checked against every enabled environment, so picking only ones this page skips shows nothing.
-	const picked = environmentFilterIds(environmentFilter);
+	// Picks are checked against filterEnvironments, so picking only ones this page skips shows nothing.
+	const picked = environmentFilterIds(environmentFilter, filterEnvironments);
 	const targets = picked.length > 0 ? environments.filter((env) => picked.includes(env.id)) : environments;
 	const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: options.pagination?.limit ?? 0 };
 	if (targets.length === 0) {

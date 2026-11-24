@@ -96,13 +96,14 @@ func NewDockerClientService(ctx context.Context, db *database.DB, settingsServic
 
 func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerClientService {
 	return &DockerClientService{
-		db:              s.db,
-		settingsService: s.settingsService,
-		Client:          dockerClient,
-		boundHost:       dockerClient.DaemonHost(),
-		eventBus:        s.eventBus,
-		VolumeUsage:     cmp.Or(s.VolumeUsage, docker.NewVolumeUsageCache(docker.VolumeUsageCacheConfig{})),
-		streamConnected: s.streamConnected,
+		db:                  s.db,
+		settingsService:     s.settingsService,
+		Client:              dockerClient,
+		boundHost:           dockerClient.DaemonHost(),
+		eventBus:            s.eventBus,
+		VolumeUsage:         cmp.Or(s.VolumeUsage, docker.NewVolumeUsageCache(docker.VolumeUsageCacheConfig{})),
+		streamConnected:     s.streamConnected,
+		localDockerDisabled: s.localDockerDisabled,
 	}
 }
 
