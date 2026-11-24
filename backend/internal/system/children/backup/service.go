@@ -1638,6 +1638,8 @@ func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *type
 			}
 			return current.Schedule
 		},
+		// System backups are written through the manager's own Docker.
+		ShouldRunFn: func(context.Context) bool { return s.dockerService.LocalDockerEnabled() },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.resumeScheduledBackup(ctx, previous, policyID)
 		},

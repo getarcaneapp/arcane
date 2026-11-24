@@ -16,6 +16,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/apns"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/notification"
@@ -147,7 +148,8 @@ func TestAutoHeal_ShouldSchedule(t *testing.T) {
 	ctx := t.Context()
 	_, settingsSvc, _ := setupAnalyticsStateServices(t)
 	job, err := NewAutoHealJob(AutoHealJobParams{
-		SettingsService: settingsSvc,
+		DockerClientService: &dockerInternal.DockerClientService{},
+		SettingsService:     settingsSvc,
 	})
 	require.NoError(t, err)
 

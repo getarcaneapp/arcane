@@ -155,6 +155,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T, scheduler types.DynamicSc
 	return NewGitOpsSyncService(GitOpsSyncServiceParams{
 		DB:              db,
 		ProjectService:  projectService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
 		EventService:    eventService,
 		SettingsService: settingsService,
 		Ctx:             t.Context(),
@@ -233,6 +234,7 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 		DB:              db,
 		RepoService:     repoService,
 		ProjectService:  projectService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
 		EventService:    eventService,
 		SettingsService: settingsService,
 		Ctx:             ctx,
@@ -1170,6 +1172,7 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 		DB:              db,
 		RepoService:     repoService,
 		ProjectService:  projectService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
 		EventService:    eventService,
 		SettingsService: settingsService,
 		Ctx:             ctx,

@@ -141,8 +141,11 @@ func startJobScheduler(p startJobSchedulerParams) {
 			}
 			p.GitOpsSync.RegisterAutoSyncJobsOnStartup(ctx)
 			p.GitOpsSync.SubscribeProjectFileChanges()
-			if registerBusWatcherErr := p.Scheduler.RegisterBusWatcher(p.ImageUpdateWatcher, true); registerBusWatcherErr != nil {
-				return registerBusWatcherErr
+			// Image polling only checks the manager's own Docker images.
+			if p.Config.LocalDockerEnabled {
+				if registerBusWatcherErr := p.Scheduler.RegisterBusWatcher(p.ImageUpdateWatcher, true); registerBusWatcherErr != nil {
+					return registerBusWatcherErr
+				}
 			}
 			if startSchedulerErr := p.Scheduler.StartScheduler(ctx); startSchedulerErr != nil {
 				return fmt.Errorf("start scheduler: %w", startSchedulerErr)
@@ -243,6 +246,7 @@ func reconcileCoordinatorStartup(ctx context.Context, p startJobSchedulerParams)
 func registerJobs(params registerJobsParams) error {
 	jobs := []types.SchedulerJob{
 		params.AutoUpdate,
+		params.DockerClientRefresh,
 		params.Analytics,
 		params.EventCleanup,
 		params.ScheduledPrune,
@@ -253,11 +257,10 @@ func registerJobs(params registerJobsParams) error {
 		params.ActivitySweep,
 		params.UploadSessionsCleanup,
 		params.GitCloneCleanup,
-		params.BackupRepositoryPrune,
 		params.UpgradeLogCleanup,
 	}
 	if params.Config.LocalDockerEnabled {
-		jobs = append(jobs, params.DockerClientRefresh, params.PruningVolumeHelper)
+		jobs = append(jobs, params.PruningVolumeHelper, params.BackupRepositoryPrune)
 	}
 	if !params.Config.AgentEnabled {
 		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync)

@@ -31,6 +31,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops/children/backup"
 	gitopssync "getarcane.dev/arcane/v3/internal/gitops/children/sync"
@@ -54,6 +55,7 @@ import (
 type (
 	GitOpsSyncService struct {
 		db              *database.DB
+		dockerService   *docker.DockerClientService
 		repoService     *gitrepo.GitRepositoryService
 		projectService  *projectpkg.ProjectService
 		swarmService    *swarm.SwarmService
@@ -94,6 +96,7 @@ type (
 
 		DB              *database.DB
 		RepoService     *gitrepo.GitRepositoryService
+		DockerService   *docker.DockerClientService
 		ProjectService  *projectpkg.ProjectService
 		SwarmService    *swarm.SwarmService
 		EventService    *event.EventService
@@ -218,6 +221,7 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 func NewGitOpsSyncService(p GitOpsSyncServiceParams) *GitOpsSyncService {
 	s := &GitOpsSyncService{
 		db:              p.DB,
+		dockerService:   p.DockerService,
 		repoService:     p.RepoService,
 		projectService:  p.ProjectService,
 		swarmService:    p.SwarmService,
@@ -335,6 +339,9 @@ func (s *GitOpsSyncService) registerSyncJob(ctx context.Context, syncID, environ
 		Payload:  syncTarget{EnvironmentID: environmentID, SyncID: syncID},
 		ScheduleFn: func(context.Context) string {
 			return schedule
+		},
+		ShouldRunFn: func(context.Context) bool {
+			return environmentID != "0" || s.dockerService.LocalDockerEnabled()
 		},
 		SkipRunFn: func(runCtx context.Context) string {
 			run, _ := jobcontext.Run(runCtx)

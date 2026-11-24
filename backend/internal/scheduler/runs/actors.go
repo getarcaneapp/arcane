@@ -17,7 +17,6 @@ import (
 
 	"kit.getarcane.app"
 
-	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/types/v3"
 )
@@ -496,9 +495,6 @@ func (a *executorActor) Job(ctx context.Context, _ string, data actor.Envelope) 
 		}
 		return q.execute(ctx, claim.Run)
 	}()
-	if errors.Is(runErr, common.ErrLocalDockerDisabled) {
-		outcome, runErr = types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: runErr.Error()}, nil
-	}
 	// Domain recovery may still report uncertainty; job runs finish as failures.
 	status := cmp.Or(outcome.Status, kit.Ternary(runErr != nil, types.RunStatusFailed, types.RunStatusSucceeded))
 	outcome = types.SchedulerOutcome{
