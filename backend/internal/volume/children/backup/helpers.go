@@ -134,3 +134,25 @@ func (s *Service) createBackupTempContainer(ctx context.Context, target string, 
 	}
 	return s.createBackupTempContainerWithMount(ctx, backupMount)
 }
+
+// runSnapshots points at the backup's snapshot fields.
+func runSnapshots(entry *types.VolumeBackup) backup.RunSnapshots {
+	return backup.RunSnapshots{
+		LocalID:          &entry.LocalSnapshotID,
+		RemoteID:         &entry.RemoteSnapshotID,
+		S3DestinationID:  &entry.S3DestinationID,
+		Size:             &entry.Size,
+		RemoteInstanceID: entry.RemoteInstanceID,
+	}
+}
+
+// snapshotRun is the backup writing the plan's snapshots, labeled with its volume.
+func snapshotRun(entry *types.VolumeBackup, plan backupPlan, tags ...string) backup.SnapshotRun {
+	return backup.SnapshotRun{
+		Snapshots:          runSnapshots(entry),
+		RunID:              entry.ID,
+		Label:              entry.VolumeName,
+		Tags:               append([]string{backup.RunSnapshotTag(entry.ID)}, tags...),
+		DestinationOptions: backup.DestinationOptions{Local: plan.LocalEnabled, Remote: plan.S3Enabled},
+	}
+}

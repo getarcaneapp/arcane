@@ -4854,5 +4854,6 @@
   "arcane_only_backup_description": "Back up Arcane's own data. Projects are backed up with project backups.",
   "restore_leaves_projects_description": "System backups cover Arcane only, so this restore leaves project folders as they are; restore projects from their project backups. Older backups that include projects still restore them.",
   "found_project_backups": "Found {count} project backup(s).",
-  "failed_to_discover_project_backups": "Failed to discover project backups."
+  "failed_to_discover_project_backups": "Failed to discover project backups.",
+  "external_volume_keeps_its_name": "External volume: the new project uses it under this name, so it is restored only if no volume of that name exists."
 }
