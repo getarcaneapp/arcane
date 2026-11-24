@@ -370,6 +370,9 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	}
 	for _, syncRecord := range syncs {
 		s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
+		if syncRecord.EnvironmentID == "0" && !s.dockerService.LocalDockerEnabled() {
+			continue
+		}
 		overdue := syncRecord.LastSyncAt == nil || time.Since(*syncRecord.LastSyncAt) > time.Duration(max(syncRecord.SyncInterval, 1))*time.Minute
 		if overdue || (slices.Contains(projectpkg.GitOpsPushModes, syncRecord.Mode) && syncRecord.BackupPending) {
 			s.kickSync(ctx, syncRecord.ID, "startup")
@@ -523,6 +526,9 @@ func (s *GitOpsSyncService) getSyncByID(ctx context.Context, environmentID, id s
 }
 
 func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, change SyncUpdate) (*projectpkg.GitOpsSync, error) {
+	if environmentID == "0" && !s.dockerService.LocalDockerEnabled() {
+		return nil, common.ErrLocalDockerDisabled
+	}
 	slog.InfoContext(ctx, "Creating GitOps sync", "environmentId", environmentID, "name", change.Request.Name, "repositoryId", change.Request.RepositoryID)
 
 	mode := cmp.Or(change.Request.Mode, types.GitOpsSyncModeDeploy)

@@ -300,8 +300,12 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 	jobs := make([]types.JobStatus, 0, len(allMetadata))
 
 	for _, jobMeta := range allMetadata {
+		// Startup skips the image polling watcher without local Docker, whatever the saved settings say.
+		localDockerOff := jobMeta.ID == "image-polling" && !s.cfg.LocalDockerEnabled
 		schedule := func() string {
 			switch {
+			case localDockerOff:
+				return ""
 			// Continuous jobs with a settings key (image-polling) are event-driven but
 			// also poll on that cron schedule, so surface the real expression.
 			case jobMeta.IsContinuous && jobMeta.SettingsKey == "":
@@ -327,7 +331,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 				}
 				return new(sched.Next(time.Now().In(s.location)))
 			}()),
-			(jobMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, jobMeta.EnabledKey)),
+			!localDockerOff && (jobMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, jobMeta.EnabledKey)),
 			s.evaluatePrerequisites(ctx, jobMeta),
 		))
 	}
@@ -556,6 +560,10 @@ func (s *JobService) executeRun(ctx context.Context, run types.SchedulerRun) (re
 	if slices.Contains([]string{"auto-update", "auto-patch", "auto-heal", "scheduled-prune", "vulnerability-scan", "image-polling"}, run.JobID) ||
 		strings.HasPrefix(run.JobID, "gitops-sync:") || strings.HasPrefix(run.JobID, "volume-backup:") || strings.HasPrefix(run.JobID, "system-backup:") {
 		status, err := s.environment.TestConnection(ctx, "0")
+		if errors.Is(err, common.ErrLocalDockerDisabled) {
+			// Waiting would retry forever; local Docker stays off until the manager restarts.
+			return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Local Docker is disabled"}, nil
+		}
 		if err != nil || status != "online" {
 			return types.SchedulerOutcome{Status: types.RunStatusWaiting, Message: "Waiting for Docker"}, err
 		}

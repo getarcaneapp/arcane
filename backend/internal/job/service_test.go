@@ -308,7 +308,7 @@ func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t 
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "pollingEnabled", false))
 
-	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{}, newFakeJobScheduler())
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{LocalDockerEnabled: true}, newFakeJobScheduler())
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
