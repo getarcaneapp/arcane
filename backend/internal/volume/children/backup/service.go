@@ -979,7 +979,7 @@ func (s *Service) RestoreFile(ctx context.Context, opts types.VolumeBackupFileRe
 	return "", nil
 }
 
-func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverVolumeBackupsRequest) (int, []string, error) {
+func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverBackupsRequest) (int, []string, error) {
 	if request.Destination == types.VolumeBackupDestinationLocal {
 		created, err := s.discoverLocalBackups(ctx)
 		return created, nil, err

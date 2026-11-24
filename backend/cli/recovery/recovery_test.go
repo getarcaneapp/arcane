@@ -92,7 +92,7 @@ func TestFinalizeRestoredBackup(t *testing.T) {
 	require.NoError(t, db.First(&projectsDirectories, "key = ?", "projectsDirectories").Error)
 	require.JSONEq(t, `[{"path":"/srv/more","enabled":true}]`, projectsDirectories.Value)
 	var discoveryPending settings.SettingVariable
-	require.NoError(t, db.First(&discoveryPending, "key = ?", "projectBackupDiscoveryPending").Error)
+	require.NoError(t, db.First(&discoveryPending, "key = ?", backup.ProjectDiscoveryPendingKey).Error)
 	require.Equal(t, "true", discoveryPending.Value)
 	storedKey, err := backup.NewRecoveryKeyStore(&database.DB{DB: db}).Get(t.Context(), backup.RecoveryKeyConfigID)
 	require.NoError(t, err)
@@ -156,7 +156,8 @@ func TestRestoreDataInternalSkipsRollbackWhenTheSwapChangesNothing(t *testing.T)
 	require.Equal(t, 1, restarts)
 	entries, err := os.ReadDir(data)
 	require.NoError(t, err)
-	require.Len(t, entries, 1)
+	// The leftover in the trash folder's place may hold live entries, so it is kept.
+	require.Len(t, entries, 2)
 	content, err := os.ReadFile(filepath.Join(data, "arcane.db"))
 	require.NoError(t, err)
 	require.Equal(t, "live", string(content))
