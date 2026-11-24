@@ -112,7 +112,7 @@
 	// System backups live in a local Docker volume, so they need the manager's own Docker.
 	const localDockerDisabled = $derived(isLocalDockerDisabled(environmentStore.getLocalEnvironment()));
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && !localDockerDisabled);
-	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE));
+	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE) && !localDockerDisabled);
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
 	const canDiscoverBackups = $derived(isGlobalAdmin());
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));

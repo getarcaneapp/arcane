@@ -99,7 +99,9 @@ export function destinationEnvironmentId(
 	const permitted = environments.filter((env) => hasPermission(permission, env.id)).map((env) => env.id);
 	if (permitted.includes(picked)) return picked;
 	if (permitted.includes(LOCAL_DOCKER_ENVIRONMENT_ID)) return LOCAL_DOCKER_ENVIRONMENT_ID;
-	return permitted[0] ?? (picked || LOCAL_DOCKER_ENVIRONMENT_ID);
+	// Never fall back to the local environment when it is not offered (local Docker disabled).
+	const fallback = environments.some((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID) ? LOCAL_DOCKER_ENVIRONMENT_ID : '';
+	return permitted[0] ?? (picked || fallback);
 }
 
 export function environmentScope(environments: EnvironmentRef[]): string {
