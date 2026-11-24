@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
@@ -23,6 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/containerd/errdefs"
+	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -31,6 +33,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/samber/mo"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -48,6 +51,7 @@ import (
 	"kit.getarcane.app/updater/digest"
 	"kit.getarcane.app/updater/refs"
 	"kit.getarcane.app/updater/registry"
+	updatertypes "kit.getarcane.app/updater/types"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -1638,4 +1642,62 @@ func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef str
 		return nil, errors.New("registry image config cache loader returned no config")
 	}
 	return cfg, nil
+}
+
+func ImagePlatform(ctx context.Context, dockerClient *client.Client, candidate updatertypes.TagCandidate) (ocispec.Platform, error) {
+	inspected, inspectErr := dockerClient.ImageInspect(ctx, cmp.Or(candidate.ImageID, candidate.CurrentRef))
+	if inspectErr == nil && inspected.Os != "" && inspected.Architecture != "" {
+		return ocispec.Platform{
+			OS:           inspected.Os,
+			Architecture: inspected.Architecture,
+			Variant:      inspected.Variant,
+		}, nil
+	}
+	version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
+	if err != nil {
+		return ocispec.Platform{}, errors.Join(inspectErr, fmt.Errorf("resolve daemon platform: %w", err))
+	}
+	if version.Os == "" || version.Arch == "" {
+		return ocispec.Platform{}, errors.New("image and daemon platform are unknown")
+	}
+	return ocispec.Platform{
+		OS:           version.Os,
+		Architecture: version.Arch,
+	}, nil
+}
+
+func (s *ContainerRegistryService) HasImagePlatform(ctx context.Context, imageRef string, platform ocispec.Platform, externalCreds []types.ContainerRegistryCredential) (bool, error) {
+	parsedRef, err := normalizeImageConfigReference(imageRef)
+	if err != nil {
+		return false, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
+	defer cancel()
+	desc, _, err := registryOperationWithCredentials(ctx, s, parsedRef.Context().RegistryStr(), parsedRef.Name(), "manifest fetch for "+strings.TrimSpace(imageRef), externalCreds,
+		func(ctx context.Context, credential *resolvedRegistryCredential) (*remote.Descriptor, error) {
+			tr, transportErr := s.authorizedTransport(ctx, parsedRef.Context(), credential)
+			if transportErr != nil {
+				return nil, transportErr
+			}
+			return remote.Get(parsedRef, remote.WithContext(ctx), remote.WithTransport(tr))
+		})
+	if err != nil {
+		return false, err
+	}
+	if !desc.MediaType.IsIndex() {
+		return true, nil
+	}
+	index, err := v1.ParseIndexManifest(bytes.NewReader(desc.Manifest))
+	if err != nil {
+		return false, fmt.Errorf("parse image index for %s: %w", strings.TrimSpace(imageRef), err)
+	}
+	matcher := platforms.Only(platform)
+	return slices.ContainsFunc(index.Manifests, func(child v1.Descriptor) bool {
+		return child.Platform != nil && matcher.Match(ocispec.Platform{
+			OS:           child.Platform.OS,
+			Architecture: child.Platform.Architecture,
+			OSVersion:    child.Platform.OSVersion,
+			Variant:      child.Platform.Variant,
+		})
+	}), nil
 }

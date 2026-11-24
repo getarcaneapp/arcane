@@ -2876,9 +2876,11 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 			if !assert.NoError(
 				t,
 				json.MarshalWrite(w, image.InspectResponse{
-					ID:          imageID,
-					RepoTags:    []string{imageRef},
-					RepoDigests: []string{registryURL.Host + "/team/app@" + imageID},
+					ID:           imageID,
+					RepoTags:     []string{imageRef},
+					RepoDigests:  []string{registryURL.Host + "/team/app@" + imageID},
+					Os:           "linux",
+					Architecture: "amd64",
 				}),
 			) {
 				return
@@ -3032,6 +3034,10 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 					},
 				}),
 			) {
+				return
+			}
+		case strings.Contains(r.URL.Path, "/images/"):
+			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: imageID, Os: "linux", Architecture: "amd64"})) {
 				return
 			}
 		default:

@@ -241,6 +241,7 @@ func NewUpdaterService(p UpdaterServiceParams) (*UpdaterService, error) {
 		Settings:               service,
 		RegistryDigestResolver: p.RegistryService,
 		RegistryTagLister:      service,
+		TagCandidateFilter:     service,
 		ProjectUpdater:         service,
 		SelfUpdater:            service,
 		Notifier:               service,
@@ -2056,6 +2057,22 @@ func (s *UpdaterService) ListTags(ctx context.Context, imageRef string) ([]strin
 		return nil, fmt.Errorf("resolve registry credentials: %w", err)
 	}
 	return s.deps.RegistryDigestResolver.ListImageTags(ctx, imageRef, credentials)
+}
+
+func (s *UpdaterService) AcceptTag(ctx context.Context, candidate updatertypes.TagCandidate) (bool, error) {
+	dockerClient, err := s.DockerClient(ctx)
+	if err != nil {
+		return false, err
+	}
+	platform, err := registryInternal.ImagePlatform(ctx, dockerClient, candidate)
+	if err != nil {
+		return false, err
+	}
+	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
+	if err != nil {
+		return false, fmt.Errorf("resolve registry credentials: %w", err)
+	}
+	return s.deps.RegistryDigestResolver.HasImagePlatform(ctx, candidate.TargetRef, platform, credentials)
 }
 
 func (s *UpdaterService) UpdateServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) error {
