@@ -187,6 +187,7 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
+	// The first lookup succeeded and the disabled flag is fixed at startup, so this one cannot fail.
 	if current, _ := s.DockerHost(); host != current {
 		s.mu.Unlock()
 		closeDockerClient(ctx, cli, "stale host after settings change")

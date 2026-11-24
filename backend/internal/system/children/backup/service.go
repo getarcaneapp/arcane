@@ -1445,8 +1445,9 @@ func (s *Service) GetPolicies(ctx context.Context) (*types.SystemBackupPolicyCol
 		})
 	}
 	return &types.SystemBackupPolicyCollection{
-		Policies:          decorated,
-		RecoveryKeyStored: configured,
+		Policies:           decorated,
+		RecoveryKeyStored:  configured,
+		LocalDockerEnabled: s.dockerService.LocalDockerEnabled(),
 	}, nil
 }
 
@@ -1713,6 +1714,10 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.engine.Authorize(ctx, requester); err != nil {
 		return nil, err
+	}
+	// Reject before a run is saved; the worker needs the manager's Docker even for S3-only backups.
+	if !s.dockerService.LocalDockerEnabled() {
+		return nil, common.ErrLocalDockerDisabled
 	}
 	if s.config.AgentEnabled && request.ID != "" {
 		if _, parseErr := uuid.Parse(strings.TrimPrefix(request.ID, "system-")); parseErr != nil {
