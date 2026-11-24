@@ -50,7 +50,7 @@
 		runAutomaticBackupDiscovery,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
-	import { readableEnvironments, type EnvironmentRow } from '#lib/utils/environments.js';
+	import type { EnvironmentRow } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -62,7 +62,7 @@
 	const queryClient = useQueryClient();
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const backupsQuery = createQuery(() => ({
-		...systemBackupHistoryQuery(pageState.scope, readableEnvironments('volumes:read'), pageState.requestOptions),
+		...systemBackupHistoryQuery(pageState.scope, pageState.requestOptions),
 		placeholderData: (previous) => previous
 	}));
 	const backups = $derived(backupsQuery.data ?? data.backups);
@@ -114,7 +114,8 @@
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && !localDockerDisabled);
 	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE) && !localDockerDisabled);
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
-	const canDiscoverBackups = $derived(isGlobalAdmin());
+	// Discovery restores snapshots through the manager's Docker, even for S3 destinations.
+	const canDiscoverBackups = $derived(isGlobalAdmin() && !localDockerDisabled);
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const backupTypeOptions = $derived([
