@@ -440,6 +440,9 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 					"name": journal.OldName, "path": journal.OldPath, "dir_name": journal.OldDirName,
 				}).Error
 			},
+			PersistEnv: func(ctx context.Context, projectPath string, values map[string]string) error {
+				return s.persistServiceImageEnv(ctx, projectPath, values)
+			},
 		}),
 		containerRegistryService:    p.ContainerRegistryService,
 		uploads:                     p.Uploads,
@@ -1270,8 +1273,13 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 			return changesErr
 		}
 		if len(changes) > 0 {
-			if _, saveErr := s.saveProjectServiceImages(ctx, projectID, changes); saveErr != nil {
+			saved, saveErr := s.saveProjectServiceImages(ctx, projectID, changes)
+			if saveErr != nil {
 				return saveErr
+			}
+			// A selective update also recreates services whose image follows an updated .env variable.
+			if len(options.Services) > 0 {
+				options.Services = slices.Compact(slices.Sorted(slices.Values(slices.Concat(options.Services, saved))))
 			}
 		}
 	}
@@ -3871,6 +3879,43 @@ func (s *ProjectService) saveProjectServiceImages(ctx context.Context, projectID
 	}
 	s.invalidateProjectCaches(projectID)
 	return services, nil
+}
+
+// persistServiceImageEnv writes image tag variables to the project .env once it is known to decide their values.
+func (s *ProjectService) persistServiceImageEnv(ctx context.Context, projectPath string, values map[string]string) error {
+	projectsDirectory, err := s.GetProjectsDirectory(ctx)
+	if err != nil {
+		return err
+	}
+	if readableErr := update.EnsureProjectEnvReadable(ctx, projectsDirectory, projectPath); readableErr != nil {
+		return readableErr
+	}
+	current, _, err := projectEnvDetails(ctx, projectPath)
+	if err != nil {
+		return err
+	}
+	names := slices.Sorted(maps.Keys(values))
+	var overrides strings.Builder
+	for _, name := range names {
+		overrides.WriteString(name + "=" + values[name] + "\n")
+	}
+	candidate, err := projects.BuildEffectiveEnvContent(current, overrides.String())
+	if err != nil {
+		return fmt.Errorf("update project .env: %w", err)
+	}
+	runtimeEnv, err := projects.BuildValidationEnvironment(ctx, projectsDirectory, projectPath, &candidate)
+	if err != nil {
+		return fmt.Errorf("check project .env: %w", err)
+	}
+	for _, name := range names {
+		if runtimeEnv[name] != values[name] {
+			return fmt.Errorf("cannot set %s in the project .env: COMPOSE_ENV_FILES or COMPOSE_DISABLE_ENV_FILE overrides it; update %s where it is set", name, name)
+		}
+	}
+	if candidate == current {
+		return nil
+	}
+	return projectsync.PersistEffectiveEnvContent(ctx, projectPath, projectsDirectory, candidate)
 }
 
 func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID, folderPath string) (*types.Workspace, error) {
