@@ -499,6 +499,36 @@ func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
 	require.Empty(t, fakeScheduler.busWatcherRuns)
 }
 
+func TestJobService_Submit_RejectsImagePollingWithoutLocalDocker(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "pollingEnabled", true))
+	fakeScheduler := newFakeJobScheduler()
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{LocalDockerEnabled: false}, fakeScheduler)
+	require.NoError(t, db.AutoMigrate(&userdomain.User{}, &role.Role{}, &role.UserRoleAssignment{}))
+	require.NoError(t, db.Create(&userdomain.User{Username: "operator", BaseModel: database.BaseModel{ID: "operator"}}).Error)
+	require.NoError(t, db.Create(&role.Role{
+		ID:          "jobs-manager",
+		Name:        "Jobs manager",
+		Permissions: database.StringSlice{authz.PermJobsRun},
+	}).Error)
+	require.NoError(t, db.Create(&role.UserRoleAssignment{UserID: "operator", RoleID: "jobs-manager"}).Error)
+
+	_, err = jobSvc.Submit(ctx, types.SchedulerRequest{
+		JobID:         "image-polling",
+		EnvironmentID: "0",
+		Trigger:       "manual",
+		RequestedBy:   "operator",
+	})
+	require.ErrorContains(t, err, "job is disabled")
+	runs, err := jobSvc.runs.List(ctx, "0", "image-polling", 1, 10)
+	require.NoError(t, err)
+	require.Empty(t, runs.Runs)
+	require.Empty(t, fakeScheduler.busWatcherRuns)
+}
+
 func findJobStatusByID(t *testing.T, jobs []types.JobStatus, id string) types.JobStatus {
 	t.Helper()
 
