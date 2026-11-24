@@ -228,14 +228,18 @@ func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 func TestRequirePermissionAllowsScopeWhenAnyEnvironmentAllows(t *testing.T) {
 	tests := []struct {
 		name    string
+		method  string
 		ids     []string
 		allowed bool
 	}{
-		{name: "one permitted environment", ids: []string{"env-2", "env-1"}, allowed: true},
-		{name: "no permitted environment", ids: []string{"env-2", "env-3"}, allowed: false},
+		{name: "one permitted environment", method: http.MethodGet, ids: []string{"env-2", "env-1"}, allowed: true},
+		{name: "no permitted environment", method: http.MethodGet, ids: []string{"env-2", "env-3"}, allowed: false},
+		{name: "action with every environment permitted", method: http.MethodPost, ids: []string{"env-1"}, allowed: true},
+		{name: "action with one denied environment", method: http.MethodPost, ids: []string{"env-2", "env-1"}, allowed: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			handled := false
 			router := echo.New()
 			api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 			api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
@@ -246,19 +250,21 @@ func TestRequirePermissionAllowsScopeWhenAnyEnvironmentAllows(t *testing.T) {
 			})
 			huma.Register(api, huma.Operation{
 				OperationID: "scoped-list",
-				Method:      http.MethodGet,
+				Method:      tt.method,
 				Path:        "/agents/{id}/containers",
 				Middlewares: RequirePermission(api, authz.PermContainersList),
 			}, func(_ context.Context, _ *struct {
 				ID string `path:"id"`
 			},
 			) (*struct{}, error) {
+				handled = true
 				return &struct{}{}, nil
 			})
 
 			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/agents/"+strings.Join(tt.ids, ",")+"/containers", http.NoBody))
+			router.ServeHTTP(rec, httptest.NewRequest(tt.method, "/api/agents/"+strings.Join(tt.ids, ",")+"/containers", http.NoBody))
 
+			require.Equal(t, tt.allowed, handled)
 			if tt.allowed {
 				require.Less(t, rec.Code, http.StatusMultipleChoices)
 				return

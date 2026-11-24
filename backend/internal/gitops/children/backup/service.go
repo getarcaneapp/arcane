@@ -2,6 +2,7 @@ package backup
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -159,8 +160,10 @@ func (s *Service) ApplyCreate(ctx context.Context, tx *gorm.DB, req types.GitOps
 	if err != nil {
 		return err
 	}
-	syncRecord.ProjectID = &backupConfig.project.ID
-	syncRecord.ProjectName = backupConfig.project.Name
+	if backupConfig.project != nil {
+		syncRecord.ProjectID = &backupConfig.project.ID
+		syncRecord.ProjectName = backupConfig.project.Name
+	}
 	syncRecord.TargetType = "project"
 	syncRecord.BackupDirectory = backupConfig.directory
 	syncRecord.ComposePath = path.Join(backupConfig.directory, backupConfig.composeFile)
@@ -172,10 +175,30 @@ func (s *Service) ApplyCreate(ctx context.Context, tx *gorm.DB, req types.GitOps
 }
 
 func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req types.GitOpsSync) (*backupCreateConfig, error) {
-	if strings.TrimSpace(kit.FromPtr(req.ProjectID)) == "" {
-		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "projectId", Err: errors.New("a project is required for a backup sync")})
+	projectID := strings.TrimSpace(kit.FromPtr(req.ProjectID))
+	if projectID == "" && (req.Mode != types.GitOpsSyncModeBidirectional || len(req.BackupPaths) > 0) {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "projectId", Err: errors.New("a project is required for a backup sync and to choose backup paths")})
 	}
-	project, err := projectpkg.LockProjectForSync(tx, kit.FromPtr(req.ProjectID))
+	directory, err := kit.NormalizeRelativePath(req.BackupDirectory)
+	if err == nil && slices.Contains(strings.Split(directory, "/"), ".git") {
+		err = errors.New("backup directory must not contain a .git segment")
+	}
+	if err == nil && len(directory) >= 2 && directory[1] == ':' && unicode.IsLetter(rune(directory[0])) {
+		err = errors.New("backup directory must not start with a drive letter")
+	}
+	if err != nil {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "backupDirectory", Err: err})
+	}
+	if ensureBackupDestinationFreeErr := ensureBackupDestinationFree(tx, "", req.RepositoryID, req.Branch, directory); ensureBackupDestinationFreeErr != nil {
+		return nil, ensureBackupDestinationFreeErr
+	}
+	if projectID == "" {
+		return &backupCreateConfig{
+			directory:   directory,
+			composeFile: path.Base(cmp.Or(strings.TrimSpace(req.ComposePath), projects.DefaultComposeFileName)),
+		}, nil
+	}
+	project, err := projectpkg.LockProjectForSync(tx, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -192,19 +215,6 @@ func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req type
 		return nil, common.Classify(common.ErrConflict, errors.New("project already has a Git backup; disconnect it first"))
 	}
 
-	directory, err := kit.NormalizeRelativePath(req.BackupDirectory)
-	if err == nil && slices.Contains(strings.Split(directory, "/"), ".git") {
-		err = errors.New("backup directory must not contain a .git segment")
-	}
-	if err == nil && len(directory) >= 2 && directory[1] == ':' && unicode.IsLetter(rune(directory[0])) {
-		err = errors.New("backup directory must not start with a drive letter")
-	}
-	if err != nil {
-		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "backupDirectory", Err: err})
-	}
-	if ensureBackupDestinationFreeErr := ensureBackupDestinationFree(tx, "", req.RepositoryID, req.Branch, directory); ensureBackupDestinationFreeErr != nil {
-		return nil, ensureBackupDestinationFreeErr
-	}
 	if ensureProjectPathUnderRootErr := s.projectService.EnsureProjectPathUnderRoot(ctx, project, false); ensureProjectPathUnderRootErr != nil {
 		return nil, ensureProjectPathUnderRootErr
 	}

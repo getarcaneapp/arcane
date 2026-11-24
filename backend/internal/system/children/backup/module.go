@@ -138,7 +138,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			OperationID: "discover-system-backups",
 			Method:      http.MethodPost,
 			Path:        "/backups/discover",
-			Summary:     "Discover Arcane system backups in S3",
+			Summary:     "Discover Arcane system backups in local storage or S3",
 			Tags: []string{
 				"System Backups",
 			},

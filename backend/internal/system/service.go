@@ -630,6 +630,11 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 				Pluck("remote_snapshot_id", &ids).Error
 			return ids, err
 		},
+		LocalSnapshotIDs: func(ctx context.Context) ([]string, error) {
+			var ids []string
+			err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).Where("local_snapshot_id <> ''").Pluck("local_snapshot_id", &ids).Error
+			return ids, err
+		},
 		CountRuns: func(ctx context.Context) (int64, error) {
 			var count int64
 			err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).Count(&count).Error

@@ -42,7 +42,7 @@ func newScopeTestRouter(t *testing.T, limit int) (*echo.Echo, *[]*httpx.Environm
 	}
 	aggregate := map[string]any{authz.MetaEnvironmentAggregate: true}
 	huma.Register(api, huma.Operation{OperationID: "list-containers", Method: http.MethodGet, Path: "/agents/{id}/containers", Metadata: aggregate}, handler)
-	huma.Register(api, huma.Operation{OperationID: "create-container", Method: http.MethodPost, Path: "/agents/{id}/containers", Metadata: aggregate}, handler)
+	huma.Register(api, huma.Operation{OperationID: "create-container", Method: http.MethodPost, Path: "/agents/{id}/containers"}, handler)
 	huma.Register(api, huma.Operation{OperationID: "list-images", Method: http.MethodGet, Path: "/agents/{id}/images"}, handler)
 	matcher.CollectFromHumaAPI(api)
 	return router, &handled

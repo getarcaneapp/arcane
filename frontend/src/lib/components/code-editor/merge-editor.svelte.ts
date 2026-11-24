@@ -1,4 +1,4 @@
-import { MergeView } from '@codemirror/merge';
+import type { MergeView } from '@codemirror/merge';
 import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { untrack } from 'svelte';
@@ -15,57 +15,35 @@ export type MergeAttachmentParams = {
 
 type CreateMergeHostAttachmentOptions = {
 	getTheme: () => Extension;
-	getLanguageExtension: (lang: CodeLanguage, options?: { lightweight?: boolean }) => Extension[];
-	getReadonlyLanguageExtension: (lang: CodeLanguage) => Extension[];
+	getLanguageExtension: (
+		lang: CodeLanguage,
+		options?: { lightweight?: boolean; languageExtensions?: Extension[] }
+	) => Extension[];
+	loadLanguageExtension: (lang: CodeLanguage) => Promise<Extension[]>;
 	onValueChange: (nextValue: string) => void;
 	onPrimaryViewReady: (view: EditorView) => void;
+	onLoadError: (error: unknown) => void;
 };
 
 export function createMergeHostAttachment(
 	options: CreateMergeHostAttachmentOptions,
 	getParams: () => MergeAttachmentParams
 ): Attachment<HTMLDivElement> {
-	const { getTheme, getLanguageExtension, getReadonlyLanguageExtension, onValueChange, onPrimaryViewReady } = options;
+	const { getTheme, getLanguageExtension, loadLanguageExtension, onValueChange, onPrimaryViewReady, onLoadError } = options;
 
 	return (node) => {
 		let currentParams = untrack(getParams);
 		let currentMergeView: MergeView | null = null;
+		let destroyed = false;
+		let createGeneration = 0;
 		const themeCompartmentA = new Compartment();
 		const themeCompartmentB = new Compartment();
 
 		const destroyCurrentMergeView = () => {
+			createGeneration += 1;
 			if (!currentMergeView) return;
 			currentMergeView.destroy();
 			currentMergeView = null;
-		};
-
-		const createCurrentMergeView = () => {
-			if (!currentParams.diffActive || currentMergeView) return;
-
-			const theme = untrack(getTheme);
-			const readonlyExtension = [EditorState.readOnly.of(true), EditorView.editable.of(false), themeCompartmentB.of(theme)];
-
-			currentMergeView = new MergeView({
-				parent: node,
-				a: {
-					doc: currentParams.value,
-					extensions: [
-						...getLanguageExtension(currentParams.language, { lightweight: true }),
-						themeCompartmentA.of(theme),
-						EditorView.updateListener.of((update) => {
-							if (update.docChanged) {
-								onValueChange(update.state.doc.toString());
-							}
-						})
-					]
-				},
-				b: {
-					doc: currentParams.baseline,
-					extensions: [...getReadonlyLanguageExtension(currentParams.language), ...readonlyExtension]
-				}
-			});
-
-			onPrimaryViewReady(currentMergeView.a);
 		};
 
 		const syncCurrentMergeView = () => {
@@ -94,6 +72,52 @@ export function createMergeHostAttachment(
 			}
 		};
 
+		const createCurrentMergeView = async () => {
+			if (!currentParams.diffActive || currentMergeView) return;
+			const generation = ++createGeneration;
+			const language = currentParams.language;
+
+			let MergeViewCtor: typeof MergeView;
+			let languageExtensions: Extension[];
+			try {
+				const [mergeModule, loadedLanguage] = await Promise.all([import('@codemirror/merge'), loadLanguageExtension(language)]);
+				MergeViewCtor = mergeModule.MergeView;
+				languageExtensions = loadedLanguage;
+			} catch (error) {
+				if (!destroyed && generation === createGeneration && currentParams.diffActive) {
+					onLoadError(error);
+				}
+				return;
+			}
+			if (destroyed || generation !== createGeneration || !currentParams.diffActive || currentMergeView) return;
+
+			const theme = untrack(getTheme);
+			const readonlyExtension = [EditorState.readOnly.of(true), EditorView.editable.of(false), themeCompartmentB.of(theme)];
+
+			currentMergeView = new MergeViewCtor({
+				parent: node,
+				a: {
+					doc: currentParams.value,
+					extensions: [
+						...getLanguageExtension(language, { lightweight: true, languageExtensions }),
+						themeCompartmentA.of(theme),
+						EditorView.updateListener.of((update) => {
+							if (update.docChanged) {
+								onValueChange(update.state.doc.toString());
+							}
+						})
+					]
+				},
+				b: {
+					doc: currentParams.baseline,
+					extensions: [...languageExtensions, ...readonlyExtension]
+				}
+			});
+
+			onPrimaryViewReady(currentMergeView.a);
+			syncCurrentMergeView();
+		};
+
 		const applyParams = (nextParams: MergeAttachmentParams) => {
 			const mustRecreate = Boolean(currentMergeView && nextParams.language !== currentParams.language);
 			currentParams = nextParams;
@@ -107,7 +131,11 @@ export function createMergeHostAttachment(
 				destroyCurrentMergeView();
 			}
 
-			createCurrentMergeView();
+			if (!currentMergeView) {
+				void createCurrentMergeView();
+				return;
+			}
+
 			syncCurrentMergeView();
 		};
 
@@ -127,6 +155,9 @@ export function createMergeHostAttachment(
 			});
 		});
 
-		return destroyCurrentMergeView;
+		return () => {
+			destroyed = true;
+			destroyCurrentMergeView();
+		};
 	};
 }
