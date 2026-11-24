@@ -44,7 +44,7 @@ COPY cli ./cli
 COPY backend/go.mod backend/go.sum ./backend/
 WORKDIR /build/backend
 RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
+    GOSUMDB=off go mod download
 COPY backend ./
 COPY .arcane.json ../arcane.json
 
