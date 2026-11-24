@@ -48,8 +48,9 @@ const (
 // ErrSwapNotApplied marks a failed swap that changed nothing or undid every change it made.
 var ErrSwapNotApplied = errors.New("the live data was left as it was")
 
-// RemoveSwapLeftovers removes the staging and trash folders an earlier staged restore left in directory.
-func RemoveSwapLeftovers(ctx context.Context, directory string) error {
+// RemoveSwapLeftovers removes the folders with the prefix that earlier staged restores left in directory. A trash folder
+// may hold live entries a failed swap could not put back, so only a swap that applied removes trash folders.
+func RemoveSwapLeftovers(ctx context.Context, directory, prefix string) error {
 	root := acfs.Root{Path: directory}
 	entries, err := root.List(ctx, "/")
 	if err != nil {
@@ -57,7 +58,7 @@ func RemoveSwapLeftovers(ctx context.Context, directory string) error {
 	}
 	var removeErr error
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name, SwapStagingPrefix) || strings.HasPrefix(entry.Name, SwapTrashPrefix) {
+		if strings.HasPrefix(entry.Name, prefix) {
 			removeErr = errors.Join(removeErr, root.RemoveAll(ctx, "/"+entry.Name))
 		}
 	}
@@ -183,7 +184,8 @@ func (p *SwapPlan) children(ctx context.Context, relative string) (map[string]ac
 }
 
 // Apply moves removed and replaced live entries to the trash, removals first so stale SQLite sidecars go before a
-// database moves in, then moves each staged entry into place. A failed swap undoes its steps and reports ErrSwapNotApplied.
+// database moves in, then moves each staged entry into place, and removes every trash folder the restored data replaced.
+// A failed swap undoes its steps and reports ErrSwapNotApplied.
 func (p SwapPlan) Apply(ctx context.Context) (err error) {
 	if err = p.root.Mkdir(ctx, "/"+p.trash, 0o700); err != nil {
 		return fmt.Errorf("create the restore trash folder: %w; %w", err, ErrSwapNotApplied)
@@ -252,7 +254,7 @@ func (p SwapPlan) Apply(ctx context.Context) (err error) {
 			return fmt.Errorf("move restored %s into place: %w", placement.path, err)
 		}
 	}
-	if cleanupErr := errors.Join(p.root.RemoveAll(ctx, "/"+p.staging), p.root.RemoveAll(ctx, "/"+p.trash)); cleanupErr != nil {
+	if cleanupErr := errors.Join(p.root.RemoveAll(ctx, "/"+p.staging), RemoveSwapLeftovers(ctx, p.root.Path, SwapTrashPrefix)); cleanupErr != nil {
 		slog.WarnContext(ctx, "Restored data is in place, but the staging folders could not be removed", "directory", p.root.Path, "error", cleanupErr)
 	}
 	return nil

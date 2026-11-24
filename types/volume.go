@@ -71,11 +71,6 @@ type (
 		External bool              `json:"external,omitempty" doc:"Create the volume without Compose labels, as Compose expects of an external volume"`
 	}
 
-	DiscoverVolumeBackupsRequest struct {
-		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3" doc:"Repository to scan; s3 when omitted"`
-		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"S3 destination to scan for existing volume backups"`
-	}
-
 	DiscoverVolumeBackupsResponse struct {
 		Errors []string `json:"errors,omitempty" doc:"Per-repository failures encountered during discovery"`
 		Count  int      `json:"count" doc:"Number of newly discovered volume backups"`
