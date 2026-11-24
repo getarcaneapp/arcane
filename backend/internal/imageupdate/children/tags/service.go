@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/platforms"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
@@ -21,6 +22,7 @@ import (
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 	"kit.getarcane.app/updater/refs"
+	updatertypes "kit.getarcane.app/updater/types"
 
 	"getarcane.dev/arcane/v3/internal/docker"
 	registryInternal "getarcane.dev/arcane/v3/internal/registry"
@@ -52,14 +54,15 @@ type (
 
 	// tagRegistry shares listings and digests per scan so replicas cost one request and scan credentials skip service caches.
 	tagRegistry struct {
-		service      *registryInternal.ContainerRegistryService
-		docker       *docker.DockerClientService
-		dockerClient *scanDockerClient
-		settings     *settings.SettingsService
-		limiter      *registry.RegistryRateLimiter
-		tags         *scanRegistryMemo[[]string]
-		digests      *scanRegistryMemo[string]
-		credentials  []types.ContainerRegistryCredential
+		service         *registryInternal.ContainerRegistryService
+		docker          *docker.DockerClientService
+		dockerClient    *scanDockerClient
+		settings        *settings.SettingsService
+		limiter         *registry.RegistryRateLimiter
+		tags            *scanRegistryMemo[[]string]
+		digests         *scanRegistryMemo[string]
+		platformMatches *scanRegistryMemo[bool]
+		credentials     []types.ContainerRegistryCredential
 	}
 
 	// scanDockerClient shares one timeout-bounded Docker client across a tag scan.
@@ -146,12 +149,18 @@ func (s *Service) Check(ctx context.Context, req CheckRequest) (map[string]*type
 			failures:    map[string]error{},
 			keepFailure: func(error) bool { return false },
 		},
+		platformMatches: &scanRegistryMemo[bool]{
+			values:      map[string]bool{},
+			failures:    map[string]error{},
+			keepFailure: func(err error) bool { return registryInternal.IsRateLimitErrorString(err.Error()) },
+		},
 	}
 	defer adapter.dockerClient.close(ctx)
 	engine, err := updater.New(updater.Config{
 		RegistryTagLister:      adapter,
 		RegistryDigestResolver: adapter,
 		DockerClientProvider:   adapter,
+		TagCandidateFilter:     adapter,
 		LabelPolicy:            updater.LabelPolicy{IsUpdateDisabledFunc: imageref.IsUpdateCheckDisabled},
 	})
 	if err != nil {
@@ -279,6 +288,28 @@ func (r tagRegistry) ImageDigest(ctx context.Context, imageRef string) (string, 
 		return fetch()
 	}
 	return r.digests.do(parsed.NormalizedRef, fetch)
+}
+
+func (r tagRegistry) AcceptTag(ctx context.Context, candidate updatertypes.TagCandidate) (bool, error) {
+	parsed, err := refs.NormalizeReference(candidate.TargetRef)
+	if err != nil {
+		return false, err
+	}
+	dockerClient, err := r.DockerClient(ctx)
+	if err != nil {
+		return false, err
+	}
+	platform, err := registryInternal.ImagePlatform(ctx, dockerClient, candidate)
+	if err != nil {
+		return false, err
+	}
+	return r.platformMatches.do(parsed.NormalizedRef+"|"+platforms.Format(platform), func() (bool, error) {
+		if acquireErr := r.limiter.Acquire(ctx, parsed.RegistryHost); acquireErr != nil {
+			return false, acquireErr
+		}
+		defer r.limiter.Release(parsed.RegistryHost)
+		return r.service.HasImagePlatform(ctx, parsed.NormalizedRef, platform, r.credentials)
+	})
 }
 
 func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service, digests tagRegistry, cnt container.Summary) *types.ImageUpdateResponse {

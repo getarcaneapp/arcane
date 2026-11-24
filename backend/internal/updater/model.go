@@ -45,7 +45,10 @@ const (
 	AutoUpdateStatusSkipped   AutoUpdateStatus = "skipped"
 	AutoUpdateStatusRestarted AutoUpdateStatus = "restarted"
 
-	vulnerabilityGateBlockedPrefix    = "update blocked by vulnerability gate: "
+	vulnerabilityGateBlockedPrefix = "update blocked by vulnerability gate: "
+	// engineExcludedReason is the skip reason the updater engine reports for ExcludedContainers.
+	// It mirrors containerEligibility in kit.getarcane.app/updater; recheck it on kit upgrades.
+	engineExcludedReason              = "container excluded by settings"
 	vulnerabilityGateScanFailedPrefix = "vulnerability gate scan failed: "
 )
 

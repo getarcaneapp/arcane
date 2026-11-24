@@ -832,7 +832,12 @@ func TestSettingsServiceActorSerializesContainerExclusionUpdates(t *testing.T) {
 	for _, name := range []string{"api", "worker"} {
 		go func() {
 			<-start
-			results <- svc.SetContainerAutoUpdateExclusion(ctx, name, true)
+			results <- svc.SetContainerListed(ctx, ContainerListChange{
+				ListKey:       "autoUpdateExcludedContainers",
+				ModeKey:       "autoUpdateMode",
+				ContainerName: name,
+				Enabled:       false,
+			})
 		}()
 	}
 	close(start)

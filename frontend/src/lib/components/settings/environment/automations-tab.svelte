@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import JobScheduleDialog from '#lib/components/job-card/job-schedule-dialog.svelte';
 	import MixedValuesPopover from '#lib/components/settings/mixed-values-popover.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
@@ -20,15 +21,17 @@
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { ContainerSummary } from '#lib/types/container.js';
 	import type { JobScheduleConfig } from '#lib/types/jobschedule.js';
+	import type { FormInput } from '#lib/types/ui/form.js';
 	import type { MixedSettingValue } from '#lib/types/ui/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
+		AUTO_UPDATE_LABEL,
 		UPDATE_CHECK_LABEL,
 		UPDATE_DELAY_LABEL,
-		isAutoUpdateLabelDisabled,
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
+	import { AUTO_HEAL_LABEL, isContainerLabelDisabled, isContainerLabelEnabled } from '#lib/utils/container-labels.js';
 	import { actAcrossEnvironments, listScopes } from '#lib/utils/environments.js';
 
 	import type { AutomationsTabProps } from './tab-props';
@@ -38,6 +41,16 @@
 		'pollingInterval' | 'autoUpdateInterval' | 'scheduledPruneInterval' | 'vulnerabilityScanInterval' | 'autoHealInterval'
 	>;
 
+	type ContainerListKey = 'autoUpdateExcludedContainers' | 'autoHealExcludedContainers';
+	type ContainerModeKey = 'autoUpdateMode' | 'autoHealMode';
+	type ContainerMode = 'exclude' | 'include';
+	type ClearedList = { list: string; mode: ContainerMode | null };
+
+	type LabelState = {
+		hint: string;
+		selected: boolean;
+	};
+
 	type ContainerItem = {
 		value: string;
 		label: string;
@@ -46,7 +59,7 @@
 		selected: boolean;
 	};
 
-	let { formInputs = $bindable(), mixed, lock, environments }: AutomationsTabProps = $props();
+	let { formInputs = $bindable(), mixed, lock, environments, containerModes }: AutomationsTabProps = $props();
 
 	const queryClient = useQueryClient();
 	const vulnerabilityManagementEnabled = $derived(
@@ -81,21 +94,143 @@
 	const containers = $derived([
 		...new Map((containersQuery.data?.data ?? []).map((container) => [containerName(container), container])).values()
 	]);
+	// Rows merge same-named containers from several environments, so a label only decides a row when all of them carry it.
+	const containersByName = $derived(Map.groupBy(containersQuery.data?.data ?? [], containerName));
 
 	let updateSearchTerm = $state('');
 	let autoHealSearchTerm = $state('');
 	let scheduleTarget = $state<{ key: ScheduleKey; name: string; value?: string } | null>(null);
 	let scheduleOpen = $state(false);
 
-	const autoUpdateExcluded = $derived(parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers.value));
-	const autoHealExcluded = $derived(parseExcludedContainerSet(formInputs.autoHealExcludedContainers.value));
+	// Agents that predate the mode settings do not report them, so their inputs can be missing.
+	const autoUpdateMode = $derived<FormInput<ContainerMode | null> | undefined>(formInputs.autoUpdateMode);
+	const autoHealMode = $derived<FormInput<ContainerMode | null> | undefined>(formInputs.autoHealMode);
+	const autoUpdateIncludeMode = $derived(autoUpdateMode?.value === 'include');
+	const autoHealIncludeMode = $derived(autoHealMode?.value === 'include');
+	// Older agents read a shared list as an exclusion list, so the mode is only offered when every selected
+	// environment supports it, and the list stays read-only then while any environment uses include mode.
+	const modesPartlySupported = $derived(!containerModes.every && containerModes.some);
+	// While the selected environments use different modes the list means different things for them.
+	const autoUpdateModeMixed = $derived(containerModes.every && autoUpdateMode?.value == null);
+	const autoHealModeMixed = $derived(containerModes.every && autoHealMode?.value == null);
+	const autoUpdateListLocked = $derived(autoUpdateModeMixed || (modesPartlySupported && containerModes.autoUpdateInclude));
+	const autoHealListLocked = $derived(autoHealModeMixed || (modesPartlySupported && containerModes.autoHealInclude));
+	const containerModeOptions = [
+		{ value: 'exclude', label: m.all_except_the_listed_ones() },
+		{ value: 'include', label: m.only_the_listed_ones() }
+	];
+	// Switching the mode gives a list the opposite meaning, so it is cleared and restored if the switch is undone.
+	let clearedLists = $state<Partial<Record<ContainerListKey, ClearedList>>>({});
+	// A list that differs between environments or is set by an environment variable cannot be cleared with the
+	// mode change, so the mode stays as it is until the list can change too.
+	const autoUpdateModeBlocked = $derived(modeBlocked('autoUpdateExcludedContainers'));
+	const autoHealModeBlocked = $derived(modeBlocked('autoHealExcludedContainers'));
+	// Standalone containers that are not included are not restarted when a container they depend on is updated.
+	const autoUpdateListHelp = $derived(
+		[
+			m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` }),
+			autoUpdateIncludeMode ? m.dependent_containers_restart_hint() : '',
+			clearedHint('autoUpdateExcludedContainers', autoUpdateMode?.value),
+			autoUpdateModeMixed ? m.mixed_modes_list_hint() : ''
+		]
+			.filter(Boolean)
+			.join(' ')
+	);
+	const autoHealListHelp = $derived(
+		[clearedHint('autoHealExcludedContainers', autoHealMode?.value), autoHealModeMixed ? m.mixed_modes_list_hint() : '']
+			.filter(Boolean)
+			.join(' ') || undefined
+	);
+	const autoUpdateListed = $derived(parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers.value));
+	const autoHealListed = $derived(parseExcludedContainerSet(formInputs.autoHealExcludedContainers.value));
 
 	function containerName(container: ContainerSummary): string {
 		return container.names[0] || container.id.substring(0, 12);
 	}
 
-	function toggleExcluded(current: ReadonlySet<string>, name: string): string {
-		return (current.has(name) ? [...current].filter((entry) => entry !== name) : [...current, name]).join(',');
+	function allNamed(container: ContainerSummary, test: (labels?: Record<string, string>) => boolean): boolean {
+		return (containersByName.get(containerName(container)) ?? [container]).every((entry) => test(entry.labels));
+	}
+
+	function autoUpdateLabelState(container: ContainerSummary): LabelState | undefined {
+		// updater=false keeps a container out, so it counts as listed in exclude mode and as unlisted in include mode.
+		if (allNamed(container, (labels) => isContainerLabelDisabled(labels, AUTO_UPDATE_LABEL)))
+			return { hint: m.jobs_container_label_excluded(), selected: !autoUpdateIncludeMode };
+		if (autoUpdateIncludeMode && allNamed(container, (labels) => isContainerLabelEnabled(labels, AUTO_UPDATE_LABEL)))
+			return { hint: m.included_by_label(), selected: true };
+		return undefined;
+	}
+
+	function autoHealLabelState(container: ContainerSummary): LabelState | undefined {
+		if (autoHealIncludeMode && allNamed(container, (labels) => isContainerLabelEnabled(labels, AUTO_HEAL_LABEL)))
+			return { hint: m.included_by_label(), selected: true };
+		return undefined;
+	}
+
+	// A label that decides the outcome locks the entry, unless the container is still listed and needs removing.
+	function containerItem(
+		container: ContainerSummary,
+		listed: ReadonlySet<string>,
+		labelState: LabelState | undefined,
+		listLocked: boolean
+	): ContainerItem {
+		const name = containerName(container);
+		return {
+			value: name,
+			label: name,
+			disabled: listLocked || (!!labelState && !listed.has(name)),
+			hint: labelState?.hint,
+			selected: listed.has(name) || !!labelState?.selected
+		};
+	}
+
+	function modeBlocked(listKey: ContainerListKey): boolean {
+		return !!mixed(listKey) || (!!lock(listKey)?.locked && !!formInputs[listKey].value.trim());
+	}
+
+	// A list cleared while the environments used different modes cannot be restored by switching back.
+	function clearedHint(listKey: ContainerListKey, mode: ContainerMode | null | undefined): string {
+		const cleared = clearedLists[listKey];
+		if (!cleared || cleared.mode === mode || formInputs[listKey].value.trim()) return '';
+		return cleared.mode === null ? m.list_cleared_mixed_modes_hint() : m.list_cleared_hint();
+	}
+
+	// The mixed popover sets one environment's mode directly, so it is routed through changeMode to clear the list.
+	function modeMixed(modeKey: ContainerModeKey, listKey: ContainerListKey): MixedSettingValue[] | undefined {
+		if (modeBlocked(listKey)) return undefined;
+		return mixed(modeKey)?.map((entry) => ({
+			...entry,
+			apply: () => {
+				const input = formInputs[modeKey];
+				const before = input.value;
+				entry.apply();
+				const target = input.value;
+				input.value = before;
+				if (target) changeMode(modeKey, listKey, target);
+			}
+		}));
+	}
+
+	// The saved copy belongs to the mode it was cleared from, so it is only restored when switching back to that
+	// mode with the list still empty. A form reset or new entries leave it unused.
+	function changeMode(modeKey: ContainerModeKey, listKey: ContainerListKey, mode: ContainerMode) {
+		const modeInput = formInputs[modeKey];
+		const listInput = formInputs[listKey];
+		const previous = modeInput.value;
+		if (previous === mode) return;
+		modeInput.value = mode;
+		const cleared = clearedLists[listKey];
+		if (cleared?.mode === mode && !listInput.value.trim()) {
+			listInput.value = cleared.list;
+			clearedLists = { ...clearedLists, [listKey]: undefined };
+			return;
+		}
+		clearedLists = { ...clearedLists, [listKey]: listInput.value.trim() ? { list: listInput.value, mode: previous } : undefined };
+		listInput.value = '';
+	}
+
+	function toggleListed(key: ContainerListKey, current: ReadonlySet<string>, name: string) {
+		formInputs[key].value = (current.has(name) ? [...current].filter((entry) => entry !== name) : [...current, name]).join(',');
 	}
 
 	function scheduleValues(key: ScheduleKey): string[] {
@@ -241,6 +376,34 @@
 {/snippet}
 
 {#snippet autoUpdateOptions()}
+	{#if modesPartlySupported}
+		<p class="text-xs text-muted-foreground">{m.include_mode_unsupported_hint()}</p>
+	{:else if autoUpdateMode}
+		<SettingsRow
+			for="auto-update-mode"
+			label={m.containers_to_update()}
+			description={m.containers_to_update_description({ label: `${AUTO_UPDATE_LABEL}=true` })}
+			class="p-0"
+			helpText={autoUpdateModeBlocked ? m.mode_change_blocked_hint() : undefined}
+			lock={lock('autoUpdateMode')}
+			mixed={modeMixed('autoUpdateMode', 'autoUpdateExcludedContainers')}
+		>
+			{#snippet children({ describedBy })}
+				<SelectWithLabel
+					id="auto-update-mode"
+					name="autoUpdateMode"
+					hideLabel
+					value={autoUpdateMode.value ?? ''}
+					label={m.containers_to_update()}
+					options={containerModeOptions}
+					onValueChange={(v) => changeMode('autoUpdateMode', 'autoUpdateExcludedContainers', v as ContainerMode)}
+					placeholder={mixed('autoUpdateMode') ? m.mixed() : undefined}
+					disabled={autoUpdateModeBlocked}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
+		</SettingsRow>
+	{/if}
 	<SettingsRow
 		for="auto-update-delay"
 		label={m.auto_update_delay_label()}
@@ -266,13 +429,13 @@
 	</SettingsRow>
 	<SettingsRow
 		for="auto-update-container-search"
-		label={m.excluded_containers()}
-		description={m.auto_update_exclude_description()}
-		helpText={m.auto_update_check_label_hint({ label: `${UPDATE_CHECK_LABEL}=false` })}
+		label={autoUpdateIncludeMode ? m.included_containers() : m.excluded_containers()}
+		description={autoUpdateIncludeMode ? m.choose_containers_to_update() : m.auto_update_exclude_description()}
+		helpText={autoUpdateListHelp}
 		layout="wide"
 		class="p-0"
 		lock={lock('autoUpdateExcludedContainers')}
-		mixed={mixed('autoUpdateExcludedContainers')}
+		mixed={autoUpdateListLocked ? undefined : mixed('autoUpdateExcludedContainers')}
 	>
 		{#snippet children({ describedBy })}
 			<div class="space-y-2">
@@ -286,14 +449,8 @@
 				{@render containerExclusionList({
 					term: updateSearchTerm,
 					idPrefix: 'container-',
-					item: (container) => ({
-						value: containerName(container),
-						label: containerName(container),
-						disabled: isAutoUpdateLabelDisabled(container.labels),
-						hint: isAutoUpdateLabelDisabled(container.labels) ? m.jobs_container_label_excluded() : undefined,
-						selected: autoUpdateExcluded.has(containerName(container))
-					}),
-					onToggle: (name) => (formInputs.autoUpdateExcludedContainers.value = toggleExcluded(autoUpdateExcluded, name))
+					item: (container) => containerItem(container, autoUpdateListed, autoUpdateLabelState(container), autoUpdateListLocked),
+					onToggle: (name) => toggleListed('autoUpdateExcludedContainers', autoUpdateListed, name)
 				})}
 			</div>
 		{/snippet}
@@ -301,6 +458,34 @@
 {/snippet}
 
 {#snippet autoHealOptions()}
+	{#if modesPartlySupported}
+		<p class="text-xs text-muted-foreground">{m.include_mode_unsupported_hint()}</p>
+	{:else if autoHealMode}
+		<SettingsRow
+			for="auto-heal-mode"
+			label={m.containers_to_heal()}
+			description={m.containers_to_heal_description({ label: `${AUTO_HEAL_LABEL}=true` })}
+			class="p-0"
+			helpText={autoHealModeBlocked ? m.mode_change_blocked_hint() : undefined}
+			lock={lock('autoHealMode')}
+			mixed={modeMixed('autoHealMode', 'autoHealExcludedContainers')}
+		>
+			{#snippet children({ describedBy })}
+				<SelectWithLabel
+					id="auto-heal-mode"
+					name="autoHealMode"
+					hideLabel
+					value={autoHealMode.value ?? ''}
+					label={m.containers_to_heal()}
+					options={containerModeOptions}
+					onValueChange={(v) => changeMode('autoHealMode', 'autoHealExcludedContainers', v as ContainerMode)}
+					placeholder={mixed('autoHealMode') ? m.mixed() : undefined}
+					disabled={autoHealModeBlocked}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
+		</SettingsRow>
+	{/if}
 	<SettingsRow
 		for="auto-heal-max-restarts"
 		label={m.auto_heal_max_restarts_label()}
@@ -347,12 +532,13 @@
 	</SettingsRow>
 	<SettingsRow
 		for="auto-heal-container-search"
-		label={m.excluded_containers()}
-		description={m.auto_heal_exclude_description()}
+		label={autoHealIncludeMode ? m.included_containers() : m.excluded_containers()}
+		description={autoHealIncludeMode ? m.choose_containers_to_heal() : m.auto_heal_exclude_description()}
+		helpText={autoHealListHelp}
 		layout="wide"
 		class="p-0"
 		lock={lock('autoHealExcludedContainers')}
-		mixed={mixed('autoHealExcludedContainers')}
+		mixed={autoHealListLocked ? undefined : mixed('autoHealExcludedContainers')}
 	>
 		{#snippet children({ describedBy })}
 			<div class="space-y-2">
@@ -366,12 +552,8 @@
 				{@render containerExclusionList({
 					term: autoHealSearchTerm,
 					idPrefix: 'auto-heal-container-',
-					item: (container) => ({
-						value: containerName(container),
-						label: containerName(container),
-						selected: autoHealExcluded.has(containerName(container))
-					}),
-					onToggle: (name) => (formInputs.autoHealExcludedContainers.value = toggleExcluded(autoHealExcluded, name))
+					item: (container) => containerItem(container, autoHealListed, autoHealLabelState(container), autoHealListLocked),
+					onToggle: (name) => toggleListed('autoHealExcludedContainers', autoHealListed, name)
 				})}
 			</div>
 		{/snippet}

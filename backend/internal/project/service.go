@@ -112,18 +112,19 @@ type (
 	}
 
 	CreateProjectOptions struct {
-		EnvContent     *string
-		Uploads        map[int][]byte
-		TagColors      map[string]types.ProjectTagColor
-		Actor          types.Actor
-		Manifest       types.CreateProjectWorkspaceManifest
-		Name           string
-		ComposeContent string
-		Directory      string
-		Archive        io.Reader
-		ID             string
-		Tags           []string
-		ExactName      bool
+		EnvContent      *string
+		Uploads         map[int][]byte
+		TagColors       map[string]types.ProjectTagColor
+		Actor           types.Actor
+		Manifest        types.CreateProjectWorkspaceManifest
+		Name            string
+		ComposeContent  string
+		ComposeFileName string
+		Directory       string
+		Archive         io.Reader
+		ID              string
+		Tags            []string
+		ExactName       bool
 	}
 
 	projectArchiveUnpack struct {
@@ -1609,7 +1610,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	cleanupCtx := context.WithoutCancel(ctx)
 	undo := func() error { return acfs.Root{Path: projectsDirectory}.RemoveAll(cleanupCtx, projectLogical) }
 	if reused {
-		targets := []string{projects.DefaultComposeFileName, projects.EffectiveEnvFileName}
+		targets := []string{cmp.Or(opts.ComposeFileName, projects.DefaultComposeFileName), projects.EffectiveEnvFileName}
 		for _, change := range opts.Manifest.FileChanges {
 			targets = append(targets, workspace.ChangeTargetPaths(change)...)
 		}
@@ -1650,7 +1651,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 		return cause
 	}
 
-	composePath := filepath.Join(projectPath, projects.DefaultComposeFileName)
+	composePath := filepath.Join(projectPath, cmp.Or(opts.ComposeFileName, projects.DefaultComposeFileName))
 	if opts.Archive != nil {
 		detected, unpackErr := s.unpackProjectArchive(ctx, projectArchiveUnpack{
 			Archive:            opts.Archive,
@@ -1666,7 +1667,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 		composePath = detected
 	} else {
 		if applyProjectWorkspaceChangesErr := workspacepkg.Apply(ctx, projectPath, opts.Manifest.FileChanges, opts.Uploads, workspacepkg.Options{
-			ProtectedFiles:   projects.ProtectedProjectFilePaths(projects.DefaultComposeFileName),
+			ProtectedFiles:   projects.ProtectedProjectFilePaths(opts.ComposeFileName),
 			MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
 		}); applyProjectWorkspaceChangesErr != nil {
 			return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
@@ -1689,6 +1690,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 			GlobalEnvDirectory: globalEnvDirectory,
 			DirPath:            projectPath,
 			Content:            opts.ComposeContent,
+			FileName:           opts.ComposeFileName,
 		}, envContent); writeProjectFilesErr != nil {
 			return nil, rollback(fmt.Errorf("failed to save project files: %w", writeProjectFilesErr))
 		}
