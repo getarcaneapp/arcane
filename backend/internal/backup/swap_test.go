@@ -198,7 +198,7 @@ func TestRemoveSwapLeftovers(t *testing.T) {
 		"settings.txt":                      "live",
 	})
 
-	require.NoError(t, RemoveSwapLeftovers(t.Context(), data))
+	require.NoError(t, RemoveSwapLeftovers(t.Context(), data, SwapStagingPrefix))
 
 	entries, err := os.ReadDir(data)
 	require.NoError(t, err)
@@ -206,5 +206,5 @@ func TestRemoveSwapLeftovers(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	require.ElementsMatch(t, []string{".arcane-snapshot-abc", "settings.txt"}, names)
+	require.ElementsMatch(t, []string{".arcane-snapshot-abc", SwapTrashPrefix + "old", "settings.txt"}, names)
 }
