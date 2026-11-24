@@ -21,7 +21,9 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 	const [backups, policyCollection, destinations, systemVolumePolicyCollection] = await Promise.all([
 		queryClient.query(systemBackupHistoryQuery(environmentStore.shownKey, requestOptions)),
-		canReadBackups ? queryClient.query(systemBackupPoliciesQuery()) : { policies: [], recoveryKeyStored: false },
+		canReadBackups
+			? queryClient.query(systemBackupPoliciesQuery())
+			: { policies: [], recoveryKeyStored: false, localDockerEnabled: true },
 		userHasPermission(user, 's3-destinations:list', GLOBAL_SCOPE) ? queryClient.query(s3DestinationAllQuery()) : [],
 		canReadBackups ? queryClient.query(systemVolumeBackupConfigQuery()) : { policies: [] }
 	]);
