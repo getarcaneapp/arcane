@@ -130,7 +130,19 @@ CREATE INDEX idx_image_updates_repository_tag ON image_updates(repository, tag);
 `
 	v122PostgresUp = `
 ALTER TABLE image_updates ADD COLUMN IF NOT EXISTS environment_id text NOT NULL DEFAULT '0';
-ALTER TABLE image_updates DROP CONSTRAINT IF EXISTS image_updates_pkey;
+-- The primary key keeps whatever name it was created with (installs upgraded from
+-- older schema versions still carry image_update_table_pkey), so drop it by lookup
+-- instead of guessing the constraint name.
+DO $$
+DECLARE constraint_name text;
+BEGIN
+    FOR constraint_name IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'image_updates'::regclass AND contype = 'p'
+    LOOP
+        EXECUTE format('ALTER TABLE image_updates DROP CONSTRAINT %I', constraint_name);
+    END LOOP;
+END $$;
 ALTER TABLE image_updates ADD PRIMARY KEY (id, environment_id);
 CREATE INDEX IF NOT EXISTS idx_image_updates_environment_id ON image_updates(environment_id);
 `
