@@ -1,0 +1,53 @@
+apiVersion: arcane.secretsource/v1
+id: infisical
+name: Infisical
+description: Infisical secrets through a machine identity with Universal Auth.
+kind: http
+inputs:
+  baseUrl:
+    label: URL
+    default: https://app.infisical.com
+    required: true
+  projectId:
+    label: Project ID
+    required: true
+  environment:
+    label: Environment
+    placeholder: prod
+    required: true
+credentials:
+  clientId:
+    label: Client ID
+    required: true
+  clientSecret:
+    label: Client Secret
+    required: true
+login:
+  method: POST
+  path: /api/v1/auth/universal-auth/login
+  json:
+    clientId: "{{ .credentials.clientId }}"
+    clientSecret: "{{ .credentials.clientSecret }}"
+  capture:
+    token: accessToken
+    expiresIn: expiresIn
+fetch:
+  method: GET
+  path: /api/v4/secrets
+  query:
+    projectId: "{{ .inputs.projectId }}"
+    environment: "{{ .inputs.environment }}"
+    secretPath: "{{ .path }}"
+    expandSecretReferences: "true"
+    includeImports: "true"
+  headers:
+    Authorization: "Bearer {{ .login.token }}"
+extract:
+  - from: imports.*.secrets
+    list:
+      key: secretKey
+      value: secretValue
+  - from: secrets
+    list:
+      key: secretKey
+      value: secretValue

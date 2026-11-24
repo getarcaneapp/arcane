@@ -25,19 +25,21 @@ type (
 )
 
 const (
-	WebhookTargetTypeContainer = "container"
-	WebhookTargetTypeProject   = "project"
-	WebhookTargetTypeUpdater   = "updater"
-	WebhookTargetTypeGitOps    = "gitops"
-	WebhookActionTypeUpdate    = "update"
-	WebhookActionTypeStart     = "start"
-	WebhookActionTypeStop      = "stop"
-	WebhookActionTypeRestart   = "restart"
-	WebhookActionTypeRedeploy  = "redeploy"
-	WebhookActionTypeUp        = "up"
-	WebhookActionTypeDown      = "down"
-	WebhookActionTypeRun       = "run"
-	WebhookActionTypeSync      = "sync"
+	WebhookTargetTypeContainer    = "container"
+	WebhookTargetTypeProject      = "project"
+	WebhookTargetTypeUpdater      = "updater"
+	WebhookTargetTypeGitOps       = "gitops"
+	WebhookTargetTypeSecretSource = "secretsource"
+	WebhookActionTypeUpdate       = "update"
+	WebhookActionTypeStart        = "start"
+	WebhookActionTypeStop         = "stop"
+	WebhookActionTypeRestart      = "restart"
+	WebhookActionTypeRedeploy     = "redeploy"
+	WebhookActionTypeUp           = "up"
+	WebhookActionTypeDown         = "down"
+	WebhookActionTypeRun          = "run"
+	WebhookActionTypeSync         = "sync"
+	WebhookActionTypeRefresh      = "refresh"
 )
 
 func (Webhook) TableName() string {

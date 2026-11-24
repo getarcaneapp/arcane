@@ -2,6 +2,7 @@
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
+	import EnvironmentScopeCell, { scopeLabel } from '#lib/components/arcane-table/cells/scope-cell.svelte';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -40,15 +41,6 @@
 
 	function updatedTimestamp(variable: GlobalVariable): string {
 		return variable.updatedAt ?? variable.createdAt;
-	}
-
-	function scopeNames(variable: GlobalVariable): string[] {
-		return variable.environmentIds.map((id) => envNameById.get(id) ?? id);
-	}
-
-	function scopeLabel(variable: GlobalVariable): string {
-		if (variable.allEnvironments || variable.environmentIds.length === 0) return m.all_environments();
-		return scopeNames(variable).join(', ');
 	}
 
 	const filteredVariables = $derived.by(() => {
@@ -152,21 +144,7 @@
 {/snippet}
 
 {#snippet ScopeCell({ item }: { item: GlobalVariable })}
-	{#if item.allEnvironments || item.environmentIds.length === 0}
-		<Badge variant="outline" size="sm">{m.all_environments()}</Badge>
-	{:else}
-		{@const names = scopeNames(item)}
-		<div class="flex flex-wrap items-center gap-1">
-			{#each item.environmentIds.slice(0, 2) as environmentId (environmentId)}
-				<Badge variant="outline" size="sm" class="max-w-40"
-					><span class="block min-w-0 truncate">{envNameById.get(environmentId) ?? environmentId}</span></Badge
-				>
-			{/each}
-			{#if names.length > 2}
-				<Badge variant="gray" size="sm">{m.plus_count({ count: names.length - 2 })}</Badge>
-			{/if}
-		</div>
-	{/if}
+	<EnvironmentScopeCell allEnvironments={item.allEnvironments} environmentIds={item.environmentIds} {envNameById} />
 {/snippet}
 
 {#snippet UpdatedCell({ item }: { item: GlobalVariable })}
@@ -198,7 +176,7 @@
 			},
 			{
 				label: m.common_scope(),
-				getValue: (item: GlobalVariable) => scopeLabel(item),
+				getValue: (item: GlobalVariable) => scopeLabel(item.allEnvironments, item.environmentIds, envNameById),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['scope'] ?? true

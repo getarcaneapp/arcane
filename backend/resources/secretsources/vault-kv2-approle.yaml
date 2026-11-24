@@ -1,0 +1,49 @@
+apiVersion: arcane.secretsource/v1
+id: vault-kv2-approle
+name: Vault / OpenBao KV v2 (AppRole)
+description: Read one KV v2 secret from HashiCorp Vault or OpenBao with AppRole login. Set the source path to the secret path.
+kind: http
+pathRequired: true
+inputs:
+  baseUrl:
+    label: URL
+    placeholder: https://vault.example.com:8200
+    required: true
+  mount:
+    label: KV mount
+    default: secret
+    required: true
+  approleMount:
+    label: AppRole mount
+    default: approle
+    required: true
+  namespace:
+    label: Namespace
+    description: Vault Enterprise namespace; leave empty otherwise.
+credentials:
+  roleId:
+    label: Role ID
+    required: true
+  secretId:
+    label: Secret ID
+    required: true
+login:
+  method: POST
+  path: "/v1/auth/{{ .inputs.approleMount }}/login"
+  headers:
+    X-Vault-Namespace: "{{ .inputs.namespace }}"
+  json:
+    role_id: "{{ .credentials.roleId }}"
+    secret_id: "{{ .credentials.secretId }}"
+  capture:
+    token: auth.client_token
+    expiresIn: auth.lease_duration
+fetch:
+  method: GET
+  path: "/v1/{{ .inputs.mount }}/data/{{ .path }}"
+  headers:
+    X-Vault-Token: "{{ .login.token }}"
+    X-Vault-Namespace: "{{ .inputs.namespace }}"
+extract:
+  - from: data.data
+    object: true

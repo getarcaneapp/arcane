@@ -12,9 +12,9 @@ type (
 		ID          string `json:"id" readOnly:"true" doc:"Webhook ID"`
 		Name        string `json:"name" required:"false" minLength:"1" maxLength:"255" doc:"Human-readable name for this webhook" unorm:"nfc" trim:"true"`
 		TokenPrefix string `json:"tokenPrefix" readOnly:"true" doc:"Masked token prefix for identification"`
-		TargetType  string `json:"targetType" required:"false" doc:"Resource type this webhook targets: 'container', 'project', 'updater', or 'gitops'" enum:"container,project,updater,gitops"`
-		ActionType  string `json:"actionType" required:"false" doc:"Action to run; supported values depend on targetType." enum:"update,start,stop,restart,redeploy,up,down,run,sync"`
-		TargetID    string `json:"targetId" required:"false" doc:"Container ID, project ID, or GitOps sync ID to target. Leave empty for 'updater' webhooks."`
+		TargetType  string `json:"targetType" required:"false" doc:"Resource type this webhook targets" enum:"container,project,updater,gitops,secretsource"`
+		ActionType  string `json:"actionType" required:"false" doc:"Action to run; supported values depend on targetType." enum:"update,start,stop,restart,redeploy,up,down,run,sync,refresh"`
+		TargetID    string `json:"targetId" required:"false" doc:"Container ID, project ID, GitOps sync ID, or secret source ID to target. Leave empty for 'updater' webhooks."`
 		TargetName  string `json:"targetName,omitempty" readOnly:"true" doc:"Resolved target resource name when available"`
 		Enabled     bool   `json:"enabled" required:"false" doc:"Whether the webhook is active"`
 	}
