@@ -1067,6 +1067,9 @@ func (s *EnvironmentService) runHealthCheck(ctx context.Context, envID string) (
 	if !localEnvironment.Enabled {
 		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Environment disabled"}, nil
 	}
+	if envID == LocalEnvironmentID && !s.config.LocalDockerEnabled {
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: common.ErrLocalDockerDisabled.Error()}, nil
+	}
 	wasOnline := localEnvironment.Status == string(EnvironmentStatusOnline)
 	status, err := s.TestConnection(ctx, envID)
 	switch {
@@ -1106,6 +1109,9 @@ func (s *EnvironmentService) runHealthCheck(ctx context.Context, envID string) (
 }
 
 func (s *EnvironmentService) TestConnection(ctx context.Context, id string) (string, error) {
+	if id == LocalEnvironmentID && !s.config.LocalDockerEnabled {
+		return string(EnvironmentStatusOffline), common.ErrLocalDockerDisabled
+	}
 	envRecord, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
 		return "error", err

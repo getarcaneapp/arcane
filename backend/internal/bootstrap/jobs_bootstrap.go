@@ -243,10 +243,8 @@ func reconcileCoordinatorStartup(ctx context.Context, p startJobSchedulerParams)
 func registerJobs(params registerJobsParams) error {
 	jobs := []types.SchedulerJob{
 		params.AutoUpdate,
-		params.DockerClientRefresh,
 		params.Analytics,
 		params.EventCleanup,
-		params.PruningVolumeHelper,
 		params.ScheduledPrune,
 		params.VulnerabilityScan,
 		params.VulnerabilityRisk,
@@ -257,6 +255,9 @@ func registerJobs(params registerJobsParams) error {
 		params.GitCloneCleanup,
 		params.BackupRepositoryPrune,
 		params.UpgradeLogCleanup,
+	}
+	if params.Config.LocalDockerEnabled {
+		jobs = append(jobs, params.DockerClientRefresh, params.PruningVolumeHelper)
 	}
 	if !params.Config.AgentEnabled {
 		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync)

@@ -283,6 +283,10 @@ func applicationOptions(
 				}})
 			},
 			func(lc fx.Lifecycle, dockerService *docker.DockerClientService, swarmService *swarm.SwarmService, _ *http.Server) {
+				if !dockerService.LocalDockerEnabled() {
+					slog.InfoContext(appCtx, "Local Docker is disabled; skipping the Docker connection test and swarm sync")
+					return
+				}
 				lc.Append(fx.Hook{OnStart: func(context.Context) error {
 					go func() {
 						dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
