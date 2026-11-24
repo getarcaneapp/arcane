@@ -30,7 +30,7 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, isLocalDockerDisabled, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		CreateSystemBackupRequest,
 		RunSystemVolumeBackupsRequest,
@@ -109,7 +109,10 @@
 	let restoringFiles = $state(false);
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
-	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE));
+	// System backups live in a local Docker volume, so they need the manager's own Docker.
+	const canCreateBackups = $derived(
+		hasPermission('system-backups:create', GLOBAL_SCOPE) && !isLocalDockerDisabled(environmentStore.getLocalEnvironment())
+	);
 	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE));
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
 	const canDiscoverBackups = $derived(isGlobalAdmin());

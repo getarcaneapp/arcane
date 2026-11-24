@@ -1,7 +1,7 @@
 import { createQuery, keepPreviousData, useQueryClient } from '@tanstack/svelte-query';
 
 import { environmentVersionsQuery, upgradeAvailableQuery } from '#lib/query/system.js';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import { environmentStore, isLocalDockerDisabled, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { VersionInfo } from '#lib/types/version.js';
 import { hasPermission } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
@@ -17,6 +17,8 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 
 	// Same permission the update-all endpoint enforces (PermSystemUpgrade).
 	const canInstallUpdates = $derived(hasPermission('system:upgrade', LOCAL_DOCKER_ENVIRONMENT_ID));
+	// Without local Docker the manager cannot replace its own container, so only agent updates count.
+	const managerUpgradable = $derived(!isLocalDockerDisabled(environmentStore.getLocalEnvironment()));
 	const queryClient = useQueryClient();
 	const agentEnvironments = $derived(
 		environmentStore.available.filter(
@@ -39,18 +41,19 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 			data.updateAvailable && agentEnvironments.some((env) => env.id === environment.id) ? [data] : []
 		)
 	);
-	const updateCount = $derived(agentUpdates.length + (getVersionInformation()?.updateAvailable ? 1 : 0));
+	const updateCount = $derived(agentUpdates.length + (managerUpgradable && getVersionInformation()?.updateAvailable ? 1 : 0));
 	const shouldCheckUpgrade = $derived(
 		!!(updateCount > 0 && canInstallUpdates && hasPermission('system:read', LOCAL_DOCKER_ENVIRONMENT_ID) && !getDebug())
 	);
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		...upgradeAvailableQuery(queryScope),
-		enabled: shouldCheckUpgrade,
+		enabled: shouldCheckUpgrade && managerUpgradable,
 		staleTime: 0
 	}));
 
 	const canUpgrade = $derived.by(() => {
 		if (getDebug()) return true;
+		if (!managerUpgradable) return agentUpdates.length > 0;
 		const result = upgradeAvailabilityQuery.data;
 		return !!result?.canUpgrade && !result?.error;
 	});

@@ -17,7 +17,7 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 	let revision = $state(0);
 	const selectedId = $derived(page.url.searchParams.get('env') ?? '');
 	const readable = $derived(
-		environmentStore.shown.filter((env) =>
+		environmentStore.enabled.filter((env) =>
 			['environment-settings:read', ...permissions()].every((permission) => hasPermission(permission, env.id))
 		)
 	);

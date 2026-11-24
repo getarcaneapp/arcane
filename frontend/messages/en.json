@@ -4779,5 +4779,6 @@
   "too_many_files": "Too many files",
   "discovered": "Discovered",
   "failed_to_load_diff_view": "Failed to load diff view",
-  "failed_to_load_syntax_highlighting": "Failed to load syntax highlighting"
+  "failed_to_load_syntax_highlighting": "Failed to load syntax highlighting",
+  "local_docker_disabled_add_agent": "Local Docker is turned off on this manager. Add an agent to manage containers."
 }
