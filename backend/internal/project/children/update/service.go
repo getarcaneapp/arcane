@@ -74,6 +74,8 @@ type (
 	ImageFollower struct {
 		Variable string
 		Image    string
+		// LocallyBuilt followers build their image, so its tag is not looked up in a registry.
+		LocallyBuilt bool
 	}
 
 	SyncState struct {
@@ -373,24 +375,33 @@ func (s *Service) Operations() types.ProjectRenameRecoveryOperations {
 }
 
 func PersistProjectServiceImages(ctx context.Context, projectPath, logical string, original, updated []byte) error {
-	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logical, acfstypes.StatOptions{})
+	mode, err := checkProjectServiceImagesSource(ctx, projectPath, logical, original)
 	if err != nil {
-		return fmt.Errorf("inspect Compose source: %w", err)
+		return err
 	}
-	if entry.IsSymlink {
-		return fmt.Errorf("tag updates refuse a symlinked Compose source: %s", filepath.Base(logical))
-	}
-	current, err := acfs.Root{Path: projectPath}.ReadFile(ctx, logical)
-	if err != nil {
-		return fmt.Errorf("recheck Compose source: %w", err)
-	}
-	if !bytes.Equal(current, original) {
-		return errors.New("Compose source changed during the image update; check updates again") //nolint:staticcheck // Preserve the existing error message.
-	}
-	if writeErr := (acfs.Root{Path: projectPath}).Write(ctx, logical, updated, acfs.WriteOptions{Mode: os.FileMode(entry.UnixMode).Perm()}); writeErr != nil {
+	if writeErr := (acfs.Root{Path: projectPath}).Write(ctx, logical, updated, acfs.WriteOptions{Mode: mode}); writeErr != nil {
 		return fmt.Errorf("persist Compose image changes: %w", writeErr)
 	}
 	return nil
+}
+
+// checkProjectServiceImagesSource refuses a symlinked or changed Compose source and returns its permissions.
+func checkProjectServiceImagesSource(ctx context.Context, projectPath, logical string, original []byte) (os.FileMode, error) {
+	entry, err := acfs.Root{Path: projectPath}.Stat(ctx, logical, acfstypes.StatOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("inspect Compose source: %w", err)
+	}
+	if entry.IsSymlink {
+		return 0, fmt.Errorf("tag updates refuse a symlinked Compose source: %s", filepath.Base(logical))
+	}
+	current, err := acfs.Root{Path: projectPath}.ReadFile(ctx, logical)
+	if err != nil {
+		return 0, fmt.Errorf("recheck Compose source: %w", err)
+	}
+	if !bytes.Equal(current, original) {
+		return 0, errors.New("Compose source changed during the image update; check updates again") //nolint:staticcheck // Preserve the existing error message.
+	}
+	return os.FileMode(entry.UnixMode).Perm(), nil
 }
 
 func composeImageField(node *yaml.Node, key string) *yaml.Node {
@@ -519,15 +530,16 @@ func PrepareProjectServiceImages(source []byte, effective *composeTypes.Project,
 
 // imageFollowers finds unchanged services whose image uses a variable in env, with the image it moves to.
 func imageFollowers(servicesNode *yaml.Node, effective *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange, env map[string]string) (map[string]ImageFollower, error) {
-	// Selecting the changed services disables the rest; profile-gated ones pick up the new value on their next deploy.
-	candidates := effective.ServiceNames()
+	// Selecting the changed services disables the rest; ones outside the active profiles pick up the new value on their next deploy.
+	candidates := make(composeTypes.Services, len(effective.Services))
+	maps.Copy(candidates, effective.Services)
 	for name, service := range effective.DisabledServices {
-		if len(service.Profiles) == 0 {
-			candidates = append(candidates, name)
+		if service.HasProfile(effective.Profiles) {
+			candidates[name] = service
 		}
 	}
 	followers := make(map[string]ImageFollower)
-	for _, name := range candidates {
+	for _, name := range slices.Sorted(maps.Keys(candidates)) {
 		imageNode := composeImageField(composeImageField(servicesNode, name), "image")
 		if _, changed := changes[name]; changed || kit.FromPtr(imageNode).Kind != yaml.ScalarNode {
 			continue
@@ -540,7 +552,7 @@ func imageFollowers(servicesNode *yaml.Node, effective *composeTypes.Project, ch
 			if err != nil {
 				return nil, fmt.Errorf("service %s image: %w", name, err)
 			}
-			followers[name] = ImageFollower{Variable: variable, Image: image}
+			followers[name] = ImageFollower{Variable: variable, Image: image, LocallyBuilt: candidates[name].Build != nil}
 			break
 		}
 	}
@@ -645,17 +657,9 @@ func (s *Service) ImageChanges(ctx context.Context, effective *composeTypes.Proj
 		case refs.IsDigestPinnedReference(service.Image) || refs.IsImageIDLikeReference(service.Image):
 			return nil, fmt.Errorf("service %s has an immutable image reference", service.Name)
 		}
-		parsed, err := refs.NormalizeReference(service.Image)
-		if err != nil {
-			return nil, fmt.Errorf("parse service %s image: %w", service.Name, err)
-		}
-		credentials, err := s.credentials(ctx)
+		parsed, tags, err := s.imageTags(ctx, service.Name, service.Image)
 		if err != nil {
 			return nil, err
-		}
-		tags, err := s.registryService.ListImageTags(ctx, service.Image, credentials)
-		if err != nil {
-			return nil, fmt.Errorf("list service %s image tags: %w", service.Name, err)
 		}
 		selected, err := tagpolicy.Select(parsed.Tag, tags, tagPolicy)
 		if err != nil {
@@ -691,6 +695,10 @@ func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, eff
 		return nil, followerErr
 	}
 	if len(edits.Env) > 0 {
+		// Refuse a symlinked or changed Compose source before .env is written.
+		if _, sourceErr := checkProjectServiceImagesSource(ctx, projectPath, logical, original); sourceErr != nil {
+			return nil, sourceErr
+		}
 		if persistErr := s.persistEnv(ctx, projectPath, edits.Env); persistErr != nil {
 			return nil, persistErr
 		}
@@ -709,20 +717,15 @@ func (s *Service) checkFollowerImages(ctx context.Context, edits ImageEdits, cha
 	}
 	for _, name := range slices.Sorted(maps.Keys(edits.Followers)) {
 		follower := edits.Followers[name]
-		if refs.IsDigestPinnedReference(follower.Image) || slices.Contains(checked, refs.NormalizeImageUpdateRef(follower.Image)) {
+		if follower.LocallyBuilt || refs.IsDigestPinnedReference(follower.Image) || slices.Contains(checked, refs.NormalizeImageUpdateRef(follower.Image)) {
 			continue
 		}
-		parsed, err := refs.NormalizeReference(follower.Image)
+		parsed, tags, err := s.imageTags(ctx, name, follower.Image)
 		if err != nil {
-			return fmt.Errorf("parse service %s image: %w", name, err)
-		}
-		credentials, err := s.credentials(ctx)
-		if err != nil {
-			return err
-		}
-		tags, err := s.registryService.ListImageTags(ctx, follower.Image, credentials)
-		if err != nil {
-			return fmt.Errorf("list service %s image tags: %w", name, err)
+			return fmt.Errorf(
+				"cannot set %s to %s: service %s also uses it, and Arcane could not check that %s is published: %w",
+				follower.Variable, edits.Env[follower.Variable], name, follower.Image, err,
+			)
 		}
 		if !slices.Contains(tags, parsed.Tag) {
 			return fmt.Errorf(
@@ -733,4 +736,21 @@ func (s *Service) checkFollowerImages(ctx context.Context, edits ImageEdits, cha
 		checked = append(checked, refs.NormalizeImageUpdateRef(follower.Image))
 	}
 	return nil
+}
+
+// imageTags parses a service image and lists the tags its registry publishes.
+func (s *Service) imageTags(ctx context.Context, name, image string) (*refs.Reference, []string, error) {
+	parsed, err := refs.NormalizeReference(image)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse service %s image: %w", name, err)
+	}
+	credentials, err := s.credentials(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	tags, err := s.registryService.ListImageTags(ctx, image, credentials)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list service %s image tags: %w", name, err)
+	}
+	return parsed, tags, nil
 }
