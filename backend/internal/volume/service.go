@@ -63,6 +63,7 @@ type (
 		helperByVolume  map[string]*volumeHelper
 		backup          *volumebackup.Service
 		repository      *backup.VolumeRepository
+		policies        *backup.Policies
 		workspace       *workspace.Service
 		workspaceLocks  concurrency.KeyedMutex
 		helperMu        sync.Mutex
@@ -82,6 +83,7 @@ type (
 		S3Destinations  *s3.S3DestinationService
 		Config          *config.Config
 		RecoveryKeys    *backup.RecoveryKeyStore
+		Policies        *backup.Policies
 		Uploads         *upload.UploadService
 		Ctx             context.Context
 		Scheduler       types.DynamicScheduler
@@ -113,11 +115,13 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 		settingsService: p.SettingsService,
 		imageService:    p.ImageService,
 		repository:      p.Repository,
+		policies:        p.Policies,
 		helperByVolume:  make(map[string]*volumeHelper),
 	}
 	backupDeps := volumebackup.Dependencies{
 		Store:            service.backupStore(),
 		DB:               p.DB,
+		Policies:         p.Policies,
 		Docker:           p.DockerService,
 		Events:           p.EventService,
 		Settings:         p.SettingsService,
@@ -178,7 +182,7 @@ func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 
 // HasEnabledBackupPolicy reports whether a volume-level schedule takes precedence over centralized backups.
 func (s *VolumeService) HasEnabledBackupPolicy(ctx context.Context, volumeName string) (bool, error) {
-	return s.backup.HasEnabledBackupPolicy(ctx, volumeName)
+	return s.policies.HasEnabled(ctx, backup.PolicyVolume, volumeName)
 }
 
 // CreateSystemManagedBackup runs the existing volume backup workflow with a transient centralized policy.
@@ -340,25 +344,8 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 	}
 }
 
-// listBackups pages one volume's backup history; both or neither management type selected means no type filter.
 func (s *VolumeService) listBackups(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
-	var system, managed bool
-	for value := range strings.SplitSeq(params.Filters["type"], ",") {
-		switch types.BackupManagementType(strings.TrimSpace(value)) {
-		case types.BackupManagementTypeSystem:
-			system = true
-		case types.BackupManagementTypeVolume:
-			managed = true
-		}
-	}
-	if system != managed {
-		if system {
-			query = query.Where("policy_id LIKE ?", types.SystemVolumePolicyPrefix+"%")
-		} else {
-			query = query.Where("policy_id NOT LIKE ? OR policy_id IS NULL", types.SystemVolumePolicyPrefix+"%")
-		}
-	}
 
 	if params.Search != "" {
 		pattern := "%" + params.Search + "%"
@@ -1155,7 +1142,7 @@ func (s *VolumeService) renameVolumeMetadata(ctx context.Context, oldName, newNa
 		if err := tx.Model(&VolumeBackup{}).Where("volume_name = ?", oldName).Update("volume_name", newName).Error; err != nil {
 			return fmt.Errorf("rename volume backup history: %w", err)
 		}
-		if err := s.backup.RenamePolicies(tx, oldName, newName); err != nil {
+		if err := s.policies.Rename(tx, backup.PolicyVolume, oldName, newName); err != nil {
 			return fmt.Errorf("rename volume backup policies: %w", err)
 		}
 		return nil

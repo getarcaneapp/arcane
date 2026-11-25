@@ -176,6 +176,23 @@ type (
 		LocalEnabled  bool
 	}
 
+	ScheduledRemoteRequest struct {
+		DestinationID string
+		Root          string
+		Tables        []string
+	}
+
+	Policies struct {
+		db *database.DB
+		sync.Mutex
+	}
+
+	RemoteCheck struct {
+		S3Destinations *s3.S3DestinationService
+		Settings       *settings.SettingsService
+		Reschedule     func(ctx context.Context, policy *Policy)
+	}
+
 	VolumeRepository struct {
 		deps           VolumeRepositoryDependencies
 		legacyPassword string
@@ -248,6 +265,7 @@ type (
 const (
 	VolumeAdmissionScope           = "volume-backup"
 	ProjectSnapshotTag             = "arcane-kind:project"
+	ProjectTargetType              = "project_backup"
 	SystemAdmissionScope           = "system-backup"
 	SystemAdmissionID              = "system"
 	RecoveryKeyConfigID            = "system-recovery"
@@ -277,7 +295,10 @@ var (
 	RecoveryKeyFormat           = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
+	ErrRemoteOnlyDisabled      = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
 	ErrRepositoryMissing       = errors.New("the backup repository does not exist")
+
+	VolumeRepositoryTables = []string{"volume_backups", "project_backups"}
 )
 
 func RootSnapshotInput(source mount.Mount, tags ...string) CreateSnapshotInput {
@@ -1127,17 +1148,155 @@ func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemote
 	return result.Error == nil && result.RowsAffected > 0, result.Error
 }
 
-func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3.S3DestinationService, table, destinationID, root string) error {
-	result, err := CheckRemoteRepository(ctx, destinations, destinationID, root)
+func NewPolicies(db *database.DB) *Policies { return &Policies{db: db} }
+
+func (p *Policies) List(ctx context.Context, kind, subjectID string) ([]Policy, error) {
+	var policies []Policy
+	if err := p.db.WithContext(ctx).Where("subject_kind = ? AND subject_id = ?", kind, subjectID).Order("created_at ASC").Find(&policies).Error; err != nil {
+		return nil, fmt.Errorf("failed to load %s backup policies: %w", kind, err)
+	}
+	return policies, nil
+}
+
+func (p *Policies) Get(ctx context.Context, kind, subjectID, id string) (*Policy, error) {
+	return p.first(ctx, p.db.Where("id = ? AND subject_kind = ? AND subject_id = ?", id, kind, subjectID))
+}
+
+func (p *Policies) Enabled(ctx context.Context, id string) (*Policy, error) {
+	return p.first(ctx, p.db.Where("id = ? AND enabled = ?", id, true))
+}
+
+func (p *Policies) first(ctx context.Context, query *gorm.DB) (*Policy, error) {
+	var policy Policy
+	err := query.WithContext(ctx).First(&policy).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load backup policy: %w", err)
+	}
+	return &policy, nil
+}
+
+func (p *Policies) AllEnabled(ctx context.Context, kind string) ([]Policy, error) {
+	var policies []Policy
+	if err := p.db.WithContext(ctx).Where("subject_kind = ? AND enabled = ?", kind, true).Find(&policies).Error; err != nil {
+		return nil, fmt.Errorf("failed to load %s backup policies: %w", kind, err)
+	}
+	return policies, nil
+}
+
+func (p *Policies) HasEnabled(ctx context.Context, kind, subjectID string) (bool, error) {
+	var count int64
+	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ? AND subject_id = ? AND enabled = ?", kind, subjectID, true).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("failed to load %s backup policies: %w", kind, err)
+	}
+	return count > 0, nil
+}
+
+func (p *Policies) IDs(ctx context.Context, kind string) ([]string, error) {
+	var ids []string
+	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ?", kind).Pluck("id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("failed to load %s backup policy IDs: %w", kind, err)
+	}
+	return ids, nil
+}
+
+func (p *Policies) Subjects(ctx context.Context, kind string) ([]string, error) {
+	var subjects []string
+	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ? AND subject_id <> ''", kind).Distinct().Pluck("subject_id", &subjects).Error; err != nil {
+		return nil, fmt.Errorf("failed to load %s backup policy subjects: %w", kind, err)
+	}
+	return subjects, nil
+}
+
+func (p *Policies) Remove(ctx context.Context, kind, subjectID string) ([]Policy, error) {
+	p.Lock()
+	defer p.Unlock()
+	policies, err := p.List(ctx, kind, subjectID)
+	if err != nil || len(policies) == 0 {
+		return nil, err
+	}
+	if deleteErr := p.db.WithContext(ctx).Where("subject_kind = ? AND subject_id = ?", kind, subjectID).Delete(&Policy{}).Error; deleteErr != nil {
+		return policies, fmt.Errorf("failed to delete %s backup policies: %w", kind, deleteErr)
+	}
+	return policies, nil
+}
+
+func (p *Policies) Rename(tx *gorm.DB, kind, oldID, newID string) error {
+	return tx.Model(&Policy{}).Where("subject_kind = ? AND subject_id = ?", kind, oldID).Update("subject_id", newID).Error
+}
+
+func (p *Policies) DisableRemote(ctx context.Context, policy *Policy, field string) (bool, error) {
+	return DisableStoredRemote(ctx, p.db, DisableRemoteRequest{
+		Model:         &Policy{},
+		ID:            policy.ID,
+		DestinationID: policy.S3DestinationID,
+		LocalEnabled:  policy.LocalEnabled,
+		Field:         field,
+	})
+}
+
+func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check RemoteCheck) (bool, error) {
+	var remoteErr error
+	if policy.S3Enabled {
+		remoteErr = CheckScheduledRemote(ctx, p.db, check.S3Destinations, ScheduledRemoteRequest{
+			DestinationID: policy.S3DestinationID,
+			Root:          path.Join(VolumeRoot, check.Settings.GetSettingsConfig().InstanceID.Value),
+			Tables:        VolumeRepositoryTables,
+		})
+	}
+	disabled, err := DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
+		return p.DisableRemote(ctx, policy, field)
+	})
+	switch {
+	case err != nil:
+		return false, err
+	case !disabled && errors.Is(remoteErr, ErrRemoteRepositoryMissing):
+		current, getErr := p.Get(ctx, policy.SubjectKind, policy.SubjectID, policy.ID)
+		if getErr != nil || current == nil || current.S3Enabled {
+			return false, cmp.Or(getErr, remoteErr)
+		}
+		*policy = *current
+		return false, nil
+	case !disabled:
+		return false, nil
+	}
+	check.Reschedule(ctx, policy)
+	if !policy.LocalEnabled {
+		return true, ErrRemoteOnlyDisabled
+	}
+	return true, nil
+}
+
+func (p *Policies) Schedule(policyID, fallback string) func(context.Context) string {
+	return func(ctx context.Context) string {
+		var policy Policy
+		if err := p.db.WithContext(ctx).Where("id = ?", policyID).First(&policy).Error; err != nil {
+			return fallback
+		}
+		return policy.Schedule
+	}
+}
+
+func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3.S3DestinationService, req ScheduledRemoteRequest) error {
+	result, err := CheckRemoteRepository(ctx, destinations, req.DestinationID, req.Root)
 	if err != nil || result.Available {
 		return err
 	}
 	if result.Reason == s3util.RepositoryReasonMissingRepository {
 		var retained int64
-		if countRetainedSnapshotsErr := db.WithContext(ctx).Table(table).
-			Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", destinationID).
-			Count(&retained).Error; countRetainedSnapshotsErr != nil {
-			return countRetainedSnapshotsErr
+		for _, table := range req.Tables {
+			var count int64
+			query := db.WithContext(ctx).Table(table).Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID)
+			if table == "volume_backups" {
+				query = query.Where("COALESCE(remote_instance_id, '') = ''")
+			}
+			if countRetainedSnapshotsErr := query.Count(&count).Error; countRetainedSnapshotsErr != nil {
+				return countRetainedSnapshotsErr
+			}
+			retained += count
 		}
 		if retained == 0 {
 			return nil
@@ -1259,11 +1418,16 @@ func ResolveDestination(ctx context.Context, req DestinationRequest) (Destinatio
 	return selected, s3DestinationID, nil
 }
 
+func HandedBack(ctx context.Context) bool {
+	_, resumable := jobcontext.Run(ctx)
+	return resumable && errors.Is(context.Cause(ctx), context.Canceled)
+}
+
 func SettleFailure(ctx context.Context, err error, fail func(ctx context.Context, message string) error) error {
-	if err == nil || ctx.Err() != nil || errors.Is(err, actor.ErrJobRejected) || errors.Is(err, ErrBackupSettled) {
+	if err == nil || HandedBack(ctx) || (ctx.Err() == nil && errors.Is(err, actor.ErrJobRejected)) || errors.Is(err, ErrBackupSettled) {
 		return err
 	}
-	return errors.Join(err, fail(ctx, err.Error()))
+	return errors.Join(err, fail(context.WithoutCancel(ctx), err.Error()))
 }
 
 func FailStoppedRun(ctx context.Context, fail func(ctx context.Context, message string) error) error {

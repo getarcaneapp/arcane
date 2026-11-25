@@ -20,7 +20,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
-	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
 	"getarcane.dev/types/v3"
 )
 
@@ -85,10 +84,11 @@ func TestVolumeBackupPolicy_RetentionCountsFailedRunsSeparately(t *testing.T) {
 func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-scheduled-activity?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&policies.VolumeBackupPolicy{}, &activity.Activity{}, &activity.ActivityMessage{}))
+	require.NoError(t, gormDB.AutoMigrate(&backup.Policy{}, &activity.Activity{}, &activity.ActivityMessage{}))
 	db := &database.DB{DB: gormDB}
-	policy := &policies.VolumeBackupPolicy{
-		VolumeName:     "app-data",
+	policy := &backup.Policy{
+		SubjectKind:    backup.PolicyVolume,
+		SubjectID:      "app-data",
 		Enabled:        true,
 		Schedule:       "0 2 * * *",
 		RetentionCount: 7,
@@ -105,6 +105,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
 	service := NewService(Dependencies{
 		DB:             db,
+		Policies:       backup.NewPolicies(db),
 		Engine:         engine,
 		AlreadyRunning: errors.New("a backup is already running for this volume"),
 		Docker:         &docker.DockerClientService{},
@@ -135,8 +136,8 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 func TestVolumeBackup_ValidationErrors(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-validation?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&policies.VolumeBackupPolicy{}))
-	service := NewService(Dependencies{DB: &database.DB{DB: gormDB}})
+	require.NoError(t, gormDB.AutoMigrate(&backup.Policy{}))
+	service := NewService(Dependencies{DB: &database.DB{DB: gormDB}, Policies: backup.NewPolicies(&database.DB{DB: gormDB})})
 	ctx := t.Context()
 
 	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []types.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})

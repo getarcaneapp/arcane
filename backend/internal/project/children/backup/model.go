@@ -22,6 +22,7 @@ type (
 		LocalSnapshotID   string                        `gorm:"column:local_snapshot_id"`
 		RemoteSnapshotID  string                        `gorm:"column:remote_snapshot_id"`
 		S3DestinationID   string                        `gorm:"column:s3_destination_id"`
+		PolicyID          string                        `gorm:"column:policy_id;index"`
 		Error             string                        `gorm:"column:error"`
 		Volumes           []types.ProjectBackupVolume   `gorm:"column:volumes;serializer:json"`
 		Size              int64                         `gorm:"column:size"`
@@ -55,6 +56,7 @@ func (b *ProjectBackup) DTO(opts DTOOptions) types.ProjectBackup {
 		LocalSnapshotID:   b.LocalSnapshotID,
 		RemoteSnapshotID:  b.RemoteSnapshotID,
 		S3DestinationID:   b.S3DestinationID,
+		PolicyID:          b.PolicyID,
 		Error:             b.Error,
 		Volumes:           b.Volumes,
 		Size:              b.Size,

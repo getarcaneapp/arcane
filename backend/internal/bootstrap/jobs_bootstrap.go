@@ -42,6 +42,8 @@ type (
 		Settings    *settings.SettingsService
 		Volume      *volume.VolumeService
 		System      *system.SystemService
+		Projects    *project.Module
+		Apns        *apns.ApnsService
 
 		AutoUpdate            *flow.Job `name:"auto-update"`
 		ImageUpdateWatcher    *scheduler.ImageUpdateWatcher
@@ -84,6 +86,7 @@ type (
 		JobSchedule *job.JobService
 		Volume      *volume.VolumeService
 		System      *system.SystemService
+		Projects    *project.Module
 	}
 
 	startJobSchedulerParams struct {
@@ -288,6 +291,7 @@ func registerJobs(params registerJobsParams) error {
 		JobSchedule: params.JobSchedule,
 		Volume:      params.Volume,
 		System:      params.System,
+		Projects:    params.Projects,
 	})
 
 	if err := setupSettingsSubscriptions(settingsSubscriptionsParams{
@@ -343,6 +347,7 @@ func rescheduleJob(ctx context.Context, jobScheduler settingsEffectsScheduler, s
 
 func registerDynamicJobs(params dynamicJobsParams) {
 	params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
+	params.Projects.RegisterBackupJobsOnStartup(params.AppCtx)
 	if !params.Config.AgentEnabled {
 		params.System.RegisterBackupJobOnStartup(params.AppCtx)
 	}

@@ -47,6 +47,15 @@ export function projectExportOptionsQuery(environmentId: string, projectId: stri
 	});
 }
 
+export function projectBackupOptionsQuery(environmentId: string, projectId: string) {
+	return queryOptions({
+		queryKey: queryKeys.projects.backupOptions(environmentId, projectId),
+		queryFn: () => projectService.getBackupOptions(projectId, environmentId),
+		staleTime: 0,
+		refetchOnWindowFocus: false
+	});
+}
+
 export function projectDirectoriesQuery(environmentId: string, view: 'projects' | 'settings') {
 	return queryOptions({
 		queryKey: queryKeys.projects.directories(environmentId, view),
@@ -67,6 +76,16 @@ export function projectBackupListQuery(environmentId: string, projectId: string,
 		queryFn: async () => {
 			await environmentStore.ready;
 			return projectService.listBackups(projectId, requestOptions, environmentId);
+		}
+	});
+}
+
+export function projectBackupPoliciesQuery(environmentId: string, projectId: string) {
+	return queryOptions({
+		queryKey: queryKeys.projects.backupPolicies(environmentId, projectId),
+		queryFn: async () => {
+			await environmentStore.ready;
+			return projectService.getBackupPolicies(projectId, environmentId);
 		}
 	});
 }

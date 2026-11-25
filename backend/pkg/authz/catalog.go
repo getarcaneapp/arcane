@@ -526,7 +526,7 @@ var permissionCatalog = []PermissionCatalogResource{
 	{
 		Key:         "system-backups",
 		Label:       "System Backups",
-		Description: "Backups of the Arcane system and system-managed volumes",
+		Description: "Backups of Arcane, and the global project and volume backup policies",
 		Scope:       PermissionScopeGlobal,
 		Actions: []PermissionCatalogAction{
 			{

@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -13,7 +11,10 @@
 	import BackupTriggerCell from '#lib/components/arcane-table/cells/backup-trigger-cell.svelte';
 	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
+	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
+	import BackupPolicyDialog from '#lib/components/backup-policy-dialog.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectRestoreAsNewDialog from '#lib/components/dialogs/project-restore-as-new-dialog.svelte';
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
@@ -22,7 +23,6 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
@@ -41,14 +41,20 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { s3DestinationAllQuery } from '#lib/query/backups.js';
-	import { projectBackupListQuery } from '#lib/query/projects.js';
+	import { projectBackupListQuery, projectBackupOptionsQuery, projectBackupPoliciesQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { activityService } from '#lib/services/activity-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { S3Destination, SystemBackupDestination } from '#lib/types/backup.js';
 	import type { Paginated } from '#lib/types/base.js';
-	import type { ProjectBackup, ProjectBackupVolume, ProjectExportOptions, ProjectVolume } from '#lib/types/project.js';
+	import type {
+		ProjectBackup,
+		ProjectBackupPolicy,
+		ProjectExportOptions,
+		ProjectVolume,
+		UpdateProjectBackupPolicy
+	} from '#lib/types/project.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { activityToastOptions } from '#lib/utils/activity-toast.js';
@@ -57,8 +63,10 @@
 	import {
 		backupDestinationDisplay,
 		backupDestinationOptions,
+		backupPolicyUpdateFromPolicy,
 		backupStatusLabel,
 		backupTriggerLabel,
+		restorableVolumes,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
@@ -82,7 +90,6 @@
 	const canRestore = $derived(hasPermission('projects:restore', environmentId));
 	const canRestoreAsNew = $derived(hasPermission('projects:create', environmentId));
 	const canRestoreFiles = $derived(hasPermission('projects:update', environmentId));
-	const canStartRestored = $derived(hasPermission('projects:deploy', environmentId));
 	const canTrackActivities = $derived(hasPermission('activities:list', environmentId));
 	const canReadActivities = $derived(hasPermission('activities:read', environmentId));
 	// Destinations are a global resource; an environment-scoped grant does not cover them.
@@ -106,27 +113,36 @@
 	let restoreFiles = $state(true);
 	let restoreOverrides = $state<Record<string, boolean>>({});
 	let redeploy = $state(true);
-	let restoreName = $state('');
-	let startRestored = $state(false);
-	let shareExternalVolumes = $state(false);
 	let restoring = $state(false);
 
+	let scheduleOpen = $state(false);
+	let scheduleSession = $state(0);
+	let editingPolicyId = $state<string | undefined>();
+	// The edited policy's volumes; undefined follows the volumes a manual backup includes by default.
+	let scheduleBaseVolumes = $state<string[] | undefined>();
+	let scheduleOverrides = $state<Record<string, boolean>>({});
+	const scheduleOptionsQuery = createQuery(() => ({
+		...projectBackupOptionsQuery(environmentId, projectId),
+		enabled: scheduleOpen
+	}));
+	const scheduleFollowsProject = $derived(scheduleBaseVolumes === undefined && Object.keys(scheduleOverrides).length === 0);
+	const policiesQuery = createQuery(() => projectBackupPoliciesQuery(environmentId, projectId));
+	const policies = $derived<ProjectBackupPolicy[]>(policiesQuery.data?.policies ?? []);
+	// Saving sends the whole list, so schedules are only edited once the current list has loaded.
+	const policiesLoaded = $derived(policiesQuery.isSuccess);
 	const backupSelectable = (volume: ProjectVolume) => volume.included;
+	const backupVolumeNotes = {
+		backupStore: m.backup_store_not_backed_up(),
+		missing: m.not_created_yet_nothing_to_back_up(),
+		driverOpts: m.driver_options_not_backed_up(),
+		external: m.external_volume_not_backed_up()
+	};
 	const selectedVolumes = $derived(
 		(options?.volumes ?? []).filter((volume) => backupSelectable(volume) && (checkedOverrides[volume.key] ?? volume.included))
 	);
 	const needsS3Destination = $derived(destination !== 'local');
-	const restoreVolumes = $derived((restoreItem?.volumes ?? []).filter((volume) => volume.included));
-	// A project restored as new keeps an external volume's name, so the volume is restored only when chosen.
-	const restoreByDefault = (volume: ProjectBackupVolume) => !restoreAsNewOpen || volume.kind !== 'external';
-	const selectedRestoreVolumes = $derived(
-		restoreVolumes.filter((volume) => restoreOverrides[volume.key] ?? restoreByDefault(volume))
-	);
-	const sharesExternalVolumes = $derived(
-		(restoreItem?.volumes ?? []).some(
-			(volume) => volume.kind === 'external' && !selectedRestoreVolumes.some((selected) => selected.key === volume.key)
-		)
-	);
+	const restoreVolumes = $derived(restorableVolumes(restoreItem?.volumes ?? []));
+	const selectedRestoreVolumes = $derived(restoreVolumes.filter((volume) => restoreOverrides[volume.key] ?? true));
 
 	const queryClient = useQueryClient();
 	const backupsQuery = createQuery(() => ({
@@ -139,12 +155,18 @@
 	);
 
 	function invalidateBackups() {
-		return queryClient.invalidateQueries({ queryKey: queryKeys.projects.backupListPrefix(environmentId, projectId) });
+		return Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.projects.backupListPrefix(environmentId, projectId) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.projects.backupPolicies(environmentId, projectId) })
+		]);
 	}
 
 	const backupActivity = useBackupActivity(
 		() => environmentId,
-		(activity) => activity.metadata?.['action'] === 'create_project_backup' && activity.resourceId === projectId,
+		(activity) =>
+			(activity.metadata?.['action'] === 'create_project_backup' ||
+				activity.metadata?.['action'] === 'scheduled_project_backup') &&
+			activity.resourceId === projectId,
 		invalidateBackups,
 		() => `project:${projectId}`,
 		() => {
@@ -155,6 +177,14 @@
 				return result.data.filter((backup) => backup.status === 'running').map((backup) => backup.id);
 			};
 		}
+	);
+
+	// A global run backs up many projects under one activity, so it only refreshes this list.
+	useBackupActivity(
+		() => environmentId,
+		(activity) => ['run_project_backups', 'scheduled_project_backups'].includes(String(activity.metadata?.['action'])),
+		invalidateBackups,
+		() => 'global-project-backups'
 	);
 
 	const restoreActivity = useBackupActivity(
@@ -263,9 +293,6 @@
 		restoreFiles = backup.files && canRestoreFiles;
 		restoreOverrides = {};
 		redeploy = true;
-		restoreName = `${backup.projectName}-restored`;
-		startRestored = false;
-		shareExternalVolumes = false;
 	}
 
 	function openRestore(backup: ProjectBackup) {
@@ -274,7 +301,7 @@
 	}
 
 	function openRestoreAsNew(backup: ProjectBackup) {
-		resetRestore(backup);
+		restoreItem = backup;
 		restoreAsNewOpen = true;
 	}
 
@@ -306,31 +333,27 @@
 		});
 	}
 
-	async function handleRestoreAsNew() {
-		if (!restoreItem || restoring || !restoreName.trim()) return;
-		restoring = true;
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(
-				projectService.restoreBackupAsNew(
-					projectId,
-					restoreItem.id,
-					{
-						name: restoreName.trim(),
-						volumes: selectedRestoreVolumes.map((volume) => volume.key),
-						start: startRestored && canStartRestored,
-						shareExternalVolumes
-					},
-					environmentId
-				)
-			),
-			message: m.failed_to_restore_backup(),
-			setLoadingState: (value) => (restoring = value),
-			onSuccess: async (project) => {
-				restoreAsNewOpen = false;
-				toast.success(m.project_restored_from_backup({ name: project.name }), activityToastOptions(project.activityId));
-				await goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(environmentId)}`, { projectId: project.id }));
-			}
-		});
+	function openSchedule(policy?: ProjectBackupPolicy) {
+		if (!policiesLoaded) return;
+		editingPolicyId = policy?.id;
+		scheduleBaseVolumes = policy?.volumes;
+		scheduleOverrides = {};
+		scheduleSession += 1;
+		scheduleOpen = true;
+	}
+
+	function scheduleDefault(volume: ProjectVolume): boolean {
+		return scheduleBaseVolumes ? scheduleBaseVolumes.includes(volume.key) : volume.included;
+	}
+
+	function scheduleChecked(volume: ProjectVolume): boolean {
+		return backupSelectable(volume) && (scheduleOverrides[volume.key] ?? scheduleDefault(volume));
+	}
+
+	// An untouched selection keeps the policy's own, so one that follows the project keeps doing so.
+	function scheduleVolumes(): string[] | undefined {
+		if (Object.keys(scheduleOverrides).length === 0) return scheduleBaseVolumes;
+		return (scheduleOptionsQuery.data?.volumes ?? []).filter(scheduleChecked).map((volume) => volume.key);
 	}
 
 	function includedVolumes(backup: ProjectBackup): string {
@@ -412,42 +435,6 @@
 			{/if}
 		</RowActionsMenu>
 	{/if}
-{/snippet}
-
-{#snippet RestoreParts(filesRequired: boolean)}
-	<div class="min-w-0 space-y-2">
-		<p class="text-sm font-medium">{m.what_to_restore()}</p>
-		<ul class="space-y-2">
-			<li class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
-				<Checkbox
-					id="project-restore-files"
-					class="mt-0.5"
-					checked={filesRequired || restoreFiles}
-					disabled={filesRequired || restoring || !restoreItem?.files || !canRestoreFiles}
-					onCheckedChange={(checked) => (restoreFiles = checked === true)}
-				/>
-				<Label for="project-restore-files" class="mb-0">{m.project_files()}</Label>
-			</li>
-			{#each restoreVolumes as volume (volume.key)}
-				<li class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
-					<Checkbox
-						id={`project-restore-volume-${volume.key}`}
-						class="mt-0.5"
-						checked={restoreOverrides[volume.key] ?? restoreByDefault(volume)}
-						disabled={restoring}
-						onCheckedChange={(checked) => (restoreOverrides = { ...restoreOverrides, [volume.key]: checked === true })}
-					/>
-					<div class="grid min-w-0 gap-1">
-						<Label for={`project-restore-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
-						<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
-						{#if filesRequired && volume.kind === 'external'}
-							<span class="text-xs text-muted-foreground">{m.external_volume_keeps_its_name()}</span>
-						{/if}
-					</div>
-				</li>
-			{/each}
-		</ul>
-	</div>
 {/snippet}
 
 {#snippet BackupMobileCard({
@@ -561,6 +548,36 @@
 			/>
 		{/if}
 	</div>
+	<div class="min-w-0 space-y-2">
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<h3 class="text-sm font-medium">{m.system_backups_schedules()}</h3>
+			{#if canBackup}
+				<ArcaneButton
+					action="create"
+					size="sm"
+					customLabel={m.volume_backup_add_schedule()}
+					icon={AddIcon}
+					disabled={!policiesLoaded}
+					onclick={() => openSchedule()}
+					data-testid="project-backup-add-schedule"
+				/>
+			{/if}
+		</div>
+		{#if policiesQuery.error}
+			<Alert.Root variant="destructive" size="sm">
+				<AlertIcon class="size-4" />
+				<Alert.Description>{extractApiErrorMessage(policiesQuery.error)}</Alert.Description>
+			</Alert.Root>
+		{:else if policies.length === 0}
+			<p class="text-sm text-muted-foreground">{m.no_backup_schedules()}</p>
+		{:else}
+			<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2">
+				{#each policies as policy (policy.id)}
+					<BackupPolicyCard {policy} showStopContainers onEdit={canBackup ? () => openSchedule(policy) : undefined} />
+				{/each}
+			</div>
+		{/if}
+	</div>
 	<ArcaneTable
 		persistKey="arcane-project-backup-table"
 		items={backups}
@@ -606,12 +623,7 @@
 						volumes={options.volumes}
 						bind:overrides={checkedOverrides}
 						selectable={backupSelectable}
-						notes={{
-							backupStore: m.backup_store_not_backed_up(),
-							missing: m.not_created_yet_nothing_to_back_up(),
-							driverOpts: m.driver_options_not_backed_up(),
-							external: m.external_volume_not_backed_up()
-						}}
+						notes={backupVolumeNotes}
 						idPrefix="project-backup-volume"
 						disabled={creating}
 					/>
@@ -665,6 +677,77 @@
 	{/snippet}
 </ResponsiveDialog>
 
+{#snippet ScheduleVolumes()}
+	{#if scheduleOptionsQuery.isPending}
+		<div class="flex items-center gap-2 text-sm text-muted-foreground">
+			<Spinner class="size-4" />
+			<span>{m.common_loading()}</span>
+		</div>
+	{:else if scheduleOptionsQuery.error}
+		<Alert.Root variant="destructive" size="sm">
+			<AlertIcon class="size-4" />
+			<Alert.Description>{extractApiErrorMessage(scheduleOptionsQuery.error)}</Alert.Description>
+		</Alert.Root>
+	{:else if scheduleOptionsQuery.data?.volumes.length === 0}
+		<p class="text-sm text-muted-foreground">{m.no_volumes_files_only()}</p>
+	{:else}
+		<div class="min-w-0 space-y-2">
+			<p class="text-sm font-medium">{m.include_volume_data()}</p>
+			{#if scheduleFollowsProject}
+				<p class="text-xs text-muted-foreground">{m.volumes_added_later_included()}</p>
+			{/if}
+			<ProjectVolumeChecklist
+				volumes={scheduleOptionsQuery.data?.volumes ?? []}
+				bind:overrides={scheduleOverrides}
+				selectable={backupSelectable}
+				checkedByDefault={scheduleDefault}
+				notes={backupVolumeNotes}
+				idPrefix="project-backup-policy-volume"
+			/>
+		</div>
+	{/if}
+{/snippet}
+
+{#if scheduleSession > 0 && policiesLoaded}
+	{#key scheduleSession}
+		<BackupPolicyDialog
+			bind:open={scheduleOpen}
+			idPrefix="project-backup-policy"
+			{policies}
+			policyId={editingPolicyId}
+			addTitle={m.volume_backup_add_schedule()}
+			description={m.back_up_on_schedule_keep_newest()}
+			enabledDescription={m.back_up_project_on_schedule()}
+			defaultSchedule="0 2 * * *"
+			showStopContainers
+			stopContainersDescription={m.stop_containers_during_snapshot()}
+			retentionDescription={m.keep_newest_successful_schedule_backups()}
+			defaultStopContainers
+			destinations={canListS3Destinations && !s3DestinationsError ? s3Destinations : undefined}
+			afterFields={ScheduleVolumes}
+			policyPayload={(policy): UpdateProjectBackupPolicy => ({
+				...backupPolicyUpdateFromPolicy(policy, true),
+				volumes: policy.volumes
+			})}
+			extendUpdate={(update): UpdateProjectBackupPolicy => ({ ...update, volumes: scheduleVolumes() })}
+			updatePolicies={async (next) => {
+				if (!policiesLoaded) throw new Error(m.failed_to_save_backup_schedules());
+				return (await projectService.updateBackupPolicies(projectId, next, environmentId)).policies;
+			}}
+			messages={{
+				saved: m.backup_schedules_saved(),
+				saveFailed: m.failed_to_save_backup_schedules(),
+				removed: m.backup_schedule_removed()
+			}}
+			onSaved={(saved) =>
+				queryClient.setQueryData(projectBackupPoliciesQuery(environmentId, projectId).queryKey, (current) => ({
+					s3Available: current?.s3Available ?? false,
+					policies: saved
+				}))}
+		/>
+	{/key}
+{/if}
+
 <ResponsiveDialog
 	bind:open={restoreOpen}
 	title={m.restore_from_backup()}
@@ -677,7 +760,26 @@
 			<AlertIcon class="size-4" />
 			<Alert.Description>{m.restore_replaces_current_data()}</Alert.Description>
 		</Alert.Root>
-		{@render RestoreParts(false)}
+		<div class="min-w-0 space-y-2">
+			<p class="text-sm font-medium">{m.what_to_restore()}</p>
+			<div class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
+				<Checkbox
+					id="project-restore-files"
+					class="mt-0.5"
+					checked={restoreFiles}
+					disabled={restoring || !restoreItem?.files || !canRestoreFiles}
+					onCheckedChange={(checked) => (restoreFiles = checked === true)}
+				/>
+				<Label for="project-restore-files" class="mb-0">{m.project_files()}</Label>
+			</div>
+			<ProjectVolumeChecklist
+				volumes={restoreVolumes}
+				bind:overrides={restoreOverrides}
+				selectable={() => true}
+				idPrefix="project-restore-volume"
+				disabled={restoring}
+			/>
+		</div>
 		{#if running}
 			<LabeledSwitch
 				id="project-restore-redeploy"
@@ -703,51 +805,4 @@
 	{/snippet}
 </ResponsiveDialog>
 
-<ResponsiveDialog
-	bind:open={restoreAsNewOpen}
-	title={m.restore_as_new_project()}
-	description={m.restore_as_new_project_description()}
-	contentClass="sm:max-w-xl"
-	dismissible={!restoring}
->
-	<div class="grid min-w-0 gap-y-4 py-4" data-testid="project-restore-as-new-dialog">
-		<div class="space-y-2">
-			<Label for="project-restore-name">{m.project_name()}</Label>
-			<Input
-				id="project-restore-name"
-				value={restoreName}
-				autocomplete="off"
-				disabled={restoring}
-				oninput={(event) => (restoreName = event.currentTarget.value)}
-			/>
-		</div>
-		{@render RestoreParts(true)}
-		<LabeledSwitch
-			id="project-restore-share-external"
-			checked={shareExternalVolumes}
-			label={m.share_original_project_data()}
-			description={m.share_original_project_data_description()}
-			disabled={restoring}
-			onCheckedChange={(next) => (shareExternalVolumes = next)}
-		/>
-		<LabeledSwitch
-			id="project-restore-start"
-			checked={startRestored && canStartRestored}
-			label={m.start_after_restore()}
-			disabled={!canStartRestored || restoring}
-			onCheckedChange={(next) => (startRestored = next)}
-		/>
-	</div>
-
-	{#snippet footer()}
-		<ArcaneButton action="cancel" onclick={() => (restoreAsNewOpen = false)} disabled={restoring} />
-		<ArcaneButton
-			action="create"
-			customLabel={m.restore_as_new_project()}
-			onclick={handleRestoreAsNew}
-			loading={restoring}
-			disabled={restoring || !restoreName.trim() || (sharesExternalVolumes && !shareExternalVolumes)}
-			data-testid="project-restore-as-new-submit"
-		/>
-	{/snippet}
-</ResponsiveDialog>
+<ProjectRestoreAsNewDialog bind:open={restoreAsNewOpen} backup={restoreItem} {environmentId} />

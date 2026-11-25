@@ -2186,13 +2186,12 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 	instanceID := s.settingsService.GetSettingsConfig().InstanceID.Value
 	decorated := make([]types.SystemVolumeBackupHistoryEntry, 0, len(history))
 	for _, entry := range history {
-		// Volume backups discovered from another instance live under that instance's root.
 		root := func() string {
 			owner := cmp.Or(entry.RemoteInstanceID, instanceID)
 			switch {
-			case entry.ResourceType != "volume" && s.config.AgentEnabled:
+			case entry.ResourceType == "system" && s.config.AgentEnabled:
 				return path.Join(backup.EnvironmentSystemRoot, instanceID)
-			case entry.ResourceType != "volume":
+			case entry.ResourceType == "system":
 				return "arcane-system-recovery"
 			case owner == "":
 				return ""
@@ -2220,6 +2219,8 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 			Type:              entry.Type,
 			ResourceType:      entry.ResourceType,
 			ResourceName:      entry.ResourceName,
+			ResourceID:        entry.ResourceID,
+			ResourceMissing:   entry.ResourceMissing,
 		})
 	}
 	return decorated, pagination.Response{

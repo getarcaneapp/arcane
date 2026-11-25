@@ -117,11 +117,82 @@ type (
 		RemoteSnapshotID  string                  `json:"remoteSnapshotId,omitempty"`
 		S3DestinationID   string                  `json:"s3DestinationId,omitempty"`
 		S3DestinationName string                  `json:"s3DestinationName,omitempty"`
+		PolicyID          string                  `json:"policyId,omitempty" doc:"Backup policy that scheduled the backup"`
 		Error             string                  `json:"error,omitempty"`
 		Volumes           []ProjectBackupVolume   `json:"volumes"`
 		Size              int64                   `json:"size" doc:"Total size of the captured files"`
 		StoppedContainers bool                    `json:"stoppedContainers" doc:"Whether the project's containers were stopped for the snapshot"`
 		Files             bool                    `json:"files" doc:"Whether the backup includes the project files"`
+	}
+
+	ProjectBackupPolicy struct {
+		LastRun           *ProjectBackup `json:"lastRun,omitempty"`
+		ID                string         `json:"id"`
+		ProjectID         string         `json:"projectId"`
+		Schedule          string         `json:"schedule"`
+		S3DestinationID   string         `json:"s3DestinationId,omitempty"`
+		S3DestinationName string         `json:"s3DestinationName,omitempty"`
+		Volumes           []string       `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+		RetentionCount    int            `json:"retentionCount"`
+		Enabled           bool           `json:"enabled"`
+		StopContainers    bool           `json:"stopContainers"`
+		LocalEnabled      bool           `json:"localEnabled"`
+		S3Enabled         bool           `json:"s3Enabled"`
+	}
+
+	ProjectBackupPolicyCollection struct {
+		Policies    []ProjectBackupPolicy `json:"policies"`
+		S3Available bool                  `json:"s3Available"`
+	}
+
+	UpdateProjectBackupPolicy struct {
+		StopContainers *bool    `json:"stopContainers,omitempty" doc:"Stop the project's running containers during the snapshot; defaults to true"`
+		Volumes        []string `json:"volumes,omitzero" doc:"Compose keys of the volumes to include; omitted means every volume that exists and keeps its data in Docker, empty means none"`
+		UpdateBackupPolicy
+	}
+
+	UpdateProjectBackupPolicies struct {
+		Policies []UpdateProjectBackupPolicy `json:"policies"`
+	}
+
+	GlobalProjectBackupPolicy struct {
+		LastRun           *ProjectBackup            `json:"lastRun,omitempty"`
+		ID                string                    `json:"id"`
+		Schedule          string                    `json:"schedule"`
+		S3DestinationID   string                    `json:"s3DestinationId,omitempty"`
+		S3DestinationName string                    `json:"s3DestinationName,omitempty"`
+		SelectionMode     SystemVolumeSelectionMode `json:"selectionMode"`
+		ProjectIDs        []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; empty for all"`
+		RetentionCount    int                       `json:"retentionCount" doc:"Backups kept per project; 0 keeps all"`
+		Enabled           bool                      `json:"enabled"`
+		StopContainers    bool                      `json:"stopContainers"`
+		LocalEnabled      bool                      `json:"localEnabled"`
+		S3Enabled         bool                      `json:"s3Enabled"`
+	}
+
+	GlobalProjectBackupPolicyCollection struct {
+		Policies []GlobalProjectBackupPolicy `json:"policies"`
+	}
+
+	UpdateGlobalProjectBackupPolicy struct {
+		StopContainers *bool                     `json:"stopContainers,omitempty" doc:"Stop each project's running containers during its snapshot; defaults to true"`
+		SelectionMode  SystemVolumeSelectionMode `json:"selectionMode" enum:"all,allowlist,blocklist"`
+		ProjectIDs     []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; an empty allowlist backs up nothing"`
+		UpdateBackupPolicy
+	}
+
+	UpdateGlobalProjectBackupPolicies struct {
+		Policies []UpdateGlobalProjectBackupPolicy `json:"policies"`
+	}
+
+	RunGlobalProjectBackupsRequest struct {
+		PolicyID string `json:"policyId"`
+	}
+
+	GlobalProjectBackupOption struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Available bool   `json:"available"`
 	}
 
 	RestoreProjectBackupRequest struct {

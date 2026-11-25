@@ -1,4 +1,4 @@
-import type { SystemBackupDestination } from './backup';
+import type { SystemBackupDestination, SystemVolumeSelectionMode, UpdateBackupPolicy } from './backup';
 import type { ImageUpdateInfo } from './image';
 import type { BackupRun } from './ui/backup';
 import type { WorkspaceFileChange } from './workspace';
@@ -306,6 +306,60 @@ export type ProjectBackup = BackupRun & {
 	stoppedContainers: boolean;
 	files: boolean;
 };
+
+export interface ProjectBackupPolicy {
+	lastRun?: ProjectBackup;
+	id: string;
+	projectId: string;
+	schedule: string;
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	/** Omitted follows the volumes a manual backup includes by default; empty backs up only the files. */
+	volumes?: string[];
+	retentionCount: number;
+	enabled: boolean;
+	stopContainers: boolean;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+}
+
+export interface ProjectBackupPolicyCollection {
+	policies: ProjectBackupPolicy[];
+	s3Available: boolean;
+}
+
+export type UpdateProjectBackupPolicy = UpdateBackupPolicy & { volumes?: string[] };
+
+/** Backs up all or selected projects on this server; a project's own enabled policy replaces it for that project. */
+export interface GlobalProjectBackupPolicy {
+	lastRun?: ProjectBackup;
+	id: string;
+	schedule: string;
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	selectionMode: SystemVolumeSelectionMode;
+	projectIds: string[];
+	retentionCount: number;
+	enabled: boolean;
+	stopContainers: boolean;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+}
+
+export interface GlobalProjectBackupPolicyCollection {
+	policies: GlobalProjectBackupPolicy[];
+}
+
+export type UpdateGlobalProjectBackupPolicy = UpdateBackupPolicy & {
+	selectionMode: SystemVolumeSelectionMode;
+	projectIds: string[];
+};
+
+export interface GlobalProjectBackupOption {
+	id: string;
+	name: string;
+	available: boolean;
+}
 
 export interface ImportProjectArchiveRequest {
 	name: string;

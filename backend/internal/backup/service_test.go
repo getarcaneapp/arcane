@@ -24,6 +24,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
@@ -212,6 +213,38 @@ func TestExpiredUnmanagedRunIDs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"safety-old"}, expired)
 	require.Nil(t, orphanedAt("orphan-stale"))
+}
+
+func TestCheckScheduledRemoteCountsEveryTableOfTheRepository(t *testing.T) {
+	db, err := database.Initialize(t.Context(), "file:backup-scheduled-remote?mode=memory&cache=shared", database.MigrationOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>missing</Message></Error>`))
+	}))
+	t.Cleanup(storage.Close)
+	crypto.InitEncryption(crypto.Config{EncryptionKey: "test-encryption-key-for-scheduled-remote-32", Environment: "test"})
+	secret, err := crypto.Encrypt("secret-key")
+	require.NoError(t, err)
+	destination := &s3.S3Destination{
+		Name: "Offsite", Endpoint: strings.TrimPrefix(storage.URL, "http://"), Bucket: "backups", Region: "us-east-1",
+		AccessKeyID: "access-key", SecretAccessKey: secret, ForcePathStyle: true,
+	}
+	require.NoError(t, db.Create(destination).Error)
+	destinations := s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil })
+	check := func(root string, tables []string) error {
+		return CheckScheduledRemote(t.Context(), db, destinations, ScheduledRemoteRequest{DestinationID: destination.ID, Root: root, Tables: tables})
+	}
+
+	require.NoError(t, check(VolumeRoot+"/instance", VolumeRepositoryTables))
+	require.NoError(t, db.Exec(
+		"INSERT INTO project_backups (id, project_id, project_name, created_at, status, s3_destination_id, remote_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"project-backup", "p1", "web", time.Now(), types.VolumeBackupStatusSucceeded, destination.ID, "remote",
+	).Error)
+	require.ErrorIs(t, check(VolumeRoot+"/instance", VolumeRepositoryTables), ErrRemoteRepositoryMissing)
+	require.NoError(t, check("arcane-system-recovery", []string{"system_backup_runs"}))
 }
 
 func TestAwaitRunWaitsForConflictingRun(t *testing.T) {

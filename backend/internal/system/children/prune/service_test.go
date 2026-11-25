@@ -80,6 +80,7 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 	volumeService := volume.NewVolumeService(volume.VolumeServiceParams{
 		Config:        &config.Config{},
 		DB:            db,
+		Policies:      backup.NewPolicies(db),
 		DockerService: dockerService,
 		EventService:  event.NewEventService(db, &config.Config{}, nil),
 		Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
@@ -156,6 +157,7 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 	volumeService := volume.NewVolumeService(volume.VolumeServiceParams{
 		Config:        &config.Config{},
 		DB:            db,
+		Policies:      backup.NewPolicies(db),
 		DockerService: dockerService,
 		EventService:  event.NewEventService(db, &config.Config{}, nil),
 		Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
@@ -356,6 +358,7 @@ func newVolumeFallbackService(t *testing.T) (*Service, func() []string) {
 		VolumeService: volume.NewVolumeService(volume.VolumeServiceParams{
 			Config:        &config.Config{},
 			DB:            db,
+			Policies:      backup.NewPolicies(db),
 			DockerService: dockerService,
 			EventService:  event.NewEventService(db, &config.Config{}, nil),
 			Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),

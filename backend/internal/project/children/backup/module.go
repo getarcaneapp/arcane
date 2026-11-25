@@ -6,11 +6,18 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/project/children/backup/children/policies"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
 func RegisterRoutes(api huma.API, h *Handler) {
+	var policiesService *policies.Service
+	if h.service != nil {
+		policiesService = h.service.policies
+	}
+	policies.RegisterRoutes(api, policies.NewHandler(policiesService, h.appCtx))
+
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-project-backups",
 		Method:      http.MethodGet,

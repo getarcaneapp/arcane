@@ -16,6 +16,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
@@ -38,8 +39,12 @@ type (
 	}
 
 	BackupDependencies struct {
+		Ctx            context.Context
+		Scheduler      types.DynamicScheduler
+		Admission      *runs.Admission
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
+		Policies       *backup.Policies
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
 	}
@@ -55,6 +60,7 @@ func New(p ModuleParams) *Module {
 		Docker:         p.Service.dockerService,
 		Engine:         p.Backups.Engine,
 		Repository:     p.Backups.Repository,
+		Policies:       p.Backups.Policies,
 		S3Destinations: p.Backups.S3Destinations,
 		Settings:       p.Service.settingsService,
 		LockVolumes:    p.Backups.LockVolumes,
@@ -89,7 +95,15 @@ func New(p ModuleParams) *Module {
 		},
 		Deploy:             p.Service.deployProject,
 		RewriteComposeName: p.Service.rewriteComposeName,
-		ProjectRoot:        p.Service.ProjectRootDirectory,
+		ProjectName: func(ctx context.Context, projectID string) (string, error) {
+			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
+			if err != nil {
+				return "", err
+			}
+			return proj.Name, nil
+		},
+		ListProjects: p.Service.ListProjectReferences,
+		ProjectRoot:  p.Service.ProjectRootDirectory,
 		Projects: func(ctx context.Context) ([]types.ProjectRecord, error) {
 			all, err := p.Service.ListAllProjects(ctx)
 			if err != nil {
@@ -99,7 +113,12 @@ func New(p ModuleParams) *Module {
 		},
 		DeleteVolume: local.DeleteVolume,
 		Activities:   p.Activity,
+		Config:       p.Service.config,
+		Ctx:          p.Backups.Ctx,
+		Scheduler:    p.Backups.Scheduler,
+		Admission:    p.Backups.Admission,
 	})
+	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
@@ -167,6 +186,14 @@ func (m *Module) RegisterWorkflows(engine *flow.Engine) error {
 
 func (m *Module) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	return m.backups.ReconcileInterruptedBackups(ctx, protectedIDs...)
+}
+
+func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
+	m.backups.RegisterJobsOnStartup(ctx)
+}
+
+func (m *Module) PruneUnmanagedBackups(ctx context.Context) error {
+	return m.backups.PruneUnmanagedBackups(ctx)
 }
 
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {

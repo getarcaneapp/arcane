@@ -18,6 +18,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -37,13 +38,21 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_runs (s3_destination_id text, remote_snapshot_id text, status text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
-	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
 	crypto.InitEncryption(crypto.Config{
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
 	})
-	return NewS3DestinationService(&database.DB{DB: gormDB}, func(context.Context, string) error { return nil }), gormDB
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     &database.DB{DB: gormDB},
+		Config: &config.Config{},
+		Env:    settings.Env{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	return NewS3DestinationService(&database.DB{DB: gormDB}, settingsService, func(context.Context, string) error { return nil }), gormDB
 }
 
 func TestS3DestinationService_CRUD(t *testing.T) {
@@ -113,7 +122,7 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 		UseSSL:          true,
 	})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (s3_destination_id, s3_enabled) VALUES (?, 1)", destination.ID).Error)
+	require.NoError(t, gormDB.Exec("INSERT INTO backup_policies (s3_destination_id, s3_enabled) VALUES (?, 1)", destination.ID).Error)
 
 	err = service.DeleteS3Destination(ctx, destination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)

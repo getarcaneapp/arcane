@@ -131,17 +131,18 @@ func newVolumeBackupTestDB(t *testing.T, name string) *gorm.DB {
 
 func TestRenameVolumeMetadataPreservesPoliciesAndHistory(t *testing.T) {
 	gormDB := newVolumeBackupTestDB(t, "volume-rename-metadata")
-	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES (?, ?, ?)", "policy-1", "source-data", "0 2 * * *").Error)
+	require.NoError(t, gormDB.Exec("INSERT INTO backup_policies (id, subject_kind, subject_id, schedule) VALUES (?, ?, ?, ?)", "policy-1", "volume", "source-data", "0 2 * * *").Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "source-data", PolicyID: "policy-1"}).Error)
 
 	service := NewVolumeService(VolumeServiceParams{
-		Config: &config.Config{},
-		DB:     &database.DB{DB: gormDB},
+		Config:   &config.Config{},
+		DB:       &database.DB{DB: gormDB},
+		Policies: backup.NewPolicies(&database.DB{DB: gormDB}),
 	})
 	require.NoError(t, service.renameVolumeMetadata(t.Context(), "source-data", "renamed-data"))
 
 	var renamedPolicy string
-	require.NoError(t, gormDB.Raw("SELECT volume_name FROM volume_backup_policies WHERE id = ?", "policy-1").Scan(&renamedPolicy).Error)
+	require.NoError(t, gormDB.Raw("SELECT subject_id FROM backup_policies WHERE id = ?", "policy-1").Scan(&renamedPolicy).Error)
 	require.Equal(t, "renamed-data", renamedPolicy)
 
 	var backupEntry VolumeBackup
@@ -162,20 +163,10 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	}
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 
-	systemRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
-		Filters: map[string]string{"type": "system"},
-	})
+	volumeRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{})
 	require.NoError(t, err)
-	require.EqualValues(t, 1, page.TotalItems)
-	require.Len(t, systemRows, 1)
-	require.Equal(t, types.BackupManagementTypeSystem, systemRows[0].Type)
-
-	volumeRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
-		Filters: map[string]string{"type": "volume"},
-	})
-	require.NoError(t, err)
-	require.EqualValues(t, 2, page.TotalItems)
-	require.Len(t, volumeRows, 2)
+	require.EqualValues(t, 3, page.TotalItems)
+	require.Len(t, volumeRows, 3)
 	for _, entry := range volumeRows {
 		require.Equal(t, types.BackupManagementTypeVolume, entry.Type)
 	}
@@ -476,7 +467,7 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 	}).Error)
 
 	settingsService := newVolumeTestSettingsService(t)
-	s3Destinations := s3.NewS3DestinationService(db, nil)
+	s3Destinations := s3.NewS3DestinationService(db, nil, nil)
 	service := NewVolumeService(VolumeServiceParams{
 		Config:          &config.Config{},
 		DB:              db,

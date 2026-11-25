@@ -102,6 +102,7 @@ type (
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 		FilesChanged                *concurrency.Signal[string]
+		Deleted                     *concurrency.Signal[string]
 
 		opLock concurrency.KeyedMutex
 
@@ -452,6 +453,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		composeIdentities:           projects.NewComposeCache[types.ComposeIdentity](2048, nil),
 		composeNames:                composeNameCache{byName: make(map[string]string)},
 		FilesChanged:                concurrency.NewSignal[string](),
+		Deleted:                     concurrency.NewSignal[string](),
 	}
 	return s
 }
@@ -2013,6 +2015,7 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 	}); transactionErr != nil {
 		return fmt.Errorf("failed to delete project from database: %w", transactionErr)
 	}
+	s.Deleted.Publish(projectID)
 
 	if !opts.RemoveFiles {
 		if projectsDir, dirErr := s.ProjectRootDirectory(ctx, proj.Path); dirErr != nil {
@@ -3342,6 +3345,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 			slog.ErrorContext(ctx, "failed to delete project during filesystem cleanup", "projectId", p.ID, "name", p.Name, "path", p.Path, "reason", decision.reason, "error", deleteErr)
 			continue
 		}
+		s.Deleted.Publish(p.ID)
 		slog.WarnContext(ctx, "deleted project during filesystem cleanup", "projectId", p.ID, "name", p.Name, "path", p.Path, "reason", decision.reason)
 	}
 	return nil

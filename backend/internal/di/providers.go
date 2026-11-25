@@ -114,6 +114,9 @@ type (
 	projectModuleParams struct {
 		fx.In
 
+		Ctx       context.Context
+		Scheduler types.DynamicScheduler
+		Admission *runs.Admission
 		Service   *project.ProjectService
 		Activity  *activity.ActivityService
 		Engine    *flow.Engine
@@ -125,6 +128,7 @@ type (
 		Networks  *network.NetworkService
 
 		Repository     *backup.VolumeRepository
+		Policies       *backup.Policies
 		S3Destinations *s3.S3DestinationService
 	}
 
@@ -197,8 +201,12 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			CreateNetwork:    p.Networks.CreateNetwork,
 		},
 		Backups: project.BackupDependencies{
+			Ctx:            p.Ctx,
+			Scheduler:      p.Scheduler,
+			Admission:      p.Admission,
 			Engine:         p.Backups,
 			Repository:     p.Repository,
+			Policies:       p.Policies,
 			S3Destinations: p.S3Destinations,
 			LockVolumes:    p.Volumes.LockVolumes,
 		},

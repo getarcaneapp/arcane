@@ -232,6 +232,8 @@ type (
 		Type              BackupManagementType    `json:"type" sortable:"true"`
 		ResourceType      string                  `json:"resourceType"`
 		ResourceName      string                  `json:"resourceName" sortable:"true"`
+		ResourceID        string                  `json:"resourceId,omitempty" doc:"ID of the backed up project"`
+		ResourceMissing   bool                    `json:"resourceMissing,omitempty" doc:"True when the backed up project no longer exists"`
 		Size              int64                   `json:"size" sortable:"true"`
 	}
 
@@ -270,7 +272,9 @@ const (
 
 	BackupManagementTypeSystem     BackupManagementType      = "system"
 	BackupManagementTypeVolume     BackupManagementType      = "volume"
+	BackupManagementTypeProject    BackupManagementType      = "project"
 	SystemVolumePolicyPrefix                                 = "system-volume:"
+	GlobalProjectPolicyPrefix                                = "global-project:"
 	SystemVolumeManualSeriesOwner                            = "manual"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
@@ -285,9 +289,17 @@ const (
 	VolumeBackupTriggerDiscovered = "discovered"
 )
 
+func (m SystemVolumeSelectionMode) Valid() bool {
+	return m == SystemVolumeSelectionAll || m == SystemVolumeSelectionAllowlist || m == SystemVolumeSelectionBlocklist
+}
+
+func (m SystemVolumeSelectionMode) Selects(listed bool) bool {
+	return m == SystemVolumeSelectionAll || (m == SystemVolumeSelectionAllowlist && listed) || (m == SystemVolumeSelectionBlocklist && !listed)
+}
+
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {
-	if strings.HasPrefix(policyID, SystemVolumePolicyPrefix) {
-		return BackupManagementTypeSystem
+	if strings.HasPrefix(policyID, GlobalProjectPolicyPrefix) {
+		return BackupManagementTypeProject
 	}
 	return BackupManagementTypeVolume
 }

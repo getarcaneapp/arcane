@@ -35,6 +35,7 @@ import (
 
 type (
 	Backups interface {
+		HoldBackups(ctx context.Context, projectID string) (func(context.Context), error)
 		Manifest(ctx context.Context, projectID, backupID string) (types.ProjectManifest, error)
 		RestoreTo(ctx context.Context, opts types.ProjectBackupRestore) error
 	}
@@ -520,6 +521,11 @@ func (s *Service) checkComposeNameFree(ctx context.Context, name string) error {
 
 func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (string, error) {
 	request := opts.Request
+	releaseBackups, err := s.deps.Backups.HoldBackups(ctx, opts.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	defer releaseBackups(context.WithoutCancel(ctx))
 	manifest, err := s.deps.Backups.Manifest(ctx, opts.ProjectID, opts.BackupID)
 	if err != nil {
 		return "", err
@@ -611,6 +617,7 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	if err == nil {
 		created, err = s.restoreBackupVolumes(ctx, opts, target, included)
 	}
+	releaseBackups(context.WithoutCancel(ctx))
 	if err != nil {
 		return "", s.rollback(ctx, err, importRollback{
 			User:        opts.User,
