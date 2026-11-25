@@ -38,8 +38,8 @@ export class ContainerHostnames {
 	async retryFailures() {
 		await this.#scheduleSync();
 		await Promise.all(this.#workers.values());
-		for (const key of this.#rendered.keys()) {
-			if (this.#entries.get(key) === failed) this.#entries.delete(key);
+		for (const [key, entry] of this.#entries) {
+			if (entry === failed) this.#entries.delete(key);
 		}
 		await this.#loadRenderedEnvironments();
 	}
