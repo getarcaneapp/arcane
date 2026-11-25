@@ -289,7 +289,6 @@
 				failure: () => m.common_bulk_remove_failed({ count: ids.length, resource: m.volumes_backups_title() })
 			},
 			setLoading: (loading) => (deletingSelected = loading),
-			onItemFailure: (_id, error) => toast.error(extractApiErrorMessage(error)),
 			onComplete: invalidateBackups,
 			clearSelection: () => (selectedIds = [])
 		});
