@@ -101,6 +101,7 @@ type (
 	}
 
 	plan struct {
+		User            types.Actor           `json:"user"`
 		BackupID        string                `json:"backupId"`
 		ProjectID       string                `json:"projectId"`
 		S3DestinationID string                `json:"s3DestinationId,omitempty"`
@@ -256,7 +257,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	if err != nil {
 		return types.ProjectBackup{}, err
 	}
-	p, err := s.resolvePlan(ctx, project, opts.Request)
+	p, err := s.resolvePlan(ctx, project, opts.Request, opts.User)
 	if err != nil {
 		return types.ProjectBackup{}, err
 	}
@@ -319,7 +320,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	return entry.DTO(DTOOptions{ActivityID: &activityID}), nil
 }
 
-func (s *Service) resolvePlan(ctx context.Context, project types.Project, request types.CreateProjectBackupRequest) (plan, error) {
+func (s *Service) resolvePlan(ctx context.Context, project types.Project, request types.CreateProjectBackupRequest, user types.Actor) (plan, error) {
 	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
 		Class:           common.ErrBadRequest,
 		S3Destinations:  s.deps.S3Destinations,
@@ -339,6 +340,7 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 		return plan{}, err
 	}
 	return plan{ //exhaustruct:enforce
+		User:            user,
 		BackupID:        uuid.New().String(),
 		ProjectID:       project.ID,
 		S3DestinationID: s3DestinationID,
@@ -575,7 +577,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	if planErr := s.checkPlanVolumes(ctx, project, p); planErr != nil {
 		return backup.Snapshot{}, planErr
 	}
-	env, externalEnv, projectMounts, err := s.projectFiles(ctx, dockerClient, project, p.Files)
+	projectMounts, err := s.projectFiles(ctx, dockerClient, project, p.Files)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
@@ -589,12 +591,6 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 		return backup.Snapshot{}, err
 	}
 	p.Volumes = markInUse(p.Volumes, inUse)
-	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, externalEnv), env)
-	if err != nil {
-		return backup.Snapshot{}, err
-	}
-	defer removeMeta()
-	input := snapshotInput(projectMounts, metaVolume, entry, p)
 	var snapshot backup.Snapshot
 	reject := func(ctx context.Context, err error) error {
 		cleanupCtx, cancelCleanup := context.WithTimeout(ctx, time.Minute)
@@ -609,7 +605,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 		Stop:     nil,
 		Verify:   nil,
 		Rejected: reject,
-		Mounts:   input.Mounts,
+		Mounts:   projectMounts,
 		Volumes:  p.volumeNames(),
 	}
 	if p.StopContainers && len(active) > 0 {
@@ -636,7 +632,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 			return start, backup.ProjectStop{
 				Docker:    s.deps.Docker,
 				Stop:      s.deps.StopProject,
-				User:      types.SystemUser,
+				User:      p.User,
 				ProjectID: entry.ProjectID,
 				Compose:   project.ComposeName,
 				Active:    active,
@@ -644,8 +640,20 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 		}
 	}
 	err = backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
-		input.Mounts = mounts
-		created, snapshotErr := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, project.Name, input)
+		var env []byte
+		var externalEnv bool
+		if p.Files {
+			var envErr error
+			if env, _, externalEnv, envErr = projects.ReadExternalEnvFile(ctx, project.Path); envErr != nil {
+				return fmt.Errorf("read the .env file of project %s: %w", project.Name, envErr)
+			}
+		}
+		metaVolume, removeMeta, metaErr := s.writeManifest(ctx, dockerClient, backupManifest(project, p, externalEnv), env)
+		if metaErr != nil {
+			return metaErr
+		}
+		defer removeMeta()
+		created, snapshotErr := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, project.Name, snapshotInput(mounts, metaVolume, entry, p))
 		releaseRepository()
 		if snapshotErr != nil {
 			return fmt.Errorf("failed to create the project snapshot: %w", snapshotErr)
@@ -663,22 +671,14 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	return confirmed, nil
 }
 
-func (s *Service) projectFiles(ctx context.Context, dockerClient *client.Client, project types.Project, files bool) ([]byte, bool, []mount.Mount, error) {
+func (s *Service) projectFiles(ctx context.Context, dockerClient *client.Client, project types.Project, files bool) ([]mount.Mount, error) {
 	if !files {
-		return nil, false, nil, nil
+		return nil, nil
 	}
 	if err := s.deps.SoleDirectory(ctx, project); err != nil {
-		return nil, false, nil, err
+		return nil, err
 	}
-	env, _, externalEnv, err := projects.ReadExternalEnvFile(ctx, project.Path)
-	if err != nil {
-		return nil, false, nil, fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
-	}
-	projectMounts, err := projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: project.Path, Target: path.Join(backup.SnapshotRoot, "project")})
-	if err != nil {
-		return nil, false, nil, err
-	}
-	return env, externalEnv, projectMounts, nil
+	return projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: project.Path, Target: path.Join(backup.SnapshotRoot, "project")})
 }
 
 func (s *Service) containerUse(ctx context.Context, composeName string) (active []container.Summary, inUse map[string]bool, err error) {
@@ -1025,7 +1025,7 @@ func (s *Service) admitScheduled(
 	if err != nil {
 		return fail(err)
 	}
-	p, err := s.resolvePlan(ctx, project, request)
+	p, err := s.resolvePlan(ctx, project, request, types.SystemUser)
 	if err != nil {
 		return fail(err)
 	}
@@ -1040,7 +1040,7 @@ func (s *Service) admitScheduled(
 	if err != nil {
 		return fail(err)
 	}
-	current, err := s.resolvePlan(ctx, project, request)
+	current, err := s.resolvePlan(ctx, project, request, types.SystemUser)
 	if err != nil {
 		return fail(err)
 	}
