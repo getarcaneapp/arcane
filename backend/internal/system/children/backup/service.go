@@ -114,6 +114,7 @@ type (
 		Docker                *dockerInternal.DockerClientService
 		Volumes               *volume.VolumeService
 		Engine                *backup.Engine
+		Repository            *backup.VolumeRepository
 		S3Destinations        *s3.S3DestinationService
 		Activity              *activity.ActivityService
 		Settings              *settings.SettingsService
@@ -129,8 +130,8 @@ type (
 	Service struct {
 		store                 Store
 		dockerService         *dockerInternal.DockerClientService
-		volumeService         *volume.VolumeService
 		engine                *backup.Engine
+		repository            *backup.VolumeRepository
 		s3Destinations        *s3.S3DestinationService
 		activityService       *activity.ActivityService
 		settingsService       *settings.SettingsService
@@ -191,8 +192,8 @@ func NewService(deps Dependencies) *Service {
 	service = &Service{
 		store:                 deps.Store,
 		dockerService:         deps.Docker,
-		volumeService:         deps.Volumes,
 		engine:                deps.Engine,
+		repository:            deps.Repository,
 		s3Destinations:        deps.S3Destinations,
 		activityService:       deps.Activity,
 		settingsService:       deps.Settings,
@@ -371,7 +372,7 @@ func (s *Service) databaseFile() (string, error) {
 }
 
 func (s *Service) localRepository(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
-	storage, err := s.volumeService.BackupStorageMount(ctx, dockerClient, "/repository", readOnly)
+	storage, err := s.repository.StorageMount(ctx, dockerClient, "/repository", readOnly)
 	if err != nil {
 		return backup.Repository{}, err
 	}
@@ -420,60 +421,35 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	if err != nil {
 		return nil, err
 	}
-	selected, err := func() (*types.SystemBackupPolicy, error) {
-		if request.PolicyID != "" {
-			policy, policyErr := s.store.Policy(ctx, request.PolicyID)
-			if policyErr == nil && policy == nil {
-				return nil, common.Classify(common.ErrNotFound, errors.New("system backup policy not found"))
-			}
-			return policy, policyErr
+	defaults, s3DestinationID, destination := backup.DestinationOptions{Local: true, Remote: false}, request.S3DestinationID, request.Destination
+	if request.PolicyID != "" {
+		policy, policyErr := s.store.Policy(ctx, request.PolicyID)
+		if policyErr != nil {
+			return nil, policyErr
 		}
-		switch request.Destination {
-		case types.SystemBackupDestinationLocal, "":
-			return &types.SystemBackupPolicy{
-				LocalEnabled:    true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		case types.SystemBackupDestinationS3:
-			return &types.SystemBackupPolicy{
-				S3Enabled:       true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		case types.SystemBackupDestinationLocalS3:
-			return &types.SystemBackupPolicy{
-				LocalEnabled:    true,
-				S3Enabled:       true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		default:
-			return nil, common.Classify(common.ErrValidation, errors.New("unknown system backup destination"))
+		if policy == nil {
+			return nil, common.Classify(common.ErrNotFound, errors.New("system backup policy not found"))
 		}
-	}()
+		defaults, s3DestinationID, destination = backup.DestinationOptions{Local: policy.LocalEnabled, Remote: policy.S3Enabled}, policy.S3DestinationID, ""
+	}
+	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
+		Class:           common.ErrValidation,
+		S3Destinations:  s.s3Destinations,
+		Domain:          "system",
+		Destination:     string(destination),
+		S3DestinationID: s3DestinationID,
+		Default:         defaults,
+	})
 	if err != nil {
 		return nil, err
 	}
-	if !selected.LocalEnabled && !selected.S3Enabled {
-		return nil, common.Classify(common.ErrValidation, errors.New("select at least one system backup destination"))
-	}
-	if selected.S3Enabled && selected.S3DestinationID == "" {
-		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the system backup"))
-	}
 	run := &types.SystemBackupRun{
-		ID:        cmp.Or(kit.Ternary(s.config.AgentEnabled, request.ID, ""), "system-"+uuid.New().String()),
-		CreatedAt: time.Now().UTC(),
-		Status:    types.SystemBackupStatusRunning,
-		Trigger:   trigger,
-		Destination: func() types.SystemBackupDestination {
-			switch {
-			case selected.LocalEnabled && selected.S3Enabled:
-				return types.SystemBackupDestinationLocalS3
-			case selected.LocalEnabled:
-				return types.SystemBackupDestinationLocal
-			default:
-				return types.SystemBackupDestinationS3
-			}
-		}(),
-		S3DestinationID: selected.S3DestinationID,
+		ID:              cmp.Or(kit.Ternary(s.config.AgentEnabled, request.ID, ""), "system-"+uuid.New().String()),
+		CreatedAt:       time.Now().UTC(),
+		Status:          types.SystemBackupStatusRunning,
+		Trigger:         trigger,
+		Destination:     types.SystemBackupDestination(backup.Destination(selected)),
+		S3DestinationID: s3DestinationID,
 		PolicyID:        request.PolicyID,
 	}
 	if createErr := s.store.CreateRun(ctx, run); createErr != nil {
@@ -481,8 +457,8 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	}
 	checkpoint := systemBackupRecovery{
 		BackupID:     run.ID,
-		LocalEnabled: selected.LocalEnabled,
-		S3Enabled:    selected.S3Enabled,
+		LocalEnabled: selected.Local,
+		S3Enabled:    selected.Remote,
 	}
 	recoveryData, err := json.Marshal(checkpoint)
 	if err == nil {
@@ -1325,14 +1301,19 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, runningVolumeBackupsErr
 	}
-	if rekeyErr := s.rekeyRepositories(ctx, previous, recoveryKey); rekeyErr != nil {
+	held, releaseRepository, err := s.repository.HoldLocal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseRepository()
+	if rekeyErr := s.rekeyRepositories(held, previous, recoveryKey); rekeyErr != nil {
 		return nil, rekeyErr
 	}
 	rollback := func(cause error) error {
 		if previous == "" {
 			return cause
 		}
-		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(ctx), recoveryKey, previous))
+		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(held), recoveryKey, previous))
 	}
 	runningVolumeBackups, countErr = s.store.CountRunningVolumeBackups(ctx)
 	if countErr != nil {
@@ -1341,7 +1322,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, rollback(runningVolumeBackupsErr)
 	}
-	if setErr := s.recoveryKeys.Set(ctx, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
+	if setErr := s.recoveryKeys.Set(held, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
 		return nil, rollback(setErr)
 	}
 	return &types.SystemBackupRecoveryKeyStatus{Configured: true}, nil
@@ -1389,7 +1370,7 @@ func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) 
 	if volumeRuns == 0 {
 		return nil
 	}
-	migrateErr := s.volumeService.MigrateRepositoryPasswords(ctx, previous, next)
+	migrateErr := s.repository.Rekey(ctx, previous, next)
 	if migrateErr == nil || len(systemRepositories) == 0 || previous == "" {
 		return migrateErr
 	}

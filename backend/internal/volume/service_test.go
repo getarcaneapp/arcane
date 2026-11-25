@@ -26,6 +26,7 @@ import (
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -89,15 +90,26 @@ func TestEnrichVolumesWithUsageData(t *testing.T) {
 	}
 }
 
-func TestIsInternalVolume(t *testing.T) {
-	svc := &VolumeService{backupVolumeName: "arcane-backups"}
+func newBackupVolumeTestRepository(t *testing.T) *backup.VolumeRepository {
+	t.Helper()
+	server := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(server.Close)
+	return backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{
+		Docker:           newVolumeTestDockerService(t, newVolumeServiceTestDockerClient(t, server)),
+		BackupVolumeName: "arcane-backups",
+	})
+}
 
-	require.True(t, svc.isInternalVolume(types.Volume{Name: "arcane-backups"}))
-	require.False(t, svc.isInternalVolume(types.Volume{Name: "user-volume"}))
+func TestIsInternalVolume(t *testing.T) {
+	svc := &VolumeService{repository: newBackupVolumeTestRepository(t)}
+	isBackupVolume := svc.BackupVolumeMatcher(t.Context())
+
+	require.True(t, svc.isInternalVolume(types.Volume{Name: "arcane-backups"}, isBackupVolume))
+	require.False(t, svc.isInternalVolume(types.Volume{Name: "user-volume"}, isBackupVolume))
 }
 
 func TestRenameVolumeRejectsInvalidAndProtectedNames(t *testing.T) {
-	service := &VolumeService{backupVolumeName: "arcane-backups"}
+	service := &VolumeService{repository: newBackupVolumeTestRepository(t)}
 
 	_, err := service.RenameVolume(t.Context(), "data", "data", types.Actor{})
 	require.ErrorIs(t, err, common.ErrVolumeRenameInvalid)
@@ -463,11 +475,14 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 		S3DestinationID: destination.ID,
 	}).Error)
 
+	settingsService := newVolumeTestSettingsService(t)
+	s3Destinations := s3.NewS3DestinationService(db, nil)
 	service := NewVolumeService(VolumeServiceParams{
 		Config:          &config.Config{},
 		DB:              db,
-		SettingsService: newVolumeTestSettingsService(t),
-		S3Destinations:  s3.NewS3DestinationService(db, nil),
+		SettingsService: settingsService,
+		S3Destinations:  s3Destinations,
+		Repository:      backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Settings: settingsService, S3Destinations: s3Destinations}),
 	})
 	backups, _, err := service.backup.List(t.Context(), "app-data", pagination.QueryParams{})
 	require.NoError(t, err)

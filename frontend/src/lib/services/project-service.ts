@@ -1,10 +1,12 @@
 import { m } from '#lib/paraglide/messages.js';
 import type { MessageResponse, Paginated } from '#lib/types/base.js';
 import type {
+	CreateProjectBackupRequest,
 	ExportProjectArchiveRequest,
 	ImportProjectArchiveRequest,
 	Project,
 	ProjectDeployOptions,
+	ProjectBackup,
 	ProjectExportOptions,
 	ProjectStatusCounts,
 	ProjectsDirectoryStatus,
@@ -16,7 +18,9 @@ import type {
 	ProjectTransferResource,
 	ProjectTransferStarted,
 	ProjectUpdateInfo,
-	ProjectUrl
+	ProjectUrl,
+	RestoreProjectBackupAsNewRequest,
+	RestoreProjectBackupRequest
 } from '#lib/types/project.js';
 import type { OperationStreamFrame } from '#lib/types/stream.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
@@ -296,6 +300,51 @@ class ProjectService extends BaseAPIService {
 
 	async getExportOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/export`));
+	}
+
+	async getBackupOptions(projectId: string, environmentId: string): Promise<ProjectExportOptions> {
+		return this.handleResponse(this.api.get(`/agents/${environmentId}/projects/${projectId}/backup-options`));
+	}
+
+	async listBackups(
+		projectId: string,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string
+	): Promise<Paginated<ProjectBackup>> {
+		const res = await this.api.get<Paginated<ProjectBackup>>(`/agents/${environmentId}/projects/${projectId}/backups`, {
+			params: transformPaginationParams(options)
+		});
+		return res.data;
+	}
+
+	async createBackup(projectId: string, request: CreateProjectBackupRequest, environmentId: string): Promise<ProjectBackup> {
+		return this.handleResponse(this.api.post(`/agents/${environmentId}/projects/${projectId}/backups`, request));
+	}
+
+	async deleteBackup(projectId: string, backupId: string, environmentId: string): Promise<MessageResponse> {
+		return this.handleResponse(this.api.delete(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}`));
+	}
+
+	async restoreBackup(
+		projectId: string,
+		backupId: string,
+		request: RestoreProjectBackupRequest,
+		environmentId: string
+	): Promise<MessageResponse> {
+		return this.handleResponse(
+			this.api.post(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}/restore`, request)
+		);
+	}
+
+	async restoreBackupAsNew(
+		projectId: string,
+		backupId: string,
+		request: RestoreProjectBackupAsNewRequest,
+		environmentId: string
+	): Promise<Project> {
+		return this.handleResponse(
+			this.api.post(`/agents/${environmentId}/projects/${projectId}/backups/${backupId}/restore-as-new`, request)
+		);
 	}
 
 	async exportProject(projectId: string, request: ExportProjectArchiveRequest, environmentId: string): Promise<void> {

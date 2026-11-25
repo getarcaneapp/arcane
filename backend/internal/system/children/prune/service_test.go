@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
@@ -81,6 +82,7 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 		DB:            db,
 		DockerService: dockerService,
 		EventService:  event.NewEventService(db, &config.Config{}, nil),
+		Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 	})
 	service := NewService(ServiceParams{
 		Location:      time.UTC,
@@ -120,9 +122,11 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 				`{"ID":"idle","InUse":false,"Size":10},`+
 				`{"ID":"busy","InUse":true,"Size":20}]}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
-			mu.Lock()
-			containerQuery = r.URL.Query()
-			mu.Unlock()
+			if strings.Contains(r.URL.Query().Get("filters"), "status") {
+				mu.Lock()
+				containerQuery = r.URL.Query()
+				mu.Unlock()
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprint(w, `[{"Id":"stopped","State":"exited","SizeRw":30}]`)
 		default:
@@ -154,6 +158,7 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 		DB:            db,
 		DockerService: dockerService,
 		EventService:  event.NewEventService(db, &config.Config{}, nil),
+		Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 	})
 	service := NewService(ServiceParams{
 		Location:      time.UTC,
@@ -353,6 +358,7 @@ func newVolumeFallbackService(t *testing.T) (*Service, func() []string) {
 			DB:            db,
 			DockerService: dockerService,
 			EventService:  event.NewEventService(db, &config.Config{}, nil),
+			Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
 	})
 	return service, func() []string {

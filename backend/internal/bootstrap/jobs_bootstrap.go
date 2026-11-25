@@ -17,6 +17,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/job"
+	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/scheduler"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -100,6 +101,7 @@ type (
 		Volume             *volume.VolumeService
 		System             *system.SystemService
 		GitOpsSync         *gitops.GitOpsSyncService
+		Projects           *project.Module
 	}
 
 	settingsSubscriptionsParams struct {
@@ -247,6 +249,9 @@ func reconcileCoordinatorStartup(ctx context.Context, p startJobSchedulerParams)
 	}
 	if reconcileInterruptedBackupsOnStartupErr := p.GitOpsSync.ReconcileInterruptedBackupsOnStartup(ctx, backups...); reconcileInterruptedBackupsOnStartupErr != nil {
 		return reconcileInterruptedBackupsOnStartupErr
+	}
+	if reconcileProjectBackupsErr := p.Projects.ReconcileInterruptedBackups(ctx, backups...); reconcileProjectBackupsErr != nil {
+		return reconcileProjectBackupsErr
 	}
 	return p.JobSchedule.ReconcileStartupActivities(ctx, activities...)
 }

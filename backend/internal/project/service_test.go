@@ -47,6 +47,7 @@ import (
 	updatertypes "kit.getarcane.app/updater/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -11150,6 +11151,7 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	)
 	module := New(ModuleParams{
 		Service: svc,
+		Backups: BackupDependencies{Repository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: svc.dockerService, BackupVolumeName: "arcane-backups"})},
 		Transfer: TransferDependencies{
 			ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 				exports = append(exports, name)

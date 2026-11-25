@@ -179,3 +179,9 @@ func FlushWriter(writer io.Writer) {
 		flusher.Flush()
 	}
 }
+
+func AppendOrWarn(ctx context.Context, appender MessageAppender, activityID string, req AppendMessageRequest) {
+	if _, err := appender.AppendMessage(context.WithoutCancel(ctx), activityID, req); err != nil {
+		slog.WarnContext(ctx, "Failed to append activity message", "activityId", activityID, "level", req.Level, "error", err)
+	}
+}

@@ -251,6 +251,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		&settings.SettingVariable{},
 		&volume.VolumeBackup{},
 	))
+	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (id TEXT PRIMARY KEY, status TEXT)").Error)
 	crypto.InitEncryption(crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
@@ -269,6 +270,9 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 		return cli
 	}())
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
+		return nil
+	})
 	service := NewSystemService(SystemServiceParams{
 		DB:            db,
 		DockerService: dockerService,
@@ -276,17 +280,17 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 			Config:        &config.Config{},
 			DB:            db,
 			DockerService: dockerService,
+			Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
-		SettingsService: settingsService,
-		BackupEngine: backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
-			return nil
-		}),
-		S3Destinations: s3Destinations,
-		RecoveryKeys:   recoveryKeys,
-		Config:         &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
-		Ctx:            t.Context(),
-		Scheduler:      jobScheduler,
-		Admission:      gate,
+		SettingsService:  settingsService,
+		BackupEngine:     engine,
+		BackupRepository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, Engine: engine, BackupVolumeName: "arcane-backups"}),
+		S3Destinations:   s3Destinations,
+		RecoveryKeys:     recoveryKeys,
+		Config:           &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
+		Ctx:              t.Context(),
+		Scheduler:        jobScheduler,
+		Admission:        gate,
 	})
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine, nil))

@@ -3,7 +3,7 @@ import { queryOptions } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { projectService } from '#lib/services/project-service.js';
 import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
-import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import type { ProjectStatusCounts, ProjectTagOption } from '#lib/types/project.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import {
@@ -58,6 +58,16 @@ export function projectWorkspaceFolderQuery(environmentId: string, projectId: st
 	return queryOptions({
 		queryKey: queryKeys.projects.workspaceFolder(environmentId, projectId, path),
 		queryFn: () => projectWorkspaceService.getWorkspace(projectId, path, environmentId)
+	});
+}
+
+export function projectBackupListQuery(environmentId: string, projectId: string, requestOptions: SearchPaginationSortRequest) {
+	return queryOptions({
+		queryKey: queryKeys.projects.backupList(environmentId, projectId, requestOptions),
+		queryFn: async () => {
+			await environmentStore.ready;
+			return projectService.listBackups(projectId, requestOptions, environmentId);
+		}
 	});
 }
 

@@ -356,7 +356,9 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	require.NoError(t, err)
 	catalogRoles := make(map[string]string, len(authz.AllPermissions()))
 	for i, permission := range authz.AllPermissions() {
-		if permission == authz.PermGitOpsBidirectional || permission == authz.PermProjectsJobsRun || permission == authz.PermProjectsExport {
+		if slices.Contains([]string{
+			authz.PermGitOpsBidirectional, authz.PermProjectsJobsRun, authz.PermProjectsExport, authz.PermProjectsBackup, authz.PermProjectsRestore,
+		}, permission) {
 			continue
 		}
 		id := fmt.Sprintf("c%d", i)
@@ -441,7 +443,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -996,6 +998,117 @@ func TestMigration119_GrantsProjectsExport(t *testing.T) {
 	assert.JSONEq(t, `["projects:list","projects:read","projects:create"]`, creator)
 	assert.JSONEq(t, `["projects:list","projects:read"]`, reader)
 	assert.Empty(t, scopes)
+}
+
+func TestMigration120_CreatesProjectBackupsAndGrantsProjectsBackup(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-project-backups.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('b1', 'Backups', '["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]'),
+		('b2', 'Volumes only', '["volumes:list","volumes:read","volumes:backup"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES
+		('bk1', 'Backup key', 'hash-bk1', 'bk1'),
+		('bk2', 'Mixed key', 'hash-bk2', 'bk2'),
+		('bk3', 'Other env key', 'hash-bk3', 'bk3')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('bp1', 'bk1', 'volumes:backup', NULL),
+		('bp2', 'bk1', 'projects:read', NULL),
+		('bp3', 'bk2', 'volumes:backup', '0'),
+		('bp4', 'bk2', 'projects:read', NULL),
+		('bp5', 'bk3', 'volumes:backup', '0'),
+		('bp6', 'bk3', 'projects:read', 'other')`)
+	require.NoError(t, err)
+	state := func() (int, string, string, int) {
+		var objects, keyGrants int
+		var backups, volumesOnly string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'project_backups') +
+			(SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_project_backups_project_id')`).Scan(&objects))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'b1'`).Scan(&backups))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = 'b2'`).Scan(&volumesOnly))
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'bk1' AND permission = 'projects:backup'`).Scan(&keyGrants))
+		return objects, backups, volumesOnly, keyGrants
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
+	objects, backups, volumesOnly, keyGrants := state()
+	assert.Equal(t, 2, objects)
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:backup","projects:restore"]`, backups)
+	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, volumesOnly)
+	assert.Equal(t, 1, keyGrants)
+	var mixedScope string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT environment_id FROM api_key_permissions WHERE api_key_id = 'bk2' AND permission = 'projects:backup'`).Scan(&mixedScope))
+	assert.Equal(t, "0", mixedScope)
+	var otherGrants int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_key_permissions WHERE api_key_id = 'bk3' AND permission = 'projects:backup'`).Scan(&otherGrants))
+	assert.Zero(t, otherGrants)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO project_backups (id, project_id, project_name, created_at) VALUES ('pb1', 'p1', 'web', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+	var status, volumes string
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT status, volumes FROM project_backups WHERE id = 'pb1'`).Scan(&status, &volumes))
+	assert.Equal(t, "running", status)
+	assert.Equal(t, "[]", volumes)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 119))
+	objects, backups, volumesOnly, keyGrants = state()
+	assert.Zero(t, objects)
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]`, backups)
+	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, volumesOnly)
+	assert.Zero(t, keyGrants)
+}
+
+func TestMigration120_GrantsProjectsRestore(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-project-restore.db")
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
+		('r1', 'Backups', '["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]'),
+		('r2', 'Volumes only', '["volumes:list","volumes:read","volumes:backup"]')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES
+		('k1', 'Global key', 'hash-k1', 'k1'),
+		('k2', 'Mixed key', 'hash-k2', 'k2'),
+		('k3', 'Other env key', 'hash-k3', 'k3')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
+		('p1', 'k1', 'volumes:backup', NULL),
+		('p2', 'k1', 'projects:read', NULL),
+		('p3', 'k2', 'volumes:backup', '0'),
+		('p4', 'k2', 'projects:read', NULL),
+		('p5', 'k3', 'volumes:backup', '0'),
+		('p6', 'k3', 'projects:read', 'other')`)
+	require.NoError(t, err)
+	role := func(id string) string {
+		var permissions string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT permissions FROM roles WHERE id = ?`, id).Scan(&permissions))
+		return permissions
+	}
+	keyGrants := func() map[string]string {
+		rows, queryErr := rawDB.QueryContext(ctx, `SELECT api_key_id, COALESCE(environment_id, '*') FROM api_key_permissions WHERE permission = 'projects:restore'`)
+		require.NoError(t, queryErr)
+		defer func() { require.NoError(t, rows.Close()) }()
+		grants := map[string]string{}
+		for rows.Next() {
+			var keyID, environmentID string
+			require.NoError(t, rows.Scan(&keyID, &environmentID))
+			grants[keyID] = environmentID
+		}
+		require.NoError(t, rows.Err())
+		return grants
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:backup","projects:restore"]`, role("r1"))
+	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, role("r2"))
+	assert.Equal(t, map[string]string{"k1": "*", "k2": "0"}, keyGrants())
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 119))
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]`, role("r1"))
+	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, role("r2"))
+	assert.Empty(t, keyGrants())
 }
 
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {

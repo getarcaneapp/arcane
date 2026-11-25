@@ -89,6 +89,7 @@ type (
 		ProjectService     *project.ProjectService
 		RegistryService    *registry.ContainerRegistryService
 		BackupEngine       *backup.Engine
+		BackupRepository   *backup.VolumeRepository
 		S3Destinations     *s3.S3DestinationService
 		RecoveryKeys       *backup.RecoveryKeyStore
 		Actors             *francis.Runtime
@@ -165,6 +166,7 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 		Docker:                p.DockerService,
 		Volumes:               p.VolumeService,
 		Engine:                p.BackupEngine,
+		Repository:            p.BackupRepository,
 		S3Destinations:        p.S3Destinations,
 		Activity:              p.ActivityService,
 		Settings:              p.SettingsService,
@@ -642,14 +644,20 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			return count, err
 		},
 		CountVolumeRepositoryRuns: func(ctx context.Context) (int64, error) {
-			var count int64
-			err := s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("format = ?", volume.VolumeBackupFormatRustic).Count(&count).Error
-			return count, err
+			var volumeRuns, projectRuns int64
+			err := errors.Join(
+				s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("format = ?", volume.VolumeBackupFormatRustic).Count(&volumeRuns).Error,
+				s.db.WithContext(ctx).Table("project_backups").Count(&projectRuns).Error,
+			)
+			return volumeRuns + projectRuns, err
 		},
 		CountRunningVolumeBackups: func(ctx context.Context) (int64, error) {
-			var count int64
-			err := s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("status = ?", volume.VolumeBackupStatusRunning).Count(&count).Error
-			return count, err
+			var volumeRuns, projectRuns int64
+			err := errors.Join(
+				s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("status = ?", volume.VolumeBackupStatusRunning).Count(&volumeRuns).Error,
+				s.db.WithContext(ctx).Table("project_backups").Where("status = ?", types.VolumeBackupStatusRunning).Count(&projectRuns).Error,
+			)
+			return volumeRuns + projectRuns, err
 		},
 		Policies: func(ctx context.Context) ([]types.SystemBackupPolicy, error) {
 			var policies []SystemBackupPolicy
