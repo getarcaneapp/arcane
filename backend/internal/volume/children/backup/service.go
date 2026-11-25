@@ -14,7 +14,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/containerd/errdefs"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/mount"
@@ -910,13 +909,15 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 		return nil, err
 	}
 	defer unlock()
-	if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
-	}); errdefs.IsNotFound(err) {
-		return nil, common.Classify(common.ErrNotFound, fmt.Errorf("volume %s not found", volumeName))
-	}
+	exists, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
+		_, found, inspectErr := backup.InspectVolume(ctx, dockerClient, volumeName)
+		return found, inspectErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect volume for export: %w", err)
+	}
+	if !exists {
+		return nil, common.Classify(common.ErrNotFound, fmt.Errorf("volume %s not found", volumeName))
 	}
 	helperImage, err := s.deps.HelperImage(ctx)
 	if err != nil {

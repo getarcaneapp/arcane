@@ -70,8 +70,8 @@ type (
 	}
 
 	VolumeOwner struct {
-		UID  int
-		GID  int
+		UID  uint32
+		GID  uint32
 		Mode int64
 	}
 
@@ -435,7 +435,7 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 	if decoded.ID == "" {
 		return Snapshot{}, errors.New("rustic did not return a snapshot ID")
 	}
-	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed, Tags: nil}, nil
+	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed}, nil
 }
 
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
@@ -563,13 +563,13 @@ func VolumeOwnerFromTags(tags []string) (VolumeOwner, bool) {
 		if len(fields) != 3 {
 			return VolumeOwner{}, false
 		}
-		uid, uidErr := strconv.Atoi(fields[0])
-		gid, gidErr := strconv.Atoi(fields[1])
+		uid, uidErr := strconv.ParseUint(fields[0], 10, 32)
+		gid, gidErr := strconv.ParseUint(fields[1], 10, 32)
 		mode, modeErr := strconv.ParseInt(fields[2], 8, 64)
-		if uidErr != nil || gidErr != nil || modeErr != nil || uid < 0 || gid < 0 || mode < 0 || mode > 0o7777 {
+		if uidErr != nil || gidErr != nil || modeErr != nil || mode < 0 || mode > 0o7777 {
 			return VolumeOwner{}, false
 		}
-		return VolumeOwner{UID: uid, GID: gid, Mode: mode}, true
+		return VolumeOwner{UID: uint32(uid), GID: uint32(gid), Mode: mode}, true
 	}
 	return VolumeOwner{}, false
 }

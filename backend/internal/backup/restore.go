@@ -64,7 +64,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 		return err
 	}
 	defer release()
-	subject := r.subject()
+	subject := cmp.Or(r.Subject, "the project")
 	if r.Stop != nil {
 		if state.Running {
 			r.report(held, "Stopping "+subject)
@@ -128,7 +128,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 
 func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, cause error) error {
 	ctx = context.WithoutCancel(ctx)
-	subject := r.subject()
+	subject := cmp.Or(r.Subject, "the project")
 	if r.Discard != nil {
 		leftovers := r.removeAll(ctx, state.Created)
 		discarded, left := r.Discard(ctx)
@@ -222,8 +222,6 @@ func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string 
 	}
 	return leftovers
 }
-
-func (r RestoreSteps) subject() string { return cmp.Or(r.Subject, "the project") }
 
 func (r RestoreSteps) record(ctx context.Context, state RestoreState) error {
 	if r.Record == nil {
