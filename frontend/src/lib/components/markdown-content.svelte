@@ -1,26 +1,47 @@
+<script lang="ts" module>
+	let renderer: Promise<(source: string) => string> | undefined;
+
+	// marked and DOMPurify load on first render so they stay out of the app shell bundle.
+	function loadRenderer() {
+		renderer ??= Promise.all([import('marked'), import('marked-alert'), import('isomorphic-dompurify')])
+			.then(([{ Marked }, { default: markedAlert }, { default: DOMPurify }]) => {
+				const marked = new Marked(markedAlert());
+				// Links open in a new tab so they never navigate away from unsaved edits.
+				DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+					if (node.localName !== 'a' && node.localName !== 'area') return;
+					node.setAttribute('target', '_blank');
+					node.setAttribute('rel', 'noopener noreferrer');
+				});
+				return (source: string): string => {
+					if (!source) return '';
+					try {
+						const parsed = marked.parse(source, { async: false }) as string;
+						return DOMPurify.sanitize(parsed, {
+							FORBID_TAGS: ['style', 'form', 'button', 'textarea', 'select'],
+							// Popovers render in the top layer, which paint containment cannot clip.
+							FORBID_ATTR: ['style', 'popover', 'popovertarget', 'popovertargetaction']
+						});
+					} catch {
+						return '';
+					}
+				};
+			})
+			.catch((error: unknown) => {
+				// Drop the failed load so the next instance retries it.
+				renderer = undefined;
+				throw error;
+			});
+		return renderer;
+	}
+</script>
+
 <script lang="ts">
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
 
 	let { markdown, class: className }: { markdown: string; class?: string } = $props();
 
-	// marked and DOMPurify load on first render so they stay out of the app shell bundle.
-	const renderMarkdown = Promise.all([import('marked'), import('marked-alert'), import('isomorphic-dompurify')]).then(
-		([{ Marked }, { default: markedAlert }, { default: DOMPurify }]) => {
-			const marked = new Marked(markedAlert());
-			return (source: string): string => {
-				if (!source) return '';
-				try {
-					const parsed = marked.parse(source, { async: false }) as string;
-					return DOMPurify.sanitize(parsed, {
-						ADD_ATTR: ['target', 'rel']
-					});
-				} catch {
-					return '';
-				}
-			};
-		}
-	);
+	const renderMarkdown = loadRenderer();
 </script>
 
 {#await renderMarkdown then render}
@@ -36,6 +57,11 @@
 {/await}
 
 <style>
+	/* Paint containment clips fixed or absolute descendants built from untrusted classes; it does not clip the top layer. */
+	.markdown-content {
+		contain: paint;
+		overflow-wrap: break-word;
+	}
 	.markdown-content :global(> :first-child) {
 		margin-top: 0;
 	}

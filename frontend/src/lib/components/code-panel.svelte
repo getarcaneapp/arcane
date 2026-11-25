@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import type {
 		CodeLanguage,
@@ -82,17 +84,18 @@
 		{ value: 'raw', label: m.common_raw() }
 	]);
 
-	let lastEditorTools: { outline: boolean; diff: boolean; palette: boolean } | null = null;
-	// The outline, diff, and command palette live in the editor, so opening one leaves the preview.
+	// An empty file opens in Raw so it can be typed into; typing does not switch back.
+	$effect.pre(() => {
+		if (!untrack(() => value)) rawMarkdownFile = title;
+	});
+
+	let lastEditorTools: string | null = null;
+	// The outline, diff, and command palette live in the editor, so toggling one leaves the preview.
 	$effect(() => {
-		const tools = { outline: outlineOpen, diff: diffOpen, palette: commandPaletteOpen };
-		const opened =
-			!!lastEditorTools &&
-			((tools.outline && !lastEditorTools.outline) ||
-				(tools.diff && !lastEditorTools.diff) ||
-				(tools.palette && !lastEditorTools.palette));
+		const tools = `${outlineOpen}:${diffOpen}:${commandPaletteOpen}`;
+		const toggled = lastEditorTools !== null && tools !== lastEditorTools;
 		lastEditorTools = tools;
-		if (opened && isMarkdown) rawMarkdownFile = title;
+		if (toggled && isMarkdown) rawMarkdownFile = title;
 	});
 
 	function selectMarkdownView(view: string) {
