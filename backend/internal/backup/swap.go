@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"uuid"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
@@ -70,7 +71,7 @@ func PlanSwap(ctx context.Context, swap types.RecoveryRestoreSwap) (SwapPlan, er
 	plan := SwapPlan{
 		root:    acfs.Root{Path: swap.Directory},
 		staging: SwapStagingPrefix + swap.ID,
-		trash:   SwapTrashPrefix + swap.ID,
+		trash:   SwapTrashPrefix + swap.ID + "-" + uuid.New().String(),
 	}
 	staged, err := plan.root.Stat(ctx, "/"+plan.staging, acfstypes.StatOptions{})
 	if err != nil {

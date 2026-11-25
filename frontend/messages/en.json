@@ -4851,7 +4851,7 @@
   "stop_each_project_during_snapshot": "Stop each project's running containers while its snapshot is taken, then start them again. Other containers keep running.",
   "failed_to_run_project_backups": "Failed to run the project backups.",
   "arcane_only_backup_description": "Back up Arcane's own data. Projects are backed up with project backups.",
-  "restore_leaves_projects_description": "System backups cover Arcane only, so this restore leaves project folders as they are; restore projects from their project backups. Older backups that include projects still restore them.",
+  "restore_leaves_projects_description": "Backups made without projects leave project folders as they are; restore projects from their project backups. Backups that include projects, such as older backups and safety backups, restore them too.",
   "found_project_backups": "Found {count} project backup(s).",
   "failed_to_discover_project_backups": "Failed to discover project backups.",
   "external_volume_keeps_its_name": "External volume: the new project uses it under this name, so it is restored only if no volume of that name exists.",

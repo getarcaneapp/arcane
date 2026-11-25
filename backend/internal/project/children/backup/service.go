@@ -194,6 +194,7 @@ const (
 	projectTagPrefix = "arcane-project:"
 	triggerTagPrefix = "arcane-trigger:"
 	policyTagPrefix  = "arcane-policy:"
+	interruptedError = "Backup interrupted by Arcane restart"
 )
 
 var (
@@ -646,10 +647,20 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	if err == nil && !maps.Equal(captured, after) {
 		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 	}
-	if err != nil {
-		return snapshot, errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
+	if err == nil {
+		confirmed, confirmErr := s.deps.Engine.ConfirmRunSnapshot(ctx, dockerClient, repository, password, entry.ID, snapshot.ID)
+		if confirmErr == nil {
+			return confirmed, nil
+		}
+		err = confirmErr
 	}
-	return snapshot, nil
+	cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancelCleanup()
+	return backup.Snapshot{}, errors.Join(
+		err,
+		s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()),
+		s.deps.Engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, password, []string{snapshot.ID}),
+	)
 }
 
 func (s *Service) projectFiles(ctx context.Context, dockerClient *client.Client, project types.Project, files bool) ([]byte, bool, []mount.Mount, error) {
@@ -855,7 +866,7 @@ func (s *Service) ReconcileInterruptedBackups(ctx context.Context, protectedIDs 
 	if len(protectedIDs) > 0 {
 		query = query.Where("id NOT IN ?", protectedIDs)
 	}
-	if err := query.Updates(map[string]any{"status": types.VolumeBackupStatusFailed, "error": "Backup interrupted by Arcane restart"}).Error; err != nil {
+	if err := query.Updates(map[string]any{"status": types.VolumeBackupStatusFailed, "error": interruptedError}).Error; err != nil {
 		return err
 	}
 	s.removeStagingVolumes(ctx)
@@ -1259,9 +1270,7 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 			}
 		}
 	}
-	recorded, err := s.importSnapshots(ctx, found, func(ctx context.Context, snapshot foundSnapshot) (types.ProjectManifest, error) {
-		return s.readManifest(ctx, dockerClient, snapshot.source)
-	})
+	recorded, err := s.importSnapshots(ctx, dockerClient, found)
 	if err = errors.Join(listErr, err); err != nil && recorded > 0 {
 		return recorded, fmt.Errorf("recorded %d project backups, but discovery was incomplete: %w", recorded, err)
 	}
@@ -1291,11 +1300,7 @@ func (s *Service) DiscoverAfterRestore(ctx context.Context) error {
 	return s.deps.Settings.UpdateSetting(ctx, backup.ProjectDiscoveryPendingKey, "false")
 }
 
-func (s *Service) importSnapshots(
-	ctx context.Context,
-	found []foundSnapshot,
-	readManifest func(context.Context, foundSnapshot) (types.ProjectManifest, error),
-) (int, error) {
+func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Client, found []foundSnapshot) (int, error) {
 	groups := make(map[string][]foundSnapshot)
 	for _, snapshot := range found {
 		if backupID := snapshotTag(snapshot.snapshot.Tags, backup.RunSnapshotTag("")); backupID != "" {
@@ -1364,9 +1369,26 @@ func (s *Service) importSnapshots(
 		if trigger != types.VolumeBackupTriggerScheduled || !managed[policyID] {
 			trigger, policyID = types.VolumeBackupTriggerManual, ""
 		}
-		manifest, manifestErr := readManifest(ctx, first)
-		if manifestErr != nil {
-			importErr = errors.Join(importErr, fmt.Errorf("read the manifest of project backup %s: %w", backupID, manifestErr))
+		releaseBackups, holdErr := s.HoldBackups(ctx, projectID)
+		if holdErr != nil {
+			importErr = errors.Join(importErr, holdErr)
+			continue
+		}
+		var manifest types.ProjectManifest
+		for _, copied := range []*foundSnapshot{&localSnapshot, &remoteSnapshot} {
+			if copied.snapshot.ID == "" {
+				continue
+			}
+			read, manifestErr := s.readManifest(ctx, dockerClient, copied.source)
+			if manifestErr != nil {
+				importErr = errors.Join(importErr, fmt.Errorf("read the manifest of project backup %s: %w", backupID, manifestErr))
+				*copied = foundSnapshot{}
+				continue
+			}
+			manifest = read
+		}
+		if localSnapshot.snapshot.ID == "" && remoteSnapshot.snapshot.ID == "" {
+			releaseBackups(ctx)
 			continue
 		}
 		createdAt := slices.MinFunc(snapshots, func(a, b foundSnapshot) int { return a.snapshot.Time.Compare(b.snapshot.Time) }).snapshot.Time
@@ -1378,7 +1400,7 @@ func (s *Service) importSnapshots(
 			ComposeName:      manifest.Project.ComposeName,
 			Status:           types.VolumeBackupStatusSucceeded,
 			Trigger:          trigger,
-			Destination:      backup.Destination(backup.DestinationOptions{Local: local >= 0, Remote: remote >= 0}),
+			Destination:      backup.Destination(backup.DestinationOptions{Local: localSnapshot.snapshot.ID != "", Remote: remoteSnapshot.snapshot.ID != ""}),
 			LocalSnapshotID:  localSnapshot.snapshot.ID,
 			RemoteSnapshotID: remoteSnapshot.snapshot.ID,
 			S3DestinationID:  remoteSnapshot.s3DestinationID,
@@ -1386,7 +1408,9 @@ func (s *Service) importSnapshots(
 			Volumes:          backupVolumes(manifest.Volumes),
 			Size:             largest.snapshot.Summary.TotalBytesProcessed,
 		}
-		if createErr := s.deps.DB.WithContext(ctx).Create(&entry).Error; createErr != nil {
+		createErr := s.deps.DB.WithContext(ctx).Create(&entry).Error
+		releaseBackups(ctx)
+		if createErr != nil {
 			importErr = errors.Join(importErr, createErr)
 			continue
 		}
@@ -1397,16 +1421,16 @@ func (s *Service) importSnapshots(
 
 func (s *Service) addFoundCopies(ctx context.Context, entry ProjectBackup, localSnapshot, remoteSnapshot foundSnapshot, size int64) (int64, error) {
 	hasLocal, hasRemote := localSnapshot.snapshot.ID != "", remoteSnapshot.snapshot.ID != ""
-	interrupted := entry.Status == types.VolumeBackupStatusFailed && entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""
+	interrupted := entry.Status == types.VolumeBackupStatusFailed && (entry.Error == interruptedError || (entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""))
 	addLocal, addRemote := hasLocal && entry.LocalSnapshotID == "", hasRemote && entry.RemoteSnapshotID == ""
 	if (!interrupted && entry.Status != types.VolumeBackupStatusSucceeded) || (!addLocal && !addRemote) {
 		return 0, nil
 	}
 	updates := map[string]any{"destination": backup.Destination(backup.DestinationOptions{Local: entry.LocalSnapshotID != "" || hasLocal, Remote: entry.RemoteSnapshotID != "" || hasRemote})}
-	if addLocal || interrupted {
+	if addLocal {
 		updates["local_snapshot_id"] = localSnapshot.snapshot.ID
 	}
-	if addRemote || interrupted {
+	if addRemote {
 		updates["remote_snapshot_id"], updates["s3_destination_id"] = remoteSnapshot.snapshot.ID, remoteSnapshot.s3DestinationID
 	}
 	if interrupted {
@@ -1591,6 +1615,13 @@ func (r restoring) recover(ctx context.Context) error {
 	})
 	if index < 0 {
 		return errors.New("the restore was interrupted by a restart before it changed the project; nothing was restored")
+	}
+	var settled int64
+	if err := r.s.deps.DB.WithContext(ctx).Table("activities").Where("id = ? AND status = ?", r.activityID, types.ActivityStatusFailed).Count(&settled).Error; err != nil {
+		return err
+	}
+	if settled > 0 {
+		return errors.New("the restore was interrupted by a system restore; the project was left as it is")
 	}
 	var recorded restorePlan
 	if err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded); err != nil {

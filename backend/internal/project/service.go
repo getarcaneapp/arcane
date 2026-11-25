@@ -564,11 +564,11 @@ func (s *ProjectService) ProjectFolders(ctx context.Context) ([]string, error) {
 	folders := slices.Clone(roots)
 	for _, root := range roots {
 		discovered, discoverErr := projects.DiscoverProjectDirectories(ctx, s.discoverOptions(ctx, root, roots[0]))
-		if discoverErr != nil {
-			if !errors.Is(discoverErr, os.ErrNotExist) {
-				slog.WarnContext(ctx, "Unable to find linked projects", "path", root, "error", discoverErr)
-			}
+		if errors.Is(discoverErr, os.ErrNotExist) {
 			continue
+		}
+		if discoverErr != nil {
+			return nil, fmt.Errorf("find linked projects in %s: %w", root, discoverErr)
 		}
 		for _, project := range discovered {
 			if resolved, resolveErr := filepath.EvalSymlinks(project.Path); resolveErr == nil && resolved != filepath.Clean(project.Path) {

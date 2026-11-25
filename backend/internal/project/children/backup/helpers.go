@@ -84,7 +84,7 @@ func markInUse(planned []types.ProjectVolume, inUse map[string]bool) []types.Pro
 }
 
 func snapshotTags(entry *ProjectBackup) []string {
-	tags := []string{backup.ProjectSnapshotTag, projectTagPrefix + entry.ProjectID, backup.RunSnapshotTag(entry.ID), triggerTagPrefix + entry.Trigger}
+	tags := []string{backup.ProjectSnapshotTag, projectTagPrefix + entry.ProjectID, triggerTagPrefix + entry.Trigger}
 	if entry.PolicyID != "" {
 		tags = append(tags, policyTagPrefix+entry.PolicyID)
 	}
@@ -96,7 +96,7 @@ func snapshotRun(entry *ProjectBackup, p plan) backup.SnapshotRun {
 		Snapshots:          entry.snapshots(),
 		RunID:              entry.ID,
 		Label:              entry.ProjectName,
-		Tags:               snapshotTags(entry),
+		Tags:               append(snapshotTags(entry), backup.RunSnapshotTag(entry.ID)),
 		DestinationOptions: backup.DestinationOptions{Local: p.LocalEnabled, Remote: p.S3Enabled},
 	}
 }
