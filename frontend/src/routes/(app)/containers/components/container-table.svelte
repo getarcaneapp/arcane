@@ -4,7 +4,7 @@
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -19,7 +19,6 @@
 	import IconImage from '#lib/components/icon-image.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
-	import ResourceName from '#lib/components/resource-name.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -61,6 +60,7 @@
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
 
+	import { ContainerHostnames } from '../container-hostnames.svelte';
 	import { createContainerActions } from '../container-table.actions';
 	import {
 		containerSortValue,
@@ -77,6 +77,7 @@
 	import ContainerStatsCell from './container-stats-cell.svelte';
 	import { ContainerStatsManager } from './container-stats-manager.svelte';
 	import ContainerStatsSync from './container-stats-sync.svelte';
+	import ContainerTableName from './container-table-name.svelte';
 	import KillContainerDialog from './kill-container-dialog.svelte';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -228,6 +229,7 @@
 		return (customSettings['showInternalContainers'] as boolean) ?? false;
 	});
 	let showHidden = $derived((customSettings['showHiddenContainers'] as boolean) ?? false);
+	const showSwarmTaskHostnames = $derived(customSettings['showSwarmTaskHostnames'] === true);
 	let hideExposedPorts = $derived.by(() => {
 		return (customSettings['hideExposedPorts'] as boolean) ?? false;
 	});
@@ -259,6 +261,35 @@
 	});
 
 	const resourcesCurrent = $derived(scope === environmentStore.shownKey);
+	const hostnameHintId = $props.id();
+	const hostnames = new ContainerHostnames();
+	onDestroy(() => hostnames.destroy());
+
+	function watchHostname(item: ContainerRow) {
+		if (
+			showSwarmTaskHostnames &&
+			resourcesCurrent &&
+			!loading &&
+			item.labels?.['com.docker.swarm.task.id'] &&
+			hasPermission('containers:read', item.environmentId)
+		) {
+			return hostnames.watch(item);
+		}
+		return undefined;
+	}
+
+	export async function retryHostnames() {
+		if (showSwarmTaskHostnames && resourcesCurrent) {
+			await hostnames.retryFailures();
+		}
+	}
+
+	function displayedContainerName(item: ContainerRow) {
+		if (showSwarmTaskHostnames && hasPermission('containers:read', item.environmentId)) {
+			return hostnames.get(item) || getContainerDisplayName(item);
+		}
+		return getContainerDisplayName(item);
+	}
 
 	const activeUpdateKeys = $derived(activityStore.activeUpdateKeys);
 
@@ -737,7 +768,8 @@
 {/snippet}
 
 {#snippet NameCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
-	{@const displayName = getContainerDisplayName(item)}
+	{@const dockerName = getContainerDisplayName(item)}
+	{@const name = displayedContainerName(item)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	{@const projectLabel = groupByProject ? undefined : item.labels?.[COMPOSE_PROJECT_LABEL]}
 	{@const iconVariant = getContainerIconVariant(item.state)}
@@ -755,7 +787,7 @@
 			/>
 			<div class="flex min-w-0 flex-col">
 				<div class="flex min-w-0 items-center gap-2">
-					<ResourceName name={displayName} {href} />
+					<ContainerTableName {name} {dockerName} {href} watchHostname={() => watchHostname(item)} />
 					{@render NameBadges(item)}
 				</div>
 				{#if projectLabel}
@@ -776,7 +808,7 @@
 			/>
 			<div class="flex min-w-0 flex-1 flex-col">
 				<div class="flex min-w-0 items-center gap-2">
-					<ResourceName name={displayName} {href} class="font-medium" />
+					<ContainerTableName {name} {dockerName} {href} class="font-medium" watchHostname={() => watchHostname(item)} />
 					{@render NameBadges(item)}
 					{#if projectLabel}
 						<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
@@ -900,7 +932,12 @@
 {/snippet}
 
 {#snippet ContainerMobileName(item: ContainerRow)}
-	<ResourceName name={getContainerDisplayName(item)} maxWidth="full" />
+	<ContainerTableName
+		name={displayedContainerName(item)}
+		dockerName={getContainerDisplayName(item)}
+		maxWidth="full"
+		watchHostname={() => watchHostname(item)}
+	/>
 {/snippet}
 
 {#snippet ContainerMobileCardSnippet({
@@ -921,7 +958,7 @@
 				alt: getContainerDisplayName(item)
 			};
 		}}
-		title={(item) => getContainerDisplayName(item)}
+		title={displayedContainerName}
 		titleContent={ContainerMobileName}
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) && item.id.length > 12 ? item.id : null)}
 		badges={[
@@ -1216,6 +1253,20 @@
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem checked={groupByProject} onCheckedChange={(v) => setGroupByProject(!!v)}>
 		{m.containers_group_by_project()}
+	</DropdownMenu.CheckboxItem>
+	<DropdownMenu.CheckboxItem
+		checked={showSwarmTaskHostnames}
+		aria-label={m.show_swarm_task_hostnames()}
+		aria-describedby={hostnameHintId}
+		onCheckedChange={(value) => {
+			customSettings = { ...customSettings, showSwarmTaskHostnames: !!value };
+			tablePreferences?.persistCustomSettings(customSettings);
+		}}
+	>
+		<span class="flex flex-col">
+			<span>{m.show_swarm_task_hostnames()}</span>
+			<span id={hostnameHintId} class="text-xs text-muted-foreground">{m.search_and_sort_use_docker_names()}</span>
+		</span>
 	</DropdownMenu.CheckboxItem>
 	<DropdownMenu.CheckboxItem
 		checked={showInternal}

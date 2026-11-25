@@ -4,7 +4,7 @@
 	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
 
-	import ReleaseNotes from '#lib/components/release-notes.svelte';
+	import MarkdownContent from '#lib/components/markdown-content.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
@@ -444,7 +444,7 @@
 					</div>
 					<div class="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
 						{#if releaseNotes}
-							<ReleaseNotes markdown={releaseNotes} />
+							<MarkdownContent markdown={releaseNotes} />
 						{:else}
 							<p class="text-sm text-muted-foreground italic">{m.update_center_release_notes_unavailable()}</p>
 						{/if}

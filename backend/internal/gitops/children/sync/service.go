@@ -430,7 +430,7 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 
 	// A non-nil empty value means the variables were cleared; it still replaces the git layer so their old values go.
 	if sync.EnvContent != nil {
-		merged, mergeErr := projects.BuildEffectiveEnvContent(kit.FromPtr(source.envContent), *sync.EnvContent)
+		merged, mergeErr := projects.BuildEffectiveEnvContent(kit.FromPtr(source.envContent), *sync.EnvContent, nil)
 		if mergeErr != nil {
 			return source, s.failSync(ctx, result, sync, actor, "Failed to merge sync environment variables", mergeErr)
 		}
@@ -652,7 +652,7 @@ func (s *Service) syncProjectDirectory(
 		}
 	}
 	if sync.EnvContent != nil {
-		merged, mergeErr := projects.BuildEffectiveEnvContent(kit.FromPtr(stage.gitEnvContent), *sync.EnvContent)
+		merged, mergeErr := projects.BuildEffectiveEnvContent(kit.FromPtr(stage.gitEnvContent), *sync.EnvContent, nil)
 		if mergeErr != nil {
 			return nil, nil, false, false, fmt.Errorf("failed to merge sync environment variables: %w", mergeErr)
 		}
@@ -740,7 +740,7 @@ func (s *Service) seedStageEnvFromCandidateDir(ctx context.Context, sync *projec
 		return err
 	}
 	// Only .env.git and/or project.env exist, so derive .env from them.
-	merged, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+	merged, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent, nil)
 	if err != nil {
 		return fmt.Errorf("build effective env from pre-existing project: %w", err)
 	}
