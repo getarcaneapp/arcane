@@ -396,13 +396,13 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 	return run()
 }
 
-func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error) {
-	contextEnv := make(EnvMap)
-
-	gitEnv, err := ParseProjectEnvContent(gitContent, contextEnv)
+func BuildEffectiveEnvContent(gitContent, overrideContent string, lookup EnvMap) (string, error) {
+	gitEnv, err := ParseProjectEnvContent(gitContent, lookup)
 	if err != nil {
 		return "", fmt.Errorf("parse git env content: %w", err)
 	}
+	contextEnv := make(EnvMap)
+	maps.Copy(contextEnv, lookup)
 	maps.Copy(contextEnv, gitEnv)
 
 	overrideEnv, err := ParseProjectEnvContent(overrideContent, contextEnv)
@@ -425,8 +425,8 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 		return concatenated, nil
 	}
 
-	candidateEnv, candidateErr := ParseProjectEnvContent(candidate, make(EnvMap))
-	expectedEnv, expectedErr := ParseProjectEnvContent(concatenated, make(EnvMap))
+	candidateEnv, candidateErr := ParseProjectEnvContent(candidate, lookup)
+	expectedEnv, expectedErr := ParseProjectEnvContent(concatenated, lookup)
 	if candidateErr == nil && expectedErr == nil && maps.Equal(candidateEnv, expectedEnv) {
 		return candidate, nil
 	}
@@ -653,7 +653,7 @@ func ReadProjectEnvState(ctx context.Context, projectPath string) (ProjectEnvSta
 		state.EditableContent = overrideContent
 
 		if !hasEffective {
-			mergedContent, mergeErr := BuildEffectiveEnvContent(gitContent, overrideContent)
+			mergedContent, mergeErr := BuildEffectiveEnvContent(gitContent, overrideContent, nil)
 			if mergeErr != nil {
 				return ProjectEnvState{}, mergeErr
 			}

@@ -37,7 +37,6 @@ import (
 	git "getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/rustic"
-	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
@@ -633,43 +632,6 @@ func projectsSnapshotPath(dataDirectory, projectsDirectory string) (projectsPath
 	}
 }
 
-func currentMounts(ctx context.Context, dockerClient *client.Client) (mounts []container.MountPoint, inContainer bool, err error) {
-	if !selfcontainer.RunningInContainer() {
-		return nil, false, nil
-	}
-	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
-	if err != nil {
-		return nil, true, fmt.Errorf("failed to inspect Arcane container mounts: %w", err)
-	}
-	return inspect.Mounts, true, nil
-}
-
-func sourceMounts(mounts []container.MountPoint, inContainer bool, containerPath, target string) ([]mount.Mount, error) {
-	if !inContainer {
-		return []mount.Mount{{Type: mount.TypeBind, Source: containerPath, Target: target, ReadOnly: true}}, nil
-	}
-	primary := docker.MountForSubpath(mounts, containerPath, target)
-	if primary == nil {
-		return nil, fmt.Errorf("%s must be mounted into the Arcane container from a bind or named volume for system backups", containerPath)
-	}
-	result := make([]mount.Mount, 0, 1+len(docker.NestedMounts(mounts, containerPath, target)))
-	for _, resolved := range append([]mount.Mount{*primary}, docker.NestedMounts(mounts, containerPath, target)...) {
-		result = append(result, mount.Mount{ //exhaustruct:enforce
-			Type:           resolved.Type,
-			Source:         resolved.Source,
-			Target:         resolved.Target,
-			ReadOnly:       true,
-			Consistency:    resolved.Consistency,
-			BindOptions:    resolved.BindOptions,
-			VolumeOptions:  resolved.VolumeOptions,
-			ImageOptions:   resolved.ImageOptions,
-			TmpfsOptions:   resolved.TmpfsOptions,
-			ClusterOptions: resolved.ClusterOptions,
-		})
-	}
-	return result, nil
-}
-
 func nestedDataPath(mounts []container.MountPoint, dataDirectory, projectsDirectory string) (relative string, nested bool, err error) {
 	// Projects kept at the data root share one mount by design; projectsSnapshotPath owns that layout.
 	if path.Clean(filepath.ToSlash(dataDirectory)) == path.Clean(filepath.ToSlash(projectsDirectory)) {
@@ -726,11 +688,11 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 	if err != nil {
 		return backupSourceLayout{}, err
 	}
-	mounts, inContainer, err := currentMounts(ctx, dockerClient)
+	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
 		return backupSourceLayout{}, err
 	}
-	dataMounts, err := sourceMounts(mounts, inContainer, dataDirectory, snapshotDataPath)
+	dataMounts, err := backup.SourceMounts(backup.SourceMountOptions{Mounts: mounts, ContainerPath: dataDirectory, Target: snapshotDataPath, InContainer: inContainer})
 	if err != nil {
 		return backupSourceLayout{}, fmt.Errorf("resolve Arcane data source: %w", err)
 	}
@@ -745,7 +707,7 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 			excludes:          excludes,
 		}, nil
 	}
-	projectMounts, err := sourceMounts(mounts, inContainer, projectsDirectory, snapshotProjectsPath)
+	projectMounts, err := backup.SourceMounts(backup.SourceMountOptions{Mounts: mounts, ContainerPath: projectsDirectory, Target: snapshotProjectsPath, InContainer: inContainer})
 	if err != nil {
 		return backupSourceLayout{}, fmt.Errorf("resolve projects source: %w", err)
 	}
@@ -955,7 +917,7 @@ func restoreTarget(mounts []container.MountPoint, containerPath, target, exclude
 
 func (s *Service) projectsRestoreDestination(ctx context.Context, dockerClient *client.Client) (projectsRestoreDestination, error) {
 	directory := s.projectsDirectory(ctx)
-	mounts, inContainer, err := currentMounts(ctx, dockerClient)
+	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
 		return projectsRestoreDestination{}, err
 	}
@@ -1096,7 +1058,7 @@ func (s *Service) Create(
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	mounts, inContainer, err := currentMounts(ctx, dockerClient)
+	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
@@ -1107,7 +1069,9 @@ func (s *Service) Create(
 		if stageErr := stageDatabase(ctx, db, filepath.Join(layout.dataDirectory, name), stagedDatabase); stageErr != nil {
 			return backup.Snapshot{}, stageErr
 		}
-		stagedMounts, mountErr := sourceMounts(mounts, inContainer, stagedDatabase, filepath.Join(snapshotDataPath, name))
+		stagedMounts, mountErr := backup.SourceMounts(backup.SourceMountOptions{
+			Mounts: mounts, ContainerPath: stagedDatabase, Target: filepath.Join(snapshotDataPath, name), InContainer: inContainer,
+		})
 		if mountErr != nil {
 			return backup.Snapshot{}, mountErr
 		}

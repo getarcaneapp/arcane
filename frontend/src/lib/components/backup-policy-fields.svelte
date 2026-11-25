@@ -18,6 +18,8 @@
 		enabledDescription,
 		schedulePlaceholder,
 		showStopContainers = false,
+		stopContainersDescription,
+		retentionDescription,
 		destinationsLoading = false,
 		destinationReadOnly = false,
 		destinationsLoadError = null,
@@ -33,6 +35,8 @@
 		enabledDescription: string;
 		schedulePlaceholder: string;
 		showStopContainers?: boolean;
+		stopContainersDescription?: string;
+		retentionDescription?: string;
 		destinationsLoading?: boolean;
 		/** Keeps the configured destination as-is when the user cannot list destinations. */
 		destinationReadOnly?: boolean;
@@ -77,7 +81,7 @@
 		onChange={(retentionCount) => onChange({ retentionCount: Number(retentionCount) })}
 		error={retentionError}
 		label={m.backups_retention_label()}
-		description={m.backups_retention_description()}
+		description={retentionDescription ?? m.backups_retention_description()}
 		reserveHelpTextSpace
 		type="number"
 	/>
@@ -87,7 +91,7 @@
 			checked={form.stopContainers ?? false}
 			onCheckedChange={(stopContainers) => onChange({ stopContainers })}
 			label={m.volume_backup_stop_containers()}
-			description={m.volume_backup_stop_containers_description()}
+			description={stopContainersDescription ?? m.volume_backup_stop_containers_description()}
 		/>
 	{/if}
 	<SelectWithLabel

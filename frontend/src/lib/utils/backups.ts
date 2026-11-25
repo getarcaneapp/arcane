@@ -13,6 +13,7 @@ import type {
 	BackupTrigger,
 	S3Destination
 } from '#lib/types/backup.js';
+import type { ProjectBackupVolume, ProjectVolume } from '#lib/types/project.js';
 import type { BackupPolicy, BackupRun } from '#lib/types/ui/backup.js';
 import type { VolumeBackupDestination } from '#lib/types/volume.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -38,14 +39,18 @@ export function backupTriggerLabel(trigger: BackupTrigger): string {
 	return m.backups_trigger_manual();
 }
 
+// System is only ever Arcane's own backups; the global project and volume policies' backups are projects' and volumes'.
 export function backupManagementLabel(type?: BackupManagementType): string {
-	return type === 'system' ? m.backups_system_managed() : m.backups_volume_managed();
+	if (type === 'system') return m.system();
+	if (type === 'project') return m.project();
+	return m.resource_volume_cap();
 }
 
 export function backupManagementFilterOptions() {
 	return [
-		{ label: m.backups_system_managed(), value: 'system' },
-		{ label: m.backups_volume_managed(), value: 'volume' }
+		{ label: m.system(), value: 'system' },
+		{ label: m.project(), value: 'project' },
+		{ label: m.resource_volume_cap(), value: 'volume' }
 	];
 }
 
@@ -175,4 +180,11 @@ export async function runAutomaticBackupDiscovery(
 		...destinations.map((item) => discoverVolumes(item.id, 's3'))
 	]);
 	return counts.some((count) => count > 0);
+}
+
+// restorableVolumes lists the volumes whose data a project backup holds, as the volume checklist shows them.
+export function restorableVolumes(volumes: ProjectBackupVolume[]): ProjectVolume[] {
+	return volumes
+		.filter((volume) => volume.included)
+		.map((volume) => ({ key: volume.key, name: volume.name, kind: volume.kind ?? 'named', included: true }));
 }

@@ -11,6 +11,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"uuid"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
@@ -22,19 +23,22 @@ import (
 	"github.com/opencontainers/go-digest"
 	"go.yaml.in/yaml/v4"
 
+	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
 
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	ResolveProjectVolumesOptions struct {
-		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
-		InUse   map[string]bool
-		Project types.Project
+		Inspect     func(ctx context.Context, name string) (types.Volume, bool, error)
+		InUse       map[string]bool
+		BackupStore string
+		Project     types.Project
 	}
 
 	VolumeMigrationPlanConfig struct {
@@ -46,6 +50,8 @@ type (
 		ToolsImage     string
 	}
 )
+
+const restoreOwnerLabel = "com.getarcaneapp.arcane.restore-owner"
 
 func PlanVolumeMigration(ctx context.Context, cfg VolumeMigrationPlanConfig) (types.VolumeMigration, error) {
 	if cfg.ComposeProject == nil || len(cfg.ComposeProject.Volumes) == 0 {
@@ -172,6 +178,7 @@ func ClassifyProjectVolumes(project types.Project) []types.ProjectVolume {
 			Included:     local,
 			Missing:      false,
 			InUse:        false,
+			BackupStore:  false,
 		})
 	}
 	return classified
@@ -182,6 +189,22 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 	resolved := make([]types.ProjectVolume, 0, len(classified))
 	inspected := map[string]types.Volume{}
 	for _, volume := range classified {
+		if opts.BackupStore != "" && volume.Name == opts.BackupStore {
+			resolved = append(resolved, types.ProjectVolume{ //exhaustruct:enforce
+				Labels:       volume.Labels,
+				DockerLabels: volume.DockerLabels,
+				Key:          volume.Key,
+				Name:         volume.Name,
+				Kind:         volume.Kind,
+				Driver:       volume.Driver,
+				Archive:      volume.Archive,
+				Included:     false,
+				Missing:      false,
+				InUse:        false,
+				BackupStore:  true,
+			})
+			continue
+		}
 		if !volume.Included {
 			resolved = append(resolved, volume)
 			continue
@@ -207,6 +230,7 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 			Included:     included,
 			Missing:      !exists,
 			InUse:        included && opts.InUse[volume.Name],
+			BackupStore:  false,
 		})
 	}
 	return resolved, inspected, nil
@@ -231,6 +255,17 @@ func ProjectContainerUse(composeName string, containers []container.Summary) ([]
 	return active, inUse
 }
 
+func NewComposeVolumeTarget(composeName string, volume types.ProjectVolume, recordedLabels map[string]string) types.ComposeVolumeTarget {
+	external := volume.Kind == types.ProjectVolumeExternal
+	return types.ComposeVolumeTarget{ //exhaustruct:enforce
+		Labels:   kit.Ternary(external, recordedLabels, volume.Labels),
+		Project:  composeName,
+		Key:      volume.Key,
+		Driver:   volume.Driver,
+		External: external,
+	}
+}
+
 // ComposeVolumeTargetCreateOptions creates a restore target as Compose would, or as its own volume when it is external.
 func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (client.VolumeCreateOptions, error) {
 	if target.External {
@@ -240,6 +275,36 @@ func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTar
 		Driver: target.Driver,
 		Labels: target.Labels,
 	}, target.Key, name, target.Project), nil)
+}
+
+func CreateNewVolume(ctx context.Context, dockerClient *client.Client, options client.VolumeCreateOptions) error {
+	_, err := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
+	if err == nil {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", options.Name))
+	}
+	if !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("inspect volume %s: %w", options.Name, err)
+	}
+	owner := uuid.New().String()
+	owned := maps.Clone(options.Labels)
+	if owned == nil {
+		owned = map[string]string{}
+	}
+	owned[restoreOwnerLabel] = owner
+	created, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{ //exhaustruct:enforce
+		Name:              options.Name,
+		Driver:            options.Driver,
+		DriverOpts:        options.DriverOpts,
+		Labels:            owned,
+		ClusterVolumeSpec: options.ClusterVolumeSpec,
+	})
+	if err != nil {
+		return fmt.Errorf("create volume %s: %w", options.Name, err)
+	}
+	if created.Volume.Labels[restoreOwnerLabel] != owner {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created by another restore at the same time", options.Name))
+	}
+	return nil
 }
 
 func ComposeVolumeConfig(volumeConfig composeTypes.VolumeConfig, key, newName, newComposeName string) composeTypes.VolumeConfig {

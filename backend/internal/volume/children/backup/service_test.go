@@ -13,7 +13,6 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
-	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -21,7 +20,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
-	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
 	"getarcane.dev/types/v3"
 )
 
@@ -86,10 +84,11 @@ func TestVolumeBackupPolicy_RetentionCountsFailedRunsSeparately(t *testing.T) {
 func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-scheduled-activity?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&policies.VolumeBackupPolicy{}, &activity.Activity{}, &activity.ActivityMessage{}))
+	require.NoError(t, gormDB.AutoMigrate(&backup.Policy{}, &activity.Activity{}, &activity.ActivityMessage{}))
 	db := &database.DB{DB: gormDB}
-	policy := &policies.VolumeBackupPolicy{
-		VolumeName:     "app-data",
+	policy := &backup.Policy{
+		SubjectKind:    backup.PolicyVolume,
+		SubjectID:      "app-data",
 		Enabled:        true,
 		Schedule:       "0 2 * * *",
 		RetentionCount: 7,
@@ -106,6 +105,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
 	service := NewService(Dependencies{
 		DB:             db,
+		Policies:       backup.NewPolicies(db),
 		Engine:         engine,
 		AlreadyRunning: errors.New("a backup is already running for this volume"),
 		Docker:         &docker.DockerClientService{},
@@ -136,8 +136,8 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 func TestVolumeBackup_ValidationErrors(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-validation?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&policies.VolumeBackupPolicy{}))
-	service := NewService(Dependencies{DB: &database.DB{DB: gormDB}})
+	require.NoError(t, gormDB.AutoMigrate(&backup.Policy{}))
+	service := NewService(Dependencies{DB: &database.DB{DB: gormDB}, Policies: backup.NewPolicies(&database.DB{DB: gormDB})})
 	ctx := t.Context()
 
 	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []types.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})
@@ -151,29 +151,6 @@ func TestVolumeBackup_ValidationErrors(t *testing.T) {
 
 	_, err = service.StartBackup(ctx, "0", "app-data", types.Actor{}, types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestinationS3})
 	require.EqualError(t, err, "select an S3 destination for the volume backup")
-}
-
-func TestVolumeBackupPasswordPrefersRecoveryKey(t *testing.T) {
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-password?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&backup.SystemBackupRecoveryConfig{}))
-	crypto.InitEncryption(crypto.Config{EncryptionKey: "volume-backup-password-test-key-32bytes", Environment: "test"})
-	recoveryKeys := backup.NewRecoveryKeyStore(&database.DB{DB: gormDB})
-	service := NewService(Dependencies{
-		DB:            &database.DB{DB: gormDB},
-		EncryptionKey: "legacy-instance-secret",
-		RecoveryKeys:  recoveryKeys,
-	})
-
-	password, err := service.volumeBackupPassword(t.Context(), nil)
-	require.NoError(t, err)
-	require.Equal(t, kit.SHA256Hex(legacyVolumePasswordSalt+service.deps.EncryptionKey), password)
-
-	recoveryKey := "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN"
-	require.NoError(t, recoveryKeys.Set(t.Context(), backup.RecoveryKeyConfigID, recoveryKey))
-	password, err = service.volumeBackupPassword(t.Context(), nil)
-	require.NoError(t, err)
-	require.Equal(t, recoveryKey, password)
 }
 
 func TestDiscoveredVolumeBackupMapping(t *testing.T) {
@@ -197,6 +174,7 @@ func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	// map to a volume backup.
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x"}))
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x", Label: "arcane-system-recovery"}))
+	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x", Label: "web", Tags: []string{backup.ProjectSnapshotTag, "arcane-project:p1"}}))
 
 	fallback := discoveredVolumeBackup("d", "r", backup.DiscoveredSnapshot{ID: "x", Label: "vol"})
 	require.NotNil(t, fallback)

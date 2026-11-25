@@ -47,6 +47,7 @@ import (
 	updatertypes "kit.getarcane.app/updater/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -8843,12 +8844,13 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 			"# stays\r\n\r\r  plain:\r\n    image: app:1.2.0\r\n  qualified:\r\n    image: docker.io/library/app:1.2.0\r\n  " +
 			"omitted:\r\n    image: registry.example.com:5000/team/app",
 	)
-	expected := "\ufeff# operator configuration\r\n\r\nservices:\r\n  web:\r\n    image: \"app:1.3.0\"   # keep this comment\r\n    " +
+	expected := "\ufeff# operator configuration\r\n\r\nservices:\r\n  web:\r\n    image: \"app:${VERSION}\"   # keep this comment\r\n    " +
 		"environment:\r\n      VERSION: ${VERSION}\r\n\r\n  worker:\r\n    image: 'app:1.3.0'  \r\n  " +
 		"tagged:\r\n    image: !!str app:1.3.0\r\n  escaped:\r\n    image: \"app:1.3.0\"\r\n  untouched:\r\n    image: " +
 		"app:1.2.0 # stays\r\n\r\r  plain:\r\n    image: app:1.3.0\r\n  qualified:\r\n    image: docker.io/library/app:1.3.0\r\n  " +
 		"omitted:\r\n    image: registry.example.com:5000/team/app:1.3.0"
 	effective := &composeTypes.Project{
+		Environment: composeTypes.Mapping{"VERSION": "1.2.0"},
 		Services: composeTypes.Services{
 			"web": {
 				Image: "app:1.2.0",
@@ -8876,7 +8878,7 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 			},
 		},
 	}
-	updated, names, err := update.PrepareProjectServiceImages(source, effective, map[string]updatertypes.ServiceImageChange{
+	edits, err := update.PrepareProjectServiceImages(source, effective, map[string]updatertypes.ServiceImageChange{
 		"web":       {ExpectedRef: "docker.io/library/app:1.2.0", TargetRef: "app:1.3.0"},
 		"worker":    {ExpectedRef: "app:1.2.0", TargetRef: "docker.io/library/app:1.3.0"},
 		"tagged":    {ExpectedRef: "app:1.2.0", TargetRef: "app:1.3.0"},
@@ -8886,8 +8888,10 @@ func TestPrepareProjectServiceImages(t *testing.T) {
 		"omitted":   {ExpectedRef: "registry.example.com:5000/team/app", TargetRef: "registry.example.com:5000/team/app:1.3.0"},
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"escaped", "omitted", "plain", "qualified", "tagged", "web", "worker"}, names)
-	require.Equal(t, expected, string(updated))
+	require.Equal(t, []string{"escaped", "omitted", "plain", "qualified", "tagged", "web", "worker"}, edits.Services)
+	require.Equal(t, expected, string(edits.Compose))
+	require.Equal(t, map[string]string{"VERSION": "1.3.0"}, edits.Env)
+	require.Empty(t, edits.Followers)
 	require.Equal(t, "app:1.2.0", effective.Services["web"].Image)
 }
 
@@ -8905,9 +8909,9 @@ func TestPrepareProjectServiceImagesRejectsUnsupportedSource(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			effective := &composeTypes.Project{Services: composeTypes.Services{"web": {Image: "app:1.2.0"}}}
-			updated, _, err := update.PrepareProjectServiceImages([]byte(tt.source), effective, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: tt.expected, TargetRef: "app:1.3.0"}})
+			edits, err := update.PrepareProjectServiceImages([]byte(tt.source), effective, map[string]updatertypes.ServiceImageChange{"web": {ExpectedRef: tt.expected, TargetRef: "app:1.3.0"}})
 			require.Error(t, err)
-			require.Nil(t, updated)
+			require.Nil(t, edits.Compose)
 		})
 	}
 }
@@ -9042,18 +9046,19 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 		require.ErrorIs(t, updateProjectServiceImagesErr, deploymentError)
 		content, readComposeErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
 		require.NoError(t, readComposeErr)
-		require.Equal(t, "# keep\n\nservices:\n  app:\n    image: app:1.3.0\n\n  worker:\n    image: app:${VERSION}\n", string(content))
+		require.Equal(t, source, string(content))
 		mode, statComposeErr := os.Stat(filepath.Join(projectPath, "compose.yaml"))
 		require.NoError(t, statComposeErr)
 		require.Equal(t, os.FileMode(0o600), mode.Mode().Perm())
 	}
-	require.Equal(t, [][]string{{"app"}, {"app"}}, scopes)
+	require.Equal(t, [][]string{{"app", "worker"}, {"app", "worker"}}, scopes)
 	for _, selected := range deployed {
 		require.Equal(t, "app:1.3.0", selected.Services["app"].Image)
+		require.Equal(t, "app:1.3.0", selected.Services["worker"].Image)
 	}
 	env, err := os.ReadFile(filepath.Join(projectPath, ".env"))
 	require.NoError(t, err)
-	require.Equal(t, "VERSION=1.2.0\n", string(env))
+	require.Equal(t, "VERSION=1.3.0\n", string(env))
 }
 
 func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
@@ -11150,6 +11155,7 @@ func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	)
 	module := New(ModuleParams{
 		Service: svc,
+		Backups: BackupDependencies{Repository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: svc.dockerService, BackupVolumeName: "arcane-backups"})},
 		Transfer: TransferDependencies{
 			ExportVolume: func(ctx context.Context, name string) (*types.UploadSession, error) {
 				exports = append(exports, name)

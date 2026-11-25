@@ -36,6 +36,7 @@
 	import BuildSourceSection from './components/build-source-section.svelte';
 	import BuildWorkspaceEditor from './components/build-workspace-editor.svelte';
 	import ImageBuildHistoryPanel from './components/image-build-history-panel.svelte';
+	import RecentBuildsMenu from './components/recent-builds-menu.svelte';
 	import {
 		formatBuildArgs,
 		formatKeyValueMap,
@@ -374,7 +375,11 @@
 							bind:contextMode
 							bind:remoteContext={remoteContextSource}
 							onEditFiles={() => mainUrlTab.select('files')}
-						/>
+						>
+							{#snippet history()}
+								<RecentBuildsMenu onApplyBuild={applyBuildConfig} onOpenHistory={() => mainUrlTab.select('history')} />
+							{/snippet}
+						</BuildSourceSection>
 					{/snippet}
 				</BuildConfigPanel>
 				<div class="h-128 lg:sticky lg:top-0 lg:h-screen-inset-15">

@@ -65,6 +65,14 @@ func IsHelperContainer(c container.Summary) bool {
 	})
 }
 
+func ListRunningContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+	running, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	return slices.DeleteFunc(running.Items, IsHelperContainer), nil
+}
+
 func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *container.HostConfig {
 	return helperHostConfig(helperImage, binds, mounts, true)
 }
