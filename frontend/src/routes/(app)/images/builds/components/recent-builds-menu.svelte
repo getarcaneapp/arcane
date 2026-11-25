@@ -2,18 +2,19 @@
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageBuildListQuery } from '#lib/query/images.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ImageBuildRecord } from '#lib/types/image.js';
+	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/image.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { environmentName, readableEnvironments } from '#lib/utils/environments.js';
+	import { readableEnvironments } from '#lib/utils/environments.js';
 
-	import { formatBuildTimestamp, getBuildTitle } from '../image-build-history';
+	import { buildHistoryStatusLabel, formatBuildTimestamp, getBuildTitle } from '../image-build-history';
 
 	let {
 		onApplyBuild,
@@ -25,9 +26,13 @@
 
 	const requestOptions = {
 		pagination: { page: 1, limit: 10 },
-		sort: { column: 'createdAt', direction: 'desc' },
-		filters: { status: 'success' }
+		sort: { column: 'createdAt', direction: 'desc' }
 	} satisfies SearchPaginationSortRequest;
+	const statusDotClass = {
+		running: 'bg-info',
+		success: 'bg-success',
+		failed: 'bg-destructive'
+	} satisfies Record<ImageBuildStatus, string>;
 
 	let open = $state(false);
 	const historyQuery = createQuery(() => ({
@@ -66,14 +71,21 @@
 		{:else}
 			{#each builds as build (`${build.environmentId}:${build.id}`)}
 				<DropdownMenu.Item
-					class="block"
 					disabled={!hasPermission('images:build', build.environmentId)}
 					onclick={() => onApplyBuild(build, build.environmentId)}
 				>
-					<span class="block font-medium wrap-anywhere">{build.tags?.join(', ') || getBuildTitle(build)}</span>
-					<span class="block text-xs wrap-anywhere text-muted-foreground">
-						{environmentName(build.environmentId)} · {formatBuildTimestamp(build.createdAt)}
+					<span class="inline-flex max-w-1/2 shrink-0 items-center overflow-hidden rounded-full border px-2 py-0.5">
+						<EnvironmentCell value={build.environmentId} />
 					</span>
+					<span class="min-w-0 flex-1">
+						<span class="block font-medium wrap-anywhere">{build.tags?.join(', ') || getBuildTitle(build)}</span>
+						<span class="block text-xs wrap-anywhere text-muted-foreground">{formatBuildTimestamp(build.createdAt)}</span>
+					</span>
+					<span
+						role="img"
+						aria-label={buildHistoryStatusLabel(build.status)}
+						class={['size-2 shrink-0 rounded-full', statusDotClass[build.status]]}
+					></span>
 				</DropdownMenu.Item>
 			{/each}
 		{/if}

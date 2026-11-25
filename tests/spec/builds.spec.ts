@@ -207,7 +207,7 @@ test.describe('Build workspace provider flows', () => {
 		);
 	});
 
-	test('shows the ten newest successful builds and restores one without submitting it', async ({
+	test('shows the ten newest builds with status indicators and restores one without submitting it', async ({
 		page
 	}) => {
 		const contextDir = 'https://example.com/team/build.git#main:docker/app';
@@ -268,10 +268,18 @@ test.describe('Build workspace provider flows', () => {
 		const menu = page.getByRole('menu');
 		const builds = menu.getByRole('menuitem', { name: /e2e\/recent:/ });
 		await expect(builds).toHaveCount(10);
-		await expect(builds.first()).toContainText('e2e/recent:v1, e2e/recent:latest');
-		await expect(builds.last()).toContainText('e2e/recent:v10, e2e/recent:latest');
-		await expect(menu.getByText(/e2e\/recent:(failed|running)/)).toHaveCount(0);
-		await builds.first().click();
+		await expect(builds.first()).toContainText('e2e/recent:running');
+		await expect(builds.first().getByLabel('Running', { exact: true })).toHaveClass(/\bbg-info\b/);
+		await expect(builds.nth(1)).toContainText('e2e/recent:failed');
+		await expect(builds.nth(1).getByLabel('Failed', { exact: true })).toHaveClass(
+			/\bbg-destructive\b/
+		);
+		await expect(builds.last()).toContainText('e2e/recent:v8, e2e/recent:latest');
+		const successfulBuild = builds.filter({ hasText: 'e2e/recent:v1, e2e/recent:latest' });
+		await expect(successfulBuild.getByLabel('Success', { exact: true })).toHaveClass(
+			/\bbg-success\b/
+		);
+		await successfulBuild.click();
 
 		await expect(menu).toBeHidden();
 		await expect(page.getByRole('tab', { name: 'Git repository', exact: true })).toHaveAttribute(
