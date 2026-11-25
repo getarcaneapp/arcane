@@ -3,7 +3,16 @@
 
 	import ResourceName from '#lib/components/resource-name.svelte';
 
-	let { dockerName, ...nameProps }: Omit<ComponentProps<typeof ResourceName>, 'tooltip'> & { dockerName: string } = $props();
+	let {
+		dockerName,
+		watchHostname,
+		...nameProps
+	}: Omit<ComponentProps<typeof ResourceName>, 'tooltip'> & {
+		dockerName: string;
+		watchHostname: () => (() => void) | undefined;
+	} = $props();
+
+	$effect(() => watchHostname());
 </script>
 
 <ResourceName {...nameProps}>

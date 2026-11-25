@@ -45,7 +45,11 @@ class ContainerService extends BaseAPIService {
 		signal: AbortSignal
 	): Promise<Record<string, string>> {
 		return this.handleResponse(
-			this.api.post(`/agents/${environmentId}/containers/swarm-tasks/hostnames`, { containerIds }, { signal })
+			this.api.post(
+				`/agents/${environmentId}/containers/swarm-tasks/hostnames`,
+				{ containerIds },
+				{ signal, suppressAccessDeniedToast: true }
+			)
 		);
 	}
 

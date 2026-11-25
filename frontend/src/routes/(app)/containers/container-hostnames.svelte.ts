@@ -12,39 +12,56 @@ export class ContainerHostnames {
 	readonly #entries = new SvelteMap<string, string | typeof failed>();
 	readonly #workers = new Map<string, Promise<void>>();
 	readonly #requests = new Map<string, { controller: AbortController; keys: string[] }>();
-	#visible = new Map<string, Row[]>();
+	readonly #rendered = new Map<string, { row: Row; count: number }>();
+	#sync: Promise<void> | undefined;
 
 	get(row: Row): string | undefined {
 		const entry = this.#entries.get(rowKey(row));
 		return typeof entry === 'string' ? entry : undefined;
 	}
 
-	show(rows: Row[]) {
-		this.#visible = Map.groupBy(rows, (row) => row.environmentId);
-		const visibleKeys = new Set(rows.map(rowKey));
-		for (const { controller, keys } of this.#requests.values()) {
-			if (keys.some((key) => !visibleKeys.has(key))) controller.abort();
-		}
-		void this.#loadVisibleEnvironments();
+	watch(row: Row) {
+		const key = rowKey(row);
+		this.#rendered.set(key, { row, count: (this.#rendered.get(key)?.count ?? 0) + 1 });
+		void this.#scheduleSync();
+		return () => {
+			const count = (this.#rendered.get(key)?.count ?? 1) - 1;
+			if (count > 0) {
+				this.#rendered.set(key, { row, count });
+			} else {
+				this.#rendered.delete(key);
+			}
+			void this.#scheduleSync();
+		};
 	}
 
 	async retryFailures() {
+		await this.#scheduleSync();
 		await Promise.all(this.#workers.values());
-		for (const rows of this.#visible.values()) {
-			for (const row of rows) {
-				const key = rowKey(row);
-				if (this.#entries.get(key) === failed) this.#entries.delete(key);
-			}
+		for (const key of this.#rendered.keys()) {
+			if (this.#entries.get(key) === failed) this.#entries.delete(key);
 		}
-		await this.#loadVisibleEnvironments();
+		await this.#loadRenderedEnvironments();
 	}
 
-	#loadVisibleEnvironments() {
+	#scheduleSync() {
+		this.#sync ??= Promise.resolve().then(() => {
+			this.#sync = undefined;
+			for (const { controller, keys } of this.#requests.values()) {
+				if (!keys.some((key) => this.#rendered.has(key))) controller.abort();
+			}
+			void this.#loadRenderedEnvironments();
+		});
+		return this.#sync;
+	}
+
+	#loadRenderedEnvironments() {
+		const environmentIds = new Set(Array.from(this.#rendered.values(), ({ row }) => row.environmentId));
 		return Promise.all(
-			Array.from(this.#visible.keys(), (environmentId) => {
+			Array.from(environmentIds, (environmentId) => {
 				const running = this.#workers.get(environmentId);
 				if (running) return running;
-				const worker = Promise.resolve().then(() => this.#loadEnvironment(environmentId));
+				const worker = this.#loadEnvironment(environmentId);
 				this.#workers.set(environmentId, worker);
 				return worker;
 			})
@@ -53,14 +70,15 @@ export class ContainerHostnames {
 
 	async #loadEnvironment(environmentId: string) {
 		try {
-			while (this.#visible.has(environmentId)) {
-				const rows = this.#visible.get(environmentId) ?? [];
-				const batch = rows.filter((row) => !this.#entries.has(rowKey(row))).slice(0, batchSize);
+			await Promise.resolve();
+			while (true) {
+				const batch = Array.from(this.#rendered.values(), ({ row }) => row)
+					.filter((row) => row.environmentId === environmentId && !this.#entries.has(rowKey(row)))
+					.slice(0, batchSize);
 				if (batch.length === 0) return;
 
-				const keys = batch.map(rowKey);
 				const controller = new AbortController();
-				this.#requests.set(environmentId, { controller, keys });
+				this.#requests.set(environmentId, { controller, keys: batch.map(rowKey) });
 				let hostnames: Record<string, string> = {};
 				try {
 					hostnames = await containerService.getSwarmTaskHostnames(
@@ -85,7 +103,7 @@ export class ContainerHostnames {
 	}
 
 	destroy() {
-		this.#visible.clear();
+		this.#rendered.clear();
 		for (const { controller } of this.#requests.values()) controller.abort();
 	}
 }

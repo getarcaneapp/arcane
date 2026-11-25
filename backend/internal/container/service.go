@@ -1588,7 +1588,10 @@ func (s *ContainerService) GetSwarmTaskHostnames(ctx context.Context, ids []stri
 				task, taskErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.TaskInspectResult, error) {
 					return dockerClient.TaskInspect(ctx, config.Labels["com.docker.swarm.task.id"], client.TaskInspectOptions{})
 				})
-				if taskErr != nil || strings.TrimSpace(kit.FromPtr(task.Task.Spec.ContainerSpec).Hostname) == "" {
+				if taskErr != nil {
+					return groupCtx.Err()
+				}
+				if strings.TrimSpace(kit.FromPtr(task.Task.Spec.ContainerSpec).Hostname) == "" {
 					hostname = ""
 				}
 			}

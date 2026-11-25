@@ -4,7 +4,7 @@
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
-	import { onDestroy, onMount, untrack } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -263,18 +263,20 @@
 	const resourcesCurrent = $derived(scope === environmentStore.shownKey);
 	const hostnameHintId = $props.id();
 	const hostnames = new ContainerHostnames();
-	let displayedRows = $state.raw<ContainerRow[]>([]);
 	onDestroy(() => hostnames.destroy());
 
-	$effect(() => {
-		const rows =
-			showSwarmTaskHostnames && resourcesCurrent && !loading
-				? displayedRows.filter(
-						(row) => row.labels?.['com.docker.swarm.task.id'] && hasPermission('containers:read', row.environmentId)
-					)
-				: [];
-		untrack(() => hostnames.show(rows));
-	});
+	function watchHostname(item: ContainerRow) {
+		if (
+			showSwarmTaskHostnames &&
+			resourcesCurrent &&
+			!loading &&
+			item.labels?.['com.docker.swarm.task.id'] &&
+			hasPermission('containers:read', item.environmentId)
+		) {
+			return hostnames.watch(item);
+		}
+		return undefined;
+	}
 
 	export async function retryHostnames() {
 		if (showSwarmTaskHostnames && resourcesCurrent) {
@@ -785,7 +787,7 @@
 			/>
 			<div class="flex min-w-0 flex-col">
 				<div class="flex min-w-0 items-center gap-2">
-					<ContainerTableName {name} {dockerName} {href} />
+					<ContainerTableName {name} {dockerName} {href} watchHostname={() => watchHostname(item)} />
 					{@render NameBadges(item)}
 				</div>
 				{#if projectLabel}
@@ -806,7 +808,7 @@
 			/>
 			<div class="flex min-w-0 flex-1 flex-col">
 				<div class="flex min-w-0 items-center gap-2">
-					<ContainerTableName {name} {dockerName} {href} class="font-medium" />
+					<ContainerTableName {name} {dockerName} {href} class="font-medium" watchHostname={() => watchHostname(item)} />
 					{@render NameBadges(item)}
 					{#if projectLabel}
 						<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
@@ -930,7 +932,12 @@
 {/snippet}
 
 {#snippet ContainerMobileName(item: ContainerRow)}
-	<ContainerTableName name={displayedContainerName(item)} dockerName={getContainerDisplayName(item)} maxWidth="full" />
+	<ContainerTableName
+		name={displayedContainerName(item)}
+		dockerName={getContainerDisplayName(item)}
+		maxWidth="full"
+		watchHostname={() => watchHostname(item)}
+	/>
 {/snippet}
 
 {#snippet ContainerMobileCardSnippet({
@@ -1237,7 +1244,6 @@
 	groupIcon={groupByProject ? getGroupIcon : undefined}
 	groupCollapsedState={collapsedGroups}
 	onGroupToggle={toggleGroup}
-	onDisplayedRowsChange={(rows) => (displayedRows = rows)}
 >
 	{#snippet emptyState()}
 		<EmptyState icon={ContainersIcon} title={m.no_containers_yet()} description={m.containers_you_run_appear_here()} />
