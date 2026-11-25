@@ -1,4 +1,5 @@
 import {
+	projectBackupConfigQuery,
 	s3DestinationAllQuery,
 	systemBackupHistoryQuery,
 	systemBackupPoliciesQuery,
@@ -19,13 +20,21 @@ export const load: PageLoad = async ({ parent }) => {
 		pagination: { page: 1, limit: 20 },
 		sort: { column: 'createdAt', direction: 'desc' }
 	} satisfies SearchPaginationSortRequest);
-	const [backups, policyCollection, destinations, systemVolumePolicyCollection] = await Promise.all([
+	const [backups, policyCollection, destinations, projectPolicyCollection, systemVolumePolicyCollection] = await Promise.all([
 		queryClient.query(systemBackupHistoryQuery(environmentStore.shownKey, requestOptions)),
 		canReadBackups
 			? queryClient.query(systemBackupPoliciesQuery())
 			: { policies: [], recoveryKeyStored: false, localDockerEnabled: true },
 		userHasPermission(user, 's3-destinations:list', GLOBAL_SCOPE) ? queryClient.query(s3DestinationAllQuery()) : [],
+		canReadBackups ? queryClient.query(projectBackupConfigQuery()) : { policies: [] },
 		canReadBackups ? queryClient.query(systemVolumeBackupConfigQuery()) : { policies: [] }
 	]);
-	return { backups, policyCollection, destinations, systemVolumePolicyCollection, requestOptions };
+	return {
+		backups,
+		policyCollection,
+		destinations,
+		projectPolicyCollection,
+		systemVolumePolicyCollection,
+		requestOptions
+	};
 };

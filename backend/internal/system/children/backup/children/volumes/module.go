@@ -16,7 +16,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			OperationID: "get-system-volume-backup-config",
 			Method:      http.MethodGet,
 			Path:        "/backups/volumes/config",
-			Summary:     "Get system-managed volume backup policies",
+			Summary:     "Get global volume backup policies",
 			Tags: []string{
 				"System Backups",
 			},
@@ -30,7 +30,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			OperationID: "update-system-volume-backup-config",
 			Method:      http.MethodPut,
 			Path:        "/backups/volumes/config",
-			Summary:     "Update system-managed volume backup policies",
+			Summary:     "Update global volume backup policies",
 			Tags: []string{
 				"System Backups",
 			},
@@ -44,7 +44,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			OperationID: "list-system-volume-backup-options",
 			Method:      http.MethodGet,
 			Path:        "/backups/volumes/options",
-			Summary:     "List volumes available to system-managed backups",
+			Summary:     "List volumes available to global volume backups",
 			Tags: []string{
 				"System Backups",
 			},
@@ -59,7 +59,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			DefaultStatus: http.StatusAccepted,
 			Method:        http.MethodPost,
 			Path:          "/backups/volumes/run",
-			Summary:       "Run system-managed volume backups",
+			Summary:       "Run global volume backups",
 			Tags: []string{
 				"System Backups",
 			},

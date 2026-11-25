@@ -78,12 +78,8 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 			if relativePath != EffectiveEnvFileName {
 				return nil
 			}
-			envPath, perm, _, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, relativePath))
-			if err != nil {
-				return err
-			}
-			content, err := acfs.Host{}.ReadFile(ctx, envPath)
-			if err != nil {
+			content, perm, external, err := ReadExternalEnvFile(ctx, projectPath)
+			if err != nil || !external {
 				return err
 			}
 			if headerErr := tarWriter.WriteHeader(&tar.Header{
@@ -136,6 +132,93 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	}
 	if closeErr := gzipWriter.Close(); closeErr != nil {
 		return fmt.Errorf("finish project archive compression: %w", closeErr)
+	}
+	return nil
+}
+
+func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byte, perm os.FileMode, external bool, err error) {
+	envPath, perm, isSymlink, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, EffectiveEnvFileName))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, 0, false, nil
+	}
+	if err != nil || !isSymlink {
+		return nil, 0, false, err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("resolve project directory: %w", err)
+	}
+	if IsSafeSubdirectory(resolvedRoot, envPath) {
+		return nil, 0, false, nil
+	}
+	content, err = acfs.Host{}.ReadFile(ctx, envPath)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return content, perm, true, nil
+}
+
+func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, report func(ctx context.Context, message string)) error {
+	if len(sourceDirs) == 0 {
+		return nil
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(projectPath)
+	if err != nil {
+		return fmt.Errorf("resolve project directory: %w", err)
+	}
+	var readOnly []string
+	walkErr := filepath.WalkDir(resolvedRoot, func(hostPath string, entry fs.DirEntry, err error) error {
+		switch {
+		case errors.Is(err, fs.ErrPermission):
+			return fs.SkipDir
+		case err != nil:
+			return err
+		case hostPath != resolvedRoot && entry.IsDir() && IsInternalScratchDirName(entry.Name()):
+			return fs.SkipDir
+		case entry.Type()&fs.ModeSymlink == 0:
+			return nil
+		}
+		relative, err := filepath.Rel(resolvedRoot, hostPath)
+		if err != nil {
+			return err
+		}
+		target, err := os.Readlink(hostPath)
+		switch {
+		case err != nil:
+		case filepath.IsAbs(target):
+			err = ownLink(hostPath, resolvedRoot, target, sourceDirs)
+		case !filepath.IsLocal(filepath.Join(filepath.Dir(relative), target)):
+			err = ownLink(hostPath, resolvedRoot, filepath.Join(sourceDirs[len(sourceDirs)-1], filepath.Dir(relative), target), sourceDirs)
+		}
+		if errors.Is(err, fs.ErrPermission) {
+			readOnly = append(readOnly, relative)
+			return nil
+		}
+		return err
+	})
+	if walkErr != nil {
+		return fmt.Errorf("point the restored links at the project's own files: %w", walkErr)
+	}
+	if len(readOnly) > 0 {
+		report(ctx, "Arcane can't change links in read-only folders, so these still lead into the original project: "+strings.Join(readOnly, ", "))
+	}
+	return nil
+}
+
+func ownLink(hostPath, resolvedRoot, named string, sourceDirs []string) error {
+	for _, dir := range sourceDirs {
+		inside, err := filepath.Rel(dir, named)
+		if err != nil || !filepath.IsLocal(inside) {
+			continue
+		}
+		own, err := filepath.Rel(filepath.Dir(hostPath), filepath.Join(resolvedRoot, inside))
+		if err != nil {
+			return err
+		}
+		if removeErr := os.Remove(hostPath); removeErr != nil {
+			return removeErr
+		}
+		return os.Symlink(own, hostPath)
 	}
 	return nil
 }
@@ -444,4 +527,16 @@ func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]boo
 		expected[volume.Archive] = false
 	}
 	return expected, nil
+}
+
+func SelectBackupVolumes(included, requested []string) ([]string, error) {
+	if requested == nil {
+		return included, nil
+	}
+	for _, key := range requested {
+		if !slices.Contains(included, key) {
+			return nil, fmt.Errorf("the backup does not include the data of volume %s", key)
+		}
+	}
+	return slices.Compact(slices.Sorted(slices.Values(requested))), nil
 }

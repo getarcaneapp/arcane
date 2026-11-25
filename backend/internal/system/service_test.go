@@ -145,6 +145,14 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 		Trigger: volume.VolumeBackupTriggerManual, Destination: types.VolumeBackupDestinationLocal,
 		Format: volume.VolumeBackupFormatRustic,
 	}).Error)
+	require.NoError(t, gormDB.Exec(`CREATE TABLE project_backups (id TEXT PRIMARY KEY, project_id TEXT, project_name TEXT, status TEXT,
+		trigger TEXT, destination TEXT, local_snapshot_id TEXT, remote_snapshot_id TEXT, s3_destination_id TEXT, policy_id TEXT,
+		error TEXT, size INTEGER, created_at TIMESTAMP)`).Error)
+	require.NoError(t, gormDB.Exec(`INSERT INTO project_backups VALUES ('pb1', 'p1', 'web', 'succeeded', 'scheduled', 'local', 'snap', '', '', 'pp1', '', 10, ?),
+		('pb2', 'p2', 'old', 'succeeded', 'manual', 'local', 'snap2', '', '', '', '', 20, ?)`,
+		now.Add(-3*time.Minute), now.Add(-4*time.Minute)).Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE projects (id TEXT PRIMARY KEY)").Error)
+	require.NoError(t, gormDB.Exec("INSERT INTO projects VALUES ('p1')").Error)
 	db := &database.DB{DB: gormDB}
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    t.Context(),
@@ -157,7 +165,7 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	service := NewSystemService(SystemServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		S3Destinations:  s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		S3Destinations:  s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil }),
 		Config:          &config.Config{},
 	})
 
@@ -166,21 +174,42 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 		Filters: map[string]string{"type": "system"},
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 2, page.TotalItems)
-	require.Len(t, systemRows, 2)
+	require.EqualValues(t, 1, page.TotalItems)
+	require.Len(t, systemRows, 1)
 	require.Equal(t, types.BackupManagementTypeSystem, systemRows[0].Type)
-	require.Equal(t, "app-data", systemRows[0].ResourceName)
-	require.Equal(t, "volume", systemRows[0].ResourceType)
+	require.Equal(t, "Arcane", systemRows[0].ResourceName)
+	require.Equal(t, "system", systemRows[0].ResourceType)
 
 	volumeRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
-		Search: "cache", Sort: "createdAt", Order: pagination.SortDesc, Limit: 1,
+		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
 		Filters: map[string]string{"type": "volume"},
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 1, page.TotalItems)
-	require.Len(t, volumeRows, 1)
-	require.Equal(t, types.BackupManagementTypeVolume, volumeRows[0].Type)
-	require.Equal(t, "cache", volumeRows[0].ResourceName)
+	require.EqualValues(t, 2, page.TotalItems)
+	require.Len(t, volumeRows, 2)
+	require.Equal(t, []string{"cache", "app-data"}, []string{volumeRows[0].ResourceName, volumeRows[1].ResourceName})
+	for _, row := range volumeRows {
+		require.Equal(t, types.BackupManagementTypeVolume, row.Type)
+		require.Equal(t, "volume", row.ResourceType)
+	}
+
+	projectRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
+		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
+		Filters: map[string]string{"type": "project"},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.TotalItems)
+	require.Len(t, projectRows, 2)
+	require.Equal(t, types.BackupManagementTypeProject, projectRows[0].Type)
+	require.Equal(t, "project", projectRows[0].ResourceType)
+	require.Equal(t, "web", projectRows[0].ResourceName)
+	require.Equal(t, "p1", projectRows[0].ResourceID)
+	require.Equal(t, "scheduled", projectRows[0].Trigger)
+	require.False(t, projectRows[0].ResourceMissing)
+	require.Equal(t, "p2", projectRows[1].ResourceID)
+	require.True(t, projectRows[1].ResourceMissing)
+	require.False(t, systemRows[0].ResourceMissing)
+	require.False(t, volumeRows[0].ResourceMissing)
 }
 
 func TestSystemBackupStoreExpiresRunsOfDeletedPolicies(t *testing.T) {
@@ -251,10 +280,11 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		&settings.SettingVariable{},
 		&volume.VolumeBackup{},
 	))
+	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (id TEXT PRIMARY KEY, status TEXT)").Error)
 	crypto.InitEncryption(crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
-	s3Destinations := s3.NewS3DestinationService(db, func(context.Context, string) error { return nil })
+	s3Destinations := s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil })
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    t.Context(),
 		DB:     db,
@@ -269,6 +299,9 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 		return cli
 	}())
+	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
+		return nil
+	})
 	service := NewSystemService(SystemServiceParams{
 		DB:            db,
 		DockerService: dockerService,
@@ -276,17 +309,17 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 			Config:        &config.Config{},
 			DB:            db,
 			DockerService: dockerService,
+			Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
-		SettingsService: settingsService,
-		BackupEngine: backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
-			return nil
-		}),
-		S3Destinations: s3Destinations,
-		RecoveryKeys:   recoveryKeys,
-		Config:         &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
-		Ctx:            t.Context(),
-		Scheduler:      jobScheduler,
-		Admission:      gate,
+		SettingsService:  settingsService,
+		BackupEngine:     engine,
+		BackupRepository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, Engine: engine, BackupVolumeName: "arcane-backups"}),
+		S3Destinations:   s3Destinations,
+		RecoveryKeys:     recoveryKeys,
+		Config:           &config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
+		Ctx:              t.Context(),
+		Scheduler:        jobScheduler,
+		Admission:        gate,
 	})
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine, nil))
@@ -361,7 +394,7 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 	db := &database.DB{DB: gormDB}
 	service := NewSystemService(SystemServiceParams{
 		DB:             db,
-		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		S3Destinations: s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil }),
 		RecoveryKeys:   backup.NewRecoveryKeyStore(db),
 		Config:         &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
 	})

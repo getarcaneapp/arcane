@@ -30,6 +30,9 @@
 		defaultSchedule,
 		defaultEnabled = true,
 		showStopContainers = false,
+		stopContainersDescription,
+		retentionDescription,
+		defaultStopContainers = false,
 		destinations,
 		beforeFields,
 		afterFields,
@@ -51,6 +54,9 @@
 		defaultSchedule: string;
 		defaultEnabled?: boolean;
 		showStopContainers?: boolean;
+		stopContainersDescription?: string;
+		retentionDescription?: string;
+		defaultStopContainers?: boolean;
 		destinations?: S3Destination[];
 		beforeFields?: Snippet;
 		afterFields?: Snippet;
@@ -115,7 +121,7 @@
 			enabled: defaultEnabled,
 			schedule: defaultSchedule,
 			retentionCount: 7,
-			stopContainers: false,
+			stopContainers: defaultStopContainers,
 			destination: 'local',
 			s3DestinationId: ''
 		};
@@ -196,6 +202,8 @@
 			{enabledDescription}
 			schedulePlaceholder={defaultSchedule}
 			{showStopContainers}
+			{stopContainersDescription}
+			{retentionDescription}
 			{destinationsLoading}
 			destinationReadOnly={!destinationsAccessible}
 			{destinationsLoadError}
