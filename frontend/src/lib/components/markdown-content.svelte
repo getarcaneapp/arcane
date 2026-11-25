@@ -6,9 +6,11 @@
 		renderer ??= Promise.all([import('marked'), import('marked-alert'), import('isomorphic-dompurify')])
 			.then(([{ Marked }, { default: markedAlert }, { default: DOMPurify }]) => {
 				const marked = new Marked(markedAlert());
-				// Links open in a new tab so they never navigate away from unsaved edits.
+				// External links open in a new tab so they never navigate away from unsaved edits.
 				DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 					if (node.localName !== 'a' && node.localName !== 'area') return;
+					const href = node.getAttribute('href')?.trim();
+					if (!href || href.startsWith('#')) return;
 					node.setAttribute('target', '_blank');
 					node.setAttribute('rel', 'noopener noreferrer');
 				});

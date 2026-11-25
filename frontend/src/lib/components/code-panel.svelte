@@ -101,6 +101,13 @@
 		commandPaletteOpen = false;
 	}
 
+	function setCommandPaletteOpen(next: boolean) {
+		if (isMarkdown && (next || commandPaletteOpen)) {
+			markdownChoice = { file: title, view: 'raw' };
+		}
+		commandPaletteOpen = next;
+	}
+
 	// CodeMirror's gutters, search panel and tooltips share this wrapper.
 	function isEditorText(target: EventTarget | null): boolean {
 		return target instanceof Element && !!target.closest('.cm-content');
@@ -159,8 +166,12 @@
 {#snippet editorBody()}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
-		class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0 {editUrl ? 'cursor-pointer' : ''}"
-		class:hidden={showMarkdownPreview}
+		class={[
+			'min-h-0 w-full min-w-0',
+			!effectiveAutoHeight && 'relative flex-1',
+			editUrl && 'cursor-pointer',
+			showMarkdownPreview && 'hidden'
+		]}
 		role={editUrl ? 'link' : undefined}
 		tabindex={editUrl ? 0 : undefined}
 		title={editUrl ? m.git_edit_file_in_repository() : undefined}
@@ -188,7 +199,7 @@
 						{editorContext}
 						bind:outlineOpen
 						bind:diffOpen
-						bind:commandPaletteOpen
+						bind:commandPaletteOpen={() => commandPaletteOpen, setCommandPaletteOpen}
 					/>
 				{:catch}
 					<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
@@ -258,7 +269,7 @@
 						showLabel={false}
 						icon={SearchIcon}
 						customLabel={m.compose_editor_command_palette()}
-						onclick={() => (commandPaletteOpen = true)}
+						onclick={() => setCommandPaletteOpen(true)}
 					/>
 				</div>
 			</Card.Action>
