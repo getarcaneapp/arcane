@@ -75,31 +75,30 @@
 	const effectiveAutoHeight = $derived(autoHeight || isMobile.current);
 	const editUrl = $derived(readOnly && !(enableDiff && diffOpen) && gitEditUrl ? gitEditUrl : null);
 
-	// Markdown opens rendered; Raw sticks only to the file it was chosen for.
-	let rawMarkdownFile = $state<string | null>(null);
+	let markdownChoice = $state<{ file: string; view: string } | null>(null);
 	const isMarkdown = $derived(language === 'markdown');
-	const showMarkdownPreview = $derived(isMarkdown && rawMarkdownFile !== title);
+	const openedEmpty = $derived.by(() => {
+		void title;
+		return untrack(() => !value);
+	});
+	const markdownView = $derived.by(() => {
+		if (markdownChoice?.file === title) return markdownChoice.view;
+		return openedEmpty ? 'raw' : 'preview';
+	});
+	const showMarkdownPreview = $derived(
+		isMarkdown && markdownView === 'preview' && !outlineOpen && !diffOpen && !commandPaletteOpen
+	);
 	const markdownViewOptions = $derived([
 		{ value: 'preview', label: m.preview() },
 		{ value: 'raw', label: m.common_raw() }
 	]);
 
-	// An empty file opens in Raw so it can be typed into; typing does not switch back.
-	$effect.pre(() => {
-		if (!untrack(() => value)) rawMarkdownFile = title;
-	});
-
-	let lastEditorTools: string | null = null;
-	// The outline, diff, and command palette live in the editor, so toggling one leaves the preview.
-	$effect(() => {
-		const tools = `${outlineOpen}:${diffOpen}:${commandPaletteOpen}`;
-		const toggled = lastEditorTools !== null && tools !== lastEditorTools;
-		lastEditorTools = tools;
-		if (toggled && isMarkdown) rawMarkdownFile = title;
-	});
-
 	function selectMarkdownView(view: string) {
-		rawMarkdownFile = view === 'raw' ? title : null;
+		markdownChoice = { file: title, view };
+		if (view !== 'preview') return;
+		outlineOpen = false;
+		diffOpen = false;
+		commandPaletteOpen = false;
 	}
 
 	// CodeMirror's gutters, search panel and tooltips share this wrapper.
