@@ -66,7 +66,6 @@ func New(p ModuleParams) *Module {
 		LockVolumes:    p.Backups.LockVolumes,
 		Project:        p.Service.GetProjectDetails,
 		StopProject:    p.Service.stopProject,
-		StartProject:   p.Service.startProject,
 		Volume:         local.Volume,
 		BackupStore:    p.Backups.Repository.StorageVolume,
 		LockProject:    p.Service.LockProject,
@@ -77,6 +76,14 @@ func New(p ModuleParams) *Module {
 				return false, err
 			}
 			return p.Service.runsArcane(ctx, proj), nil
+		},
+		GitOpsOwned: func(ctx context.Context, projectID string) (bool, error) {
+			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
+			if err != nil {
+				return false, err
+			}
+			owned, err := p.Service.gitOpsOwnedWorkspacePaths(ctx, proj)
+			return len(owned) > 0, err
 		},
 		// A restore holds the project lock, so it deploys the project without taking it again.
 		Deploy:             p.Service.deployProject,

@@ -53,6 +53,7 @@ export type Environment = {
 	agentMTLSCertificate?: AgentMTLSCertificate;
 	agentHost?: AgentHostInfo;
 	agentTunnelStats?: AgentTunnelStats;
+	localDockerEnabled?: boolean;
 };
 
 export type EnvironmentStreamEvent = {

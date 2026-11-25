@@ -31,6 +31,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops/children/backup"
 	gitopssync "getarcane.dev/arcane/v3/internal/gitops/children/sync"
@@ -54,6 +55,7 @@ import (
 type (
 	GitOpsSyncService struct {
 		db              *database.DB
+		dockerService   *docker.DockerClientService
 		repoService     *gitrepo.GitRepositoryService
 		projectService  *projectpkg.ProjectService
 		swarmService    *swarm.SwarmService
@@ -94,6 +96,7 @@ type (
 
 		DB              *database.DB
 		RepoService     *gitrepo.GitRepositoryService
+		DockerService   *docker.DockerClientService
 		ProjectService  *projectpkg.ProjectService
 		SwarmService    *swarm.SwarmService
 		EventService    *event.EventService
@@ -218,6 +221,7 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 func NewGitOpsSyncService(p GitOpsSyncServiceParams) *GitOpsSyncService {
 	s := &GitOpsSyncService{
 		db:              p.DB,
+		dockerService:   p.DockerService,
 		repoService:     p.RepoService,
 		projectService:  p.ProjectService,
 		swarmService:    p.SwarmService,
@@ -336,6 +340,9 @@ func (s *GitOpsSyncService) registerSyncJob(ctx context.Context, syncID, environ
 		ScheduleFn: func(context.Context) string {
 			return schedule
 		},
+		ShouldRunFn: func(context.Context) bool {
+			return environmentID != "0" || s.dockerService.LocalDockerEnabled()
+		},
 		SkipRunFn: func(runCtx context.Context) string {
 			run, _ := jobcontext.Run(runCtx)
 			syncRecord, err := s.GetSyncByID(runCtx, environmentID, syncID)
@@ -363,6 +370,9 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	}
 	for _, syncRecord := range syncs {
 		s.registerSyncJob(ctx, syncRecord.ID, syncRecord.EnvironmentID, syncRecord.SyncInterval)
+		if syncRecord.EnvironmentID == "0" && !s.dockerService.LocalDockerEnabled() {
+			continue
+		}
 		overdue := syncRecord.LastSyncAt == nil || time.Since(*syncRecord.LastSyncAt) > time.Duration(max(syncRecord.SyncInterval, 1))*time.Minute
 		if overdue || (slices.Contains(projectpkg.GitOpsPushModes, syncRecord.Mode) && syncRecord.BackupPending) {
 			s.kickSync(ctx, syncRecord.ID, "startup")
@@ -516,6 +526,9 @@ func (s *GitOpsSyncService) getSyncByID(ctx context.Context, environmentID, id s
 }
 
 func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, change SyncUpdate) (*projectpkg.GitOpsSync, error) {
+	if environmentID == "0" && !s.dockerService.LocalDockerEnabled() {
+		return nil, common.ErrLocalDockerDisabled
+	}
 	slog.InfoContext(ctx, "Creating GitOps sync", "environmentId", environmentID, "name", change.Request.Name, "repositoryId", change.Request.RepositoryID)
 
 	mode := cmp.Or(change.Request.Mode, types.GitOpsSyncModeDeploy)
@@ -949,6 +962,10 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 }
 
 func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (syncResult *types.GitOpsSyncResult, syncErr error) {
+	// Webhooks and manual runs bypass ShouldRunFn, so local syncs (including push-mode backups) stop here too.
+	if req.EnvironmentID == "0" && !s.dockerService.LocalDockerEnabled() {
+		return nil, common.ErrLocalDockerDisabled
+	}
 	ctx, span := otel.Tracer(logging.InstrumentationName).Start(ctx, "gitops.sync", trace.WithAttributes(
 		attribute.String("arcane.gitops.sync_id", req.SyncID),
 		attribute.String("arcane.environment.id", req.EnvironmentID),

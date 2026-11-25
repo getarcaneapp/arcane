@@ -32,6 +32,7 @@
 	let nameOverride = $state<string | null>(null);
 	let overrides = $state<Record<string, boolean>>({});
 	let start = $state(false);
+	let shareExternalVolumes = $state(false);
 	let restoring = $state(false);
 
 	const canStart = $derived(hasPermission('projects:deploy', environmentId));
@@ -40,6 +41,11 @@
 	// A project restored as new keeps an external volume's name, so the volume is restored only when chosen.
 	const restoreByDefault = (volume: ProjectVolume) => volume.kind !== 'external';
 	const selectedVolumes = $derived(volumes.filter((volume) => overrides[volume.key] ?? restoreByDefault(volume)));
+	const sharesExternalVolumes = $derived(
+		(backup?.volumes ?? []).some(
+			(volume) => volume.kind === 'external' && !selectedVolumes.some((selected) => selected.key === volume.key)
+		)
+	);
 
 	function handleOpenChange(next: boolean) {
 		if (!next) handleClose();
@@ -53,6 +59,7 @@
 		nameOverride = null;
 		overrides = {};
 		start = false;
+		shareExternalVolumes = false;
 		open = false;
 	}
 
@@ -64,7 +71,12 @@
 				projectService.restoreBackupAsNew(
 					backup.projectId,
 					backup.id,
-					{ name: name.trim(), volumes: selectedVolumes.map((volume) => volume.key), start: start && canStart },
+					{
+						name: name.trim(),
+						volumes: selectedVolumes.map((volume) => volume.key),
+						start: start && canStart,
+						shareExternalVolumes: sharesExternalVolumes && shareExternalVolumes
+					},
 					environmentId
 				)
 			),
@@ -114,6 +126,16 @@
 				disabled={restoring}
 			/>
 		</div>
+		{#if sharesExternalVolumes}
+			<LabeledSwitch
+				id="project-restore-as-new-share-external"
+				checked={shareExternalVolumes}
+				label={m.share_external_volumes()}
+				description={m.share_external_volumes_description()}
+				disabled={restoring}
+				onCheckedChange={(next) => (shareExternalVolumes = next)}
+			/>
+		{/if}
 		<LabeledSwitch
 			id="project-restore-as-new-start"
 			checked={start && canStart}
@@ -130,7 +152,7 @@
 			customLabel={m.restore_as_new_project()}
 			onclick={handleRestore}
 			loading={restoring}
-			disabled={restoring || !name.trim()}
+			disabled={restoring || !name.trim() || (sharesExternalVolumes && !shareExternalVolumes)}
 			data-testid="project-restore-as-new-submit"
 		/>
 	{/snippet}

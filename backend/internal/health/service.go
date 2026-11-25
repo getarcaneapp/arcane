@@ -25,6 +25,7 @@ const (
 	readyStatus    = "ready"
 	notReadyStatus = "not_ready"
 	checkOK        = "ok"
+	checkDisabled  = "disabled"
 	checkTimeout   = 2 * time.Second
 )
 
@@ -60,6 +61,9 @@ func (s *Service) Ready(ctx context.Context) types.ReadinessResponse {
 			return checkOK
 		}(),
 		"docker": func() string {
+			if !s.docker.LocalDockerEnabled() {
+				return checkDisabled
+			}
 			pingCtx, cancel := context.WithTimeout(ctx, checkTimeout)
 			defer cancel()
 			dockerClient, err := s.docker.GetClient(pingCtx)
@@ -73,7 +77,7 @@ func (s *Service) Ready(ctx context.Context) types.ReadinessResponse {
 		}(),
 	}
 	for _, result := range checks {
-		if result != checkOK {
+		if result != checkOK && result != checkDisabled {
 			return types.ReadinessResponse{Status: notReadyStatus, Checks: checks}
 		}
 	}

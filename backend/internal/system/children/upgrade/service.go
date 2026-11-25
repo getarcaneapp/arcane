@@ -240,6 +240,9 @@ func (s *Service) AggregateUpgradeChecks(ctx context.Context) (types.UpgradeChec
 
 func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
+	if errors.Is(err, common.ErrLocalDockerDisabled) {
+		return false, err
+	}
 	if err != nil {
 		return false, errors.New("docker socket is not accessible")
 	}
@@ -460,9 +463,13 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		slog.DebugContext(ctx, "Mounting /app/data into upgrader container", "type", appDataMount.Type, "source", appDataMount.Source)
 	}
 
+	dockerHost, err := s.dockerService.DockerHost()
+	if err != nil {
+		return "", err
+	}
 	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(
 		ctx,
-		s.dockerService.DockerHost(),
+		dockerHost,
 		&prepared.current,
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
@@ -731,8 +738,23 @@ func (s *Service) StartUpgradeJob(ctx context.Context, user types.Actor, environ
 		return nil, fmt.Errorf("list remote environments: %w", err)
 	}
 	agents := make([]remoteAgent, len(remotes))
+	agentIDs := make([]string, len(remotes))
 	for i, remote := range remotes {
 		agents[i] = remoteAgent{ID: remote.ID, Name: remote.Name}
+		agentIDs[i] = remote.ID
+	}
+	if !s.dockerService.LocalDockerEnabled() {
+		// The manager cannot replace its own container without Docker: "update all" means every agent, and explicit targets drop the manager.
+		if len(environmentIDs) == 0 {
+			environmentIDs = agentIDs
+		} else {
+			environmentIDs = slices.DeleteFunc(slices.Clone(environmentIDs), func(id string) bool {
+				return id == environment.LocalEnvironmentID
+			})
+		}
+		if len(environmentIDs) == 0 {
+			return nil, common.Classify(common.ErrValidation, errors.New("no environments to upgrade"))
+		}
 	}
 	info := s.versionService.GetAppVersionInfo(ctx)
 	results, err := seedUpgradeResults(environmentIDs, UpgradeJobResult{

@@ -85,6 +85,7 @@ type (
 
 		AgentEnabled         bool `env:"ARCANE_AGENT" default:"false"`
 		UpgradeKeepContainer bool `env:"ARCANE_UPGRADE_KEEP_CONTAINER" default:"false"`
+		LocalDockerEnabled   bool `env:"ARCANE_LOCAL_DOCKER_ENABLED" default:"true"`
 	}
 )
 
@@ -108,6 +109,9 @@ func Load() (*Config, error) {
 	if cfg.Environment.IsProdEnvironment() && !cfg.AgentEnabled && key != "" &&
 		!strings.HasPrefix(key, "hex:") && !strings.HasPrefix(key, "base64:") && len(strings.TrimPrefix(key, "raw:")) < 32 {
 		return nil, errors.New("ARCANE_ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
+	}
+	if cfg.AgentEnabled && !cfg.LocalDockerEnabled {
+		return nil, errors.New("ARCANE_LOCAL_DOCKER_ENABLED=false is only supported on the manager; an agent always manages its local Docker")
 	}
 
 	// Set global file permissions
