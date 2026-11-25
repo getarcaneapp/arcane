@@ -8,7 +8,7 @@ import type { Activity } from '#lib/types/activity.js';
 import type { ConfirmDialogOptions } from '#lib/types/ui/confirmdialog.js';
 import type { Result } from '#lib/types/ui/result.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 import { parseEnvironmentRowKey, parseRowKey } from '#lib/utils/environments.js';
 import { streamCacheBuster } from '#lib/utils/streaming.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -63,10 +63,12 @@ async function runBulkOperation<T>({
 	let firstActivityId: string | undefined;
 	const activityIds: string[] = [];
 	let sessionCancelled = false;
+	let firstError: Error | undefined;
 	const tally = (key: string, outcome: Result<T>) => {
 		const { id } = parseRowKey(key);
 		if (outcome.error) {
 			result.failed += 1;
+			firstError ??= outcome.error;
 			onItemFailure?.(id, outcome.error);
 		} else {
 			result.success += 1;
@@ -126,9 +128,12 @@ async function runBulkOperation<T>({
 		else toast.success(messages.success(result.success), options);
 	} else if (result.success > 0) {
 		const options = activityLink ? activityToastOptions(firstActivityId, !acceptanceOnly) : undefined;
-		toast.warning(messages.partial(result.success, total, result.failed), options);
+		toast.warning(messages.partial(result.success, total, result.failed), {
+			...options,
+			description: extractApiErrorMessage(firstError)
+		});
 	} else {
-		toast.error(messages.failure());
+		toast.error(messages.failure(), { description: extractApiErrorMessage(firstError) });
 	}
 
 	await onComplete?.(result);

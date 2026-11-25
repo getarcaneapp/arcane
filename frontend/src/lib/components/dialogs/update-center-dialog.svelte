@@ -2,7 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import ReleaseNotes from '#lib/components/release-notes.svelte';
+	import MarkdownContent from '#lib/components/markdown-content.svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { AlertIcon, ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
@@ -232,7 +232,7 @@
 
 				<div class="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
 					{#if effectiveReleaseNotes}
-						<ReleaseNotes markdown={effectiveReleaseNotes} />
+						<MarkdownContent markdown={effectiveReleaseNotes} />
 					{:else if debug && debugFetching}
 						<div class="flex items-center gap-2 text-sm text-muted-foreground">
 							<Spinner class="size-3.5" />
