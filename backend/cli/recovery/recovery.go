@@ -208,6 +208,8 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	for key, value := range map[string]string{
 		"projectsDirectory":               request.ProjectsSetting,
 		"projectsDirectories":             request.ProjectsDirectoriesSetting,
+		"templatesDirectory":              request.TemplatesSetting,
+		"followProjectSymlinks":           request.FollowSymlinksSetting,
 		backup.ProjectDiscoveryPendingKey: "true",
 	} {
 		if strings.TrimSpace(value) == "" {

@@ -529,7 +529,13 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user types.Actor) error {
 	slog.DebugContext(ctx, "volume service: delete volume", "volume", name, "force", force, "user", user.ID)
 	// Clients may not know this environment's backup volume name, so its removal is refused here.
-	if s.BackupVolumeMatcher(ctx)(name) {
+	isBackupVolume := s.BackupVolumeMatcher(ctx)
+	if isBackupVolume(name) {
+		return common.ErrVolumeDeleteProtected
+	}
+	if inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	}); inspectErr == nil && s.isInternalVolume(types.NewVolume(inspected.Volume), isBackupVolume) {
 		return common.ErrVolumeDeleteProtected
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)

@@ -328,20 +328,20 @@ func TestSetupAPIForSpec_HiddenOperationsKeepAccess(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
-		"POST /events":                   authz.EndpointAccessAgentToken,
-		"POST /tunnel/mtls/enroll":       authz.EndpointAccessAgentToken,
-		"POST /webhooks/trigger/{token}": authz.EndpointAccessWebhookToken,
-		"POST /auth/federated/token":     authz.EndpointAccessSubjectToken,
-		"POST /telemetry/{signal}":       authz.EndpointAccessPublic,
-		"GET /docs":                      authz.EndpointAccessPublic,
-		"GET /docs/scalar.js":            authz.EndpointAccessPublic,
-		"GET /debug/pprof/{name}":        authz.EndpointAccessPermission,
-		"POST /debug/pprof/symbol":       authz.EndpointAccessPermission,
+		"POST /events":                         authz.EndpointAccessAgentToken,
+		"POST /tunnel/mtls/enroll":             authz.EndpointAccessAgentToken,
+		"POST /webhooks/trigger/{token}":       authz.EndpointAccessWebhookToken,
+		"POST /auth/federated/token":           authz.EndpointAccessSubjectToken,
+		"POST /telemetry/{signal}":             authz.EndpointAccessPublic,
+		"GET /docs":                            authz.EndpointAccessPublic,
+		"GET /docs/scalar.js":                  authz.EndpointAccessPublic,
+		"GET /agents/{id}/debug/pprof/{name}":  authz.EndpointAccessPermission,
+		"POST /agents/{id}/debug/pprof/symbol": authz.EndpointAccessPermission,
 	} {
 		require.Equal(t, want, access[key].Access, key)
 	}
-	require.Equal(t, authz.PermDiagnosticsProfile, access["GET /debug/pprof/{name}"].Permission)
-	require.Equal(t, authz.PermDiagnosticsProfile, access["POST /debug/pprof/symbol"].Permission)
+	require.Equal(t, authz.PermDiagnosticsProfile, access["GET /agents/{id}/debug/pprof/{name}"].Permission)
+	require.Equal(t, authz.PermDiagnosticsProfile, access["POST /agents/{id}/debug/pprof/symbol"].Permission)
 	require.Nil(t, api.OpenAPI().Paths["/docs"])
 	require.Nil(t, api.OpenAPI().Paths["/webhooks/trigger/{token}"])
 }

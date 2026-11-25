@@ -1,7 +1,6 @@
 package ws
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -30,24 +29,7 @@ const (
 	diagnosticsPingPeriod          = 54 * time.Second
 )
 
-var (
-	defaultLogBroadcaster = logs.New(logs.Config{Capacity: 1000})
-
-	diagnosticsCommandConditions = authz.PermissionConditions{
-		{
-			In:         authz.ConditionInMessage,
-			Field:      "type",
-			Value:      "dump",
-			Permission: authz.PermDiagnosticsProfile,
-		},
-		{
-			In:         authz.ConditionInMessage,
-			Field:      "type",
-			Value:      "profile",
-			Permission: authz.PermDiagnosticsProfile,
-		},
-	}
-)
+var defaultLogBroadcaster = logs.New(logs.Config{Capacity: 1000})
 
 func buildDiagnostics(diag *diagnostics.DiagnosticsService) types.Diagnostics {
 	runtime, memory, gc := diag.Collect()
@@ -70,7 +52,6 @@ func (h *WebSocketHandler) diagnosticsRoutes() []middleware.EchoRoute {
 			Method:     http.MethodGet,
 			Path:       "/diagnostics/stream",
 			Permission: authz.PermDiagnosticsRead,
-			Conditions: diagnosticsCommandConditions,
 			Handler:    h.DiagnosticsStream,
 		},
 		{
@@ -89,18 +70,12 @@ func (h *WebSocketHandler) diagnosticsRoutes() []middleware.EchoRoute {
 }
 
 func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
-	ps, _ := c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
 	snapshot := func(context.Context) any {
 		return types.DiagnosticsMessage{Type: "snapshot", Snapshot: new(buildDiagnostics(h.diagnosticsService))}
 	}
 	return h.streamSnapshots(c, diagnosticsStreamInterval, snapshot, func(ctx context.Context, cmd types.DiagnosticsCommand) any {
 		if cmd.Type == "refresh" {
 			return snapshot(ctx)
-		}
-		for _, perm := range diagnosticsCommandConditions.Required("type", cmd.Type) {
-			if !ps.Allows(perm, "") {
-				return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Error: "permission denied: " + perm}
-			}
 		}
 		switch cmd.Type {
 		case "leakScan":
@@ -109,18 +84,6 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 				return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, LeakReport: &report, Error: err.Error()}
 			}
 			return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, LeakReport: &report}
-		case "dump":
-			text, err := h.diagnosticsService.Profile(ctx, cmd.Name, 0, 2)
-			if err != nil {
-				return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Text: string(text), Error: err.Error()}
-			}
-			return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Text: string(text)}
-		case "profile":
-			data, err := h.diagnosticsService.Profile(ctx, cmd.Name, min(cmp.Or(cmd.Seconds, 30), 120), 0)
-			if err != nil {
-				return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Data: data, Error: err.Error()}
-			}
-			return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Data: data}
 		default:
 			return types.DiagnosticsMessage{Type: "result", ID: cmd.ID, Error: fmt.Sprintf("unknown diagnostics command %q", cmd.Type)}
 		}

@@ -745,6 +745,7 @@ const (
 	ProjectTransferVolumeDataExternal                             = "volume_data_external"
 	ProjectTransferComposeInvalid                                 = "compose_invalid"
 	ProjectTransferVolumeMissing                                  = "volume_missing"
+	ProjectTransferVolumeShared                                   = "volume_shared"
 
 	ProjectVolumeNamed      ProjectVolumeKind = "named"
 	ProjectVolumeExternal   ProjectVolumeKind = "external"

@@ -13,6 +13,8 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
+	"kit.getarcane.app/docker"
+
 	"getarcane.dev/arcane/v3/internal/common"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/projects"
@@ -158,10 +160,15 @@ func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, cause er
 	if err = r.Stop(held, state); err != nil {
 		return fmt.Errorf("%w; %s could not be stopped for the rollback (%w), so it was left as is; restore the safety backup %s by hand to undo the restore", cause, subject, err, state.SafetyID)
 	}
+	if r.InUse != nil {
+		if err = r.InUse(held); err != nil {
+			return fmt.Errorf("%w; the rollback was not written because %w; restore the safety backup %s by hand to undo the restore", cause, err, state.SafetyID)
+		}
+	}
 	undoErr := r.Write(held, state.SafetyID)
 	var removeErr error
-	for _, name := range state.Created {
-		removeErr = errors.Join(removeErr, r.DeleteVolume(held, name, r.User))
+	if leftovers := r.removeAll(held, state.Created); len(leftovers) > 0 {
+		removeErr = fmt.Errorf("could not remove %s", strings.Join(leftovers, ", "))
 	}
 	release()
 	if undoErr != nil {
@@ -185,7 +192,27 @@ func (r RestoreSteps) hold(ctx context.Context) (context.Context, func(), error)
 }
 
 func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string {
+	if len(created) == 0 {
+		return nil
+	}
+	listed, listErr := r.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	})
+	if listErr != nil {
+		return []string{fmt.Sprintf("volumes %s (%v)", strings.Join(created, ", "), listErr)}
+	}
+	var users []string
+	for _, name := range created {
+		users = append(users, docker.FilterContainersUsingVolume(listed.Items, name)...)
+	}
 	var leftovers []string
+	for _, id := range slices.Compact(slices.Sorted(slices.Values(users))) {
+		if _, removeErr := r.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true})
+		}); removeErr != nil {
+			leftovers = append(leftovers, fmt.Sprintf("container %s (%v)", id, removeErr))
+		}
+	}
 	for _, name := range created {
 		if err := r.DeleteVolume(ctx, name, r.User); err != nil {
 			leftovers = append(leftovers, fmt.Sprintf("volume %s (%v)", name, err))
