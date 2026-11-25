@@ -1361,7 +1361,7 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 		for _, table := range req.Tables {
 			var count int64
 			query := db.WithContext(ctx).Table(table).Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID)
-			if table == "volume_backups" {
+			if slices.Contains(VolumeRepositoryTables, table) {
 				query = query.Where("COALESCE(remote_instance_id, '') = ''")
 			}
 			if countRetainedSnapshotsErr := query.Count(&count).Error; countRetainedSnapshotsErr != nil {
