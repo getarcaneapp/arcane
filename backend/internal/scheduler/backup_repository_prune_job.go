@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 
+	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/system"
 	"getarcane.dev/arcane/v3/internal/volume"
@@ -18,6 +19,7 @@ type (
 	BackupRepositoryPruneJob struct {
 		systemService   *system.SystemService
 		volumeService   *volume.VolumeService
+		projects        *project.Module
 		settingsService *settings.SettingsService
 	}
 )
@@ -26,10 +28,13 @@ const (
 	BackupRepositoryPruneJobName = "backup-repository-prune"
 )
 
-func NewBackupRepositoryPruneJob(systemService *system.SystemService, volumeService *volume.VolumeService, settingsService *settings.SettingsService) *BackupRepositoryPruneJob {
+func NewBackupRepositoryPruneJob(
+	systemService *system.SystemService, volumeService *volume.VolumeService, projects *project.Module, settingsService *settings.SettingsService,
+) *BackupRepositoryPruneJob {
 	return &BackupRepositoryPruneJob{
 		systemService:   systemService,
 		volumeService:   volumeService,
+		projects:        projects,
 		settingsService: settingsService,
 	}
 }
@@ -48,6 +53,9 @@ func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (types.SchedulerOutc
 	var pruneErr error
 	if err := j.systemService.PruneLocalBackupRepository(ctx); err != nil {
 		pruneErr = fmt.Errorf("prune system backup repository: %w", err)
+	}
+	if err := j.projects.PruneUnmanagedBackups(ctx); err != nil {
+		pruneErr = errors.Join(pruneErr, fmt.Errorf("prune unmanaged project backups: %w", err))
 	}
 	if err := j.volumeService.PruneLocalBackupRepository(ctx); err != nil {
 		pruneErr = errors.Join(pruneErr, fmt.Errorf("prune volume backup repository: %w", err))

@@ -25,7 +25,6 @@ import (
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/activity"
-	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/config/schema"
 	"getarcane.dev/arcane/v3/internal/container"
@@ -38,11 +37,9 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/internal/system"
-	"getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/internal/variable"
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
@@ -73,9 +70,6 @@ type (
 		Project     *project.ProjectService
 		Container   *container.ContainerService
 		Image       *image.ImageService
-		Role        *role.RoleService
-		User        *user.UserService
-		ApiKey      *apikey.ApiKeyService
 		KV          *kv.KVService
 		Docker      *docker.DockerClientService
 	}
@@ -229,7 +223,7 @@ func applicationOptions(
 		di.ActorOptions,
 		di.ServiceOptions,
 		di.JobOptions,
-		serverOptions,
+		serverOptions(cfg.AgentEnabled),
 		fx.Invoke(
 			func(lc fx.Lifecycle) {
 				lc.Append(fx.Hook{
@@ -240,6 +234,9 @@ func applicationOptions(
 				})
 			},
 			initializeStartupState,
+		),
+		managerOptions(cfg.AgentEnabled),
+		fx.Invoke(
 			startJobScheduler,
 			registerJobs,
 			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, systemService *system.SystemService, _ *http.Server) {
@@ -388,6 +385,7 @@ func initializeStartupState(p initializeStartupStateParams) error {
 		{name: "recover interrupted project renames", run: p.Project.RecoverProjectRenameJournals},
 		{name: "recover interrupted container redeploys", run: p.Container.RecoverInterruptedRedeploys},
 		{name: "recover stuck project statuses", run: p.Project.RecoverStuckProjectStatuses},
+		{name: "remove interrupted project restore directories", run: p.Project.RemoveRestoreScratchDirectories},
 		{name: "fail interrupted image patches", run: p.Image.RecoverInterruptedPatches},
 	} {
 		taskCtx, cancelTask := context.WithTimeout(p.AppCtx, startupTaskTimeout)
@@ -397,49 +395,7 @@ func initializeStartupState(p initializeStartupStateParams) error {
 		cancelTask()
 	}
 
-	if !p.Config.AgentEnabled {
-		if err := p.Environment.ReconcileAgentStatusesOnStartup(p.AppCtx); err != nil {
-			slog.WarnContext(p.AppCtx, "Failed to reconcile agent environment statuses on startup", "error", err)
-		}
-	}
-
-	startup.InitializeNonAgentFeatures(p.AppCtx, p.Config.AgentEnabled,
-		p.Role.EnsureBuiltInRoles,
-		func(ctx context.Context) error {
-			if err := p.Role.BackfillLegacyRoleAssignments(ctx); err != nil {
-				slog.WarnContext(ctx, "Failed to backfill legacy role assignments before admin bootstrap", "error", err)
-			}
-			if p.Config.DefaultAdminDisabled {
-				return nil
-			}
-			return p.User.CreateDefaultAdmin(ctx, user.DefaultAdminOptions{
-				Username:       p.Config.DefaultAdminUsername,
-				Password:       p.Config.DefaultAdminPassword,
-				PasswordPolicy: p.Settings.GetSettingsConfig().PasswordPolicy(),
-				DataDirectory:  "data",
-			})
-		},
-		func(ctx context.Context) error {
-			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, p.Config.DefaultAdminUsername, p.Config.AdminStaticAPIKey)
-		},
-		func(ctx context.Context) error {
-			startup.InitializeAutoLogin(ctx, p.Config.AutoLoginUsername)
-			return nil
-		},
-	)
 	startup.CleanupUnknownSettings(p.AppCtx, p.Settings)
-
-	if !p.Config.AgentEnabled {
-		if err := p.ApiKey.BackfillApiKeyPermissions(p.AppCtx); err != nil {
-			slog.WarnContext(p.AppCtx, "Failed to backfill API key permissions", "error", err)
-		}
-		if err := p.Role.ReconcileEnvOidcMappings(p.AppCtx, p.Config.OidcRoleMappings); err != nil {
-			slog.ErrorContext(p.AppCtx, "Failed to reconcile ARCANE_OIDC_ROLE_MAPPINGS", "error", err)
-		}
-		if err := p.Role.AssertGlobalAdminExists(p.AppCtx, p.DB.WithContext(p.AppCtx)); err != nil {
-			slog.ErrorContext(p.AppCtx, "RBAC global admin guard failed", "error", err)
-		}
-	}
 
 	if p.Config.AgentEnabled {
 		if config.DirectAgentRequested(os.Getenv) {

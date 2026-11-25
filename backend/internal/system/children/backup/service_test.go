@@ -53,7 +53,7 @@ func TestHistoryDestinationDecoration(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	service := NewService(Dependencies{
-		S3Destinations: s3.NewS3DestinationService(store, func(context.Context, string) error { return nil }),
+		S3Destinations: s3.NewS3DestinationService(store, nil, func(context.Context, string) error { return nil }),
 		Settings:       settingsService,
 		Config:         &config.Config{},
 		Store: Store{
@@ -168,9 +168,11 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 			Config:        &config.Config{},
 			DB:            db,
 			DockerService: dockerService,
+			Repository:    backupengine.NewVolumeRepository(backupengine.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
 		Engine:         engine,
-		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		Repository:     backupengine.NewVolumeRepository(backupengine.VolumeRepositoryDependencies{Docker: dockerService, Engine: engine, BackupVolumeName: "arcane-backups"}),
+		S3Destinations: s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil }),
 		RecoveryKeys:   recoveryKeys,
 	})
 

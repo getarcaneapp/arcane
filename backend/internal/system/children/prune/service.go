@@ -617,7 +617,7 @@ func (s *Service) GetDiskUsage(ctx context.Context) (types.SystemDiskUsage, erro
 	return types.SystemDiskUsage{
 		UnusedImagesBytes:      total(images),
 		BuildCacheBytes:        total(buildCache),
-		UnusedVolumesBytes:     total(s.selectPruneVolumes(req, usage, nil)),
+		UnusedVolumesBytes:     total(s.selectPruneVolumes(ctx, req, usage, nil)),
 		StoppedContainersBytes: total(containers),
 	}, nil
 }
@@ -689,7 +689,7 @@ func (s *Service) preparePrunePlan(ctx context.Context, req types.PruneAllReques
 	}
 	return prunePlan{
 		Request:   req,
-		Resources: slices.Concat(containers, images, s.selectPruneVolumes(req, usage, volumeRefs), networks, buildCache),
+		Resources: slices.Concat(containers, images, s.selectPruneVolumes(ctx, req, usage, volumeRefs), networks, buildCache),
 	}, nil
 }
 
@@ -754,13 +754,14 @@ func (s *Service) selectPruneImages(req types.PruneAllRequest, usage client.Disk
 	return resources, nil
 }
 
-func (s *Service) selectPruneVolumes(req types.PruneAllRequest, usage client.DiskUsageResult, volumeRefs map[string]int) []pruneResource {
+func (s *Service) selectPruneVolumes(ctx context.Context, req types.PruneAllRequest, usage client.DiskUsageResult, volumeRefs map[string]int) []pruneResource {
 	if req.Volumes == nil || req.Volumes.Mode == types.PruneVolumeModeNone {
 		return nil
 	}
+	isBackupVolume := s.volumeService.BackupVolumeMatcher(ctx)
 	var resources []pruneResource
 	for _, item := range usage.Volumes.Items {
-		if item.UsageData == nil || item.UsageData.RefCount > int64(volumeRefs[item.Name]) || !s.volumePrunable(req.Volumes.Mode, item.Name, item.Labels) {
+		if item.UsageData == nil || item.UsageData.RefCount > int64(volumeRefs[item.Name]) || !volumePrunable(req.Volumes.Mode, item.Name, item.Labels, isBackupVolume) {
 			continue
 		}
 		resources = append(resources, pruneResource{
@@ -779,9 +780,10 @@ func (s *Service) prepareVolumePlanWithoutUsage(ctx context.Context, req types.P
 	if err != nil {
 		return prunePlan{}, err
 	}
+	isBackupVolume := s.volumeService.BackupVolumeMatcher(ctx)
 	var resources []pruneResource
 	for _, item := range volumes.Items {
-		if !s.volumePrunable(req.Volumes.Mode, item.Name, item.Labels) {
+		if !volumePrunable(req.Volumes.Mode, item.Name, item.Labels, isBackupVolume) {
 			continue
 		}
 		resources = append(resources, pruneResource{
@@ -795,11 +797,11 @@ func (s *Service) prepareVolumePlanWithoutUsage(ctx context.Context, req types.P
 	}, nil
 }
 
-func (s *Service) volumePrunable(mode types.PruneVolumeMode, name string, labels map[string]string) bool {
+func volumePrunable(mode types.PruneVolumeMode, name string, labels map[string]string, isBackupVolume func(name string) bool) bool {
 	_, anonymous := labels["com.docker.volume.anonymous"]
 	// The backup volume is unused between backups but holds them, so it is never pruned.
 	return !strings.EqualFold(labels[selfcontainer.InternalResourceLabel], "true") &&
-		!s.volumeService.IsBackupVolume(name) &&
+		!isBackupVolume(name) &&
 		(mode != types.PruneVolumeModeAnonymous || anonymous)
 }
 
@@ -1169,7 +1171,7 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 			return resource.Size, false, true, usersErr
 		}
 		return resource.Size, len(users) == 0 && !strings.EqualFold(inspected.Volume.Labels[selfcontainer.InternalResourceLabel], "true") &&
-			!s.volumeService.IsBackupVolume(inspected.Volume.Name), true, nil
+			!s.volumeService.BackupVolumeMatcher(ctx)(inspected.Volume.Name), true, nil
 	default:
 		return resource.Size, false, false, nil
 	}

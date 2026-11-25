@@ -7,10 +7,8 @@ import type {
 	Diagnostics,
 	DiagnosticsCommand,
 	DiagnosticsMessage,
-	LogEntry,
-	PprofProfile
+	LogEntry
 } from '#lib/types/system.js';
-import { downloadBlob } from '#lib/utils/browser-download.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export interface ReconnectWSOptions<T> {
@@ -387,12 +385,7 @@ export function createDiagnosticsWebSocket(opts: {
 			rejectPending();
 		},
 		refresh: () => socket.send(JSON.stringify({ id: '', type: 'refresh' })),
-		request,
-		async downloadProfile(profile: PprofProfile) {
-			const msg = await request({ type: 'profile', name: profile });
-			const bytes = Uint8Array.from(atob(msg.data ?? ''), (char) => char.charCodeAt(0));
-			downloadBlob(bytes, `${profile}.${profile === 'trace' ? 'out' : 'pprof'}`);
-		}
+		request
 	};
 }
 

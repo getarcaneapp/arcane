@@ -103,6 +103,10 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	case strings.HasPrefix(databaseURL, "postgres"):
 		dbProvider = dbProviderPostgres
 		dialector = postgres.Open(databaseURL)
+		// Deprecated: remove PostgreSQL support for agents in v4.
+		if options.AgentMode {
+			slog.WarnContext(ctx, "PostgreSQL on agents is deprecated and will be removed in v4; agents will only support SQLite")
+		}
 	default:
 		err = fmt.Errorf("unsupported database type in URL: %s", databaseURL)
 	}

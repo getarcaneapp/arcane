@@ -101,6 +101,13 @@ type (
 		Body          types.ImportProjectArchive
 	}
 
+	RestoreProjectBackupAsNewInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		ProjectID     string `path:"projectId" doc:"ID of the backed up project"`
+		BackupID      string `path:"backupId" doc:"Backup ID"`
+		Body          types.RestoreProjectBackupAsNewRequest
+	}
+
 	DestroyProjectInput struct {
 		Body          *types.ProjectDestroy
 		EnvironmentID string `path:"id" doc:"Environment ID"`
@@ -592,6 +599,53 @@ func (h *ProjectHandler) ImportProjectArchive(ctx context.Context, input *Import
 			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 		}
 		return nil, huma.Error500InternalServerError("Failed to import project: " + err.Error())
+	}
+	return h.createProjectResponse(ctx, proj, activityID)
+}
+
+func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *RestoreProjectBackupAsNewInput) (*handlerutil.Out[types.CreateProjectResponse], error) {
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	required := append([]string{authz.PermProjectsRead}, authz.ProjectImportConditions.Required("start", strconv.FormatBool(input.Body.Start))...)
+	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, required); permErr != nil {
+		return nil, permErr
+	}
+	permissions, _ := middleware.PermissionsFromContext(ctx)
+
+	var proj *Project
+	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           types.ActivityTypeResourceAction,
+		ResourceType:   "project",
+		ResourceID:     input.Body.Name,
+		ResourceName:   input.Body.Name,
+		User:           user,
+		Step:           "Restoring project backup",
+		Message:        "Restoring project backup as a new project",
+		SuccessMessage: "Project restored from backup successfully",
+		Metadata:       database.JSON{"action": "restore_project_backup_as_new", "sourceProjectId": input.ProjectID, "backupId": input.BackupID},
+	}, func(runtimeCtx context.Context) error {
+		projectID, restoreErr := h.bundles.RestoreAsNew(runtimeCtx, bundle.RestoreAsNewOptions{
+			User:           *user,
+			ProjectID:      input.ProjectID,
+			BackupID:       input.BackupID,
+			Request:        input.Body,
+			RestoreVolumes: permissions.Allows(authz.PermVolumesCreate, input.EnvironmentID),
+		})
+		if restoreErr != nil {
+			return restoreErr
+		}
+		proj, restoreErr = h.projectService.GetProjectFromDatabaseByID(runtimeCtx, projectID)
+		return restoreErr
+	})
+	if err != nil {
+		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
+			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
+		return nil, huma.Error500InternalServerError("Failed to restore project backup: " + err.Error())
 	}
 	return h.createProjectResponse(ctx, proj, activityID)
 }

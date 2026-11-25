@@ -5,9 +5,8 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import { backupRunColumns, backupRunMobileFields, backupManagementBadge } from '#lib/components/arcane-table/backup-columns.js';
+	import { backupRunColumns, backupRunMobileFields } from '#lib/components/arcane-table/backup-columns.js';
 	import BackupDestinationCell from '#lib/components/arcane-table/cells/backup-destination-cell.svelte';
-	import BackupManagementCell from '#lib/components/arcane-table/cells/backup-management-cell.svelte';
 	import BackupSizeCell from '#lib/components/arcane-table/cells/backup-size-cell.svelte';
 	import BackupStatusCell from '#lib/components/arcane-table/cells/backup-status-cell.svelte';
 	import BackupTriggerCell from '#lib/components/arcane-table/cells/backup-trigger-cell.svelte';
@@ -61,7 +60,6 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		backupDestinationDisplay,
-		backupManagementFilterOptions,
 		backupTriggerLabel,
 		s3DestinationOptions as buildS3DestinationOptions
 	} from '#lib/utils/backups.js';
@@ -415,13 +413,6 @@
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), sortable: true, cell: IdCell },
-		{
-			accessorKey: 'type',
-			title: m.common_type(),
-			sortable: false,
-			cell: TypeCell,
-			filterOptions: backupManagementFilterOptions()
-		},
 		...backupRunColumns({ status: StatusCell, trigger: TriggerCell, destination: DestinationCell, size: SizeCell }),
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{
@@ -460,10 +451,6 @@
 
 {#snippet StatusCell({ item }: { item: VolumeBackupEntry })}
 	<BackupStatusCell status={item.status} />
-{/snippet}
-
-{#snippet TypeCell({ item }: { item: VolumeBackupEntry })}
-	<BackupManagementCell type={item.type} />
 {/snippet}
 
 {#snippet TriggerCell({ item }: { item: VolumeBackupEntry })}
@@ -596,7 +583,6 @@
 		{item}
 		icon={{ component: VolumesIcon, variant: 'blue' }}
 		title={(item) => item.id}
-		badges={[backupManagementBadge]}
 		fields={[
 			{
 				label: m.volume_backup_trigger(),

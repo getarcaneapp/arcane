@@ -183,7 +183,7 @@ func newBackupsPolicyUpdateCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&opts.policyEnabled, "enabled", false, "Enable or disable the policy")
 	cmd.Flags().StringVar(&opts.policySchedule, "schedule", "", "Backup schedule (cron expression)")
-	cmd.Flags().IntVar(&opts.policyRetention, "retention", 0, "Number of backups to retain")
+	cmd.Flags().IntVar(&opts.policyRetention, "retention", 7, "Number of backups to retain")
 	cmd.Flags().BoolVar(&opts.policyStopContainers, "stop-containers", false, "Stop containers using the volume during backup")
 	cmd.Flags().BoolVar(&opts.policyLocal, "local", false, "Store backups locally")
 	cmd.Flags().BoolVar(&opts.policyS3, "s3", false, "Store backups in S3")
@@ -692,7 +692,10 @@ func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opt
 				return payload, errors.New("--schedule is required when creating a new backup policy")
 			}
 			// New policies default to local storage unless --local was set explicitly.
-			payload.Policies = append(payload.Policies, types.UpdateBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.policyLocal})
+			payload.Policies = append(payload.Policies, types.UpdateBackupPolicy{
+				RetentionCount: opts.policyRetention,
+				LocalEnabled:   !cmd.Flags().Changed("local") || opts.policyLocal,
+			})
 			targetIndex = len(payload.Policies) - 1
 		}
 

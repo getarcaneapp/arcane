@@ -19,33 +19,26 @@ import (
 	"getarcane.dev/arcane/v3/api"
 	"getarcane.dev/arcane/v3/api/ws"
 	"getarcane.dev/arcane/v3/frontend"
-	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/environment"
-	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
-	"getarcane.dev/arcane/v3/pkg/cookie"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
-	"getarcane.dev/types/v3"
 )
 
-type (
-	RouterParams struct {
-		fx.In
+type AgentRouterParams struct {
+	fx.In
 
-		Context        context.Context
-		Lifecycle      fx.Lifecycle
-		Config         *config.Config
-		HandlerDeps    api.HandlerDeps
-		AuthMiddleware *auth.AuthMiddleware
-		TunnelRegistry *agent.TunnelRegistry
-		TunnelServer   *agent.TunnelServer
-	}
-)
+	Context        context.Context
+	Lifecycle      fx.Lifecycle
+	Config         *config.Config
+	HandlerDeps    api.HandlerDeps
+	AuthMiddleware *auth.AuthMiddleware
+	TunnelRegistry *agent.TunnelRegistry
+}
 
 var loggerSkipPatterns = []string{
 	"GET /api/agents/*/ws/containers/stats",
@@ -64,66 +57,23 @@ var loggerSkipPatterns = []string{
 	"PUT /api/agents/*/uploads/*/*/chunks/*",
 }
 
-func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
-	resolveUser := func(ctx context.Context, user *types.Actor) *authz.PermissionSet {
-		ps, err := deps.Role.Service().ResolvePermissions(ctx, user.ID)
-		if err != nil || ps == nil {
-			slog.WarnContext(ctx, "failed to resolve user permissions for env proxy", "error", err)
-			return authz.NewPermissionSet()
-		}
-		return ps
-	}
-	resolveKey := func(ctx context.Context, keyID string) *authz.PermissionSet {
-		ps, err := deps.Role.Service().ResolveApiKeyPermissions(ctx, keyID)
-		if err != nil || ps == nil {
-			slog.WarnContext(ctx, "failed to resolve api key permissions for env proxy", "error", err)
-			return authz.NewPermissionSet()
-		}
-		return ps
-	}
-	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
-		req := c.Request()
-		if apiKey := req.Header.Get(middleware.HeaderApiKey); apiKey != "" {
-			key, err := deps.ApiKey.Service().ValidateRawApiKey(ctx, apiKey)
-			if err != nil {
-				return nil, nil, false
-			}
-			// User-owned API key: personal keys inherit the owner's role
-			// permissions; scoped keys are limited to their own grants.
-			if key.UserID != nil {
-				user, userErr := deps.User.Service().GetUserByID(ctx, *key.UserID)
-				if userErr != nil || user.Disabled {
-					return nil, nil, false
-				}
-				if key.Kind != apikey.ApiKeyKindPersonal {
-					return resolveKey(ctx, key.ID), user.Actor(), true
-				}
-				return resolveUser(ctx, user.Actor()), user.Actor(), true
-			}
-			if key.EnvironmentID != nil {
-				return authz.EnvironmentPermissionSet(*key.EnvironmentID), nil, true
-			}
-			return nil, nil, false
-		}
+func newAgentRouter(p AgentRouterParams) *echo.Echo {
+	e, _ := newBaseRouter(p.Context, p.Config, p.HandlerDeps)
 
-		// Bearer tokens take precedence over the browser token cookie.
-		verify := deps.Auth.Service().VerifyBrowserToken
-		token, err := cookie.GetTokenCookie(req)
-		if bearer, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer "); ok {
-			verify, token, err = deps.Auth.Service().VerifyToken, bearer, nil
-		}
-		if err != nil || token == "" {
-			return nil, nil, false
-		}
-		user, _, err := verify(ctx, token)
-		if err != nil || user == nil || deps.Auth.Service().RequirePasswordChanged(user, "") != nil {
-			return nil, nil, false
-		}
-		return resolveUser(ctx, user.Actor()), user.Actor(), true
-	}
+	apiGroup := e.Group("/api")
+
+	api.SetupAPI(api.SetupParams{
+		Echo:       e,
+		Group:      apiGroup,
+		AppContext: handlerutil.NewActivityAppContext(p.Context),
+		Config:     p.Config,
+		Deps:       p.HandlerDeps,
+	})
+
+	return finishRouter(e, apiGroup, p)
 }
 
-func newRouter(p RouterParams) *echo.Echo {
+func newBaseRouter(ctx context.Context, cfg *config.Config, deps api.HandlerDeps) (*echo.Echo, []*net.IPNet) {
 	// Path params are decoded after matching on the escaped path, so an encoded "/" cannot change the route.
 	e := echo.NewWithConfig(echo.Config{
 		Router: echo.NewRouter(echo.RouterConfig{AllowOverwritingRoute: true, UnescapePathParamValues: true}),
@@ -132,21 +82,21 @@ func newRouter(p RouterParams) *echo.Echo {
 	var trustedProxyNets []*net.IPNet
 	// Trust only the configured ranges, not Echo's built-in loopback/link-local/private defaults.
 	trustOpts := []echo.TrustOption{echo.TrustLoopback(false), echo.TrustLinkLocal(false), echo.TrustPrivateNet(false)}
-	for cidr := range strings.SplitSeq(p.Config.TrustedProxies, ",") {
+	for cidr := range strings.SplitSeq(cfg.TrustedProxies, ",") {
 		cidr = strings.TrimSpace(cidr)
 		if cidr == "" {
 			continue
 		}
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err != nil {
-			slog.WarnContext(p.Context, "invalid ARCANE_TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
+			slog.WarnContext(ctx, "invalid ARCANE_TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
 			continue
 		}
 		trustedProxyNets = append(trustedProxyNets, ipnet)
 		trustOpts = append(trustOpts, echo.TrustIPRange(ipnet))
 	}
-	if p.Config.TrustedProxies != "" && len(trustedProxyNets) == 0 {
-		slog.WarnContext(p.Context, "ARCANE_TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
+	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
+		slog.WarnContext(ctx, "ARCANE_TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
 	}
 	if len(trustedProxyNets) == 0 {
 		e.IPExtractor = echo.ExtractIPDirect()
@@ -157,11 +107,6 @@ func newRouter(p RouterParams) *echo.Echo {
 	e.Use(echomiddleware.Recover())
 	e.Use(echomiddleware.RequestID())
 	e.Use(middleware.RejectDotSegmentParams)
-	e.Use(echomiddleware.SecureWithConfig(echomiddleware.SecureConfig{
-		ContentTypeNosniff:    "nosniff",
-		XFrameOptions:         "SAMEORIGIN",
-		ContentSecurityPolicy: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
-	}))
 	// Trace REST API calls only, skipping long-lived streams, tunnels, health probes, and the browser trace relay.
 	e.Use(echootel.NewMiddlewareWithConfig(echootel.Config{Skipper: func(c *echo.Context) bool {
 		req := c.Request()
@@ -170,7 +115,7 @@ func newRouter(p RouterParams) *echo.Echo {
 			strings.HasPrefix(p, "/api/telemetry/") || strings.HasPrefix(p, "/api/tunnel/") ||
 			httpx.IsWebSocketUpgradeRequest(req) || strings.Contains(req.Header.Get("Accept"), "text/event-stream")
 	}}))
-	e.Use(middleware.SpanEnvironment(p.HandlerDeps.Environment.Service().ResolveEnvironmentName, environment.DisplayName))
+	e.Use(middleware.SpanEnvironment(deps.EnvironmentService.ResolveEnvironmentName, environment.DisplayName))
 	requestLogger := slogecho.NewWithConfig(slog.Default(), slogecho.Config{
 		DefaultLevel:     slog.LevelInfo,
 		ClientErrorLevel: slog.LevelWarn,
@@ -198,110 +143,11 @@ func newRouter(p RouterParams) *echo.Echo {
 			return logged(c)
 		}
 	})
-	e.Use(secureCookieContextMiddleware(trustedProxyNets))
-	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			secure, _ := c.Request().Context().Value(cookie.SecureCookieContextKey{}).(bool)
-			if secure && p.HandlerDeps.Settings.Service().GetSettingsConfig().HstsEnabled.IsTrue() {
-				c.Response().Header().Set(echo.HeaderStrictTransportSecurity, "max-age=31536000")
-			}
-			return next(c)
-		}
-	})
-	e.Use(middleware.WarnUntrustedForwardedFor(trustedProxyNets))
 
-	e.Use(middleware.NewCORSMiddleware(p.Config).Add())
-	e.Use(middleware.NewCSRFMiddleware(p.Config).Add())
+	return e, trustedProxyNets
+}
 
-	apiGroup := e.Group("/api")
-	if !p.Config.AgentEnabled {
-		apiGroup.Use(middleware.NewCompressionMiddleware())
-	}
-
-	apiGroup.Use(middleware.PerIPRateLimitForPaths(
-		[]string{
-			"/api/auth/login",
-			"/api/auth/passkey/login/begin",
-			"/api/auth/passkey/login/finish",
-			"/api/auth/passkey/mobile/finish",
-			"/api/auth/passkey/mobile/exchange",
-			"/api/auth/mfa/passkey/begin",
-			"/api/auth/mfa/passkey/finish",
-			"/api/auth/mfa/recovery",
-			"/api/oidc/callback",
-		}, 5, 5,
-	))
-	apiGroup.Use(middleware.PerIPRateLimitForPaths(
-		[]string{"/api/auth/refresh"}, 30, 30,
-	))
-	apiGroup.Use(middleware.PerIPRateLimitForPaths(
-		[]string{"/api/auth/federated/token"}, 10, 10,
-	))
-	apiGroup.Use(middleware.PerIPRateLimitForPaths(
-		[]string{"/api/agents/enroll"}, 30, 10,
-	))
-	// Keyed per token for stored tokens, per source IP for everything else.
-	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
-		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
-		func(c *echo.Context) string { return c.Param("token") },
-		p.HandlerDeps.Webhook.Service().IsKnownToken,
-	))
-	// Agent event ingestion sits outside the auth middleware, so it needs its own ceiling; agents batch events.
-	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
-		[]string{"/api/events"}, 600, 2*event.DaemonEventBatchSize,
-		func(c *echo.Context) string {
-			return strings.TrimSpace(c.Request().Header.Get(middleware.HeaderAgentToken))
-		},
-		p.HandlerDeps.Environment.Service().IsKnownAccessToken,
-	))
-	envResolver := func(ctx context.Context, id string) (*string, bool, error) {
-		env, err := p.HandlerDeps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
-		if err != nil {
-			return nil, false, err
-		}
-		return env.AccessToken, env.Enabled, nil
-	}
-
-	permissionMatcher := authz.NewPermissionMatcher()
-
-	envProxyMiddleware := middleware.NewEnvironmentProxyMiddleware(middleware.EnvironmentProxyConfig{
-		LocalID:       types.LocalDockerEnvironmentID,
-		ParamName:     "id",
-		Resolver:      envResolver,
-		AuthValidator: createAuthValidator(p.HandlerDeps),
-		Matcher:       permissionMatcher,
-		Registry:      p.TunnelRegistry,
-		CheckOrigin:   httpx.ValidateWebSocketOrigin(p.Config.GetAppURL()),
-	})
-	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (types.EnvironmentRef, error) {
-		env, err := p.HandlerDeps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
-		if err != nil {
-			return types.EnvironmentRef{}, err
-		}
-		return types.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
-	}, permissionMatcher, func(ctx context.Context) int {
-		return p.HandlerDeps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit")
-	}))
-	apiGroup.Use(envProxyMiddleware)
-
-	if p.TunnelServer != nil {
-		middleware.RegisterEchoRoutes(apiGroup, tunnelRoutes(p.TunnelServer))
-	}
-
-	humaAPI := api.SetupAPI(api.SetupParams{
-		Echo:       e,
-		Group:      apiGroup,
-		AppContext: handlerutil.NewActivityAppContext(p.Context),
-		Config:     p.Config,
-		Deps:       p.HandlerDeps,
-		Tunnel:     p.TunnelServer,
-	})
-
-	// Fill the proxy's shared matcher from the local API surface before serving so remote
-	// requests are authorized with the same permissions.
-	permissionMatcher.CollectFromHumaAPI(humaAPI)
-	ws.AddProxiedPermissions(permissionMatcher)
-
+func finishRouter(e *echo.Echo, apiGroup *echo.Group, p AgentRouterParams) *echo.Echo {
 	ws.NewWebSocketHandler(ws.HandlerParams{
 		AppCtx:             p.Context,
 		Group:              apiGroup,
@@ -342,27 +188,4 @@ func EchoRoutePermissions() []authz.PermissionRoute {
 		permissionRoutes = append(permissionRoutes, route.PermissionRoute)
 	}
 	return permissionRoutes
-}
-
-func secureCookieContextMiddleware(trustedProxyNets []*net.IPNet) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			req := c.Request()
-			secure := req.TLS != nil
-			if !secure && len(trustedProxyNets) > 0 && strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") {
-				host, _, err := net.SplitHostPort(req.RemoteAddr)
-				if err != nil {
-					host = req.RemoteAddr
-				}
-				// Unparseable remote addresses are untrusted.
-				if ip := net.ParseIP(host); ip != nil {
-					secure = slices.ContainsFunc(trustedProxyNets, func(n *net.IPNet) bool { return n.Contains(ip) })
-				}
-			}
-			if secure {
-				c.SetRequest(req.WithContext(context.WithValue(req.Context(), cookie.SecureCookieContextKey{}, true)))
-			}
-			return next(c)
-		}
-	}
 }

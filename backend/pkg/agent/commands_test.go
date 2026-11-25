@@ -126,7 +126,7 @@ func TestBuildCommandRouteIndexPanicsOnDuplicateRoute(t *testing.T) {
 	t.Parallel()
 
 	require.Panics(t, func() {
-		buildCommandRouteIndex([]commandRoute{
+		buildCommandRouteIndex([]CommandRoute{
 			{Method: http.MethodGet, PathPattern: "/api/test/{id}", CommandName: "test.one"},
 			{Method: http.MethodGet, PathPattern: "/api/test/{id}", CommandName: "test.two"},
 		})

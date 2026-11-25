@@ -7,11 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 	"uuid"
 
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -24,14 +27,24 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
 type (
+	Backups interface {
+		HoldBackups(ctx context.Context, projectID string) (func(context.Context), error)
+		Manifest(ctx context.Context, projectID, backupID string) (types.ProjectManifest, error)
+		RestoreTo(ctx context.Context, opts types.ProjectBackupRestore) error
+	}
+
 	Dependencies struct {
+		Backups             Backups
 		Docker              *dockerInternal.DockerClientService
 		Uploads             *upload.UploadService
+		BackupStore         func(ctx context.Context) string
 		Project             func(ctx context.Context, projectID string) (types.Project, error)
 		Volume              func(ctx context.Context, name string) (types.Volume, bool, error)
 		ComposeProjectInUse func(ctx context.Context, name string) (bool, error)
@@ -45,6 +58,15 @@ type (
 		ExportVolume        func(ctx context.Context, name string) (*types.UploadSession, error)
 		RestoreVolume       func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
 		DeleteVolume        func(ctx context.Context, name string, user types.Actor) error
+		CreateProject       func(ctx context.Context, project NewProject) (string, error)
+		Activities          activity.MessageAppender
+	}
+
+	NewProject struct {
+		User types.Actor
+		Fill func(ctx context.Context, projectPath string) error
+		ID   string
+		Name string
 	}
 
 	Service struct {
@@ -63,6 +85,14 @@ type (
 		RestoreVolumes bool
 	}
 
+	RestoreAsNewOptions struct {
+		User           types.Actor
+		ProjectID      string
+		BackupID       string
+		Request        types.RestoreProjectBackupAsNewRequest
+		RestoreVolumes bool
+	}
+
 	exportState struct {
 		docker     map[string]types.Volume
 		volumes    []types.ProjectVolume
@@ -75,6 +105,7 @@ type (
 		restores    map[string]int
 		composeName string
 		volumes     []types.ProjectVolume
+		services    []composeTypes.ServiceConfig
 	}
 
 	volumeRestore struct {
@@ -157,18 +188,19 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 	if err != nil {
 		return exportState{}, err
 	}
-	running, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	running, err := volumes.ListRunningContainers(ctx, dockerClient)
 	if err != nil {
-		return exportState{}, fmt.Errorf("list containers: %w", err)
+		return exportState{}, err
 	}
-	activeContainers, inUse := projects.ProjectContainerUse(project.ComposeName, running.Items)
+	activeContainers, inUse := projects.ProjectContainerUse(project.ComposeName, running)
 	arcaneOfProject := func(c container.Summary) bool {
 		return project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName && labels.IsArcaneContainer(c.Labels)
 	}
 	resolved, inspected, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
-		Project: project,
-		Inspect: s.deps.Volume,
-		InUse:   inUse,
+		Project:     project,
+		Inspect:     s.deps.Volume,
+		InUse:       inUse,
+		BackupStore: s.deps.BackupStore(ctx),
 	})
 	if err != nil {
 		return exportState{}, err
@@ -178,7 +210,7 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		volumes:    resolved,
 		services:   projects.ContainerServices(activeContainers),
 		active:     len(activeContainers) > 0,
-		runsArcane: slices.ContainsFunc(running.Items, arcaneOfProject),
+		runsArcane: slices.ContainsFunc(running, arcaneOfProject),
 	}, nil
 }
 
@@ -196,6 +228,8 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 		switch {
 		case !known:
 			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
+		case volume.BackupStore:
+			return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf("volume %s holds Arcane's backups, so it cannot be exported", key))
 		case volume.Missing:
 			missing = append(missing, key)
 		case !volume.Included:
@@ -224,6 +258,7 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 				Included:     false,
 				Missing:      false,
 				InUse:        false,
+				BackupStore:  false,
 			})
 			continue
 		}
@@ -245,6 +280,7 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 			Included:     true,
 			Missing:      false,
 			InUse:        volume.InUse,
+			BackupStore:  false,
 		}
 		manifestVolumes = append(manifestVolumes, entry)
 		if !shared {
@@ -263,6 +299,8 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 		Volumes:       manifestVolumes,
 		FormatVersion: types.ProjectManifestFormatVersion,
 		Consistent:    consistent,
+		ExternalEnv:   false,
+		ProjectDirs:   nil,
 	}, nil
 }
 
@@ -362,13 +400,8 @@ func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error
 		return "", common.Classify(common.ErrForbidden, errVolumeRestoreForbidden)
 	}
 	if bundled || opts.Request.Start {
-		composeName := projects.NormalizeProjectName(opts.Request.Name)
-		stackExists, stackErr := s.deps.ComposeProjectInUse(ctx, composeName)
-		if stackErr != nil {
-			return "", fmt.Errorf("check Compose project %s: %w", composeName, stackErr)
-		}
-		if stackExists {
-			return "", common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; import the project under another name", composeName))
+		if nameErr := s.checkComposeNameFree(ctx, opts.Request.Name); nameErr != nil {
+			return "", nameErr
 		}
 	}
 	request := types.ImportProjectArchive{ //exhaustruct:enforce
@@ -448,19 +481,12 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 		}
 		index := target.restores[name]
 		volume := target.volumes[index]
-		external := volume.Kind == types.ProjectVolumeExternal
 		visitErr = s.restoreVolume(ctx, volumeRestore{
-			User: opts.User,
-			Body: body,
-			Name: volume.Name,
-			Compose: types.ComposeVolumeTarget{ //exhaustruct:enforce
-				Labels:   kit.Ternary(external, included[index].DockerLabels, volume.Labels),
-				Project:  target.composeName,
-				Key:      volume.Key,
-				Driver:   volume.Driver,
-				External: external,
-			},
-			Size: size,
+			User:    opts.User,
+			Body:    body,
+			Name:    volume.Name,
+			Compose: projects.NewComposeVolumeTarget(target.composeName, volume, included[index].DockerLabels),
+			Size:    size,
 		})
 		if visitErr == nil {
 			restored = append(restored, volume.Name)
@@ -479,6 +505,174 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 		})
 	}
 	return projectID, nil
+}
+
+func (s *Service) checkComposeNameFree(ctx context.Context, name string) error {
+	composeName := projects.NormalizeProjectName(name)
+	stackExists, err := s.deps.ComposeProjectInUse(ctx, composeName)
+	if err != nil {
+		return fmt.Errorf("check Compose project %s: %w", composeName, err)
+	}
+	if stackExists {
+		return common.Classify(common.ErrConflict, fmt.Errorf("docker already runs a Compose stack named %s; use another name for the project", composeName))
+	}
+	return nil
+}
+
+func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (string, error) {
+	request := opts.Request
+	releaseBackups, err := s.deps.Backups.HoldBackups(ctx, opts.ProjectID)
+	if err != nil {
+		return "", err
+	}
+	defer releaseBackups(context.WithoutCancel(ctx))
+	manifest, err := s.deps.Backups.Manifest(ctx, opts.ProjectID, opts.BackupID)
+	if err != nil {
+		return "", err
+	}
+	var keys []string
+	defaults := []string{}
+	for _, volume := range manifest.Volumes {
+		if volume.Included {
+			keys = append(keys, volume.Key)
+		}
+		if volume.Included && volume.Kind != types.ProjectVolumeExternal {
+			defaults = append(defaults, volume.Key)
+		}
+	}
+	selected, err := projects.SelectBackupVolumes(keys, kit.Ternary(request.Volumes == nil, defaults, request.Volumes))
+	if err != nil {
+		return "", common.Classify(common.ErrValidation, err)
+	}
+	included := make([]types.ProjectVolume, 0, len(selected))
+	var shared []string
+	for _, volume := range manifest.Volumes {
+		if volume.Kind == types.ProjectVolumeExternal && !slices.Contains(selected, volume.Key) && !slices.Contains(shared, volume.Name) {
+			shared = append(shared, volume.Name)
+		}
+		if !volume.Included || !slices.Contains(selected, volume.Key) {
+			continue
+		}
+		included = append(included, types.ProjectVolume{ //exhaustruct:enforce
+			Labels:       volume.Labels,
+			DockerLabels: volume.DockerLabels,
+			Key:          volume.Key,
+			Name:         volume.Name,
+			Kind:         volume.Kind,
+			Driver:       volume.Driver,
+			Archive:      volume.Name,
+			Included:     true,
+			Missing:      false,
+			InUse:        false,
+			BackupStore:  false,
+		})
+	}
+	if len(included) > 0 && !opts.RestoreVolumes {
+		return "", common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the backup's volumes requires volumes:create"))
+	}
+	if len(shared) > 0 && !request.ShareExternalVolumes {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf(
+			"the new project would use the external volumes %s under the same names and share their data with the original project; restore them into new volumes or allow sharing them",
+			strings.Join(shared, ", "),
+		))
+	}
+	if nameErr := s.checkComposeNameFree(ctx, request.Name); nameErr != nil {
+		return "", nameErr
+	}
+	newID := uuid.New().String()
+	unlock, err := s.deps.LockProject(ctx, "restore project as new", newID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	projectID, err := s.deps.CreateProject(ctx, NewProject{
+		User: opts.User,
+		Fill: func(ctx context.Context, projectPath string) error {
+			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
+				Report: func(ctx context.Context, message string) {
+					activity.AppendOrWarn(ctx, s.deps.Activities, activity.IDFromContext(ctx), activity.AppendMessageRequest{
+						Level: types.ActivityMessageLevelWarning, Message: message,
+					})
+				},
+				ProjectID:   opts.ProjectID,
+				BackupID:    opts.BackupID,
+				ProjectPath: projectPath,
+				OwnEnv:      true,
+			})
+		},
+		ID:   newID,
+		Name: request.Name,
+	})
+	if err != nil {
+		return "", err
+	}
+	target, err := s.importTarget(ctx, projectID, included)
+	if binds := sharedBinds(target.services, manifest.ProjectDirs); err == nil && len(binds) > 0 && !request.ShareExternalVolumes {
+		err = common.Classify(common.ErrValidation, fmt.Errorf(
+			"the new project would bind-mount %s from the original project's folder and share that data with the original project; change those bind mounts or allow sharing them",
+			strings.Join(binds, ", "),
+		))
+	}
+	var created []string
+	if err == nil {
+		created, err = s.restoreBackupVolumes(ctx, opts, target, included)
+	}
+	releaseBackups(context.WithoutCancel(ctx))
+	if err != nil {
+		return "", s.rollback(ctx, err, importRollback{
+			User:        opts.User,
+			ProjectID:   projectID,
+			ProjectName: request.Name,
+			Restored:    created,
+		})
+	}
+	if !request.Start {
+		return projectID, nil
+	}
+	if deployErr := s.deps.DeployProject(ctx, projectID, opts.User, nil); deployErr != nil {
+		return "", fmt.Errorf("project %s was restored but could not be started: %w", request.Name, deployErr)
+	}
+	return projectID, nil
+}
+
+func sharedBinds(services []composeTypes.ServiceConfig, projectDirs []string) []string {
+	var shared []string
+	for _, service := range services {
+		for _, volume := range service.Volumes {
+			if volume.Type == composeTypes.VolumeTypeBind && !slices.Contains(shared, volume.Source) && slices.ContainsFunc(projectDirs, func(dir string) bool {
+				return kit.FilePathMatches(filepath.Clean(volume.Source), filepath.Clean(dir))
+			}) {
+				shared = append(shared, volume.Source)
+			}
+		}
+	}
+	return shared
+}
+
+func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOptions, target importTarget, included []types.ProjectVolume) ([]string, error) {
+	var created []string
+	restores := make([]types.ProjectBackupRestoreVolume, 0, len(target.restores))
+	for _, archive := range slices.Sorted(maps.Keys(target.restores)) {
+		index := target.restores[archive]
+		volume := target.volumes[index]
+		options, err := projects.ComposeVolumeTargetCreateOptions(volume.Name, projects.NewComposeVolumeTarget(target.composeName, volume, included[index].DockerLabels))
+		if err != nil {
+			return created, err
+		}
+		if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+			return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
+		}); err != nil {
+			return created, err
+		}
+		created = append(created, volume.Name)
+		restores = append(restores, types.ProjectBackupRestoreVolume{Key: volume.Key, Snapshot: included[index].Name, Name: volume.Name})
+	}
+	return created, s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
+		ProjectID:   opts.ProjectID,
+		BackupID:    opts.BackupID,
+		Volumes:     restores,
+		LockVolumes: true,
+	})
 }
 
 func (s *Service) importTarget(ctx context.Context, projectID string, included []types.ProjectVolume) (importTarget, error) {
@@ -510,6 +704,7 @@ func (s *Service) importTarget(ctx context.Context, projectID string, included [
 		restores:    restores,
 		composeName: imported.ComposeName,
 		volumes:     resolved,
+		services:    imported.Services,
 	}, nil
 }
 
@@ -547,15 +742,27 @@ func (s *Service) checkVolumeTargets(ctx context.Context, included, targets, cla
 		checked[volume.Name] = true
 		checkNames = append(checkNames, volume.Name)
 	}
-	var conflicts []string
+	var conflicts, external []string
 	for _, name := range checkNames {
 		_, exists, err := s.deps.Volume(ctx, name)
 		if err != nil {
 			return nil, fmt.Errorf("inspect volume %s: %w", name, err)
 		}
-		if exists {
+		switch {
+		case !exists:
+		case slices.ContainsFunc(targets, func(target types.ProjectVolume) bool {
+			return target.Name == name && target.Kind == types.ProjectVolumeExternal
+		}):
+			external = append(external, name)
+		default:
 			conflicts = append(conflicts, name)
 		}
+	}
+	if len(external) > 0 {
+		return nil, common.Classify(common.ErrConflict, fmt.Errorf(
+			"the external volumes %s already exist and the new project would use them as they are; leave them out to keep their data untouched",
+			strings.Join(external, ", "),
+		))
 	}
 	if len(conflicts) > 0 {
 		return nil, common.Classify(common.ErrConflict, fmt.Errorf("these volumes already exist: %s", strings.Join(conflicts, ", ")))
