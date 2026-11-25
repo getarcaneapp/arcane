@@ -148,9 +148,9 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	}).Error)
 	require.NoError(t, gormDB.Exec(`CREATE TABLE project_backups (id TEXT PRIMARY KEY, project_id TEXT, project_name TEXT, status TEXT,
 		trigger TEXT, destination TEXT, local_snapshot_id TEXT, remote_snapshot_id TEXT, s3_destination_id TEXT, policy_id TEXT,
-		error TEXT, size INTEGER, created_at TIMESTAMP)`).Error)
-	require.NoError(t, gormDB.Exec(`INSERT INTO project_backups VALUES ('pb1', 'p1', 'web', 'succeeded', 'scheduled', 'local', 'snap', '', '', 'pp1', '', 10, ?),
-		('pb2', 'p2', 'old', 'succeeded', 'manual', 'local', 'snap2', '', '', '', '', 20, ?)`,
+		error TEXT, size INTEGER, created_at TIMESTAMP, remote_instance_id TEXT NOT NULL DEFAULT '')`).Error)
+	require.NoError(t, gormDB.Exec(`INSERT INTO project_backups VALUES ('pb1', 'p1', 'web', 'succeeded', 'scheduled', 'local', 'snap', '', '', 'pp1', '', 10, ?, ''),
+		('pb2', 'p2', 'old', 'succeeded', 'manual', 'local', 'snap2', '', '', '', '', 20, ?, '')`,
 		now.Add(-3*time.Minute), now.Add(-4*time.Minute)).Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE projects (id TEXT PRIMARY KEY)").Error)
 	require.NoError(t, gormDB.Exec("INSERT INTO projects VALUES ('p1')").Error)

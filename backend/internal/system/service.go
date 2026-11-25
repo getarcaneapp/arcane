@@ -126,7 +126,7 @@ const (
 		"created_at, status, trigger, destination, format, local_snapshot_id, remote_snapshot_id, COALESCE(remote_instance_id, '') AS remote_instance_id, " +
 		"s3_destination_id, policy_id, error, 'volume' AS type, 'volume' AS resource_type, volume_name AS resource_name, " +
 		"'' AS resource_id, FALSE AS resource_missing FROM volume_backups UNION ALL " +
-		"SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, remote_snapshot_id, '' AS remote_instance_id, " +
+		"SELECT id, size, created_at, status, trigger, destination, '' AS format, local_snapshot_id, remote_snapshot_id, COALESCE(remote_instance_id, '') AS remote_instance_id, " +
 		"s3_destination_id, policy_id, error, 'project' AS type, 'project' AS resource_type, project_name AS resource_name, " +
 		"project_id AS resource_id, NOT EXISTS (SELECT 1 FROM projects WHERE projects.id = project_backups.project_id) AS resource_missing " +
 		"FROM project_backups"
