@@ -45,6 +45,7 @@ type (
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
 		Policies       *backup.Policies
+		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
 	}
@@ -66,7 +67,7 @@ func New(p ModuleParams) *Module {
 		LockVolumes:    p.Backups.LockVolumes,
 		Project:        p.Service.GetProjectDetails,
 		StopProject:    p.Service.stopProject,
-		StartProject:   p.Service.startProject,
+		Containers:     p.Backups.Containers,
 		Volume:         base.Volume,
 		BackupStore:    p.Backups.Repository.StorageVolume,
 		LockProject:    p.Service.LockProject,

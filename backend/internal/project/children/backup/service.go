@@ -62,7 +62,7 @@ type (
 		LockVolumes        func(ctx context.Context, names []string) (func(), error)
 		Project            func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		StopProject        func(ctx context.Context, projectID string, services []string, user types.Actor) error
-		StartProject       func(ctx context.Context, projectID string, services []string, user types.Actor) error
+		Containers         *backup.Containers
 		Volume             func(ctx context.Context, name string) (types.Volume, bool, error)
 		BackupStore        func(ctx context.Context) string
 		LockProject        func(ctx context.Context, op, projectID string) (func(), error)
@@ -127,8 +127,8 @@ type (
 	}
 
 	checkpoint struct {
-		Stopped []string `json:"stopped,omitempty"`
-		Plan    plan     `json:",inline"`
+		Stopped []container.Summary `json:"stopped,omitempty"`
+		Plan    plan                `json:",inline"`
 	}
 
 	StartRestoreOptions struct {
@@ -497,7 +497,8 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 		return nil
 	}
 	if len(recorded.Stopped) > 0 {
-		return errors.Join(s.deps.StartProject(ctx, entry.ProjectID, recorded.Stopped, recorded.Plan.User), backup.FailStoppedRun(ctx, func(ctx context.Context, message string) error {
+		_, startErr := s.deps.Containers.StartContainers(ctx, recorded.Stopped, recorded.Plan.User)
+		return errors.Join(startErr, backup.FailStoppedRun(ctx, func(ctx context.Context, message string) error {
 			return s.fail(ctx, entry.ID, message)
 		}))
 	}
@@ -575,12 +576,11 @@ func (s *Service) captureStop(
 				return nil, authorizeErr
 			}
 		}
-		stopped := projects.ContainerServices(active)
-		if recordErr := s.record(ctx, p.ProjectID, checkpoint{Plan: p, Stopped: stopped}); recordErr != nil {
+		if recordErr := s.record(ctx, p.ProjectID, checkpoint{Plan: p, Stopped: active}); recordErr != nil {
 			return nil, recordErr
 		}
 		start := func(ctx context.Context) error {
-			if startErr := s.deps.StartProject(ctx, entry.ProjectID, stopped, p.User); startErr != nil {
+			if _, startErr := s.deps.Containers.StartContainers(ctx, active, p.User); startErr != nil {
 				return startErr
 			}
 			return s.record(ctx, p.ProjectID, checkpoint{Plan: p})

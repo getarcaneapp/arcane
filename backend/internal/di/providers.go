@@ -129,6 +129,7 @@ type (
 
 		Repository     *backup.VolumeRepository
 		Policies       *backup.Policies
+		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 	}
 
@@ -207,6 +208,7 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Engine:         p.Backups,
 			Repository:     p.Repository,
 			Policies:       p.Policies,
+			Containers:     p.Containers,
 			S3Destinations: p.S3Destinations,
 			LockVolumes:    p.Volumes.LockVolumes,
 		},
