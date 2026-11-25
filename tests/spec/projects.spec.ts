@@ -1512,6 +1512,63 @@ test.describe('Project Detail Page', () => {
 		}
 	});
 
+	test('should send only the edited .env file when saving', async ({ page }) => {
+		// Created through the API: the new project page trims file contents, and the
+		// regression only shows when the files on disk end in a newline.
+		const projectName = `env-only-save-${Date.now()}`;
+		createdProjectNames.add(projectName);
+		const created = await readApiData<Project>(
+			await page.request.post(ROUTES.apiProjects, {
+				multipart: {
+					project: JSON.stringify({
+						name: projectName,
+						composeContent: TEST_COMPOSE_YAML,
+						envContent: TEST_ENV_FILE
+					}),
+					manifest: JSON.stringify({ fileChanges: [] })
+				}
+			}),
+			`Create project ${projectName}`
+		);
+		expect(created.id).toBeTruthy();
+		expect((await fetchProjectDetail(page, created.id!, '/compose')).composeContent).toBe(
+			TEST_COMPOSE_YAML
+		);
+
+		await page.goto(`/projects/${created.id}?env=0`);
+		await page.waitForLoadState('load');
+
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
+		await configTab.click();
+		await page.waitForLoadState('load');
+
+		const workspaceFilesLabel = page.getByText('Files', { exact: true });
+		await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
+		if (!(await workspaceFilesLabel.isVisible())) {
+			await page.getByRole('switch', { name: 'Toggle workspace mode', exact: true }).click();
+			await expect(workspaceFilesLabel).toBeVisible();
+		}
+
+		await page.getByRole('button', { name: '.env' }).first().click();
+		await expect(page.locator('[data-tab-key="env"][data-active="true"]')).toBeVisible();
+
+		const envEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+		const updatedEnv = `${TEST_ENV_FILE}ARCANE_ENV_ONLY_SAVE=${Date.now()}\n`;
+		await setCodeMirrorValue(envEditor, updatedEnv);
+
+		const saveRequestPromise = page.waitForRequest(
+			(request) =>
+				request.method() === 'PATCH' &&
+				getPathname(request.url()) === `${ROUTES.apiProjects}/${created.id}`
+		);
+		const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
+		await expect(saveButton).toBeEnabled();
+		await saveButton.click();
+
+		expect((await saveRequestPromise).postDataJSON()).toEqual({ envContent: updatedEnv });
+		await expect(saveButton).toBeDisabled();
+	});
+
 	test(
 		'should show retained logs for a stopped project and reload them on refresh',
 		{ timeout: 90_000 },
