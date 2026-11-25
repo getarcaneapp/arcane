@@ -34,7 +34,7 @@ type (
 		ContainerLabels func(ctx context.Context, containerRef string) (map[string]string, error)
 		NewSystemd      func(rootless bool) libpodman.Systemd
 		NotifyUpdates   func(context.Context, []notifications.ContainerUpdateBatchEntry) error
-		Host            func() string
+		Host            func() (string, error)
 	}
 
 	Service struct {
@@ -345,7 +345,10 @@ func (s *Service) AutoUpdate(ctx context.Context, opts types.PodmanAutoUpdateOpt
 }
 
 func (s *detector) detect(ctx context.Context) (libpodman.Runtime, error) {
-	host := s.config.Host()
+	host, err := s.config.Host()
+	if err != nil {
+		return libpodman.Runtime{}, err
+	}
 	s.mu.Lock()
 	cached, fresh := s.cached, s.cachedHost == host && time.Since(s.cachedAt) < detectionTTL
 	s.mu.Unlock()

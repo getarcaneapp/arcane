@@ -205,6 +205,7 @@ func TestDockerEventLifecycle(t *testing.T) {
 				DB:            databaseDB,
 				LocalSettings: settingsService,
 				EventService:  eventService,
+				Config:        &config.Config{LocalDockerEnabled: true},
 			})
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)

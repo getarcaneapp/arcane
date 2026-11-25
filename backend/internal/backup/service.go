@@ -2101,6 +2101,9 @@ func SourceMounts(opts SourceMountOptions) ([]mount.Mount, error) {
 	nested := docker.NestedMounts(opts.Mounts, opts.ContainerPath, opts.Target)
 	result := make([]mount.Mount, 0, 1+len(nested))
 	for _, resolved := range append([]mount.Mount{*primary}, nested...) {
+		if opts.Writable && resolved.ReadOnly {
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("%s, or a mount inside it, is mounted read-only into the Arcane container, so nothing can be restored into it", opts.ContainerPath))
+		}
 		result = append(result, mount.Mount{ //exhaustruct:enforce
 			Type:           resolved.Type,
 			Source:         resolved.Source,

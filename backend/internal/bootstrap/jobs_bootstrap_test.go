@@ -60,9 +60,9 @@ func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 		Config:            &config.Config{},
 		Scheduler:         schedulerStub,
 		Settings:          settings,
-		VulnerabilityScan: scheduler.NewVulnerabilityScanJob(nil, &vulnerability.VulnerabilityService{}, nil),
+		VulnerabilityScan: scheduler.NewVulnerabilityScanJob(nil, &vulnerability.VulnerabilityService{}, nil, nil),
 		VulnerabilityRisk: scheduler.NewVulnerabilityRiskJob(nil, nil),
-		AutoPatch:         scheduler.NewAutoPatchJob(nil, &image.ImageService{}, nil),
+		AutoPatch:         scheduler.NewAutoPatchJob(nil, &image.ImageService{}, nil, nil),
 	}))
 	require.Len(t, settings.featureCallbacks, 3)
 	for _, callback := range settings.featureCallbacks {

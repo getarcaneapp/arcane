@@ -283,6 +283,10 @@ func applicationOptions(
 				}})
 			},
 			func(lc fx.Lifecycle, dockerService *docker.DockerClientService, swarmService *swarm.SwarmService, _ *http.Server) {
+				if !dockerService.LocalDockerEnabled() {
+					slog.InfoContext(appCtx, "Local Docker is disabled; skipping the Docker connection test and swarm sync")
+					return
+				}
 				lc.Append(fx.Hook{OnStart: func(context.Context) error {
 					go func() {
 						dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
@@ -316,7 +320,10 @@ func applicationOptions(
 					return nil
 				}})
 			},
-			func(lc fx.Lifecycle, projectService *project.ProjectService, _ *http.Server) {
+			func(lc fx.Lifecycle, projectService *project.ProjectService, dockerService *docker.DockerClientService, _ *http.Server) {
+				if !dockerService.LocalDockerEnabled() {
+					return
+				}
 				var stop func(context.Context) error
 				lc.Append(fx.Hook{
 					OnStart: func(context.Context) error {
@@ -358,9 +365,11 @@ func initializeStartupState(p initializeStartupStateParams) error {
 		p.Event.PublishChange(environmentID, "activity")
 	})
 
-	helperCtx, cancelHelpers := context.WithTimeout(p.AppCtx, startupTaskTimeout)
-	startup.CleanupOrphanedVolumeHelpers(helperCtx, p.Volume.CleanupOrphanedVolumeHelpers)
-	cancelHelpers()
+	if p.Docker.LocalDockerEnabled() {
+		helperCtx, cancelHelpers := context.WithTimeout(p.AppCtx, startupTaskTimeout)
+		startup.CleanupOrphanedVolumeHelpers(helperCtx, p.Volume.CleanupOrphanedVolumeHelpers)
+		cancelHelpers()
+	}
 
 	for _, task := range []struct {
 		run  func(context.Context) error

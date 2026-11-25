@@ -1460,7 +1460,7 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 		DB:              db,
 		RemoteTransport: NewRemoteTransport(db, nil, tunnels),
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
-		Lister:          NewLister(db, tunnels),
+		Lister:          NewLister(db, tunnels, &config.Config{LocalDockerEnabled: true}),
 		Config:          &config.Config{},
 		Ctx:             t.Context(),
 		Scheduler:       &environmentTestScheduler{},
@@ -1904,7 +1904,7 @@ func TestListerApplyRuntimeState_MapsAgentHostAndTunnelStats(t *testing.T) {
 		tunnels.Unregister(envID)
 	})
 
-	env := NewLister(nil, tunnels).ApplyRuntimeState(types.Environment{ID: envID, Status: string(EnvironmentStatusOffline)})
+	env := NewLister(nil, tunnels, &config.Config{LocalDockerEnabled: true}).ApplyRuntimeState(types.Environment{ID: envID, Status: string(EnvironmentStatusOffline)})
 
 	assert.Equal(t, &types.AgentHostInfo{
 		Hostname:      "edge-1",
@@ -1937,7 +1937,7 @@ func TestListerApplyRuntimeState_DisconnectedAgentKeepsTunnelHistory(t *testing.
 	require.NoError(t, tunnel.CloseWithReason("agent tunnel keepalive failed"))
 	require.True(t, tunnels.UnregisterCurrent(t.Context(), tunnel))
 
-	env := NewLister(nil, tunnels).ApplyRuntimeState(types.Environment{ID: envID, Status: string(EnvironmentStatusOnline)})
+	env := NewLister(nil, tunnels, &config.Config{LocalDockerEnabled: true}).ApplyRuntimeState(types.Environment{ID: envID, Status: string(EnvironmentStatusOnline)})
 
 	assert.Nil(t, env.AgentHost)
 	require.NotNil(t, env.AgentTunnelStats)
@@ -1950,7 +1950,7 @@ func TestListerApplyRuntimeState_DisconnectedAgentKeepsTunnelHistory(t *testing.
 
 func TestListerApplyRuntimeState_OmitsTunnelStatsWithoutHistory(t *testing.T) {
 	tunnels := agent.NewTunnelRegistry()
-	env := NewLister(nil, tunnels).ApplyRuntimeState(types.Environment{ID: "env-runtime-never-connected", Status: string(EnvironmentStatusOffline)})
+	env := NewLister(nil, tunnels, &config.Config{LocalDockerEnabled: true}).ApplyRuntimeState(types.Environment{ID: "env-runtime-never-connected", Status: string(EnvironmentStatusOffline)})
 
 	assert.Nil(t, env.AgentHost)
 	assert.Nil(t, env.AgentTunnelStats)

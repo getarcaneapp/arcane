@@ -788,7 +788,9 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				return "", fmt.Errorf("compose redeploy failed for %s/%s: %w", projectName, serviceName, updateProjectServicesErr)
 			}
 
-			newID, lookupErr := projects.FindComposeServiceContainerID(ctx, s.dockerService.DockerHost(), projectName, serviceName)
+			// The compose update above already failed if local Docker were disabled.
+			dockerHost, _ := s.dockerService.DockerHost()
+			newID, lookupErr := projects.FindComposeServiceContainerID(ctx, dockerHost, projectName, serviceName)
 			if lookupErr != nil {
 				slog.WarnContext(ctx, "failed to resolve container via compose ps after redeploy", "project", projectName, "service", serviceName, "err", lookupErr)
 			}

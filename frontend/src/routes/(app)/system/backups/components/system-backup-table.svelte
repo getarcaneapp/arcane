@@ -25,7 +25,7 @@
 		CopyIcon
 	} from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { SystemVolumeBackupHistoryEntry } from '#lib/types/backup.js';
 	import type { Paginated } from '#lib/types/base.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
@@ -44,6 +44,7 @@
 
 	let {
 		backups,
+		localDockerDisabled,
 		requestOptions = $bindable(),
 		onRetry,
 		onRestore,
@@ -57,6 +58,7 @@
 		emptyState
 	}: {
 		backups: EnvironmentPage<Paginated<SystemVolumeBackupHistoryEntry>>;
+		localDockerDisabled: boolean;
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
 		onRestore: (backup: BackupRow) => void;
@@ -74,8 +76,8 @@
 	const canUploadBackups = $derived(hasPermission('system-backups:upload', GLOBAL_SCOPE));
 	const canDeleteBackups = $derived(hasPermission('system-backups:delete', GLOBAL_SCOPE));
 	const canRestoreBackups = $derived(isGlobalAdmin());
-	const columns = [
-		...environmentColumns<BackupRow>(),
+	const columns = $derived<ColumnSpec<BackupRow>[]>([
+		...environmentColumns<BackupRow>(environmentStore.enabled),
 		{ accessorKey: 'id', title: m.system_backups_id(), sortable: false, cell: IdCell },
 		{ accessorKey: 'resourceName', title: m.backups_resource(), sortable: true, cell: ResourceCell },
 		{
@@ -88,7 +90,7 @@
 		...backupRunColumns({ status: StatusCell, trigger: TriggerCell, destination: DestinationCell, size: SizeCell }),
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cellComponent: CreatedAtCell },
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell }
-	] satisfies ColumnSpec<BackupRow>[];
+	]);
 	const mobileFields = [
 		{ id: 'resourceName', label: m.backups_resource(), defaultVisible: true },
 		{ id: 'type', label: m.common_type(), defaultVisible: true },
@@ -109,23 +111,27 @@
 	>{/snippet}
 
 {#snippet RowActions({ item }: { item: BackupRow })}
+	<!-- Every action on a manager row runs through the manager's own Docker. -->
+	{@const unavailable = localDockerDisabled && item.environmentId === LOCAL_DOCKER_ENVIRONMENT_ID}
 	<RowActionsMenu name={item.resourceName}>
 		{#if item.resourceType === 'system'}
 			{#if canRestoreBackups}
 				{#if item.environmentId === LOCAL_DOCKER_ENVIRONMENT_ID}
-					<DropdownMenu.Item onclick={() => onRestore(item)} disabled={item.status !== 'succeeded'}
+					<DropdownMenu.Item onclick={() => onRestore(item)} disabled={unavailable || item.status !== 'succeeded'}
 						><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
 					>
 				{/if}
-				<DropdownMenu.Item onclick={() => onRestoreFiles(item)} disabled={item.status !== 'succeeded'}
+				<DropdownMenu.Item onclick={() => onRestoreFiles(item)} disabled={unavailable || item.status !== 'succeeded'}
 					><FileTextIcon class="size-4" />{m.volume_restore_files()}</DropdownMenu.Item
 				>
 			{/if}
 			{#if canUploadBackups && item.localSnapshotId && !item.remoteSnapshotId}
-				<DropdownMenu.Item onclick={() => onUpload(item)}><UploadIcon class="size-4" />{m.backups_upload_s3()}</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => onUpload(item)} disabled={unavailable}
+					><UploadIcon class="size-4" />{m.backups_upload_s3()}</DropdownMenu.Item
+				>
 			{/if}
 			{#if canDeleteBackups}
-				<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
+				<RemoveMenuItem onclick={() => onDelete(item)} disabled={unavailable} label={m.common_delete()} />
 			{/if}
 		{:else if item.resourceType === 'project' && item.resourceMissing}
 			{@const canRestoreAsNew = hasPermission('projects:create', item.environmentId)}
@@ -149,11 +155,11 @@
 			>
 		{:else}
 			{#if onRestoreVolume && hasPermission('volumes:backup', item.environmentId)}
-				<DropdownMenu.Item onclick={() => onRestoreVolume(item)} disabled={item.status !== 'succeeded'}
+				<DropdownMenu.Item onclick={() => onRestoreVolume(item)} disabled={unavailable || item.status !== 'succeeded'}
 					><RestartIcon class="size-4" />{m.volumes_backups_restore()}</DropdownMenu.Item
 				>
 			{/if}
-			<DropdownMenu.Item onclick={() => onOpenVolume(item)}
+			<DropdownMenu.Item onclick={() => onOpenVolume(item)} disabled={unavailable}
 				><VolumesIcon class="size-4" />{m.backups_open_volume()}</DropdownMenu.Item
 			>
 		{/if}
