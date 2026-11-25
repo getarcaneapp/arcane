@@ -11,6 +11,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"uuid"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
@@ -50,6 +51,8 @@ type (
 		ToolsImage     string
 	}
 )
+
+const restoreOwnerLabel = "com.getarcaneapp.arcane.restore-owner"
 
 func PlanVolumeMigration(ctx context.Context, cfg VolumeMigrationPlanConfig) (types.VolumeMigration, error) {
 	if cfg.ComposeProject == nil || len(cfg.ComposeProject.Volumes) == 0 {
@@ -287,8 +290,24 @@ func CreateNewVolume(ctx context.Context, dockerClient *client.Client, options c
 	if !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("inspect volume %s: %w", options.Name, err)
 	}
-	if _, err = dockerClient.VolumeCreate(ctx, options); err != nil {
+	owner := uuid.New().String()
+	owned := maps.Clone(options.Labels)
+	if owned == nil {
+		owned = map[string]string{}
+	}
+	owned[restoreOwnerLabel] = owner
+	created, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{ //exhaustruct:enforce
+		Name:              options.Name,
+		Driver:            options.Driver,
+		DriverOpts:        options.DriverOpts,
+		Labels:            owned,
+		ClusterVolumeSpec: options.ClusterVolumeSpec,
+	})
+	if err != nil {
 		return fmt.Errorf("create volume %s: %w", options.Name, err)
+	}
+	if created.Volume.Labels[restoreOwnerLabel] != owner {
+		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s was created by another restore at the same time", options.Name))
 	}
 	return nil
 }

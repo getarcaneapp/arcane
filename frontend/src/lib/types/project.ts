@@ -294,6 +294,7 @@ export interface RestoreProjectBackupAsNewRequest {
 	name: string;
 	volumes?: string[];
 	start?: boolean;
+	shareExternalVolumes?: boolean;
 }
 
 export type ProjectBackup = BackupRun & {

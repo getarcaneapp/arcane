@@ -104,6 +104,7 @@
 	let redeploy = $state(true);
 	let restoreName = $state('');
 	let startRestored = $state(false);
+	let shareExternalVolumes = $state(false);
 	let restoring = $state(false);
 
 	const backupSelectable = (volume: ProjectVolume) => volume.included;
@@ -116,6 +117,11 @@
 	const restoreByDefault = (volume: ProjectBackupVolume) => !restoreAsNewOpen || volume.kind !== 'external';
 	const selectedRestoreVolumes = $derived(
 		restoreVolumes.filter((volume) => restoreOverrides[volume.key] ?? restoreByDefault(volume))
+	);
+	const sharesExternalVolumes = $derived(
+		(restoreItem?.volumes ?? []).some(
+			(volume) => volume.kind === 'external' && !selectedRestoreVolumes.some((selected) => selected.key === volume.key)
+		)
 	);
 
 	const queryClient = useQueryClient();
@@ -247,6 +253,7 @@
 		redeploy = true;
 		restoreName = `${backup.projectName}-restored`;
 		startRestored = false;
+		shareExternalVolumes = false;
 	}
 
 	function openRestore(backup: ProjectBackup) {
@@ -298,7 +305,8 @@
 					{
 						name: restoreName.trim(),
 						volumes: selectedRestoreVolumes.map((volume) => volume.key),
-						start: startRestored && canStartRestored
+						start: startRestored && canStartRestored,
+						shareExternalVolumes: sharesExternalVolumes && shareExternalVolumes
 					},
 					environmentId
 				)
@@ -690,6 +698,16 @@
 			/>
 		</div>
 		{@render RestoreParts(true)}
+		{#if sharesExternalVolumes}
+			<LabeledSwitch
+				id="project-restore-share-external"
+				checked={shareExternalVolumes}
+				label={m.share_external_volumes()}
+				description={m.share_external_volumes_description()}
+				disabled={restoring}
+				onCheckedChange={(next) => (shareExternalVolumes = next)}
+			/>
+		{/if}
 		<LabeledSwitch
 			id="project-restore-start"
 			checked={startRestored && canStartRestored}
@@ -706,7 +724,7 @@
 			customLabel={m.restore_as_new_project()}
 			onclick={handleRestoreAsNew}
 			loading={restoring}
-			disabled={restoring || !restoreName.trim()}
+			disabled={restoring || !restoreName.trim() || (sharesExternalVolumes && !shareExternalVolumes)}
 			data-testid="project-restore-as-new-submit"
 		/>
 	{/snippet}
