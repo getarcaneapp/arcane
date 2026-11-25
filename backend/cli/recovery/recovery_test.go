@@ -137,7 +137,11 @@ func stagedRestoreRequest(data string) types.RecoveryRestoreRequest {
 }
 
 func TestRestoreDataInternalSkipsRollbackWhenTheSwapChangesNothing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits are ignored when running as root")
+	}
 	data := t.TempDir()
+	t.Cleanup(func() { require.NoError(t, os.Chmod(data, 0o700)) })
 	require.NoError(t, os.WriteFile(filepath.Join(data, "arcane.db"), []byte("live"), 0o600))
 	var restored []string
 	restarts := 0
@@ -145,8 +149,8 @@ func TestRestoreDataInternalSkipsRollbackWhenTheSwapChangesNothing(t *testing.T)
 		restored = append(restored, stage.SnapshotID)
 		staging := filepath.Join(data, backup.SwapStagingPrefix+stage.SnapshotID)
 		require.NoError(t, os.MkdirAll(staging, 0o700))
-		require.NoError(t, os.WriteFile(filepath.Join(data, backup.SwapTrashPrefix+stage.SnapshotID), nil, 0o600))
-		return os.WriteFile(filepath.Join(staging, "arcane.db"), []byte("restored"), 0o600)
+		require.NoError(t, os.WriteFile(filepath.Join(staging, "arcane.db"), []byte("restored"), 0o600))
+		return os.Chmod(data, 0o500)
 	}, func() { restarts++ })
 
 	require.ErrorIs(t, err, backup.ErrSwapNotApplied)

@@ -5,8 +5,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
@@ -50,7 +52,11 @@ func (h *Handler) Policies(ctx context.Context, input *PoliciesInput) (*handleru
 }
 
 func (h *Handler) UpdatePolicies(ctx context.Context, input *UpdatePoliciesInput) (*handlerutil.Out[types.ProjectBackupPolicyCollection], error) {
-	policies, err := h.service.UpdatePolicies(ctx, input.ProjectID, input.Body.Policies)
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	policies, err := h.service.UpdatePolicies(ctx, backup.NewRequester(ctx, *user, input.EnvironmentID, authz.PermProjectsBackup), input.ProjectID, input.Body.Policies)
 	if err != nil {
 		return nil, handlerutil.APIError(err)
 	}
@@ -66,7 +72,11 @@ func (h *Handler) GlobalPolicies(ctx context.Context, _ *struct{}) (*handlerutil
 }
 
 func (h *Handler) UpdateGlobalPolicies(ctx context.Context, input *UpdateGlobalPoliciesInput) (*handlerutil.Out[types.GlobalProjectBackupPolicyCollection], error) {
-	policies, err := h.service.UpdateGlobalPolicies(ctx, input.Body.Policies)
+	user, err := handlerutil.RequireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	policies, err := h.service.UpdateGlobalPolicies(ctx, backup.NewRequester(ctx, *user, "0", authz.PermSystemBackupsUpdate), input.Body.Policies)
 	if err != nil {
 		return nil, handlerutil.APIError(err)
 	}

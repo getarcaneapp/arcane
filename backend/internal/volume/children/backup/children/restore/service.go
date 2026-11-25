@@ -402,7 +402,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 }
 
 // restoreArchiveBackup restores a legacy archive into volumeName: all of it when members is nil, otherwise only members.
-func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, members []string) error {
+func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, members []string) (err error) {
 	filename, err := s.deps.ArchiveFilename(backupID)
 	if err != nil {
 		return err
@@ -438,9 +438,12 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 		return fmt.Errorf("failed to create restore container: %w", err)
 	}
 	defer func() {
-		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		_, removeErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
+		if err != nil && removeErr != nil {
+			err = errors.Join(err, fmt.Errorf("remove restore container: %w", removeErr))
+		}
 	}()
 	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
 		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
@@ -457,7 +460,7 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 		}
 		return nil
 	}
-	waitResult := dockerClient.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	waitResult := dockerClient.ContainerWait(context.WithoutCancel(ctx), resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	var waitBody container.WaitResponse
 	select {
 	case waitHelperErr := <-waitResult.Error:

@@ -706,18 +706,27 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 	relatives := make([]string, 0, len(roots))
 	for _, root := range roots {
 		cleaned := path.Clean(filepath.ToSlash(root))
-		candidates := [][2]string{{cleaned, data}}
-		if resolved, err := filepath.EvalSymlinks(root); err == nil {
-			candidates = append(candidates, [2]string{path.Clean(filepath.ToSlash(resolved)), resolvedData})
+		if relative, inside := strings.CutPrefix(cleaned, data+"/"); inside {
+			if parent, err := filepath.EvalSymlinks(path.Dir(cleaned)); err == nil && path.Clean(filepath.ToSlash(parent)) != path.Join(resolvedData, path.Dir(relative)) {
+				return nil, common.Classify(common.ErrValidation, fmt.Errorf(
+					"the projects folder %s is reached through a linked folder inside Arcane's data folder; set the projects directory to its real path %s",
+					root, path.Join(filepath.ToSlash(parent), path.Base(cleaned)),
+				))
+			}
 		}
+		candidates := [][2]string{{cleaned, data}}
 		rootSource, rootMounted := hostSource(mounts, cleaned)
 		if rootMounted && dataMounted {
 			candidates = append(candidates, [2]string{rootSource, dataSource})
 		}
-		for _, candidate := range candidates {
-			if !kit.FilePathMatches(candidate[0], candidate[1]) {
-				continue
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			resolvedRoot := path.Clean(filepath.ToSlash(resolved))
+			candidates = append(candidates, [2]string{resolvedRoot, resolvedData})
+			if resolvedSource, resolvedMounted := hostSource(mounts, resolvedRoot); resolvedRoot != cleaned && resolvedMounted && dataMounted {
+				candidates = append(candidates, [2]string{resolvedSource, dataSource})
 			}
+		}
+		for _, candidate := range candidates {
 			if candidate[0] == candidate[1] {
 				return nil, common.Classify(common.ErrValidation, fmt.Errorf(
 					"the projects folder %s is Arcane's data folder. System backups cover Arcane only, so projects must "+
@@ -725,7 +734,15 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 					root, path.Join(data, "projects"),
 				))
 			}
-			relatives = append(relatives, strings.TrimPrefix(candidate[0], candidate[1]+"/"))
+			if kit.FilePathMatches(candidate[1], candidate[0]) {
+				return nil, common.Classify(common.ErrValidation, fmt.Errorf(
+					"the projects folder %s contains Arcane's data folder %s; move the projects into their own folder and update the projects directory setting",
+					root, data,
+				))
+			}
+			if kit.FilePathMatches(candidate[0], candidate[1]) {
+				relatives = append(relatives, strings.TrimPrefix(candidate[0], candidate[1]+"/"))
+			}
 		}
 		if !rootMounted {
 			continue
@@ -1182,10 +1199,15 @@ func stagedRestoreStages(
 		return nil, err
 	}
 	slices.Sort(nested)
-	var outermost []string
+	var outermost, writable []string
 	for _, relative := range nested {
-		if !slices.ContainsFunc(outermost, func(outer string) bool { return kit.FilePathMatches(relative, outer) }) {
+		inside := func(outer string) bool { return kit.FilePathMatches(relative, outer) }
+		if !slices.ContainsFunc(outermost, inside) {
 			outermost = append(outermost, relative)
+		}
+		source := docker.MountForDestination(target.Mounts, path.Join(data, relative), "")
+		if source != nil && !source.ReadOnly && !slices.ContainsFunc(writable, inside) {
+			writable = append(writable, relative)
 		}
 	}
 	preserve := slices.Concat(projectRoots, outermost, []string{rustic.TrustBundleName})
@@ -1207,21 +1229,27 @@ func stagedRestoreStages(
 		Globs:      globs,
 		Repository: repository,
 	}}
-	for _, relative := range outermost {
-		destination := path.Join(data, relative)
-		if source := docker.MountForDestination(target.Mounts, destination, ""); source == nil || source.ReadOnly {
-			continue
-		}
-		mountTarget, targetErr := restoreTarget(target.Mounts, destination, recoveryDataRestoreTarget, "")
+	for _, relative := range writable {
+		mountTarget, targetErr := restoreTarget(target.Mounts, path.Join(data, relative), recoveryDataRestoreTarget, "")
 		if targetErr != nil {
 			return nil, targetErr
 		}
+		var mountGlobs []string
+		for _, readOnly := range mountTarget.Mounts {
+			if readOnly.ReadOnly {
+				escaped := globEscaper.Replace(strings.TrimPrefix(readOnly.Target, mountTarget.Path+"/"))
+				mountGlobs = append(mountGlobs, "!/"+escaped, "!/"+escaped+"/**")
+			}
+		}
 		stages = append(stages, types.RecoveryRestoreStage{
-			Swap:       nil,
-			Target:     mountTarget,
+			Swap: nil,
+			Target: types.RecoveryRestoreTarget{
+				Mounts: slices.DeleteFunc(slices.Clone(mountTarget.Mounts), func(candidate mount.Mount) bool { return candidate.ReadOnly }),
+				Path:   mountTarget.Path,
+			},
 			SnapshotID: snapshotID,
 			SourcePath: path.Join(layout.dataPath, relative),
-			Globs:      nil,
+			Globs:      mountGlobs,
 			Repository: repository,
 		})
 	}
