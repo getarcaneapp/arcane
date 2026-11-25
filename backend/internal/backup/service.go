@@ -118,7 +118,7 @@ type (
 		repositories map[string]chan struct{}
 		// held parks admission a manual start won until the run that won it takes it over.
 		held      map[types.SchedulerAdmissionKey]heldLease
-		authorize func(context.Context, types.BackupRequester) error
+		Authorize func(context.Context, types.BackupRequester) error
 		mu        sync.Mutex
 	}
 
@@ -338,7 +338,7 @@ func NewEngine(admission *runs.Admission, imageService *image.ImageService, auth
 	return &Engine{
 		imageService: imageService,
 		admission:    admission,
-		authorize:    authorize,
+		Authorize:    authorize,
 		repositories: make(map[string]chan struct{}),
 		held:         make(map[types.SchedulerAdmissionKey]heldLease),
 	}
@@ -395,10 +395,6 @@ func (e *Engine) AcquireRun(ctx context.Context, scope, id, run string) (*runs.L
 		return held.lease, true, nil
 	}
 	return e.TryAcquireRun(ctx, scope, id)
-}
-
-func (e *Engine) Authorize(ctx context.Context, requester types.BackupRequester) error {
-	return e.authorize(ctx, requester)
 }
 
 func (e *Engine) Stop(ctx context.Context) error {
@@ -506,7 +502,7 @@ func markSnapshotDirectories(files []string, longOutput string) ([]string, error
 		}
 		return []string{}, nil
 	}
-	lines := strings.Split(strings.ReplaceAll(longOutput, "\r\n", "\n"), "\n")
+	lines := strings.Split(strings.ReplaceAll(strings.TrimSpace(longOutput), "\r\n", "\n"), "\n")
 	if len(lines) != len(files) {
 		return nil, errors.New("rustic file and metadata listings have different lengths")
 	}
@@ -534,13 +530,13 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
-func (s DiscoveredSnapshot) LocalRunID() string {
+func (s DiscoveredSnapshot) RunID() string {
 	for _, tag := range s.Tags {
 		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok && runID != "" {
 			return runID
 		}
 	}
-	return "local-" + s.ID
+	return ""
 }
 
 func RecordDiscovered[T any](ctx context.Context, records DiscoveredRecords[T]) (int, error) {
@@ -1431,11 +1427,16 @@ func ResolveDestination(ctx context.Context, req DestinationRequest) (Destinatio
 	return selected, s3DestinationID, nil
 }
 
+func HandedBack(ctx context.Context) bool {
+	_, resumable := jobcontext.Run(ctx)
+	return resumable && errors.Is(context.Cause(ctx), context.Canceled)
+}
+
 func SettleFailure(ctx context.Context, err error, fail func(ctx context.Context, message string) error) error {
-	if err == nil || ctx.Err() != nil || errors.Is(err, actor.ErrJobRejected) || errors.Is(err, ErrBackupSettled) {
+	if err == nil || HandedBack(ctx) || (ctx.Err() == nil && errors.Is(err, actor.ErrJobRejected)) || errors.Is(err, ErrBackupSettled) {
 		return err
 	}
-	return errors.Join(err, fail(ctx, err.Error()))
+	return errors.Join(err, fail(context.WithoutCancel(ctx), err.Error()))
 }
 
 func FailStoppedRun(ctx context.Context, fail func(ctx context.Context, message string) error) error {

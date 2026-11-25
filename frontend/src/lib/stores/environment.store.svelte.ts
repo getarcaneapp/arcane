@@ -1,100 +1,85 @@
-import { untrack } from "svelte";
+import { untrack } from 'svelte';
 
-import type { Environment } from "#lib/types/environment.js";
-import { isEnvironmentOnline } from "#lib/utils/docker.js";
+import type { Environment } from '#lib/types/environment.js';
+import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
-export const LOCAL_DOCKER_ENVIRONMENT_ID = "0";
+export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
 
-export type EnvironmentRef = Pick<Environment, "id" | "name">;
+export type EnvironmentRef = Pick<Environment, 'id' | 'name'>;
 
-export function isLocalDockerDisabled(
-  env: Environment | null | undefined,
-): boolean {
-  return (
-    env?.id === LOCAL_DOCKER_ENVIRONMENT_ID && env.localDockerEnabled === false
-  );
+export function isLocalDockerDisabled(env: Environment | null | undefined): boolean {
+	return env?.id === LOCAL_DOCKER_ENVIRONMENT_ID && env.localDockerEnabled === false;
 }
 
 function createEnvironmentManagementStore() {
-  let _availableEnvironments = $state.raw<Environment[]>([]);
-  let _initialized = false;
-  const _availableListeners = new Set<(environments: Environment[]) => void>();
+	let _availableEnvironments = $state.raw<Environment[]>([]);
+	let _initialized = false;
+	const _availableListeners = new Set<(environments: Environment[]) => void>();
 
-  let _resolveReadyPromiseFunction: () => void;
-  const _readyPromise = new Promise<void>((resolve) => {
-    _resolveReadyPromiseFunction = resolve;
-  });
+	let _resolveReadyPromiseFunction: () => void;
+	const _readyPromise = new Promise<void>((resolve) => {
+		_resolveReadyPromiseFunction = resolve;
+	});
 
-  function _updateAvailable(environments: Environment[]): Environment[] {
-    const sorted = [...environments].sort((a, b) => {
-      if (a.id === LOCAL_DOCKER_ENVIRONMENT_ID) return -1;
-      if (b.id === LOCAL_DOCKER_ENVIRONMENT_ID) return 1;
-      return 0;
-    });
-    _availableEnvironments = sorted;
-    untrack(() => {
-      for (const listener of _availableListeners) listener(sorted);
-    });
-    return sorted;
-  }
+	function _updateAvailable(environments: Environment[]): Environment[] {
+		const sorted = [...environments].sort((a, b) => {
+			if (a.id === LOCAL_DOCKER_ENVIRONMENT_ID) return -1;
+			if (b.id === LOCAL_DOCKER_ENVIRONMENT_ID) return 1;
+			return 0;
+		});
+		_availableEnvironments = sorted;
+		untrack(() => {
+			for (const listener of _availableListeners) listener(sorted);
+		});
+		return sorted;
+	}
 
-  function _enabledEnvironments(): Environment[] {
-    return _availableEnvironments
-      .filter((env) => env.enabled)
-      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-  }
+	function _enabledEnvironments(): Environment[] {
+		return _availableEnvironments
+			.filter((env) => env.enabled)
+			.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+	}
 
-  return {
-    get available(): Environment[] {
-      return _availableEnvironments;
-    },
-    /** Enabled environments, including a local environment whose Docker is turned off; use for permissions and settings. */
-    get enabled(): EnvironmentRef[] {
-      return _enabledEnvironments();
-    },
-    /** Environments whose Docker resources the UI shows. */
-    get shown(): EnvironmentRef[] {
-      return _enabledEnvironments().filter(
-        (env) => !isLocalDockerDisabled(env),
-      );
-    },
-    get shownKey(): string {
-      return this.shown.map((env) => env.id).join(",");
-    },
-    initialize: async (environmentsData: Environment[]) => {
-      _updateAvailable(environmentsData);
-      if (_initialized) return;
-      _initialized = true;
-      _resolveReadyPromiseFunction();
-    },
-    applyLiveEnvironments: (environments: Environment[]): string[] => {
-      const wasOffline = new Set(
-        _availableEnvironments
-          .filter((env) => !isEnvironmentOnline(env))
-          .map((env) => env.id),
-      );
-      return _updateAvailable(environments)
-        .filter((env) => wasOffline.has(env.id) && isEnvironmentOnline(env))
-        .map((env) => env.id);
-    },
-    subscribeAvailable(
-      listener: (environments: Environment[]) => void,
-    ): () => void {
-      _availableListeners.add(listener);
-      return () => {
-        _availableListeners.delete(listener);
-      };
-    },
-    getLocalEnvironment: () =>
-      _availableEnvironments.find(
-        (env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID,
-      ) || null,
-    ready: _readyPromise,
-    getShownEnvironments: async (): Promise<EnvironmentRef[]> => {
-      await _readyPromise;
-      return environmentStore.shown;
-    },
-  };
+	return {
+		get available(): Environment[] {
+			return _availableEnvironments;
+		},
+		/** Enabled environments, including a local environment whose Docker is turned off; use for permissions and settings. */
+		get enabled(): EnvironmentRef[] {
+			return _enabledEnvironments();
+		},
+		/** Environments whose Docker resources the UI shows. */
+		get shown(): EnvironmentRef[] {
+			return _enabledEnvironments().filter((env) => !isLocalDockerDisabled(env));
+		},
+		get shownKey(): string {
+			return this.shown.map((env) => env.id).join(',');
+		},
+		initialize: async (environmentsData: Environment[]) => {
+			_updateAvailable(environmentsData);
+			if (_initialized) return;
+			_initialized = true;
+			_resolveReadyPromiseFunction();
+		},
+		applyLiveEnvironments: (environments: Environment[]): string[] => {
+			const wasOffline = new Set(_availableEnvironments.filter((env) => !isEnvironmentOnline(env)).map((env) => env.id));
+			return _updateAvailable(environments)
+				.filter((env) => wasOffline.has(env.id) && isEnvironmentOnline(env))
+				.map((env) => env.id);
+		},
+		subscribeAvailable(listener: (environments: Environment[]) => void): () => void {
+			_availableListeners.add(listener);
+			return () => {
+				_availableListeners.delete(listener);
+			};
+		},
+		getLocalEnvironment: () => _availableEnvironments.find((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID) || null,
+		ready: _readyPromise,
+		getShownEnvironments: async (): Promise<EnvironmentRef[]> => {
+			await _readyPromise;
+			return environmentStore.shown;
+		}
+	};
 }
 
 export const environmentStore = createEnvironmentManagementStore();

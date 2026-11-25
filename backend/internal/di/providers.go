@@ -1,10 +1,12 @@
 package di
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 	"uuid"
 
@@ -173,7 +175,7 @@ func provideVolumeRepository(p volumeRepositoryParams) *backup.VolumeRepository 
 		Settings:         p.Settings,
 		S3Destinations:   p.S3Destinations,
 		RecoveryKeys:     p.RecoveryKeys,
-		BackupVolumeName: p.Config.BackupVolumeName,
+		BackupVolumeName: cmp.Or(strings.TrimSpace(p.Config.BackupVolumeName), "arcane-backups"),
 		EncryptionKey:    p.Config.EncryptionKey,
 	})
 }

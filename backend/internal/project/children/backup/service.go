@@ -67,6 +67,7 @@ type (
 		LockProject        func(ctx context.Context, op, projectID string) (func(), error)
 		SoleDirectory      func(ctx context.Context, project types.Project) error
 		RunsArcane         func(ctx context.Context, projectID string) (bool, error)
+		ProjectContainers  func(ctx context.Context, projectID string) ([]container.Summary, error)
 		GitOpsOwned        func(ctx context.Context, projectID string) (bool, error)
 		Deploy             func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
@@ -195,26 +196,29 @@ var (
 )
 
 func NewService(deps Dependencies) *Service {
-	s := &Service{deps: deps}
-	s.policies = policies.NewService(policies.Dependencies{
-		DB:             deps.DB,
-		Engine:         deps.Engine,
-		Policies:       deps.Policies,
-		S3Destinations: deps.S3Destinations,
-		Settings:       deps.Settings,
-		Config:         deps.Config,
-		ProjectName:    deps.ProjectName,
-		ListProjects:   deps.ListProjects,
-		CheckVolumes:   s.checkVolumes,
-		Authorize:      s.authorize,
-		LatestRun:      s.latestRun,
-		Resume:         s.resumeScheduled,
-		BackUp:         s.backUpScheduled,
-		Expire:         s.expire,
-		Ctx:            deps.Ctx,
-		Scheduler:      deps.Scheduler,
-		Admission:      deps.Admission,
-	})
+	s := new(Service)
+	*s = Service{
+		deps: deps,
+		policies: policies.NewService(policies.Dependencies{
+			DB:             deps.DB,
+			Engine:         deps.Engine,
+			Policies:       deps.Policies,
+			S3Destinations: deps.S3Destinations,
+			Settings:       deps.Settings,
+			Config:         deps.Config,
+			ProjectName:    deps.ProjectName,
+			ListProjects:   deps.ListProjects,
+			CheckVolumes:   s.checkVolumes,
+			Authorize:      s.authorize,
+			LatestRun:      s.latestRun,
+			Resume:         s.resumeScheduled,
+			BackUp:         s.backUpScheduled,
+			Expire:         s.expire,
+			Ctx:            deps.Ctx,
+			Scheduler:      deps.Scheduler,
+			Admission:      deps.Admission,
+		}),
+	}
 	return s
 }
 
@@ -519,13 +523,6 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 	return s.complete(ctx, entry, executeErr, adopted || localChecked)
 }
 
-func (s *Service) repository(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool) (backup.Repository, error) {
-	if remote {
-		return s.deps.Repository.Remote(ctx, s3DestinationID, "")
-	}
-	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
-}
-
 func (s *Service) execute(ctx context.Context, entry *ProjectBackup, p plan, requester *types.BackupRequester) (localChecked bool, err error) {
 	defer concurrency.RecoverToError(&err, "project backup")
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
@@ -790,27 +787,26 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 }
 
 func (s *Service) complete(ctx context.Context, entry *ProjectBackup, err error, localChecked bool) error {
-	entry.Status, entry.Error, entry.CompletedAt = types.VolumeBackupStatusSucceeded, "", new(time.Now())
-	switch {
-	case err != nil && localChecked && entry.LocalSnapshotID != "":
-		entry.Destination, entry.Error = types.VolumeBackupDestinationLocal, err.Error()
-	case err != nil:
-		entry.Status, entry.Error = types.VolumeBackupStatusFailed, err.Error()
-	}
-	if saveErr := s.deps.DB.WithContext(context.WithoutCancel(ctx)).Save(entry).Error; saveErr != nil {
+	partial := err != nil && localChecked && entry.LocalSnapshotID != ""
+	saveErr := s.deps.DB.WithContext(context.WithoutCancel(ctx)).Model(entry).
+		Select("completed_at", "status", "destination", "error", "local_snapshot_id", "remote_snapshot_id", "size", "stopped_containers").
+		Updates(ProjectBackup{
+			CompletedAt:       new(time.Now()),
+			Status:            kit.Ternary(err != nil && !partial, types.VolumeBackupStatusFailed, types.VolumeBackupStatusSucceeded),
+			Destination:       kit.Ternary(partial, types.VolumeBackupDestinationLocal, entry.Destination),
+			LocalSnapshotID:   entry.LocalSnapshotID,
+			RemoteSnapshotID:  entry.RemoteSnapshotID,
+			Error:             kit.Ternary(err != nil, fmt.Sprint(err), ""),
+			Size:              entry.Size,
+			StoppedContainers: entry.StoppedContainers,
+		}).Error
+	if saveErr != nil {
 		return errors.Join(err, fmt.Errorf("failed to save project backup result: %w", saveErr))
 	}
 	if err == nil {
 		err = jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: backup.ProjectTargetType, ID: entry.ProjectID, Status: types.RunStatusSucceeded})
 	}
 	return err
-}
-
-func handedBack(ctx context.Context, err error) bool {
-	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
-		return true
-	}
-	return ctx.Err() == nil && errors.Is(err, actor.ErrJobRejected)
 }
 
 func (s *Service) fail(ctx context.Context, backupID, message string) error {
@@ -970,9 +966,9 @@ func (s *Service) checkVolumes(ctx context.Context, projectID string, keys []str
 	return err
 }
 
-func (s *Service) latestRun(ctx context.Context, policyID string) (*types.ProjectBackup, error) {
+func (s *Service) latestRun(ctx context.Context, query, series string) (*types.ProjectBackup, error) {
 	var latest []ProjectBackup
-	if err := s.deps.DB.WithContext(ctx).Where("policy_id = ? OR policy_id LIKE ?", policyID, types.GlobalProjectPolicyPrefix+policyID+":%").
+	if err := s.deps.DB.WithContext(ctx).Where(query, series).
 		Order("created_at DESC").Limit(1).Find(&latest).Error; err != nil {
 		return nil, fmt.Errorf("failed to load the latest project backup: %w", err)
 	}
@@ -987,11 +983,9 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 	if err := json.Unmarshal(recoveryData, &recorded); err != nil {
 		return err
 	}
-	err := s.resume(ctx, previous, requester, recorded)
-	if err != nil && !errors.Is(err, backup.ErrBackupSettled) && !handedBack(ctx, err) {
-		err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.Plan.BackupID, err.Error()))
-	}
-	return err
+	return backup.SettleFailure(ctx, s.resume(ctx, previous, requester, recorded), func(ctx context.Context, message string) error {
+		return s.fail(ctx, recorded.Plan.BackupID, message)
+	})
 }
 
 func (s *Service) backUpScheduled(ctx context.Context, run policies.ScheduledBackup) error {
@@ -1074,9 +1068,9 @@ func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun, requ
 		return fmt.Errorf("failed to save project backup: %w", createErr)
 	}
 	defer func() {
-		if err != nil && !handedBack(ctx, err) {
-			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
-		}
+		err = backup.SettleFailure(ctx, err, func(ctx context.Context, message string) error {
+			return s.fail(ctx, entry.ID, message)
+		})
 	}()
 	if recordErr := s.record(ctx, p.ProjectID, checkpoint{Plan: p}); recordErr != nil {
 		return recordErr
@@ -1271,7 +1265,7 @@ func (s *Service) DiscoverAfterRestore(ctx context.Context) error {
 func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Client, found []foundSnapshot) (int, error) {
 	groups := make(map[string][]foundSnapshot)
 	for _, snapshot := range found {
-		if backupID := snapshotTag(snapshot.snapshot.Tags, backup.RunSnapshotTag("")); backupID != "" {
+		if backupID := snapshot.snapshot.RunID(); backupID != "" {
 			groups[backupID] = append(groups[backupID], snapshot)
 		}
 	}
@@ -1334,7 +1328,7 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 			continue
 		}
 		trigger, policyID := snapshotTag(first.snapshot.Tags, triggerTagPrefix), snapshotTag(first.snapshot.Tags, policyTagPrefix)
-		if trigger != types.VolumeBackupTriggerScheduled || !managed[policyID] {
+		if trigger != types.VolumeBackupTriggerSafety && (trigger != types.VolumeBackupTriggerScheduled || !managed[policyID]) {
 			trigger, policyID = types.VolumeBackupTriggerManual, ""
 		}
 		releaseBackups, holdErr := s.HoldBackups(ctx, projectID)
@@ -1359,22 +1353,24 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 			releaseBackups(ctx)
 			continue
 		}
-		createdAt := slices.MinFunc(snapshots, func(a, b foundSnapshot) int { return a.snapshot.Time.Compare(b.snapshot.Time) }).snapshot.Time
-		entry := ProjectBackup{
-			BaseModel:        database.BaseModel{ID: backupID, CreatedAt: createdAt},
-			CompletedAt:      new(createdAt),
-			ProjectID:        projectID,
-			ProjectName:      cmp.Or(first.snapshot.Label, manifest.Project.Name),
-			ComposeName:      manifest.Project.ComposeName,
-			Status:           types.VolumeBackupStatusSucceeded,
-			Trigger:          trigger,
-			Destination:      backup.Destination(backup.DestinationOptions{Local: localSnapshot.snapshot.ID != "", Remote: remoteSnapshot.snapshot.ID != ""}),
-			LocalSnapshotID:  localSnapshot.snapshot.ID,
-			RemoteSnapshotID: remoteSnapshot.snapshot.ID,
-			S3DestinationID:  remoteSnapshot.s3DestinationID,
-			PolicyID:         policyID,
-			Volumes:          backupVolumes(manifest.Volumes),
-			Size:             largest.snapshot.Summary.TotalBytesProcessed,
+		createdAt := cmp.Or(manifest.CreatedAt, slices.MinFunc(snapshots, func(a, b foundSnapshot) int { return a.snapshot.Time.Compare(b.snapshot.Time) }).snapshot.Time)
+		entry := ProjectBackup{ //exhaustruct:enforce
+			BaseModel:         database.BaseModel{ID: backupID, CreatedAt: createdAt, UpdatedAt: nil},
+			CompletedAt:       new(createdAt),
+			ProjectID:         projectID,
+			ProjectName:       cmp.Or(first.snapshot.Label, manifest.Project.Name),
+			ComposeName:       manifest.Project.ComposeName,
+			Status:            types.VolumeBackupStatusSucceeded,
+			Trigger:           trigger,
+			Destination:       backup.Destination(backup.DestinationOptions{Local: localSnapshot.snapshot.ID != "", Remote: remoteSnapshot.snapshot.ID != ""}),
+			LocalSnapshotID:   localSnapshot.snapshot.ID,
+			RemoteSnapshotID:  remoteSnapshot.snapshot.ID,
+			S3DestinationID:   remoteSnapshot.s3DestinationID,
+			PolicyID:          policyID,
+			Error:             "",
+			Volumes:           backupVolumes(manifest.Volumes),
+			Size:              largest.snapshot.Summary.TotalBytesProcessed,
+			StoppedContainers: false,
 		}
 		createErr := s.deps.DB.WithContext(ctx).Create(&entry).Error
 		releaseBackups(ctx)
@@ -1661,7 +1657,7 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 	if !slices.Equal(targets, p.Volumes) {
 		return restorePlan{}, common.Classify(common.ErrConflict, fmt.Errorf("the volumes of project %s changed after the restore was requested; start it again", project.Name))
 	}
-	if checkErr := s.checkInPlace(ctx, project, composeName, p.Files); checkErr != nil {
+	if checkErr := s.checkInPlace(ctx, project, p.Files); checkErr != nil {
 		return restorePlan{}, checkErr
 	}
 	active, inUse, err := s.containerUse(ctx, composeName)
@@ -1690,7 +1686,7 @@ func (s *Service) prepareRestore(ctx context.Context, p restorePlan) (restorePla
 	}, nil
 }
 
-func (s *Service) checkInPlace(ctx context.Context, project types.Project, composeName string, files bool) error {
+func (s *Service) checkInPlace(ctx context.Context, project types.Project, files bool) error {
 	runsArcane, err := s.deps.RunsArcane(ctx, project.ID)
 	if err != nil {
 		return err
@@ -1698,17 +1694,11 @@ func (s *Service) checkInPlace(ctx context.Context, project types.Project, compo
 	if runsArcane {
 		return common.Classify(common.ErrValidation, fmt.Errorf("project %s runs Arcane itself, so it cannot be restored in place; restore it as a new project instead", project.Name))
 	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+composeName),
-	})
+	found, err := s.deps.ProjectContainers(ctx, project.ID)
 	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
-	for _, c := range found.Items {
+	for _, c := range found {
 		if c.State == container.StatePaused {
 			return common.Classify(common.ErrConflict, fmt.Errorf("container %s of project %s is paused; unpause or stop it before restoring", docker.ContainerNameFromNames(c.Names), project.Name))
 		}
@@ -1724,6 +1714,10 @@ func (s *Service) checkInPlace(ctx context.Context, project types.Project, compo
 		return common.Classify(common.ErrValidation, fmt.Errorf(
 			"a GitOps sync manages files of project %s, so they cannot be restored in place; restore only its volumes, or restore it as a new project", project.Name,
 		))
+	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return err
 	}
 	mounts, err := projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: project.Path, Target: "/project", Writable: true})
 	if err != nil {
@@ -1851,15 +1845,23 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 	if err != nil {
 		return "", err
 	}
-	entry := &ProjectBackup{
-		BaseModel:   database.BaseModel{ID: uuid.New().String(), CreatedAt: time.Now()},
-		ProjectID:   project.ID,
-		ProjectName: project.Name,
-		ComposeName: cmp.Or(project.ComposeName, p.ComposeName),
-		Status:      types.VolumeBackupStatusRunning,
-		Trigger:     types.VolumeBackupTriggerSafety,
-		Destination: types.VolumeBackupDestinationLocal,
-		Volumes:     backupVolumes(captured),
+	entry := &ProjectBackup{ //exhaustruct:enforce
+		BaseModel:         database.BaseModel{ID: uuid.New().String(), CreatedAt: time.Now(), UpdatedAt: nil},
+		CompletedAt:       nil,
+		ProjectID:         project.ID,
+		ProjectName:       project.Name,
+		ComposeName:       cmp.Or(project.ComposeName, p.ComposeName),
+		Status:            types.VolumeBackupStatusRunning,
+		Trigger:           types.VolumeBackupTriggerSafety,
+		Destination:       types.VolumeBackupDestinationLocal,
+		LocalSnapshotID:   "",
+		RemoteSnapshotID:  "",
+		S3DestinationID:   "",
+		PolicyID:          "",
+		Error:             "",
+		Volumes:           backupVolumes(captured),
+		Size:              0,
+		StoppedContainers: false,
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return "", fmt.Errorf("failed to save the safety backup: %w", createErr)
@@ -2091,6 +2093,13 @@ func (s *Service) open(ctx context.Context, dockerClient *client.Client, entry *
 		errs = append(errs, err)
 	}
 	return snapshotSource{}, types.ProjectManifest{}, errors.Join(errs...)
+}
+
+func (s *Service) repository(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool) (backup.Repository, error) {
+	if remote {
+		return s.deps.Repository.Remote(ctx, s3DestinationID, "")
+	}
+	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 }
 
 func (s *Service) readManifest(ctx context.Context, dockerClient *client.Client, source snapshotSource) (types.ProjectManifest, error) {

@@ -2,16 +2,17 @@ package project
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/moby/moby/api/types/container"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
 	"getarcane.dev/arcane/v3/internal/project/children/bundle"
+	"getarcane.dev/arcane/v3/internal/project/children/listing"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -75,6 +76,14 @@ func New(p ModuleParams) *Module {
 				return false, err
 			}
 			return p.Service.runsArcane(ctx, proj), nil
+		},
+		ProjectContainers: func(ctx context.Context, projectID string) ([]container.Summary, error) {
+			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
+			if err != nil {
+				return nil, err
+			}
+			containers, err := p.Service.details.ComposeContainers(ctx)
+			return listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj)), err
 		},
 		GitOpsOwned: func(ctx context.Context, projectID string) (bool, error) {
 			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
@@ -192,12 +201,8 @@ func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
 	m.backups.RegisterJobsOnStartup(ctx)
 }
 
-func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) {
-	go func() {
-		if err := m.backups.DiscoverAfterRestore(ctx); err != nil {
-			slog.WarnContext(ctx, "Project backup discovery after a system restore failed; it runs again on the next start", "error", err)
-		}
-	}()
+func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) error {
+	return m.backups.DiscoverAfterRestore(ctx)
 }
 
 func (m *Module) PruneUnmanagedBackups(ctx context.Context) error {

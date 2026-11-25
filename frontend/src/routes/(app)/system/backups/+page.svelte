@@ -518,6 +518,12 @@
 			]),
 		() => 'projects'
 	);
+	useBackupActivity(
+		() => '0',
+		(activity) => activity.metadata?.['action'] === 'scheduled_project_backup',
+		() => queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true }),
+		() => 'scheduled-project-backup'
+	);
 
 	async function startPolicyRun(type: ScheduleType, policyId: string): Promise<string | undefined> {
 		if (type === 'system') return extractActivityId(await systemBackupService.create({ policyId, recoveryKey: '' }));
@@ -699,7 +705,6 @@
 	{#if canUpdateBackupPolicies}
 		<ArcaneButton
 			action="create"
-			size="sm"
 			customLabel={m.volume_backup_add_schedule()}
 			icon={AddIcon}
 			onclick={() => openSchedule(type)}
