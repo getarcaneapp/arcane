@@ -1220,8 +1220,15 @@ func TestMigration123_MovesSystemAndGlobalVolumeSchedulesIntoBackupPolicies(t *t
 	assert.Empty(t, policy("sp2").Destination)
 	g1 := policy("g1")
 	assert.JSONEq(t, `{"selectionMode":"allowlist","volumeNames":["data","logs"],"ignoreAnonymous":true}`, g1.Options)
-	g1.Options = ""
-	assert.Equal(t, row{Kind: "volume", Schedule: "0 2 * * *", Enabled: true, Stop: true, Local: true, Retention: 3}, g1)
+	assert.Equal(t, row{
+		Kind:      "volume",
+		Schedule:  "0 2 * * *",
+		Enabled:   true,
+		Stop:      true,
+		Local:     true,
+		Retention: 3,
+		Options:   g1.Options,
+	}, g1)
 	g2 := policy("g2")
 	assert.JSONEq(t, `{"selectionMode":"all","volumeNames":null,"ignoreAnonymous":false}`, g2.Options)
 	assert.Equal(t, "s3-2", g2.Destination)

@@ -120,7 +120,6 @@ type (
 
 	Service struct {
 		store                 Store
-		db                    *database.DB
 		policies              *backup.Policies
 		dockerService         *dockerInternal.DockerClientService
 		volumeService         *volume.VolumeService
@@ -183,7 +182,6 @@ func NewService(deps Dependencies) *Service {
 	var service *Service
 	service = &Service{
 		store:                 deps.Store,
-		db:                    deps.DB,
 		policies:              deps.Policies,
 		dockerService:         deps.Docker,
 		volumeService:         deps.Volumes,
@@ -1463,12 +1461,18 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBack
 				SubjectID:       "",
 				Schedule:        normalized.Schedule,
 				S3DestinationID: normalized.S3DestinationID,
-				Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil, VolumeNames: nil, IgnoreAnonymous: false},
-				RetentionCount:  normalized.RetentionCount,
-				Enabled:         normalized.Enabled,
-				StopContainers:  false,
-				LocalEnabled:    normalized.LocalEnabled,
-				S3Enabled:       normalized.S3Enabled,
+				Options: backup.PolicyOptions{ //exhaustruct:enforce
+					Volumes:         nil,
+					SelectionMode:   "",
+					ProjectIDs:      nil,
+					VolumeNames:     nil,
+					IgnoreAnonymous: false,
+				},
+				RetentionCount: normalized.RetentionCount,
+				Enabled:        normalized.Enabled,
+				StopContainers: false,
+				LocalEnabled:   normalized.LocalEnabled,
+				S3Enabled:      normalized.S3Enabled,
 			}
 			return nil
 		},

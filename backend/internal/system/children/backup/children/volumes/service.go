@@ -203,7 +203,9 @@ func (s *Service) GetConfig(ctx context.Context) (*types.SystemVolumeBackupPolic
 			if runErr != nil {
 				return nil
 			}
-			return &types.SystemBackupRun{
+			return &types.SystemBackupRun{ //exhaustruct:enforce
+				RemoteAvailable:   nil,
+				ActivityID:        "",
 				ID:                lastRun.ID,
 				Size:              lastRun.Size,
 				CreatedAt:         lastRun.CreatedAt,
