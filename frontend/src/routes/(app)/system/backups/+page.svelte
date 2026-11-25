@@ -30,7 +30,7 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, isLocalDockerDisabled, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		CreateSystemBackupRequest,
 		RunSystemVolumeBackupsRequest,
@@ -50,7 +50,7 @@
 		runAutomaticBackupDiscovery,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
-	import { readableEnvironments, type EnvironmentRow } from '#lib/utils/environments.js';
+	import type { EnvironmentRow } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -62,7 +62,7 @@
 	const queryClient = useQueryClient();
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const backupsQuery = createQuery(() => ({
-		...systemBackupHistoryQuery(pageState.scope, readableEnvironments('volumes:read'), pageState.requestOptions),
+		...systemBackupHistoryQuery(pageState.scope, pageState.requestOptions),
 		placeholderData: (previous) => previous
 	}));
 	const backups = $derived(backupsQuery.data ?? data.backups);
@@ -109,10 +109,16 @@
 	let restoringFiles = $state(false);
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
-	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE));
-	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE));
+	// System backups live in a local Docker volume, so they need the manager's own Docker.
+	// The policies response carries the flag for users whose environment list lacks the manager; only an explicit false counts.
+	const localDockerDisabled = $derived(
+		policyCollection.localDockerEnabled === false || isLocalDockerDisabled(environmentStore.getLocalEnvironment())
+	);
+	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && !localDockerDisabled);
+	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE) && !localDockerDisabled);
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
-	const canDiscoverBackups = $derived(isGlobalAdmin());
+	// Discovery restores snapshots through the manager's Docker, even for S3 destinations.
+	const canDiscoverBackups = $derived(isGlobalAdmin() && !localDockerDisabled);
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const backupTypeOptions = $derived([
@@ -871,6 +877,12 @@
 >
 	{#snippet mainContent()}
 		<div class="space-y-8">
+			{#if localDockerDisabled}
+				<Alert.Root variant="warning-subtle">
+					<InfoIcon class="size-4 text-warning" />
+					<Alert.Description>{m.local_docker_disabled_backups_unavailable()}</Alert.Description>
+				</Alert.Root>
+			{/if}
 			{@render recoveryKeySummary()}
 
 			<SettingsSection title={m.system_backups_schedules()} variant="plain">
@@ -923,6 +935,7 @@
 			<SystemBackupTable
 				emptyState={backupsEmptyState}
 				{backups}
+				{localDockerDisabled}
 				bind:requestOptions={pageState.requestOptions}
 				onRetry={() => backupsQuery.refetch()}
 				onRestore={(item) => openAction('restore', item)}

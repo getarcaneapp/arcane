@@ -811,21 +811,13 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 		return nil, fmt.Errorf("failed to inspect image: %w", err)
 	}
 
-	var allDigests, repositoryDigests []string
-	requested, referenceErr := refs.NormalizeReference(imageRef)
-
+	var allDigests []string
 	for _, repoDigest := range inspectResponse.RepoDigests {
-		digestValue, ok := digest.FromReferenceSuffix(repoDigest)
-		if !ok {
-			continue
-		}
-
-		allDigests = append(allDigests, digestValue)
-		repositoryRef, parseErr := refs.NormalizeReference(repoDigest)
-		if referenceErr == nil && parseErr == nil && repositoryRef.RegistryHost == requested.RegistryHost && repositoryRef.Repository == requested.Repository {
-			repositoryDigests = append(repositoryDigests, digestValue)
+		if digestValue, ok := digest.FromReferenceSuffix(repoDigest); ok {
+			allDigests = append(allDigests, digestValue)
 		}
 	}
+	repositoryDigests := imageref.RepositoryDigests(inspectResponse.RepoDigests, imageRef)
 
 	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse, s.parseImageReference(imageRef))
 	created, createdErr := time.Parse(time.RFC3339Nano, inspectResponse.Created)

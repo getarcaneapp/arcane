@@ -19,8 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app/docker/streams/bus"
-
 	"getarcane.dev/arcane/v3/buildables"
 	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -96,7 +94,7 @@ func newBootstrapTestVersionService(t *testing.T, db *database.DB) *version.Vers
 	return version.NewVersionService(version.VersionServiceParams{
 		AppVersion:      "1.2.3",
 		Revision:        "revision",
-		DockerService:   docker.NewDockerClientService(t.Context(), nil, versionSettings, bus.Config{}).WithClient(dockerClient),
+		DockerService:   docker.NewDockerClientService(t.Context(), nil, versionSettings, docker.ClientServiceOptions{}).WithClient(dockerClient),
 		SettingsService: versionSettings,
 	})
 }
@@ -1115,7 +1113,7 @@ func TestGetSessionBootstrap(t *testing.T) {
 			}).Error)
 			s := &AuthService{
 				userService:       userSvc,
-				environmentLister: environment.NewLister(db, agent.NewTunnelRegistry()),
+				environmentLister: environment.NewLister(db, agent.NewTunnelRegistry(), &config.Config{LocalDockerEnabled: true}),
 				versionService:    newBootstrapTestVersionService(t, db),
 			}
 
@@ -1141,7 +1139,7 @@ func TestGetSessionBootstrap(t *testing.T) {
 				RoleService:          role.NewRoleService(db),
 				RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
 			}),
-			environmentLister: environment.NewLister(db, agent.NewTunnelRegistry()),
+			environmentLister: environment.NewLister(db, agent.NewTunnelRegistry(), &config.Config{LocalDockerEnabled: true}),
 			versionService:    newBootstrapTestVersionService(t, db),
 		}
 

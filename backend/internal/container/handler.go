@@ -369,7 +369,12 @@ func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *Get
 }
 
 func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[types.ContainerGenerateComposeResponse], error) {
-	composeContent, err := projects.ComposeGenerate(ctx, h.dockerService.ResolveHostForContext(ctx), "", input.Body.ContainerIDs)
+	dockerHost, err := h.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	composeContent, err := projects.ComposeGenerate(ctx, dockerHost, "", input.Body.ContainerIDs)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to generate compose file: " + err.Error())
 	}

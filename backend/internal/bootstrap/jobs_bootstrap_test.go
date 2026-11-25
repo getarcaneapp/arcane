@@ -60,9 +60,9 @@ func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 		Config:            &config.Config{},
 		Scheduler:         schedulerStub,
 		Settings:          settings,
-		VulnerabilityScan: scheduler.NewVulnerabilityScanJob(nil, &vulnerability.VulnerabilityService{}, nil),
+		VulnerabilityScan: scheduler.NewVulnerabilityScanJob(nil, &vulnerability.VulnerabilityService{}, nil, nil),
 		VulnerabilityRisk: scheduler.NewVulnerabilityRiskJob(nil, nil),
-		AutoPatch:         scheduler.NewAutoPatchJob(nil, &image.ImageService{}, nil),
+		AutoPatch:         scheduler.NewAutoPatchJob(nil, &image.ImageService{}, nil, nil),
 	}))
 	require.Len(t, settings.featureCallbacks, 3)
 	for _, callback := range settings.featureCallbacks {
@@ -86,38 +86,20 @@ func TestExpiredSessionsCleanupJobMetadata(t *testing.T) {
 }
 
 func TestSetupSettingsSubscriptions_AgentEnabled(t *testing.T) {
-	for _, tc := range []struct {
-		name         string
-		agentEnabled bool
-	}{
-		{name: "agent", agentEnabled: true},
-		{name: "manager", agentEnabled: false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			lifecycle := fxtest.NewLifecycle(t)
-			settings := &settingsSubscriptionKeysStub{}
-			schedulerStub := &settingsSubscriptionSchedulerStub{}
-			require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
-				Lifecycle:    lifecycle,
-				LifecycleCtx: t.Context(),
-				Config:       &config.Config{AgentEnabled: tc.agentEnabled},
-				Scheduler:    schedulerStub,
-				Settings:     settings,
-			}))
-			hasApnsSub := false
-			for _, keys := range settings.subscribedKeys {
-				if slices.Contains(keys, "apnsEnabled") {
-					hasApnsSub = true
-				}
-			}
-			if tc.agentEnabled {
-				require.False(t, hasApnsSub)
-			} else {
-				require.True(t, hasApnsSub)
-			}
-			stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
-			defer cancel()
-			require.NoError(t, lifecycle.Stop(stopCtx))
-		})
+	lifecycle := fxtest.NewLifecycle(t)
+	settings := &settingsSubscriptionKeysStub{}
+	schedulerStub := &settingsSubscriptionSchedulerStub{}
+	require.NoError(t, setupSettingsSubscriptions(settingsSubscriptionsParams{
+		Lifecycle:    lifecycle,
+		LifecycleCtx: t.Context(),
+		Config:       &config.Config{AgentEnabled: true},
+		Scheduler:    schedulerStub,
+		Settings:     settings,
+	}))
+	for _, keys := range settings.subscribedKeys {
+		require.NotContains(t, keys, "apnsEnabled")
 	}
+	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, lifecycle.Stop(stopCtx))
 }

@@ -177,6 +177,9 @@ func classify(ctx context.Context, err error) error {
 
 func Retryable(err error) bool {
 	var netErr net.Error
+	if errors.Is(err, common.ErrLocalDockerDisabled) {
+		return false
+	}
 	return errors.Is(err, common.ErrUnavailable) || errors.Is(err, common.ErrTimeout) ||
 		errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
 }

@@ -73,7 +73,11 @@ type (
 		// DockerHost is the Docker API endpoint a "docker-host" environment points at, for example
 		// tcp://192.168.2.33:2375. When set, the manager serves that environment in-process against
 		// that daemon and the environment has no agent to pair.
-		DockerHost        *string  `json:"dockerHost,omitempty"`
+		DockerHost *string `json:"dockerHost,omitempty"`
+
+		// Set only on the local environment; false means the manager never connects to its own Docker.
+		LocalDockerEnabled *bool `json:"localDockerEnabled,omitempty" readOnly:"true"`
+
 		ID                string   `json:"id" readOnly:"true"`
 		Name              string   `json:"name,omitempty" unorm:"nfc" trim:"true"`
 		ApiUrl            string   `json:"apiUrl" readOnly:"true"`

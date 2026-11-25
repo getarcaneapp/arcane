@@ -263,6 +263,15 @@ func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context, previous
 	return s.backup.MigrateRepositoryPasswords(ctx, previousKey, newKey)
 }
 
+// dockerHostFieldInternal labels the volume log with the daemon the request is served against. It
+// stays empty when the manager has no local daemon and the request carries no environment target.
+func dockerHostFieldInternal(ctx context.Context) string {
+	if host := envcontext.DockerHostFromContext(ctx); host != "" {
+		return host
+	}
+	return ""
+}
+
 func (s *VolumeService) backupStore() volumebackup.Store {
 	return volumebackup.Store{
 		Create: func(ctx context.Context, record *types.VolumeBackup) error {
@@ -974,7 +983,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, effectiveParams)
 	slog.DebugContext(
 		ctx, "volume service: listed volumes",
-		"dockerHost", s.dockerService.ResolveHostForContext(ctx),
+		"dockerHost", dockerHostFieldInternal(ctx),
 		"requestedSort", params.Sort,
 		"requestedOrder", params.Order,
 		"effectiveSort", effectiveParams.Sort,

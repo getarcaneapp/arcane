@@ -54,9 +54,13 @@ func (s *Service) NamespaceDependents(ctx context.Context, compProj *composeType
 	if len(deps) == 0 {
 		return nil, nil
 	}
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return deps, nil
+	}
 	summaries, err := projects.ComposePs(ctx, types.ComposePsOptions{
 		Project:    compProj,
-		DockerHost: s.dockerService.ResolveHostForContext(ctx),
+		DockerHost: dockerHost,
 		Services:   deps,
 		All:        true,
 	})

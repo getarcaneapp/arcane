@@ -20,8 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app/docker/streams/bus"
-
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -202,7 +200,7 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
 }
 
 func TestPreparePrunePlanRequestsOnlySelectedUsageTypes(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -21,7 +22,7 @@ func TestLister_ListEnvironmentsPaginated_FiltersByAccessibleEnvIDs(t *testing.T
 	tunnels := agent.NewTunnelRegistry()
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
-	lister := NewLister(db, tunnels)
+	lister := NewLister(db, tunnels, &config.Config{LocalDockerEnabled: true})
 
 	createTestEnvironment(t, db, "0", "http://localhost:3552", nil)
 	createNamedTestEnvironment(t, db, "env-a", "Env A", "agent://a", new("token-a"))
@@ -62,7 +63,7 @@ func TestLister_ListEnvironmentsPaginated_FiltersByRuntimeType(t *testing.T) {
 	tunnels := agent.NewTunnelRegistry()
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
-	lister := NewLister(db, tunnels)
+	lister := NewLister(db, tunnels, &config.Config{LocalDockerEnabled: true})
 
 	now := time.Now()
 	envs := []Environment{

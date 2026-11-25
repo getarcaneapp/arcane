@@ -34,7 +34,6 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
-	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/labels"
 
@@ -1320,7 +1319,7 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		SettingsService: settingsService,
 		RegistryService: registryService,
-		DockerService: docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(
+		DockerService: docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(
 			t,
 			dockerServer,
 		)),
@@ -2446,7 +2445,7 @@ func newImageUpdateTestSettingsService(t *testing.T, registryTimeout, dockerAPIT
 
 func newImageUpdateTestDockerService(t *testing.T, server *httptest.Server) *docker.DockerClientService {
 	t.Helper()
-	return docker.NewDockerClientService(t.Context(), nil, newImageUpdateDefaultSettingsService(t), bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, server))
+	return docker.NewDockerClientService(t.Context(), nil, newImageUpdateDefaultSettingsService(t), docker.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, server))
 }
 
 func newImageUpdateDefaultSettingsService(t *testing.T) *settings.SettingsService {
@@ -3213,7 +3212,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 		ActivityService:     activity.NewActivityService(db, settingsService),
 		SettingsService:     settingsService,
 		RegistryService:     registryService,
-		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
+		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
 		NotificationService: newTestNotificationService(t, db),
 	})
 
@@ -3326,7 +3325,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 		ActivityService:     activity.NewActivityService(db, settingsService),
 		SettingsService:     settingsService,
 		RegistryService:     registryService,
-		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
+		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
 		NotificationService: newTestNotificationService(t, db),
 	})
 

@@ -35,7 +35,7 @@
 	import { systemService } from '#lib/services/system-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+	import { environmentStore, isLocalDockerDisabled, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { Environment } from '#lib/types/environment.js';
@@ -139,7 +139,7 @@
 			return [];
 		}
 
-		return environmentStore.available.filter((environment) => environment.enabled);
+		return environmentStore.available.filter((environment) => environment.enabled && !isLocalDockerDisabled(environment));
 	});
 
 	function canPruneInEnvironment(envId: string): boolean {
@@ -876,6 +876,11 @@
 					{#if environmentCards.length === 0}
 						<div class="rounded-xl border border-dashed border-border/60 px-4 py-8 text-center">
 							<p class="text-sm text-muted-foreground">{m.dashboard_all_no_visible_environments()}</p>
+							{#if isLocalDockerDisabled(environmentStore.getLocalEnvironment())}
+								<a href={resolve('/(app)/agents')} class="mt-2 inline-block text-sm underline underline-offset-4">
+									{m.local_docker_disabled_add_agent()}
+								</a>
+							{/if}
 						</div>
 					{:else if boardView === 'table'}
 						<EnvironmentsTable

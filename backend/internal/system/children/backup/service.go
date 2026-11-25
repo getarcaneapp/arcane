@@ -1215,7 +1215,11 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			_ = acfs.Host{}.Remove(context.WithoutCancel(ctx), requestFile)
 		}
 	}()
-	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(ctx, s.dockerService.DockerHost(), current,
+	dockerHost, err := s.dockerService.DockerHost()
+	if err != nil {
+		return err
+	}
+	containerEnv, runtimeMounts, networkMode, err := s.resolveRuntimeOptions(ctx, dockerHost, current,
 		func(ctx context.Context, containerPath string) (string, error) {
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
@@ -1442,8 +1446,9 @@ func (s *Service) GetPolicies(ctx context.Context) (*types.SystemBackupPolicyCol
 		})
 	}
 	return &types.SystemBackupPolicyCollection{
-		Policies:          decorated,
-		RecoveryKeyStored: configured,
+		Policies:           decorated,
+		RecoveryKeyStored:  configured,
+		LocalDockerEnabled: s.dockerService.LocalDockerEnabled(),
 	}, nil
 }
 
@@ -1635,6 +1640,8 @@ func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *type
 			}
 			return current.Schedule
 		},
+		// System backups are written through the manager's own Docker.
+		ShouldRunFn: func(context.Context) bool { return s.dockerService.LocalDockerEnabled() },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.resumeScheduledBackup(ctx, previous, policyID)
 		},
@@ -1711,6 +1718,10 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.engine.Authorize(ctx, requester); err != nil {
 		return nil, err
+	}
+	// Reject before a run is saved; the worker needs the manager's Docker even for S3-only backups.
+	if !s.dockerService.LocalDockerEnabled() {
+		return nil, common.ErrLocalDockerDisabled
 	}
 	if s.config.AgentEnabled && request.ID != "" {
 		if _, parseErr := uuid.Parse(strings.TrimPrefix(request.ID, "system-")); parseErr != nil {

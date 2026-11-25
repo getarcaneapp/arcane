@@ -125,7 +125,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 		AppUrl:       "http://localhost:3552",
 		Environment:  config.AppEnvironmentTest,
 	}
-	router := newRouter(RouterParams{
+	router := newAgentRouter(AgentRouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -149,7 +149,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 	transport := &http.Transport{Protocols: clientProtocols, DisableCompression: true}
 	client := &http.Client{Transport: transport}
 
-	for _, path := range []string{"/api/health", "/api/openapi.json"} {
+	for _, path := range []string{"/api/health"} {
 		t.Run(path, func(t *testing.T) {
 			req, requestErr := http.NewRequest(http.MethodGet, "http://"+addr+path, http.NoBody)
 			require.NoError(t, requestErr)

@@ -99,6 +99,7 @@ export function destinationEnvironmentId(
 	const permitted = environments.filter((env) => hasPermission(permission, env.id)).map((env) => env.id);
 	if (permitted.includes(picked)) return picked;
 	if (permitted.includes(LOCAL_DOCKER_ENVIRONMENT_ID)) return LOCAL_DOCKER_ENVIRONMENT_ID;
+	// With nothing permitted the server reports why, including when the manager's local Docker is off.
 	return permitted[0] ?? (picked || LOCAL_DOCKER_ENVIRONMENT_ID);
 }
 
@@ -288,11 +289,12 @@ export async function fetchAcrossEnvironments<
 >(
 	environments: EnvironmentRef[],
 	options: O,
-	fetch: (scope: string, options: O, config: APIRequestConfig) => Promise<P>
+	fetch: (scope: string, options: O, config: APIRequestConfig) => Promise<P>,
+	filterEnvironments: EnvironmentRef[] = environmentStore.shown
 ): Promise<EnvironmentPage<P>> {
 	const { [ENVIRONMENT_FILTER]: environmentFilter, ...filters } = options.filters ?? {};
-	// Picks are checked against every shown environment, so picking only ones this page skips shows nothing.
-	const picked = environmentFilterIds(environmentFilter);
+	// Picks are checked against filterEnvironments, so picking only ones this page skips shows nothing.
+	const picked = environmentFilterIds(environmentFilter, filterEnvironments);
 	const targets = picked.length > 0 ? environments.filter((env) => picked.includes(env.id)) : environments;
 	const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: options.pagination?.limit ?? 0 };
 	if (targets.length === 0) {

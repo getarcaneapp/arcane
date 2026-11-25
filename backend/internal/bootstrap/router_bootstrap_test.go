@@ -1,11 +1,13 @@
 package bootstrap
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -37,7 +39,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 		AppUrl:       "http://localhost:3552",
 		Environment:  config.AppEnvironmentTest,
 	}
-	router := newRouter(RouterParams{
+	router := newAgentRouter(AgentRouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -135,7 +137,6 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 
 func TestNewRouter_StrictTransportSecurity(t *testing.T) {
 	cfg := &config.Config{
-		AgentEnabled:   true,
 		AppUrl:         "http://localhost:3552",
 		Environment:    config.AppEnvironmentTest,
 		TrustedProxies: "10.0.0.0/8",
@@ -154,6 +155,7 @@ func TestNewRouter_StrictTransportSecurity(t *testing.T) {
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: agent.NewTunnelRegistry(),
+		TunnelServer:   agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
 	})
 
 	tests := []struct {
@@ -210,7 +212,7 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	}
 
 	cfg := &config.Config{AgentEnabled: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
-	router := newRouter(RouterParams{
+	router := newAgentRouter(AgentRouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -248,6 +250,21 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	slices.Sort(missing)
 	assert.Empty(t, slices.Compact(missing),
 		"proxied environment routes missing from the agent command allowlist; add them to pkg/agent/commands.go or classify them in middleware.IsManagerLocalPath")
+
+	echoParam := regexp.MustCompile(`:[^/]+`)
+	commandParam := regexp.MustCompile(`\{[^}]+\}`)
+	installed := make(map[string]struct{})
+	for _, route := range router.Router().Routes() {
+		installed[route.Method+" "+echoParam.ReplaceAllString(route.Path, "{}")] = struct{}{}
+	}
+	var unrouted []string
+	for _, route := range agent.CommandRoutes() {
+		key := cmp.Or(route.Method, http.MethodGet) + " " + commandParam.ReplaceAllString(route.PathPattern, "{}")
+		if _, ok := installed[key]; !ok {
+			unrouted = append(unrouted, key+" ("+route.CommandName+")")
+		}
+	}
+	assert.Empty(t, unrouted, "agent command allowlist entries with no route installed on the agent router")
 }
 
 func TestEveryAPIRouteIsInPermissionExport(t *testing.T) {

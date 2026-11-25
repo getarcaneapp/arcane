@@ -599,6 +599,10 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) stopProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return err
+	}
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
@@ -615,7 +619,7 @@ func (s *ProjectService) stopProject(ctx context.Context, projectID string, serv
 	// A stop cancelled partway would leave a slow container to exit after the restart skipped it.
 	if stopErr := composeStopProjectServices(context.WithoutCancel(ctx), types.ComposeTarget{
 		Project:    model,
-		DockerHost: s.dockerService.DockerHost(),
+		DockerHost: dockerHost,
 		Services:   services,
 	}); stopErr != nil {
 		return stopErr
@@ -630,6 +634,10 @@ func (s *ProjectService) stopProject(ctx context.Context, projectID string, serv
 }
 
 func (s *ProjectService) startProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return err
+	}
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
@@ -648,7 +656,7 @@ func (s *ProjectService) startProject(ctx context.Context, projectID string, ser
 	defer s.eventService.BeginComposeSuppressionWindow(model.Name)()
 	if startErr := projects.ComposeStart(ctx, types.ComposeTarget{
 		Project:    model,
-		DockerHost: s.dockerService.DockerHost(),
+		DockerHost: dockerHost,
 		Services:   services,
 	}); startErr != nil {
 		return startErr
@@ -1244,6 +1252,10 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 }
 
 func (s *ProjectService) updateProjectServices(ctx context.Context, projectID string, options ServiceUpdateOptions) error {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return err
+	}
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
@@ -1298,7 +1310,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	}
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	if updateServicesErr := s.composeCoordinator.UpdateServices(ctx, types.ComposeServiceUpdate{
-		Project: compProj, DockerHost: s.dockerService.ResolveHostForContext(ctx), Services: options.Services, Dependents: dependents, StoppedDependents: stoppedDependents,
+		Project: compProj, DockerHost: dockerHost, Services: options.Services, Dependents: dependents, StoppedDependents: stoppedDependents,
 		Images: s.deployment.ImageOperations(&options.User, credentials, options.PinnedImages), Progress: progressWriter,
 		AuthConfigs: authConfigs, WaitTimeout: timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		RestoreBeforeMutation: func(ctx context.Context) {
@@ -1417,6 +1429,10 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 }
 
 func (s *ProjectService) deployProject(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return err
+	}
 	projectFromDb, err := s.getMutableProject(ctx, projectID)
 	switch {
 	case errors.Is(err, common.ErrProjectArchived):
@@ -1444,7 +1460,7 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 	}
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	projectModel, err := s.composeCoordinator.Deploy(ctx, types.ComposeDeployment{
-		ProjectID: projectID, ProjectPath: projectFromDb.Path, DockerHost: s.dockerService.ResolveHostForContext(ctx), Options: options,
+		ProjectID: projectID, ProjectPath: projectFromDb.Path, DockerHost: dockerHost, Options: options,
 		DefaultPullPolicy: s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy"),
 		GitOpsManaged:     strings.TrimSpace(kit.FromPtr(projectFromDb.GitOpsManagedBy)) != "",
 		WaitTimeout:       timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
@@ -1507,6 +1523,10 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 }
 
 func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project, user types.Actor) error {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return err
+	}
 	projectID := projectFromDb.ID
 	proj, lerr := s.loadComposeProjectForProject(ctx, projectFromDb, nil)
 	if lerr != nil {
@@ -1521,7 +1541,7 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 
 	if composeDownErr := projects.ComposeDown(ctx, types.ComposeDownOptions{
 		Project:    proj,
-		DockerHost: s.dockerService.ResolveHostForContext(ctx),
+		DockerHost: dockerHost,
 	}); composeDownErr != nil {
 		_ = s.updateProjectStatus(context.WithoutCancel(ctx), projectID, projectFromDb.Status)
 		return fmt.Errorf("failed to bring down project: %w", composeDownErr)
@@ -1870,10 +1890,14 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 		compProj, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
 		switch {
 		case lerr == nil:
+			dockerHost, hostErr := s.dockerService.ResolveHostForContext(ctx)
+			if hostErr != nil {
+				return hostErr
+			}
 			defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 			if derr := projects.ComposeDown(ctx, types.ComposeDownOptions{
 				Project:       compProj,
-				DockerHost:    s.dockerService.ResolveHostForContext(ctx),
+				DockerHost:    dockerHost,
 				RemoveVolumes: true,
 			}); derr != nil && !missing(derr) {
 				return fmt.Errorf("failed to remove project volumes: %w", derr)
@@ -2002,6 +2026,10 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) RunProjectJob(ctx context.Context, projectID, jobName string, user types.Actor) error {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return err
+	}
 	unlock, err := s.LockProject(ctx, "run project job", projectID)
 	if err != nil {
 		return err
@@ -2031,7 +2059,7 @@ func (s *ProjectService) RunProjectJob(ctx context.Context, projectID, jobName s
 	exitCode, runErr := projects.ComposeRunJob(ctx, types.ComposeRunJobOptions{
 		AuthConfigs: authConfigs,
 		Project:     compProj,
-		DockerHost:  s.dockerService.DockerHost(),
+		DockerHost:  dockerHost,
 		Job:         jobName,
 		Timeout:     jobTimeout,
 	})
@@ -2084,6 +2112,10 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 }
 
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, services []string, user types.Actor) error {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return err
+	}
 	unlock, err := s.LockProject(ctx, "restart project", projectID)
 	if err != nil {
 		return err
@@ -2111,7 +2143,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 
 	if composeRestartErr := projects.ComposeRestart(ctx, types.ComposeTarget{
 		Project:    compProj,
-		DockerHost: s.dockerService.ResolveHostForContext(ctx),
+		DockerHost: dockerHost,
 		Services:   services,
 	}); composeRestartErr != nil {
 		s.restoreRuntimeProjectStatus(ctx, projectID)
@@ -3986,6 +4018,10 @@ func (s *ProjectService) projectServices(ctx context.Context, projectID string) 
 }
 
 func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string, logsChan chan<- string, opts types.LogStreamOptions) error {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return err
+	}
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -3995,7 +4031,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 		slog.WarnContext(ctx, "failed to list containers for project log stream", "projectId", projectID, "error", listErr)
 	}
 	matched := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj))
-	return projectdetails.Logs(ctx, s.dockerService.ResolveHostForContext(ctx), projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, opts)
+	return projectdetails.Logs(ctx, dockerHost, projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, opts)
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.ProjectStatusCounts, error) {

@@ -434,6 +434,9 @@ const defaultMobilePinnedItems: NavigationItem[] = [
 );
 
 export function getSwarmNavigationItems(swarmEnabled: boolean | undefined): NavigationItem[] {
+	if (environmentStore.shown.length === 0) {
+		return [];
+	}
 	if (swarmEnabled) {
 		return navigationItems.swarmItems;
 	}

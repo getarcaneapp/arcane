@@ -40,7 +40,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/webhook"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/francis"
-	"getarcane.dev/arcane/v3/pkg/oidc"
 	"getarcane.dev/types/v3"
 )
 
@@ -84,6 +83,7 @@ type (
 		DB            *database.DB
 		LocalSettings *settings.SettingsService
 		EventService  *event.EventService
+		Config        *config.Config
 	}
 
 	authMiddlewareParams struct {
@@ -231,10 +231,13 @@ func provideTunnelRegistry(lc fx.Lifecycle) *agent.TunnelRegistry {
 }
 
 func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClientService {
-	service := docker.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, bus.Config{OnDrop: func(message events.Message) {
-		// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
-		p.EventService.RecordDockerEvent(p.Ctx, message)
-	}})
+	service := docker.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, docker.ClientServiceOptions{
+		EventBus: bus.Config{OnDrop: func(message events.Message) {
+			// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
+			p.EventService.RecordDockerEvent(p.Ctx, message)
+		}},
+		LocalDockerDisabled: !p.Config.LocalDockerEnabled,
+	})
 	var stopStream, stopLog func(context.Context) error
 	var unsubscribe func()
 	p.Lifecycle.Append(fx.Hook{
@@ -245,6 +248,9 @@ func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClien
 				Run:  run,
 				Name: "Docker event log",
 			}).Stop
+			if !service.LocalDockerEnabled() {
+				return nil
+			}
 			stopStream = concurrency.Supervise(p.Ctx, concurrency.SuperviseConfig{
 				Run: func(runCtx context.Context) error {
 					service.WatchEvents(runCtx)
@@ -292,12 +298,6 @@ func provideUpdaterService(p updater.UpdaterServiceParams, engine *flow.Engine) 
 		return nil, registerWorkflowsErr
 	}
 	return service, nil
-}
-
-func provideJWKSetManager(ctx context.Context, lc fx.Lifecycle) *oidc.KeySetManager {
-	manager := oidc.NewKeySetManager(ctx)
-	lc.Append(fx.Hook{OnStop: manager.Shutdown})
-	return manager
 }
 
 func provideAuthMiddleware(p authMiddlewareParams) *auth.AuthMiddleware {

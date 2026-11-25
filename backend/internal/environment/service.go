@@ -1050,7 +1050,7 @@ func (s *EnvironmentService) NotifyRuntimeStateChanged() {
 }
 
 func (s *EnvironmentService) registerHealthJob(ctx context.Context, envID string) {
-	if s.config.AgentEnabled {
+	if s.config.AgentEnabled || (envID == LocalEnvironmentID && !s.config.LocalDockerEnabled) {
 		return
 	}
 	s.jobs.Register(ctx, envID,
@@ -1066,10 +1066,11 @@ func (s *EnvironmentService) registerHealthJob(ctx context.Context, envID string
 
 func (s *EnvironmentService) ListEnabledEnvironmentIDs(ctx context.Context) ([]string, error) {
 	var ids []string
-	if err := s.db.WithContext(ctx).
-		Table("environments").
-		Where("enabled = ?", true).
-		Pluck("id", &ids).Error; err != nil {
+	query := s.db.WithContext(ctx).Table("environments").Where("enabled = ?", true)
+	if !s.config.LocalDockerEnabled {
+		query = query.Where("id <> ?", LocalEnvironmentID)
+	}
+	if err := query.Pluck("id", &ids).Error; err != nil {
 		return nil, fmt.Errorf("failed to list enabled environments: %w", err)
 	}
 	return ids, nil
@@ -1163,6 +1164,9 @@ func (s *EnvironmentService) runHealthCheck(ctx context.Context, envID string) (
 }
 
 func (s *EnvironmentService) TestConnection(ctx context.Context, id string) (string, error) {
+	if id == LocalEnvironmentID && !s.config.LocalDockerEnabled {
+		return string(EnvironmentStatusOffline), common.ErrLocalDockerDisabled
+	}
 	envRecord, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
 		return "error", err

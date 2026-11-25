@@ -27,7 +27,6 @@ import (
 	"gorm.io/gorm"
 
 	"kit.getarcane.app"
-	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -85,7 +84,7 @@ func newGitOpsTestDockerService(t *testing.T, settingsService *settings.Settings
 	t.Helper()
 	cli, err := mobyclient.New(mobyclient.WithHost("tcp://127.0.0.1:1"), mobyclient.WithAPIVersion("1.41"))
 	require.NoError(t, err)
-	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(cli)
+	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(cli)
 }
 
 func loadTestConfig(t testing.TB) *config.Config {
@@ -156,6 +155,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T, scheduler types.DynamicSc
 	return NewGitOpsSyncService(GitOpsSyncServiceParams{
 		DB:              db,
 		ProjectService:  projectService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
 		EventService:    eventService,
 		SettingsService: settingsService,
 		Ctx:             t.Context(),
@@ -234,6 +234,7 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 		DB:              db,
 		RepoService:     repoService,
 		ProjectService:  projectService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
 		EventService:    eventService,
 		SettingsService: settingsService,
 		Ctx:             ctx,
@@ -1171,6 +1172,7 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 		DB:              db,
 		RepoService:     repoService,
 		ProjectService:  projectService,
+		DockerService:   newGitOpsTestDockerService(t, settingsService),
 		EventService:    eventService,
 		SettingsService: settingsService,
 		Ctx:             ctx,
@@ -2161,7 +2163,7 @@ func setupGitOpsDeleteSwarmStackTest(t *testing.T, gate *runs.Admission) (*GitOp
 	settingsService, err := newGitOpsSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
 	svc.swarmService = swarm.NewSwarmService(swarm.SwarmServiceParams{
-		DockerService:   dockerInternal.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(cli),
+		DockerService:   dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(cli),
 		SettingsService: settingsService,
 	})
 

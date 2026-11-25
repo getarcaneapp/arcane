@@ -302,7 +302,11 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 		}
 	}
 
-	if err := os.Setenv("DOCKER_HOST", s.dockerService.ResolveHostForContext(ctx)); err != nil {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return fail(err, 0)
+	}
+	if err = os.Setenv("DOCKER_HOST", dockerHost); err != nil {
 		return fail(fmt.Errorf("failed to set DOCKER_HOST for image patching: %w", err), 0)
 	}
 

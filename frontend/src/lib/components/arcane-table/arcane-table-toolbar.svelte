@@ -92,7 +92,9 @@
 	const environmentColumn = $derived(
 		table.getAllColumns().some((col) => col.id === ENVIRONMENT_FILTER) ? table.getColumn(ENVIRONMENT_FILTER) : undefined
 	);
-	const environmentFilterOptions = $derived(environmentStore.shown.map((env) => ({ label: env.name, value: env.id })));
+	const environmentFilterOptions = $derived(
+		environmentColumn?.columnDef.meta?.filterOptions ?? environmentStore.shown.map((env) => ({ label: env.name, value: env.id }))
+	);
 	const usageColumn = $derived(table.getAllColumns().some((col) => col.id === 'inUse') ? table.getColumn('inUse') : undefined);
 	const updatesColumn = $derived(
 		table.getAllColumns().some((col) => col.id === 'updates') ? table.getColumn('updates') : undefined

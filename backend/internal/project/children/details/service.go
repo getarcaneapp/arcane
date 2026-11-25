@@ -81,10 +81,14 @@ func (s *Service) ComposeServices(
 	meta projects.ArcaneComposeMetadata,
 	catalog string,
 ) ([]types.ProjectRuntimeService, error) {
+	dockerHost, err := s.dockerService.ResolveHostForContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	runtimeName := RuntimeProjectName(composeProject.Name, runtimeContainers)
 	containers, err := projects.ComposePs(ctx, types.ComposePsOptions{
 		Project:    &composeTypes.Project{Name: runtimeName},
-		DockerHost: s.dockerService.ResolveHostForContext(ctx),
+		DockerHost: dockerHost,
 		All:        true,
 	})
 	if err != nil {

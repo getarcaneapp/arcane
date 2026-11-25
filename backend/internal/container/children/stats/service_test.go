@@ -92,7 +92,7 @@ func TestCollectMaxAge(t *testing.T) {
 
 			svc := New(Params{
 				GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
-				DockerHost: func() string { return "test" },
+				DockerHost: func() (string, error) { return "test", nil },
 				CacheTTL:   tt.cacheTTL,
 			})
 			for range 2 {
@@ -136,7 +136,7 @@ func TestCollectReportsIOAndPIDs(t *testing.T) {
 
 	svc := New(Params{
 		GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
-		DockerHost: func() string { return "test" },
+		DockerHost: func() (string, error) { return "test", nil },
 		CacheTTL:   ContainerResourceSampleTTL,
 	})
 	samples, err := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, ContainerResourceSampleTTL, false)

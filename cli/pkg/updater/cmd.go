@@ -72,23 +72,8 @@ func newRunCmd() *cobra.Command {
 				Path:           clitypes.UpdaterRun(c.EnvID()),
 				FailureMessage: "failed to run updater",
 				Timeout:        30 * time.Minute,
-				Render: func(data types.UpdaterResult) error {
-					output.Header("Updater Results")
-					output.KeyValue("Checked", strconv.Itoa(data.Checked))
-					output.KeyValue("Updated", strconv.Itoa(data.Updated))
-					output.KeyValue("Skipped", strconv.Itoa(data.Skipped))
-					output.KeyValue("Failed", strconv.Itoa(data.Failed))
-					if data.Duration != "" {
-						output.KeyValue("Duration", data.Duration)
-					}
-					return nil
-				},
-				Check: func(data types.UpdaterResult) error {
-					if data.Failed > 0 {
-						return fmt.Errorf("updater failed for %d resources", data.Failed)
-					}
-					return nil
-				},
+				Render:         RenderResult,
+				Check:          CheckResult,
 			})
 		},
 	}
@@ -140,4 +125,25 @@ func newHistoryCmd() *cobra.Command {
 	}
 	cmd.Flags().IntVarP(&opts.limit, "limit", "n", 50, "Number of history entries to show")
 	return cmd
+}
+
+// RenderResult prints the counts of an updater run.
+func RenderResult(data types.UpdaterResult) error {
+	output.Header("Updater Results")
+	output.KeyValue("Checked", strconv.Itoa(data.Checked))
+	output.KeyValue("Updated", strconv.Itoa(data.Updated))
+	output.KeyValue("Skipped", strconv.Itoa(data.Skipped))
+	output.KeyValue("Failed", strconv.Itoa(data.Failed))
+	if data.Duration != "" {
+		output.KeyValue("Duration", data.Duration)
+	}
+	return nil
+}
+
+// CheckResult fails an updater run that reports failed resources, which a successful response alone does not.
+func CheckResult(data types.UpdaterResult) error {
+	if data.Failed > 0 {
+		return fmt.Errorf("updater failed for %d resources", data.Failed)
+	}
+	return nil
 }

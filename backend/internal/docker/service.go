@@ -28,6 +28,7 @@ import (
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/bus"
 
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/dhi"
@@ -63,6 +64,13 @@ type (
 		// hostMu guards hostClients. Clients are keyed by endpoint because two docker-host
 		// environments may point at different daemons.
 		hostMu sync.Mutex
+
+		localDockerDisabled bool
+	}
+
+	ClientServiceOptions struct {
+		EventBus            bus.Config
+		LocalDockerDisabled bool
 	}
 
 	dockerInventory struct {
@@ -76,13 +84,14 @@ const (
 	dockerEventStreamHealthyAfter  = 30 * time.Second
 )
 
-func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, eventBusConfig bus.Config) *DockerClientService {
+func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, opts ClientServiceOptions) *DockerClientService {
 	service := &DockerClientService{
-		db:              db,
-		settingsService: settingsService,
-		eventBus:        bus.NewDockerEventBus(eventBusConfig),
-		VolumeUsage:     docker.NewVolumeUsageCache(docker.VolumeUsageCacheConfig{}),
-		streamConnected: concurrency.NewSignal[struct{}](),
+		db:                  db,
+		settingsService:     settingsService,
+		eventBus:            bus.NewDockerEventBus(opts.EventBus),
+		VolumeUsage:         docker.NewVolumeUsageCache(docker.VolumeUsageCacheConfig{}),
+		streamConnected:     concurrency.NewSignal[struct{}](),
+		localDockerDisabled: opts.LocalDockerDisabled,
 	}
 	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"dockerHost"}, func([]types.SettingUpdate) {
 		service.Close()
@@ -92,13 +101,14 @@ func NewDockerClientService(ctx context.Context, db *database.DB, settingsServic
 
 func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerClientService {
 	return &DockerClientService{
-		db:              s.db,
-		settingsService: s.settingsService,
-		Client:          dockerClient,
-		boundHost:       dockerClient.DaemonHost(),
-		eventBus:        s.eventBus,
-		VolumeUsage:     cmp.Or(s.VolumeUsage, docker.NewVolumeUsageCache(docker.VolumeUsageCacheConfig{})),
-		streamConnected: s.streamConnected,
+		db:                  s.db,
+		settingsService:     s.settingsService,
+		Client:              dockerClient,
+		boundHost:           dockerClient.DaemonHost(),
+		eventBus:            s.eventBus,
+		VolumeUsage:         cmp.Or(s.VolumeUsage, docker.NewVolumeUsageCache(docker.VolumeUsageCacheConfig{})),
+		streamConnected:     s.streamConnected,
+		localDockerDisabled: s.localDockerDisabled,
 	}
 }
 
@@ -136,7 +146,10 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 // RefreshClient probes the Docker daemon and recreates the cached client when
 // the daemon's effective API version changed.
 func (s *DockerClientService) RefreshClient(ctx context.Context) error {
-	host := s.DockerHost()
+	host, err := s.DockerHost()
+	if err != nil {
+		return err
+	}
 	probeClient, err := client.New(client.WithHost(host))
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: failed to create Docker probe client: %w", err)
@@ -184,7 +197,8 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
-	if host != s.DockerHost() {
+	// The first lookup succeeded and the disabled flag is fixed at startup, so this one cannot fail.
+	if current, _ := s.DockerHost(); host != current {
 		s.mu.Unlock()
 		closeDockerClient(ctx, cli, "stale host after settings change")
 		return s.RefreshClient(ctx)
@@ -237,11 +251,19 @@ func (s *DockerClientService) Engine(ctx context.Context) (compat.EngineCompatib
 	})
 }
 
-func (s *DockerClientService) DockerHost() string {
-	if s.boundHost != "" {
-		return s.boundHost
+func (s *DockerClientService) LocalDockerEnabled() bool {
+	return !s.localDockerDisabled
+}
+
+// DockerHost fails with common.ErrLocalDockerDisabled so no caller reaches the local socket while it is turned off.
+func (s *DockerClientService) DockerHost() (string, error) {
+	if s.localDockerDisabled {
+		return "", common.ErrLocalDockerDisabled
 	}
-	return startup.ResolveDockerHost(s.settingsService.GetSettingsConfig().DockerHost.Value, os.Stat)
+	if s.boundHost != "" {
+		return s.boundHost, nil
+	}
+	return startup.ResolveDockerHost(s.settingsService.GetSettingsConfig().DockerHost.Value, os.Stat), nil
 }
 
 func (s *DockerClientService) Close() {
@@ -267,7 +289,12 @@ func (s *DockerClientService) Close() {
 // targets the manager's own daemon (the local environment and background work carry no target).
 func (s *DockerClientService) HostForContext(ctx context.Context) string {
 	host := strings.TrimSpace(envcontext.DockerHostFromContext(ctx))
-	if host == "" || host == s.DockerHost() {
+	if host == "" {
+		return ""
+	}
+	// A docker-host environment keeps working while the manager's own Docker is switched off, so a
+	// failed local lookup means "not the local daemon" rather than "no target".
+	if local, err := s.DockerHost(); err == nil && host == local {
 		return ""
 	}
 	return host
@@ -276,8 +303,11 @@ func (s *DockerClientService) HostForContext(ctx context.Context) string {
 // ResolveHostForContext returns the daemon endpoint a request must use: the environment target when
 // the request carries one (a docker-host environment), and the manager's own daemon otherwise. It is
 // for the calls that hand a host to the compose/CLI layer, which cannot read the request context.
-func (s *DockerClientService) ResolveHostForContext(ctx context.Context) string {
-	return cmp.Or(s.HostForContext(ctx), s.DockerHost())
+func (s *DockerClientService) ResolveHostForContext(ctx context.Context) (string, error) {
+	if host := s.HostForContext(ctx); host != "" {
+		return host, nil
+	}
+	return s.DockerHost()
 }
 
 // GetHostClient returns a cached Docker client for an explicit endpoint. A docker-host environment
@@ -285,7 +315,10 @@ func (s *DockerClientService) ResolveHostForContext(ctx context.Context) string 
 // replacing the manager's own client.
 func (s *DockerClientService) GetHostClient(ctx context.Context, host string) (*client.Client, error) {
 	host = strings.TrimSpace(host)
-	if host == "" || host == s.DockerHost() {
+	if host == "" {
+		return s.GetClient(context.WithoutCancel(ctx))
+	}
+	if local, err := s.DockerHost(); err == nil && host == local {
 		return s.GetClient(context.WithoutCancel(ctx))
 	}
 

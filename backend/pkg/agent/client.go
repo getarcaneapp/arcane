@@ -292,6 +292,7 @@ func (c *TunnelClient) serveTunnelSession(ctx context.Context, conn TunnelConnec
 			TunnelCapabilityForwardedPermissions,
 			TunnelCapabilityForwardedGlobalAdmin,
 			TunnelCapabilityProjectTransfer,
+			TunnelCapabilityDiagnosticsProfiling,
 			tunnelCapabilityMuxWindowPrefix + strconv.Itoa(streamWindowMiB),
 			tunnelCapabilityReadinessLease,
 		},
