@@ -131,7 +131,6 @@ type (
 	Service struct {
 		store                 Store
 		dockerService         *dockerInternal.DockerClientService
-		volumeService         *volume.VolumeService
 		engine                *backup.Engine
 		repository            *backup.VolumeRepository
 		s3Destinations        *s3.S3DestinationService
@@ -195,7 +194,6 @@ func NewService(deps Dependencies) *Service {
 	service = &Service{
 		store:                 deps.Store,
 		dockerService:         deps.Docker,
-		volumeService:         deps.Volumes,
 		engine:                deps.Engine,
 		repository:            deps.Repository,
 		s3Destinations:        deps.S3Destinations,
@@ -1383,7 +1381,7 @@ func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) 
 	if volumeRuns == 0 {
 		return nil
 	}
-	migrateErr := s.volumeService.MigrateRepositoryPasswords(ctx, previous, next)
+	migrateErr := s.repository.Rekey(ctx, previous, next)
 	if migrateErr == nil || len(systemRepositories) == 0 || previous == "" {
 		return migrateErr
 	}

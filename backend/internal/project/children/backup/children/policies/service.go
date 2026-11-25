@@ -19,6 +19,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -187,8 +188,8 @@ func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequ
 				return common.Classify(common.ErrValidation, validateErr)
 			}
 			if *cmp.Or(update.StopContainers, new(true)) {
-				if authorizeErr := s.deps.Authorize(ctx, requester, StopPermissions...); authorizeErr != nil {
-					return authorizeErr
+				if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, requester.EnvironmentID, StopPermissions)); permErr != nil {
+					return permErr
 				}
 			}
 			volumes := slices.Clone(update.Volumes)
@@ -676,8 +677,11 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		if target.ResourceType != backup.ProjectTargetType {
 			continue
 		}
-		if target.Status != types.RunStatusRunning {
+		if target.Status == types.RunStatusSucceeded || target.Status == types.RunStatusSkipped {
 			finished[target.ID] = target
+			continue
+		}
+		if target.Status != types.RunStatusRunning {
 			continue
 		}
 		resumeErr := s.deps.Resume(ctx, previous, input.Requester, target.RecoveryData)

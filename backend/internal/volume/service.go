@@ -267,11 +267,6 @@ func (s *VolumeService) ApplySeriesRetention(ctx context.Context, retention type
 	})
 }
 
-// MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
-func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context, previousKey, newKey string) error {
-	return s.repository.Rekey(ctx, previousKey, newKey)
-}
-
 func (s *VolumeService) backupStore() volumebackup.Store {
 	return volumebackup.Store{
 		Create: func(ctx context.Context, record *types.VolumeBackup) error {
