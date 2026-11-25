@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"time"
+	"uuid"
 
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
@@ -40,6 +41,7 @@ type (
 		ProjectName    func(ctx context.Context, projectID string) (string, error)
 		ListProjects   func(ctx context.Context) ([]types.ProjectReference, error)
 		CheckVolumes   func(ctx context.Context, projectID string, keys []string) error
+		Authorize      func(ctx context.Context, requester types.BackupRequester, permissions ...string) error
 		LatestRun      func(ctx context.Context, policyID string) (*types.ProjectBackup, error)
 		Resume         func(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recoveryData []byte) error
 		BackUp         func(ctx context.Context, run ScheduledBackup) error
@@ -52,6 +54,7 @@ type (
 	ScheduledBackup struct {
 		Read      func(ctx context.Context) (types.CreateProjectBackupRequest, error)
 		Retain    func(ctx context.Context)
+		Requester *types.BackupRequester
 		ProjectID string
 		SeriesID  string
 	}
@@ -71,6 +74,7 @@ type (
 	globalRun struct {
 		Requester *types.BackupRequester `json:"requester,omitempty"`
 		PolicyID  string                 `json:"policyId"`
+		Claim     string                 `json:"claim,omitempty"`
 	}
 )
 
@@ -79,6 +83,8 @@ const globalAdmissionScope = "global-project-backup"
 var (
 	errPolicyGone     = errors.New("backup policy disabled or deleted")
 	errProjectSkipped = errors.New("the project is no longer selected or has its own enabled backup policy")
+	errGlobalRunning  = common.Classify(common.ErrConflict, errors.New("this global project backup is already running"))
+	StopPermissions   = []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
 )
 
 func NewService(deps Dependencies) *Service {
@@ -158,12 +164,14 @@ func (s *Service) Policies(ctx context.Context, projectID string) (types.Project
 	return types.ProjectBackupPolicyCollection{Policies: dtos, S3Available: len(destinations) > 0}, nil
 }
 
-func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates []types.UpdateProjectBackupPolicy) (types.ProjectBackupPolicyCollection, error) {
+func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequester, projectID string, updates []types.UpdateProjectBackupPolicy) (types.ProjectBackupPolicyCollection, error) {
 	if _, err := s.deps.ProjectName(ctx, projectID); err != nil {
 		return types.ProjectBackupPolicyCollection{}, err
 	}
+	s.deps.Policies.Lock()
 	existing, err := s.deps.Policies.List(ctx, backup.PolicyProject, projectID)
 	if err != nil {
+		s.deps.Policies.Unlock()
 		return types.ProjectBackupPolicyCollection{}, err
 	}
 	reconcile := backup.PolicyReconciliation[backup.Policy, types.UpdateProjectBackupPolicy]{
@@ -177,6 +185,11 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 			normalized, validateErr := backup.ValidatePolicyUpdate(ctx, "project", update.UpdateBackupPolicy, s.deps.S3Destinations)
 			if validateErr != nil {
 				return common.Classify(common.ErrValidation, validateErr)
+			}
+			if *cmp.Or(update.StopContainers, new(true)) {
+				if authorizeErr := s.deps.Authorize(ctx, requester, StopPermissions...); authorizeErr != nil {
+					return authorizeErr
+				}
 			}
 			volumes := slices.Clone(update.Volumes)
 			slices.Sort(volumes)
@@ -204,7 +217,9 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 		Unregister: s.jobs.Unregister,
 		Reschedule: s.reschedule,
 	}
-	if runErr := reconcile.Run(ctx, updates); runErr != nil {
+	runErr := reconcile.Run(ctx, updates)
+	s.deps.Policies.Unlock()
+	if runErr != nil {
 		return types.ProjectBackupPolicyCollection{}, runErr
 	}
 	if _, err = s.deps.ProjectName(ctx, projectID); errors.Is(err, common.ErrNotFound) {
@@ -231,12 +246,11 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 
 func (s *Service) Remove(ctx context.Context, projectID string) {
 	policies, err := s.deps.Policies.Remove(ctx, backup.PolicyProject, projectID)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to delete the backup policies of a deleted project", "projectId", projectID, "error", err)
-		return
-	}
 	for i := range policies {
 		s.jobs.Unregister(ctx, policies[i].ID)
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to delete the backup policies of a deleted project", "projectId", projectID, "error", err)
 	}
 }
 
@@ -312,7 +326,8 @@ func (s *Service) reschedule(ctx context.Context, policy *backup.Policy) {
 				"localEnabled": policy.LocalEnabled, "s3Enabled": policy.S3Enabled, "s3DestinationId": policy.S3DestinationID,
 			},
 		},
-		ScheduleFn: s.deps.Policies.Schedule(policyID),
+		ScheduleFn:  s.deps.Policies.Schedule(policyID, policy.Schedule),
+		ShouldRunFn: func(context.Context) bool { return s.deps.Config.LocalDockerEnabled },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous)
 			if resumed || resumeErr != nil {
@@ -346,7 +361,7 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 		SeriesID:  policy.ID,
 		Read: func(ctx context.Context) (types.CreateProjectBackupRequest, error) {
 			request, disabled, readErr := s.scheduledPolicy(ctx, policy.ID)
-			remoteDisabled = disabled
+			remoteDisabled = remoteDisabled || disabled
 			return request, readErr
 		},
 		Retain: func(ctx context.Context) { s.retain(ctx, policy, policy.SubjectID, policy.ID) },
@@ -464,7 +479,9 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 	return types.GlobalProjectBackupPolicyCollection{Policies: dtos}, nil
 }
 
-func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
+func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.BackupRequester, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
+	s.deps.Policies.Lock()
+	defer s.deps.Policies.Unlock()
 	existing, err := s.deps.Policies.List(ctx, backup.PolicyProject, "")
 	if err != nil {
 		return types.GlobalProjectBackupPolicyCollection{}, err
@@ -483,6 +500,11 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.Upda
 			normalized, validateErr := backup.ValidatePolicyUpdate(ctx, "project", update.UpdateBackupPolicy, s.deps.S3Destinations)
 			if validateErr != nil {
 				return common.Classify(common.ErrValidation, validateErr)
+			}
+			if *cmp.Or(update.StopContainers, new(true)) {
+				if authorizeErr := s.deps.Authorize(ctx, requester, StopPermissions...); authorizeErr != nil {
+					return authorizeErr
+				}
 			}
 			projectIDs := kit.Unique(kit.TrimNonEmpty(update.ProjectIDs))
 			slices.Sort(projectIDs)
@@ -544,6 +566,9 @@ func (s *Service) StartGlobal(ctx context.Context, user types.Actor, policyID st
 	if err := s.deps.Engine.Authorize(ctx, requester); err != nil {
 		return types.BackupRunAccepted{}, err
 	}
+	if !s.deps.Config.LocalDockerEnabled {
+		return types.BackupRunAccepted{}, common.ErrLocalDockerDisabled
+	}
 	policy, err := s.deps.Policies.Get(ctx, backup.PolicyProject, "", policyID)
 	switch {
 	case err != nil:
@@ -553,13 +578,32 @@ func (s *Service) StartGlobal(ctx context.Context, user types.Actor, policyID st
 	case !policy.Enabled:
 		return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("enable the backup policy before running it"))
 	}
-	activityID, err := s.flow.Submit(ctx, s.global, globalRun{Requester: &requester, PolicyID: policyID}, activity.StartRequest{
+	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, globalAdmissionScope, policyID)
+	switch {
+	case err != nil:
+		return types.BackupRunAccepted{}, err
+	case !admitted:
+		return types.BackupRunAccepted{}, errGlobalRunning
+	}
+	input := globalRun{
+		Requester: &requester,
+		PolicyID:  policyID,
+		Claim:     uuid.NewV7().String(),
+	}
+	releaseHeld := s.deps.Engine.Hold(globalAdmissionScope, policyID, input.Claim, lease)
+	activityID, err := s.flow.Submit(ctx, s.global, input, activity.StartRequest{
 		StartedBy: &user,
 		Metadata:  database.JSON{"action": "run_project_backups", "policyId": policyID},
 	})
 	if err != nil {
+		releaseHeld(ctx)
 		return types.BackupRunAccepted{}, err
 	}
+	go func() {
+		background := context.WithoutCancel(ctx)
+		_, _ = s.flow.Wait(background, s.global, activityID)
+		releaseHeld(background)
+	}()
 	return types.BackupRunAccepted{ActivityID: activityID, Status: "running"}, nil
 }
 
@@ -581,7 +625,8 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *backup.Policy) {
 		Activity: activity.StartRequest{
 			Metadata: database.JSON{"action": "scheduled_project_backups", "policyId": policyID, "schedule": policy.Schedule},
 		},
-		ScheduleFn: s.deps.Policies.Schedule(policyID),
+		ScheduleFn:  s.deps.Policies.Schedule(policyID, policy.Schedule),
+		ShouldRunFn: func(context.Context) bool { return s.deps.Config.LocalDockerEnabled },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.backUpGlobal(ctx, globalRun{PolicyID: policyID}, previous)
 		},
@@ -599,7 +644,13 @@ func (s *Service) runGlobal(ctx context.Context, t flow.Task) (any, error) {
 
 func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	canceled := types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}
-	lease, err := s.deps.Engine.AwaitRun(ctx, globalAdmissionScope, input.PolicyID)
+	lease, admitted, err := s.deps.Engine.AcquireRun(ctx, globalAdmissionScope, input.PolicyID, input.Claim)
+	if err == nil && !admitted {
+		if input.Claim != "" {
+			return types.SchedulerOutcome{}, errGlobalRunning
+		}
+		lease, err = s.deps.Engine.AwaitRun(ctx, globalAdmissionScope, input.PolicyID)
+	}
 	if err != nil {
 		return types.SchedulerOutcome{}, err
 	}
@@ -657,6 +708,7 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		}
 		series := seriesID(input.PolicyID, project.ID)
 		backupErr := s.deps.BackUp(ctx, ScheduledBackup{
+			Requester: input.Requester,
 			ProjectID: project.ID,
 			SeriesID:  series,
 			Read: func(ctx context.Context) (types.CreateProjectBackupRequest, error) {

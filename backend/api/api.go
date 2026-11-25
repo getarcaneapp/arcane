@@ -2,10 +2,8 @@ package api
 
 import (
 	"context"
-	"io/fs"
 	"maps"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -17,30 +15,22 @@ import (
 	"getarcane.dev/arcane/v3/api/handlers"
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/apikey"
-	"getarcane.dev/arcane/v3/internal/apns"
-	"getarcane.dev/arcane/v3/internal/appimages"
 	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
-	"getarcane.dev/arcane/v3/internal/enrollment"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
-	"getarcane.dev/arcane/v3/internal/federated"
 	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
 	"getarcane.dev/arcane/v3/internal/health"
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/job"
-	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/network"
-	"getarcane.dev/arcane/v3/internal/notification"
-	"getarcane.dev/arcane/v3/internal/oidc"
-	"getarcane.dev/arcane/v3/internal/passkey"
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/port"
 	"getarcane.dev/arcane/v3/internal/project"
@@ -50,106 +40,69 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/internal/system"
-	"getarcane.dev/arcane/v3/internal/telemetry"
-	"getarcane.dev/arcane/v3/internal/template"
 	"getarcane.dev/arcane/v3/internal/updater"
 	"getarcane.dev/arcane/v3/internal/upload"
-	"getarcane.dev/arcane/v3/internal/user"
 	"getarcane.dev/arcane/v3/internal/variable"
 	"getarcane.dev/arcane/v3/internal/version"
 	"getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
-	"getarcane.dev/arcane/v3/internal/webhook"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/jsonx"
-	"getarcane.dev/arcane/v3/resources"
 )
 
 type (
 	HandlerDeps struct {
 		fx.In
 
-		AppImages         *appimages.ApplicationImagesService
-		User              *user.Module
-		Project           *project.Module
-		Environment       *environment.Module
-		Enrollment        *enrollment.Module
-		Settings          *settings.Module
-		JobSchedule       *job.Module
-		Container         *container.Module
-		Image             *image.Module
-		Build             *build.BuildService
-		Volume            *volume.Module
-		S3Destination     *s3.Module
-		Network           *network.NetworkService
-		Port              *port.PortService
-		Swarm             *swarm.Module
-		Podman            *podman.Module
-		ImageUpdate       *imageupdate.Module
-		Auth              *auth.Module
-		AuthTokens        *auth.TokenCache
-		Passkey           *passkey.PasskeyService
-		Oidc              *oidc.OidcService
-		Docker            *docker.DockerClientService
-		Template          *template.Module
-		ContainerRegistry *registry.Module
-		System            *system.Module
-		Diagnostics       *diagnostics.DiagnosticsService
-		Updater           *updater.Module
-		Event             *event.Module
-		Activity          *activity.Module
-		Version           *version.VersionService
-		Notification      *notification.Module
-		ApiKey            *apikey.Module
-		Apns              *apns.Module
-		Federated         *federated.FederatedCredentialService
-		GitRepository     *gitrepo.Module
-		GitOpsSync        *gitops.Module
-		Webhook           *webhook.Module
-		Vulnerability     *vulnerability.Module
-		Role              *role.Module
-		Variable          *variable.Module
-		Upload            *upload.Module
-		Health            *health.Module
-		Ldap              *ldap.Module
+		Project            *project.Module
+		EnvironmentService *environment.EnvironmentService
+		Settings           *settings.Module
+		JobSchedule        *job.Module
+		Container          *container.Module
+		Image              *image.Module
+		Build              *build.BuildService
+		Volume             *volume.Module
+		S3Destination      *s3.Module
+		Network            *network.NetworkService
+		Port               *port.PortService
+		Swarm              *swarm.Module
+		Podman             *podman.Module
+		ImageUpdate        *imageupdate.Module
+		AuthService        *auth.AuthService
+		ApiKeyService      *apikey.ApiKeyService
+		RoleService        *role.RoleService
+		Docker             *docker.DockerClientService
+		ContainerRegistry  *registry.Module
+		System             *system.Module
+		Diagnostics        *diagnostics.DiagnosticsService
+		Updater            *updater.Module
+		Event              *event.Module
+		Activity           *activity.Module
+		Version            *version.VersionService
+		GitRepository      *gitrepo.Module
+		GitOpsSync         *gitops.Module
+		Vulnerability      *vulnerability.Module
+		Variable           *variable.Module
+		Upload             *upload.Module
+		Health             *health.Module
 	}
 
 	SetupParams struct {
-		Echo       *echo.Echo
-		Group      *echo.Group
-		AppContext handlerutil.ActivityAppContext
-		Config     *config.Config
-		Deps       HandlerDeps
-		Tunnel     *agent.TunnelServer
+		Echo        *echo.Echo
+		Group       *echo.Group
+		AppContext  handlerutil.ActivityAppContext
+		Config      *config.Config
+		Deps        HandlerDeps
+		ManagerDeps ManagerHandlerDeps
+		Tunnel      *agent.TunnelServer
 	}
 )
 
 const (
-	openAPIPath    = "/openapi"
-	schemasPath    = "/schemas"
-	scalarDocsHTML = `<!doctype html>
-<html>
-  <head>
-    <title>Arcane API Reference</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-  </head>
-  <body>
-    <script
-      id="api-reference"
-      data-url="/api/openapi.json"
-      data-configuration='{
-        "theme": "purple",
-        "darkMode": true,
-        "layout": "modern",
-        "hiddenClients": ["unirest"],
-        "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" }
-      }'></script>
-    <script src="/api/docs/scalar.js"></script>
-  </body>
-</html>`
+	openAPIPath = "/openapi"
+	schemasPath = "/schemas"
 )
 
 var featureRoutes []func(huma.API, SetupParams)
@@ -163,8 +116,13 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	humaConfig.Formats["application/json"] = jsonx.HumaFormat
 	humaConfig.Formats["json"] = jsonx.HumaFormat
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
-	humaConfig.OpenAPIPath = openAPIPath
-	humaConfig.SchemasPath = schemasPath
+	if !p.Config.AgentEnabled {
+		humaConfig.OpenAPIPath = openAPIPath
+		humaConfig.SchemasPath = schemasPath
+	} else {
+		humaConfig.OpenAPIPath = ""
+		humaConfig.SchemasPath = ""
+	}
 	humaConfig.DocsPath = ""
 	humaConfig.Servers = []*huma.Server{{URL: p.Config.GetAppURL() + "/api"}}
 	humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
@@ -193,10 +151,10 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 
 	api.UseMiddleware(auth.NewHumaMiddleware(auth.HumaMiddlewareParams{
 		API:              api,
-		AuthService:      p.Deps.Auth.Service(),
-		APIKeyService:    p.Deps.ApiKey.Service(),
-		PermResolver:     p.Deps.Role.Service(),
-		EnvTokenResolver: p.Deps.Environment.Service(),
+		AuthService:      p.Deps.AuthService,
+		APIKeyService:    p.Deps.ApiKeyService,
+		PermResolver:     p.Deps.RoleService,
+		EnvTokenResolver: p.Deps.EnvironmentService,
 		Config:           p.Config,
 	}))
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
@@ -209,22 +167,11 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	registerNormalization(api)
 
 	p.Deps.Health.RegisterRoutes(api)
-	p.Deps.Auth.RegisterRoutes(api)
-	passkey.RegisterPasskeys(api, p.Deps.Passkey, p.Deps.Auth.Service(), p.Deps.AuthTokens, p.Deps.User.Service())
-	p.Deps.ApiKey.RegisterRoutes(api)
-	federated.RegisterFederatedCredentials(api, p.Deps.Federated)
-	p.Deps.Role.RegisterRoutes(api)
-	appimages.RegisterAppImages(api, p.Deps.AppImages)
-	p.Deps.User.RegisterRoutes(api)
 	p.Deps.Project.RegisterRoutes(api, p.AppContext)
 	version.RegisterVersion(api, p.Deps.Version)
-	p.Deps.Event.RegisterRoutes(api, p.Deps.Environment.Service().ResolveEventEnvironmentByAccessToken)
+	p.Deps.Event.RegisterRoutes(api, p.Deps.EnvironmentService.ResolveEventEnvironmentByAccessToken)
 	p.Deps.Activity.RegisterRoutes(api)
-	oidc.RegisterOidc(api, p.Deps.Auth.Service(), p.Deps.Passkey, p.Deps.Oidc, p.Deps.Role.Service(), p.Deps.User.Service(), p.Config)
-	p.Deps.Environment.RegisterRoutes(api, p.AppContext, p.Deps.Version.GetAppVersionInfo)
-	p.Deps.Enrollment.RegisterRoutes(api, p.Config)
 	p.Deps.ContainerRegistry.RegisterRoutes(api)
-	p.Deps.Template.RegisterRoutes(api)
 	p.Deps.Variable.RegisterRoutes(api, p.Config)
 	p.Deps.Image.RegisterRoutes(api, p.AppContext)
 	p.Deps.Upload.RegisterRoutes(api)
@@ -239,59 +186,19 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	network.RegisterNetworks(api, p.Deps.Network, p.Deps.Docker, p.Deps.Activity.Service(), p.AppContext)
 	p.Deps.Swarm.RegisterRoutes(api)
 	p.Deps.Podman.RegisterRoutes(api)
-	p.Deps.Notification.RegisterRoutes(api)
-	p.Deps.Apns.RegisterRoutes(api)
 	p.Deps.Updater.RegisterRoutes(api, p.AppContext)
 	p.Deps.System.RegisterRoutes(api, p.AppContext)
 	handlers.RegisterDiagnostics(api, p.Deps.Diagnostics)
 	p.Deps.GitRepository.RegisterRoutes(api)
 	p.Deps.GitOpsSync.RegisterRoutes(api)
-	p.Deps.Webhook.RegisterRoutes(api, p.AppContext)
 	p.Deps.Vulnerability.RegisterRoutes(api, p.AppContext)
-	handlers.RegisterStream(handlers.StreamParams{
-		API:                api,
-		ActivityHandler:    p.Deps.Activity.Handler(),
-		EnvironmentHandler: p.Deps.Environment.Handler(),
-		EventService:       p.Deps.Event.Service(),
-		VersionService:     p.Deps.Version,
-		SystemService:      p.Deps.System.Service(),
-	})
 
 	if !p.Config.AgentEnabled {
-		telemetry.RegisterRoutes(api, telemetry.NewService())
-		p.Deps.Ldap.RegisterRoutes(api)
+		registerManagerRoutes(api, p)
 	}
 	for _, register := range featureRoutes {
 		register(api, p)
 	}
-	huma.Register(api, huma.Operation{
-		OperationID: "get-api-docs",
-		Method:      http.MethodGet,
-		Path:        "/docs",
-		Tags:        []string{"Docs"},
-		Hidden:      true,
-		Security:    []map[string][]string{},
-		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
-	}, middleware.EchoHandler(func(c *echo.Context) error {
-		return c.HTML(http.StatusOK, scalarDocsHTML)
-	}))
-	huma.Register(api, huma.Operation{
-		OperationID: "get-api-docs-script",
-		Method:      http.MethodGet,
-		Path:        "/docs/scalar.js",
-		Tags:        []string{"Docs"},
-		Hidden:      true,
-		Security:    []map[string][]string{},
-		Metadata:    map[string]any{authz.MetaAccess: authz.EndpointAccessPublic},
-	}, middleware.EchoHandler(func(c *echo.Context) error {
-		if _, err := fs.Stat(resources.FS, "scalar/standalone.js"); err == nil {
-			return c.FileFS("scalar/standalone.js", resources.FS)
-		}
-		if _, err := os.Stat("resources/scalar/standalone.js"); err == nil {
-			return c.File("resources/scalar/standalone.js")
-		}
-		return c.Redirect(http.StatusTemporaryRedirect, "https://cdn.jsdelivr.net/npm/@scalar/api-reference")
-	}))
 
 	return api
 }

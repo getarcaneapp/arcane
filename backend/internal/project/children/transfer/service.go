@@ -375,7 +375,7 @@ func requesters(ctx context.Context, opts Options, webhooks bool) []types.Backup
 			backup.NewRequester(ctx, opts.User, target, authz.PermWebhooksCreate),
 		)
 	}
-	if request.IncludeVolumes && request.Mode == types.ProjectTransferModeCopy {
+	if request.IncludeVolumes {
 		required = append(required, backup.NewRequester(ctx, opts.User, source, authz.PermProjectsDeploy))
 	}
 	if request.Start {
@@ -451,8 +451,15 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Message:  fmt.Sprintf("Project %s is managed by a GitOps sync, but its copy %s on the target environment is not.", project.Name, request.Name),
 		})
 	}
+	resolved, _, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
+		Inspect: source.Volume,
+		Project: project,
+	})
+	if err != nil {
+		return fmt.Errorf("inspect source volumes: %w", err)
+	}
 	var externalVolumes, hostVolumes, sourceVolumes, missingVolumes, targetVolumes, built []string
-	for _, volume := range projects.ClassifyProjectVolumes(project) {
+	for _, volume := range resolved {
 		switch volume.Kind {
 		case types.ProjectVolumeExternal:
 			externalVolumes = append(externalVolumes, volume.Name)
@@ -462,11 +469,7 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			targetName := targetVolumeName(project.Name, volume.Key, volume.Name, request.Name)
 			if request.IncludeVolumes {
 				targetVolumes = append(targetVolumes, targetName)
-				_, exists, existsErr := source.Volume(ctx, volume.Name)
-				if existsErr != nil {
-					return fmt.Errorf("inspect source volume %s: %w", volume.Name, existsErr)
-				}
-				if !exists {
+				if volume.Missing {
 					missingVolumes = append(missingVolumes, volume.Name)
 					continue
 				}
@@ -477,6 +480,22 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 				SourceName: volume.Name,
 				TargetName: targetName,
 			})
+		}
+	}
+	for _, volume := range plan.Volumes {
+		if request.IncludeVolumes && slices.ContainsFunc(plan.Volumes, func(other types.ProjectTransferVolume) bool {
+			return other.SourceName == volume.SourceName && other.TargetName != volume.TargetName
+		}) {
+			plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+				Code:     types.ProjectTransferVolumeShared,
+				Severity: types.ProjectTransferSeverityError,
+				Message: fmt.Sprintf(
+					"Volume %s of project %s is used under several Compose keys that resolve to different volume names on the target environment; "+
+						"give those keys the same explicit name before transferring the project.",
+					volume.SourceName, project.Name,
+				),
+			})
+			break
 		}
 	}
 	if !request.IncludeVolumes && len(sourceVolumes) > 0 {
@@ -747,6 +766,9 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 		return errors.New("the transfer was interrupted while the target environment imported the project; start it again")
 	}
 	withVolumes := r.input.Request.IncludeVolumes && len(r.state.Volumes) > 0
+	if withVolumes && (r.source.Availability(ctx) != AvailabilityReady || r.target.Availability(ctx) != AvailabilityReady) {
+		return errors.New("the source or target environment no longer supports copying volume data; start the transfer again")
+	}
 	if withVolumes && r.state.SourceRunning && !r.state.SourceStopped {
 		r.state.SourceStopped = true
 		if err := s.save(ctx, r); err != nil {
@@ -760,7 +782,7 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 			return fmt.Errorf("stop the source project: %w", err)
 		}
 	}
-	request := types.ExportProjectArchive{Volumes: nil, StopProject: false}
+	request := types.ExportProjectArchive{Volumes: nil, StopProject: withVolumes}
 	if withVolumes {
 		current, err := r.source.Project(ctx, r.input.ProjectID)
 		if err != nil {
@@ -769,7 +791,13 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 		if current.RunningCount > 0 {
 			return fmt.Errorf("%d source container(s) are still running; volume data was not copied", current.RunningCount)
 		}
+		classified := projects.ClassifyProjectVolumes(current)
 		for _, volume := range r.state.Volumes {
+			if !slices.ContainsFunc(classified, func(planned types.ProjectVolume) bool {
+				return planned.Key == volume.Key && planned.Name == volume.SourceName && planned.Kind == types.ProjectVolumeNamed
+			}) {
+				return fmt.Errorf("volume %s of the source project changed after the checks; volume data was not copied", volume.Key)
+			}
 			request.Volumes = append(request.Volumes, volume.Key)
 		}
 	}
@@ -794,11 +822,6 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 	}
 	r.state.Importing = true
 	r.state.TargetCompose = projects.NormalizeProjectName(r.input.Request.Name)
-	if withVolumes {
-		for _, volume := range r.state.Volumes {
-			r.state.CreatedVolumes = append(r.state.CreatedVolumes, volume.TargetName)
-		}
-	}
 	if saveErr := s.save(ctx, r); saveErr != nil {
 		return saveErr
 	}
@@ -814,6 +837,13 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 		return fmt.Errorf("import project on the target environment: %w", err)
 	}
 	if withVolumes {
+		targetProject, projectErr := r.targetProject(ctx)
+		if projectErr != nil {
+			return projectErr
+		}
+		for _, volume := range r.state.Volumes {
+			r.state.CreatedVolumes = append(r.state.CreatedVolumes, targetProject.Volumes[volume.Key].Name)
+		}
 		r.state.CopiedVolumes = request.Volumes
 	}
 	s.report(ctx, r, types.ActivityMessageLevelInfo, fmt.Sprintf("Project %s created on the target environment (stopped)", r.input.Request.Name))
@@ -1034,11 +1064,8 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	case r.state.SourceStopped && r.state.SourceRunning:
 		restartCtx, cancelRestart := context.WithTimeout(ctx, operationTimeout)
 		err := untilUnlocked(restartCtx, func(ctx context.Context) error {
-			return r.source.DownProject(ctx, r.input.ProjectID, r.input.User)
+			return r.source.DeployProject(ctx, r.input.ProjectID, r.input.User)
 		})
-		if err == nil {
-			err = r.source.DeployProject(restartCtx, r.input.ProjectID, r.input.User)
-		}
 		cancelRestart()
 		if err != nil {
 			notes = append(notes, fmt.Sprintf("The source project could not be restarted: %v.", err))

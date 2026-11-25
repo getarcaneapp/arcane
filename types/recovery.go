@@ -57,6 +57,8 @@ type (
 		RecoveryKey                string                 `json:"recoveryKey"`
 		ProjectsSetting            string                 `json:"projectsSetting,omitempty"`
 		ProjectsDirectoriesSetting string                 `json:"projectsDirectoriesSetting,omitempty"`
+		TemplatesSetting           string                 `json:"templatesSetting,omitempty"`
+		FollowSymlinksSetting      string                 `json:"followSymlinksSetting,omitempty"`
 		NetworkMode                string                 `json:"networkMode,omitempty"`
 		Stages                     []RecoveryRestoreStage `json:"stages"`
 		RollbackStages             []RecoveryRestoreStage `json:"rollbackStages,omitempty"`

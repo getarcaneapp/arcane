@@ -3,10 +3,14 @@
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { AlertIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { GoroutineLeakReport } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { downloadBlob } from '#lib/utils/browser-download.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import type { DiagnosticsWebSocket } from '#lib/utils/ws.js';
@@ -56,14 +60,14 @@
 		downloading = true;
 		error = null;
 		try {
-			if (!socket) {
-				error = m.disconnected();
+			const downloaded = await tryCatch(
+				diagnosticsService.getProfileForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID, 'goroutineleak')
+			);
+			if (downloaded.error !== null) {
+				error = extractApiErrorMessage(downloaded.error) || m.diagnostics_error_download();
 				return;
 			}
-			const downloaded = await tryCatch(socket.downloadProfile('goroutineleak'));
-			if (downloaded.error !== null) {
-				error = downloaded.error.message || m.diagnostics_error_download();
-			}
+			downloadBlob(downloaded.data, 'goroutineleak.pprof');
 		} finally {
 			downloading = false;
 		}
