@@ -4861,5 +4861,7 @@
   "project_backups_empty_description": "Back up this project to keep a copy of its files and volume data.",
   "preview": "Preview",
   "markdown_view": "Markdown view",
-  "markdown_render_failed": "Markdown could not be rendered."
+  "markdown_render_failed": "Markdown could not be rendered.",
+  "show_swarm_task_hostnames": "Show Swarm Task Hostnames",
+  "search_and_sort_use_docker_names": "Search and sort use Docker names."
 }

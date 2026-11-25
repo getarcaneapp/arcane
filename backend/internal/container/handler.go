@@ -84,6 +84,13 @@ type (
 		ContainerID   string `path:"containerId" doc:"Container ID"`
 	}
 
+	GetSwarmTaskHostnamesInput struct {
+		EnvironmentID string `path:"id" doc:"Environment ID"`
+		Body          struct {
+			ContainerIDs []string `json:"containerIds" minItems:"1" maxItems:"100"`
+		}
+	}
+
 	ContainerActionInput struct {
 		EnvironmentID string `path:"id" doc:"Environment ID"`
 		ContainerID   string `path:"containerId" doc:"Container ID"`
@@ -340,6 +347,19 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 		Body: types.ApiResponse[types.ContainerDetails]{
 			Success: true,
 			Data:    details,
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) GetSwarmTaskHostnames(ctx context.Context, input *GetSwarmTaskHostnamesInput) (*handlerutil.Out[map[string]string], error) {
+	hostnames, err := h.containerService.GetSwarmTaskHostnames(ctx, input.Body.ContainerIDs)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to retrieve Swarm task hostnames", err)
+	}
+	return &handlerutil.Out[map[string]string]{
+		Body: types.ApiResponse[map[string]string]{
+			Success: true,
+			Data:    hostnames,
 		},
 	}, nil
 }
