@@ -1644,14 +1644,15 @@ func (s *Service) open(ctx context.Context, dockerClient *client.Client, entry *
 	return snapshotSource{}, types.ProjectManifest{}, errors.Join(errs...)
 }
 
-func (s *Service) readManifest(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool, id string) (snapshotSource, types.ProjectManifest, error) {
-	var repository backup.Repository
-	var err error
+func (s *Service) repository(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool) (backup.Repository, error) {
 	if remote {
-		repository, err = s.deps.Repository.Remote(ctx, s3DestinationID, "")
-	} else {
-		repository, err = s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
+		return s.deps.Repository.Remote(ctx, s3DestinationID, "")
 	}
+	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
+}
+
+func (s *Service) readManifest(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool, id string) (snapshotSource, types.ProjectManifest, error) {
+	repository, err := s.repository(ctx, dockerClient, s3DestinationID, remote)
 	if err != nil {
 		return snapshotSource{}, types.ProjectManifest{}, err
 	}
