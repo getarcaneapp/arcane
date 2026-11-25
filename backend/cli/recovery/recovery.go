@@ -146,8 +146,14 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	// Projects were restored into the current directory, so the recovered
 	// configuration must keep pointing there rather than at the backup-time path.
 	manifest.Environment[settings.EnvName("projectsDirectory", "")] = cmp.Or(request.ProjectsSetting, manifest.Environment[settings.EnvName("projectsDirectory", "")])
-	if name := settings.EnvName("projectsDirectories", ""); manifest.Environment[name] != "" {
-		manifest.Environment[name] = cmp.Or(request.ProjectsDirectoriesSetting, manifest.Environment[name])
+	for key, value := range map[string]string{
+		"projectsDirectories":   request.ProjectsDirectoriesSetting,
+		"templatesDirectory":    request.TemplatesSetting,
+		"followProjectSymlinks": request.FollowSymlinksSetting,
+	} {
+		if name := settings.EnvName(key, ""); manifest.Environment[name] != "" {
+			manifest.Environment[name] = cmp.Or(value, manifest.Environment[name])
+		}
 	}
 	if finalizeRestoredBackupErr := finalizeRestoredBackup(ctx, manifest.Environment, manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
 		return fmt.Errorf("finalize restored system backup: %w", finalizeRestoredBackupErr)
