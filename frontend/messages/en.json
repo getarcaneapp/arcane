@@ -4805,7 +4805,7 @@
   "not_created_yet_nothing_to_back_up": "Not created yet, so it has no data to back up.",
   "no_volumes_files_only": "This project has no volumes; only its files are backed up.",
   "files_only": "Files only",
-  "project_backup": "Project backup",
+  "project_backup": "project backup",
   "remove_this_backup": "Remove this backup? Its snapshots are deleted from the backup repository and cannot be restored.",
   "failed_to_start_project_backup": "Failed to start the project backup",
   "backup_store_not_exported": "Holds Arcane's backups, so its data is not exported.",
@@ -4857,5 +4857,6 @@
   "local_docker_disabled_backups_unavailable": "System backups are stored in a local Docker volume, so they are unavailable while ARCANE_LOCAL_DOCKER_ENABLED=false. Existing backups stay listed.",
   "share_original_project_data": "Share data with the original project",
   "share_original_project_data_description": "External volumes you do not restore keep their names, and bind mounts into the original project's folder keep their paths, so the new project uses the original project's data.",
-  "agent_profiling_upgrade_required": "Upgrade this agent to collect profiling dumps and pprof profiles."
+  "agent_profiling_upgrade_required": "Upgrade this agent to collect profiling dumps and pprof profiles.",
+  "project_backups_empty_description": "Back up this project to keep a copy of its files and volume data."
 }
