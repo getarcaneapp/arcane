@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cmp"
 	"context"
 	"math"
 	"net/http"
@@ -71,6 +72,12 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	secondsParam := &huma.Param{
 		Name:        "seconds",
 		In:          "query",
+		Description: "Capture duration in whole seconds, capped at 120.",
+		Schema:      &huma.Schema{Type: huma.TypeInteger},
+	}
+	traceSecondsParam := &huma.Param{
+		Name:        "seconds",
+		In:          "query",
 		Description: "Capture duration in seconds, capped at 120.",
 		Schema:      &huma.Schema{Type: huma.TypeNumber},
 	}
@@ -92,11 +99,13 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	pprofRoutes := []struct {
 		handler echo.HandlerFunc
 		content map[string]*huma.MediaType
+		headers map[string]*huma.Param
 		id      string
 		method  string
 		path    string
 		summary string
 		params  []*huma.Param
+		status  int
 	}{
 		{
 			id:      "pprof-index",
@@ -104,7 +113,10 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 			path:    "/agents/{id}/debug/pprof",
 			summary: "Redirect to the pprof index",
 			params:  []*huma.Param{idParam},
-			content: html,
+			status:  http.StatusMovedPermanently,
+			headers: map[string]*huma.Param{
+				"Location": {Description: "The pprof index URL with a trailing slash.", Schema: &huma.Schema{Type: huma.TypeString}},
+			},
 			handler: func(c *echo.Context) error {
 				return c.Redirect(http.StatusMovedPermanently, "pprof/")
 			},
@@ -159,7 +171,7 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 			method:  http.MethodGet,
 			path:    "/agents/{id}/debug/pprof/trace",
 			summary: "Capture an execution trace",
-			params:  []*huma.Param{idParam, secondsParam},
+			params:  []*huma.Param{idParam, traceSecondsParam},
 			content: binary,
 			handler: capProfileSeconds(pprof.Trace, traceSecondsOverLimit),
 		},
@@ -168,26 +180,30 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 			method:  http.MethodGet,
 			path:    "/agents/{id}/debug/pprof/{name}",
 			summary: "Get a named runtime profile",
-			params:  []*huma.Param{idParam, nameParam, debugParam},
+			params:  []*huma.Param{idParam, nameParam, debugParam, secondsParam},
 			content: map[string]*huma.MediaType{
 				"application/octet-stream": binary["application/octet-stream"],
 				"text/plain":               text["text/plain"],
 			},
 			handler: func(c *echo.Context) error {
-				pprof.Handler(c.Param("name")).ServeHTTP(c.Response(), c.Request())
-				return nil
+				return capProfileSeconds(pprof.Handler(c.Param("name")).ServeHTTP, cpuSecondsOverLimit)(c)
 			},
 		},
 	}
 	for _, r := range pprofRoutes {
 		middleware.RegisterWithPermission(api, huma.Operation{
-			OperationID: r.id,
-			Method:      r.method,
-			Path:        r.path,
-			Summary:     r.summary,
-			Parameters:  r.params,
+			OperationID:   r.id,
+			Method:        r.method,
+			Path:          r.path,
+			Summary:       r.summary,
+			DefaultStatus: cmp.Or(r.status, http.StatusOK),
+			Parameters:    r.params,
 			Responses: map[string]*huma.Response{
-				"200": {Description: "OK", Content: r.content},
+				strconv.Itoa(cmp.Or(r.status, http.StatusOK)): {
+					Description: http.StatusText(cmp.Or(r.status, http.StatusOK)),
+					Content:     r.content,
+					Headers:     r.headers,
+				},
 			},
 			Tags:     []string{"Diagnostics"},
 			Security: handlerutil.DefaultOperationSecurity(),
