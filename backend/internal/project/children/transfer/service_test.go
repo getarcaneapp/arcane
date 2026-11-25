@@ -225,7 +225,6 @@ func (f *fakeEnvironment) consume(uploadID string) ([]byte, error) {
 	return data, nil
 }
 
-// ExportProject stores the project archive, followed by each requested volume's data as a bundle does.
 func (f *fakeEnvironment) ExportProject(_ context.Context, projectID string, request types.ExportProjectArchive, _ types.Actor) (types.UploadSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -241,7 +240,6 @@ func (f *fakeEnvironment) ExportProject(_ context.Context, projectID string, req
 	return f.store(types.UploadKindProjectArchive, data), nil
 }
 
-// ImportProject imports the files, then restores a bundle's volumes into new ones named as Compose names them.
 func (f *fakeEnvironment) ImportProject(ctx context.Context, request types.ImportProjectArchive, _ types.Actor) (string, error) {
 	f.mu.Lock()
 	data, err := f.consume(request.UploadID)
@@ -474,10 +472,8 @@ func TestProjectTransfer(t *testing.T) {
 			source:    volumeProject,
 			dropChunk: true,
 			verify: func(t *testing.T, source, target *fakeEnvironment, _ []types.ProjectWebhookRetarget) {
-				// The source stops before the export, so its files and volume data come from one point in time.
 				require.Equal(t, []string{"down:volume", "export-project:data", "deploy:volume"}, source.callList())
 				require.Equal(t, []string{"import:compose-archive", "restore:copy_data"}, target.callList())
-				// One bundle is relayed, and the dropped chunk is sent again.
 				chunks := (len("compose-archive;data=volume-data-bytes") + testChunkSize - 1) / testChunkSize
 				written := make([]int, 0, chunks+1)
 				for index := range chunks {

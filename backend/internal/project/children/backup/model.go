@@ -29,7 +29,6 @@ type (
 		StoppedContainers bool                          `gorm:"column:stopped_containers"`
 	}
 
-	// DTOOptions carries what a backup's API value shows but its row doesn't store.
 	DTOOptions struct {
 		ActivityID        *string
 		RemoteAvailable   *bool
@@ -64,7 +63,6 @@ func (b *ProjectBackup) DTO(opts DTOOptions) types.ProjectBackup {
 	}
 }
 
-// snapshots points at the backup's snapshot fields.
 func (b *ProjectBackup) snapshots() backup.RunSnapshots {
 	return backup.RunSnapshots{
 		LocalID:          &b.LocalSnapshotID,

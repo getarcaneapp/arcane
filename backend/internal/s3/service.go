@@ -261,9 +261,7 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 		db.Table("system_backup_runs").Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
 		db.Table("system_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
 		db.Table("volume_backups").Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
-		// Volume, project and global project backup policies.
 		db.Table("backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
-		// A running project backup may still be writing its first snapshot to the destination.
 		db.Table("project_backups").Where("s3_destination_id = ? AND (remote_snapshot_id <> '' OR status = ?)", id, types.VolumeBackupStatusRunning),
 	}
 	for _, query := range counts {
@@ -275,7 +273,6 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 			return true, nil
 		}
 	}
-	// Global volume backup schedules are stored in settings, not a table.
 	global, err := s.settings.SystemVolumeBackupPolicies()
 	if err != nil {
 		return false, fmt.Errorf("failed to check S3 destination references: %w", err)

@@ -47,13 +47,11 @@ type (
 		ArchiveFilename func(backupID string) (string, error)
 		HelperImage     func(ctx context.Context) (string, error)
 		StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
-		// HoldLocal holds the local repository the safety backup writes, before the volume's containers stop.
-		HoldLocal func(ctx context.Context) (context.Context, func(), error)
-		// TempContainer starts a helper with the mount, returning what removes it.
-		TempContainer func(ctx context.Context, target mount.Mount) (string, func(), error)
-		AcquireHelper func(ctx context.Context, volumeName string) (string, func(), error)
-		DeleteVolume  func(ctx context.Context, name string, force bool, user types.Actor) error
-		Exec          func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+		HoldLocal       func(ctx context.Context) (context.Context, func(), error)
+		TempContainer   func(ctx context.Context, target mount.Mount) (string, func(), error)
+		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
+		DeleteVolume    func(ctx context.Context, name string, force bool, user types.Actor) error
+		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 	}
 
 	// Service restores volume backups, selected backup files, and uploaded archives into volumes.
@@ -61,7 +59,6 @@ type (
 		deps Dependencies
 	}
 
-	// runOptions is one restore into a volume; Create is set when the restore creates the volume.
 	runOptions struct {
 		Create     *client.VolumeCreateOptions
 		Write      func(ctx context.Context) error
@@ -69,14 +66,12 @@ type (
 		VolumeName string
 	}
 
-	// snapshotSource is where a Rustic volume backup is restored from.
 	snapshotSource struct {
 		snapshotID string
 		password   string
 		repository backup.Repository
 	}
 
-	// uploadWrite is an uploaded archive restored into a volume.
 	uploadWrite struct {
 		archive     io.ReadSeeker
 		root        *tar.Header
@@ -149,8 +144,6 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 		}
 		write = func(ctx context.Context) error { return s.restoreSnapshot(ctx, dockerClient, volumeName, source) }
 	}
-	// A discovered backup may target a volume missing on this instance; it is created, with no safety backup of an
-	// empty volume.
 	_, exists, err := backup.InspectVolume(ctx, dockerClient, volumeName)
 	if err != nil {
 		return fmt.Errorf("failed to inspect volume for restore: %w", err)
@@ -182,9 +175,6 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	return nil
 }
 
-// run restores into the volume through the shared restore runner: it stops the containers using the volume, takes a
-// safety backup of an existing volume or creates a missing one, writes, and starts the containers again. A failure
-// rolls the volume back to the safety backup, or removes the volume it created. It returns the safety backup's ID.
 func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts runOptions) (string, error) {
 	var stopped []container.Summary
 	var safetyID string
@@ -225,7 +215,6 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 		Discard: nil,
 		User:    opts.User,
 	}
-	// Containers that use the volume are always started again, whether or not this restore stopped any.
 	state := backup.RestoreState{Redeploy: new(true), SafetyID: "", Create: nil, MayStop: true, Running: true}
 	if opts.Create != nil {
 		state.Create = []client.VolumeCreateOptions{*opts.Create}
@@ -239,7 +228,6 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 	return safetyID, steps.Apply(ctx, state)
 }
 
-// snapshotSource resolves the repository, snapshot and password a Rustic volume backup restores from.
 func (s *Service) snapshotSource(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (snapshotSource, error) {
 	repository, snapshotID, err := s.deps.Repository(ctx, dockerClient, entry)
 	if err != nil {
@@ -252,7 +240,6 @@ func (s *Service) snapshotSource(ctx context.Context, dockerClient *client.Clien
 	return snapshotSource{repository: repository, snapshotID: snapshotID, password: password}, nil
 }
 
-// RestoreSnapshot replaces the volume's contents with the backup's snapshot.
 func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, volumeName string) error {
 	source, err := s.snapshotSource(ctx, dockerClient, entry)
 	if err != nil {
@@ -261,7 +248,6 @@ func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Clie
 	return s.restoreSnapshot(ctx, dockerClient, volumeName, source)
 }
 
-// restoreSnapshot replaces the volume's contents with the snapshot's.
 func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Client, volumeName string, source snapshotSource) error {
 	snapshot, _, err := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, source.repository, source.password, "", source.snapshotID)
 	if err != nil {
@@ -271,12 +257,10 @@ func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Clie
 	if err = s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.snapshotID, target, backup.RestoreOptions{DeleteExtra: true}); err != nil {
 		return fmt.Errorf("failed to restore Rustic snapshot: %w", err)
 	}
-	// Rustic restores every file's owner and mode but not the root's, which the snapshot records in a tag.
 	owner, recorded := backup.VolumeOwnerFromTags(snapshot.Tags)
 	if !recorded {
 		return nil
 	}
-	// Applied by a container removed right after, so none is left holding the volume.
 	containerID, remove, err := s.deps.TempContainer(ctx, target)
 	if err != nil {
 		return err
@@ -597,8 +581,6 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	return nil
 }
 
-// writeUpload extracts the uploaded archive beside the volume's contents, then replaces them with it; a new volume
-// takes the archive root's owner and mode.
 func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, upload uploadWrite) (err error) {
 	containerID, cleanup, err := s.deps.AcquireHelper(ctx, upload.volumeName)
 	if err != nil {

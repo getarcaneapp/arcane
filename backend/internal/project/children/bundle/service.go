@@ -33,19 +33,16 @@ import (
 )
 
 type (
-	// Backups reads project backups and restores them into another project's directory and volumes.
 	Backups interface {
-		// HoldBackups keeps retention, the sweep and deletes off the project's backups until the release runs.
 		HoldBackups(ctx context.Context, projectID string) (func(context.Context), error)
 		Manifest(ctx context.Context, projectID, backupID string) (types.ProjectManifest, error)
 		RestoreTo(ctx context.Context, opts types.ProjectBackupRestore) error
 	}
 
 	Dependencies struct {
-		Backups Backups
-		Docker  *dockerInternal.DockerClientService
-		Uploads *upload.UploadService
-		// BackupStore names the volume holding Arcane's local backups, which an export never copies.
+		Backups             Backups
+		Docker              *dockerInternal.DockerClientService
+		Uploads             *upload.UploadService
 		BackupStore         func(ctx context.Context) string
 		Project             func(ctx context.Context, projectID string) (types.Project, error)
 		Volume              func(ctx context.Context, name string) (types.Volume, bool, error)
@@ -57,19 +54,14 @@ type (
 		StartProject        func(ctx context.Context, projectID string, services []string, user types.Actor) error
 		DeployProject       func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		RemoveProject       func(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error
-		// LockVolumes takes the workspace locks that volume backups and restores also take.
-		LockVolumes func(ctx context.Context, names []string) (func(), error)
-		// ArchiveVolumes tars each captured volume as a volume export does and hands the archives to add.
-		ArchiveVolumes func(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error
-		RestoreVolume  func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
-		DeleteVolume   func(ctx context.Context, name string, user types.Actor) error
-		// CreateProject creates a project as an import does, with files that fill writes into its directory.
-		CreateProject func(ctx context.Context, project NewProject) (string, error)
-		// Activities receives what a restore as a new project left as it is, on the activity that runs it.
-		Activities activity.MessageAppender
+		LockVolumes         func(ctx context.Context, names []string) (func(), error)
+		ArchiveVolumes      func(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error
+		RestoreVolume       func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
+		DeleteVolume        func(ctx context.Context, name string, user types.Actor) error
+		CreateProject       func(ctx context.Context, project NewProject) (string, error)
+		Activities          activity.MessageAppender
 	}
 
-	// NewProject is a project created from files written into its directory.
 	NewProject struct {
 		User types.Actor
 		Fill func(ctx context.Context, projectPath string) error
@@ -94,11 +86,10 @@ type (
 	}
 
 	RestoreAsNewOptions struct {
-		User      types.Actor
-		ProjectID string
-		BackupID  string
-		Request   types.RestoreProjectBackupAsNewRequest
-		// RestoreVolumes allows restoring the backup's volumes into new volumes, which needs volumes:create.
+		User           types.Actor
+		ProjectID      string
+		BackupID       string
+		Request        types.RestoreProjectBackupAsNewRequest
 		RestoreVolumes bool
 	}
 
@@ -305,10 +296,6 @@ func (s *Service) manifest(project types.Project, request types.ExportProjectArc
 	}, nil
 }
 
-// capture reads the project's files and its selected volumes into the bundle as one point in time: the project stops
-// once when asked, and its volumes stay locked, so no volume backup or restore starts a writer during the read. A bundle
-// called consistent is refused when any other container, such as one a volume backup of another volume restarted,
-// writes to its volumes before or after the copy.
 func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, manifest types.ProjectManifest, state exportState) error {
 	archives := map[string]string{}
 	var names []string
@@ -502,7 +489,6 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 			}
 			return readErr
 		},
-		// RestoreVolumeUpload creates each volume as it restores it.
 		Written: func() []string { return restored },
 		Discard: func(ctx context.Context) (bool, []string) {
 			return s.discard(ctx, opts.User, projectID, opts.Request.Name)
@@ -514,7 +500,6 @@ func (s *Service) importProject(ctx context.Context, opts ImportOptions, bundled
 	return projectID, nil
 }
 
-// checkComposeNameFree refuses a new project's name when Docker already runs a Compose stack under it.
 func (s *Service) checkComposeNameFree(ctx context.Context, name string) error {
 	composeName := projects.NormalizeProjectName(name)
 	stackExists, err := s.deps.ComposeProjectInUse(ctx, composeName)
@@ -527,11 +512,8 @@ func (s *Service) checkComposeNameFree(ctx context.Context, name string) error {
 	return nil
 }
 
-// RestoreAsNew creates a project from a backup's files and the data of its selected volumes, restored into new
-// volumes, by the rules of a bundle import: a failure removes the new project and the volumes it created.
 func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (string, error) {
 	request := opts.Request
-	// As for an in-place restore, the source's admission comes before the project lock.
 	releaseBackups, err := s.deps.Backups.HoldBackups(ctx, opts.ProjectID)
 	if err != nil {
 		return "", err
@@ -541,8 +523,6 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	if err != nil {
 		return "", err
 	}
-	// An external volume keeps its name in the new project, so it is restored only when selected; one that exists is
-	// refused, so the original's volume is never restored over.
 	var keys []string
 	defaults := []string{}
 	for _, volume := range manifest.Volumes {
@@ -566,7 +546,6 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		if !volume.Included || !slices.Contains(selected, volume.Key) {
 			continue
 		}
-		// Volumes that name one Docker volume share its data in the snapshot, as they share an archive in a bundle.
 		included = append(included, types.ProjectVolume{
 			Labels:       volume.Labels,
 			DockerLabels: volume.DockerLabels,
@@ -590,8 +569,6 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	if nameErr := s.checkComposeNameFree(ctx, request.Name); nameErr != nil {
 		return "", nameErr
 	}
-	// The new project stays locked until its volumes are restored and it is started, so nothing starts it on data still
-	// being copied.
 	newID := uuid.New().String()
 	unlock, err := s.deps.LockProject(ctx, "restore project as new", newID)
 	if err != nil {
@@ -600,8 +577,6 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	defer unlock()
 	projectID, err := s.deps.CreateProject(ctx, NewProject{
 		User: opts.User,
-		// The new project gets its own copy of a .env the original keeps outside its directory, so it never changes the
-		// original's file and the import can set the new Compose name in it.
 		Fill: func(ctx context.Context, projectPath string) error {
 			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
 				Report: func(ctx context.Context, message string) {
@@ -660,8 +635,6 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	return projectID, nil
 }
 
-// newVolumes returns how to create the new project's volumes, once for volumes that share one, and which of the
-// backup's volumes is restored into each.
 func newVolumes(target importTarget, included []types.ProjectVolume) ([]client.VolumeCreateOptions, []types.ProjectBackupRestoreVolume, error) {
 	create := make([]client.VolumeCreateOptions, 0, len(target.restores))
 	restores := make([]types.ProjectBackupRestoreVolume, 0, len(target.restores))
@@ -790,8 +763,6 @@ func (s *Service) restoreVolume(ctx context.Context, restore volumeRestore) erro
 	return nil
 }
 
-// discard removes a new project a failed import or restore created, naming it when it could not; the restore steps
-// remove the volumes it created.
 func (s *Service) discard(ctx context.Context, user types.Actor, projectID, name string) (bool, []string) {
 	if projectID == "" {
 		return false, nil

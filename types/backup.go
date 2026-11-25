@@ -19,7 +19,6 @@ type (
 		SelectAll bool     `json:"selectAll,omitempty"`
 	}
 
-	// DiscoverBackupsRequest selects the repository a backup discovery scans.
 	DiscoverBackupsRequest struct {
 		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3" doc:"Repository to scan; s3 when omitted"`
 		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"S3 destination to scan for this instance's existing backups"`
@@ -151,7 +150,6 @@ type (
 		RecoveryKey     string                  `json:"recoveryKey"`
 	}
 
-	// BackupManagementType is the kind of backup: Arcane's own (system), a volume's, or a project's.
 	BackupManagementType string
 
 	SystemVolumeSelectionMode string
@@ -278,12 +276,10 @@ const (
 	SystemBackupTriggerSafety    = "safety"
 	SystemBackupTriggerManager   = "manager"
 
-	BackupManagementTypeSystem  BackupManagementType = "system"
-	BackupManagementTypeVolume  BackupManagementType = "volume"
-	BackupManagementTypeProject BackupManagementType = "project"
-	SystemVolumePolicyPrefix                         = "system-volume:"
-	// GlobalProjectPolicyPrefix starts the policy ID of each project's backups from a global project policy, followed by
-	// the policy ID, ":" and the project ID.
+	BackupManagementTypeSystem     BackupManagementType      = "system"
+	BackupManagementTypeVolume     BackupManagementType      = "volume"
+	BackupManagementTypeProject    BackupManagementType      = "project"
+	SystemVolumePolicyPrefix                                 = "system-volume:"
 	GlobalProjectPolicyPrefix                                = "global-project:"
 	SystemVolumeManualSeriesOwner                            = "manual"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
@@ -299,7 +295,6 @@ const (
 	VolumeBackupTriggerDiscovered = "discovered"
 )
 
-// Validate refuses an S3 discovery that names no S3 destination.
 func (r DiscoverBackupsRequest) Validate() error {
 	if r.Destination != VolumeBackupDestinationLocal && strings.TrimSpace(r.S3DestinationID) == "" {
 		return &FieldError{Field: "s3DestinationId", Err: errors.New("select an S3 destination to discover")}
@@ -307,18 +302,14 @@ func (r DiscoverBackupsRequest) Validate() error {
 	return nil
 }
 
-// Valid reports whether m is all, allowlist or blocklist.
 func (m SystemVolumeSelectionMode) Valid() bool {
 	return m == SystemVolumeSelectionAll || m == SystemVolumeSelectionAllowlist || m == SystemVolumeSelectionBlocklist
 }
 
-// Selects reports whether a resource is selected, given whether it is listed.
 func (m SystemVolumeSelectionMode) Selects(listed bool) bool {
 	return m == SystemVolumeSelectionAll || (m == SystemVolumeSelectionAllowlist && listed) || (m == SystemVolumeSelectionBlocklist && !listed)
 }
 
-// BackupManagementTypeForPolicy is the kind of a volume or project backup with the policy ID; the global volume policies'
-// backups are volume backups too.
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {
 	if strings.HasPrefix(policyID, GlobalProjectPolicyPrefix) {
 		return BackupManagementTypeProject

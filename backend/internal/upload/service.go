@@ -49,7 +49,6 @@ type (
 		Filename string
 	}
 
-	// budgetWriter refuses a write that would leave less than the reserve free.
 	budgetWriter struct {
 		w       io.Writer
 		left    int64
@@ -128,8 +127,6 @@ func (s *UploadService) validateSize(ctx context.Context, kind string, size int6
 	return nil
 }
 
-// budget returns how much an upload may store while keeping a reserve of the disk free. Only project and volume
-// archives, which hold as much as the data they were made from, are limited.
 func (s *UploadService) budget(ctx context.Context, kind string) (budget, reserve int64, limited bool, err error) {
 	if kind != types.UploadKindProjectArchive && kind != types.UploadKindVolumeBackup {
 		return 0, 0, false, nil
@@ -331,8 +328,6 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 	})
 }
 
-// WriteSession stores what Write writes as a complete upload. A limited upload fails before Write runs when the disk
-// has no room for it, and as soon as it outgrows the room left.
 func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptions) (session *types.UploadSession, err error) {
 	filename, err := sessionFilename(opts.Kind, opts.Filename)
 	if err != nil {

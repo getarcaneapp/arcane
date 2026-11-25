@@ -136,9 +136,6 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 	return nil
 }
 
-// ReadExternalEnvFile reads the file the project's .env links to, with its permissions, when the link leads outside
-// the project directory, so a copy of the directory alone would keep only the link. external is false for a regular
-// .env, a link inside the directory, or no .env at all.
 func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byte, perm os.FileMode, external bool, err error) {
 	envPath, perm, isSymlink, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, EffectiveEnvFileName))
 	if err != nil || !isSymlink {
@@ -158,8 +155,6 @@ func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byt
 	return content, perm, true, nil
 }
 
-// OwnLinks points each link in the copy at projectPath that leads into one of sourceDirs, the directories the copy was
-// taken from, at the copy's own file. A link Arcane can't change keeps its target, and report names them.
 func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, report func(ctx context.Context, message string)) error {
 	if len(sourceDirs) == 0 {
 		return nil
@@ -169,7 +164,6 @@ func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, repo
 		return fmt.Errorf("resolve project directory: %w", err)
 	}
 	var readOnly []string
-	// A directory Arcane can't read, such as a database's data, keeps its links as they are rather than failing.
 	walkErr := filepath.WalkDir(resolvedRoot, func(hostPath string, entry fs.DirEntry, err error) error {
 		switch {
 		case errors.Is(err, fs.ErrPermission):
@@ -190,7 +184,6 @@ func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, repo
 		case err != nil:
 		case filepath.IsAbs(target):
 			err = ownLink(hostPath, resolvedRoot, target, sourceDirs)
-		// A relative target is followed from where the original directory really is, the last of sourceDirs.
 		case !filepath.IsLocal(filepath.Join(filepath.Dir(relative), target)):
 			err = ownLink(hostPath, resolvedRoot, filepath.Join(sourceDirs[len(sourceDirs)-1], filepath.Dir(relative), target), sourceDirs)
 		}
@@ -209,8 +202,6 @@ func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, repo
 	return nil
 }
 
-// ownLink replaces the link at hostPath with one to the copy's own file when named is inside one of sourceDirs.
-// WalkDir only enters real directories, so replacing the link doesn't follow any target.
 func ownLink(hostPath, resolvedRoot, named string, sourceDirs []string) error {
 	for _, dir := range sourceDirs {
 		inside, err := filepath.Rel(dir, named)
@@ -535,8 +526,6 @@ func projectBundleVolumeArchives(manifest types.ProjectManifest) (map[string]boo
 	return expected, nil
 }
 
-// SelectBackupVolumes returns the requested volume keys, or every included one when the request names none; the
-// backup must include each requested key.
 func SelectBackupVolumes(included, requested []string) ([]string, error) {
 	if requested == nil {
 		return included, nil
