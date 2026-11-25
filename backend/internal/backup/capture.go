@@ -36,8 +36,8 @@ type (
 		// Stop quiesces the subject, by stopping its containers or copying its live databases, and returns what starts it
 		// again, if anything; nil when nothing needs quiescing.
 		Stop func(ctx context.Context) (func(context.Context) error, error)
-		// Watch records the parts that aren't Docker volumes before the read and returns the check that they are unchanged
-		// after it; nil when there are none.
+		// Watch records the parts that aren't Docker volumes before Stop and returns the check that they are unchanged
+		// after the read; nil when there are none.
 		Watch func(ctx context.Context) (func(context.Context) error, error)
 		// Verify, when set, refuses a read something could have changed: it runs once the subject stopped and again after
 		// the read, before the subject starts again.
@@ -103,6 +103,13 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 	if err != nil {
 		return err
 	}
+	// Recorded before quiescing, so a part that changes while the subject stops fails the check.
+	unchanged := func(context.Context) error { return nil }
+	if plan.Watch != nil {
+		if unchanged, err = plan.Watch(ctx); err != nil {
+			return err
+		}
+	}
 	if plan.Stop != nil {
 		start, stopErr := plan.Stop(ctx)
 		if start != nil {
@@ -117,12 +124,6 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 			return stopErr
 		}
 	}
-	unchanged := func(context.Context) error { return nil }
-	if plan.Watch != nil {
-		if unchanged, err = plan.Watch(ctx); err != nil {
-			return err
-		}
-	}
 	if plan.Verify != nil {
 		if verifyErr := plan.Verify(ctx); verifyErr != nil {
 			return verifyErr
@@ -131,9 +132,9 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 	if readErr := read(ctx, plan.Mounts); readErr != nil {
 		return readErr
 	}
-	err = unchanged(ctx)
-	// A shutdown can't cut the checks short: a cancelled check would reject a read that finished. They are still
-	// bounded, since the subject stays stopped until they return.
+	// A shutdown can't cut the checks short: a cancelled check would reject a read that finished. The Watch check is
+	// unbounded like the walk it repeats; the Docker checks are bounded, since the subject stays stopped until they return.
+	err = unchanged(context.WithoutCancel(ctx))
 	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
 	if err == nil {
 		var after map[string]string
