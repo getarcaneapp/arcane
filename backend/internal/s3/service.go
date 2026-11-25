@@ -255,9 +255,9 @@ func (s *S3DestinationService) ensureUnused(ctx context.Context, id string) erro
 func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) (bool, error) {
 	db := s.db.WithContext(ctx)
 	counts := []*gorm.DB{
-		db.Table("system_backup_runs").Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
+		db.Table("system_backup_runs").Where("s3_destination_id = ? AND (remote_snapshot_id <> '' OR status = ?)", id, types.SystemBackupStatusRunning),
 		db.Table("system_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
-		db.Table("volume_backups").Where("s3_destination_id = ? AND remote_snapshot_id <> ''", id),
+		db.Table("volume_backups").Where("s3_destination_id = ? AND (remote_snapshot_id <> '' OR status = ?)", id, types.VolumeBackupStatusRunning),
 		db.Table("volume_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
 		db.Table("project_backups").Where("s3_destination_id = ? AND (remote_snapshot_id <> '' OR status = ?)", id, types.VolumeBackupStatusRunning),
 	}

@@ -41,6 +41,7 @@
 	import { s3DestinationAllQuery } from '#lib/query/backups.js';
 	import { projectBackupListQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { activityService } from '#lib/services/activity-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { S3Destination, SystemBackupDestination } from '#lib/types/backup.js';
@@ -72,7 +73,7 @@
 		// Whether the project runs decides if the restore stops it and offers to deploy it again.
 		running: boolean;
 		// Called when a restore ends, so the page reloads what it shows; files says the project files were restored.
-		onRestored?: (restored: { files: boolean }) => Promise<unknown>;
+		onRestored?: (restored: { files: boolean; succeeded: boolean }) => Promise<unknown>;
 	} = $props();
 
 	const canBackup = $derived(hasPermission('projects:backup', environmentId));
@@ -164,14 +165,22 @@
 	// restore started here is known to have restored the project files.
 	let restoreWasRunning = false;
 	let restoringFiles = false;
+	let restoreActivityId: string | undefined;
 	$effect(() => {
 		const restoring = restoreActivity.activeIds.length > 0;
 		if (restoreWasRunning && !restoring) {
-			void onRestored?.({ files: restoringFiles });
+			void finishRestore(restoreActivityId, restoringFiles);
 			restoringFiles = false;
 		}
+		if (restoring) restoreActivityId = restoreActivity.activeIds[0];
 		restoreWasRunning = restoring;
 	});
+
+	async function finishRestore(activityId: string | undefined, files: boolean) {
+		const result =
+			activityId && canReadActivities ? await tryCatch(activityService.getActivity(activityId, environmentId, 1)) : undefined;
+		await onRestored?.({ files, succeeded: result?.data?.activity.status === 'success' });
+	}
 
 	const s3DestinationsQuery = createQuery(() => ({
 		...s3DestinationAllQuery(),

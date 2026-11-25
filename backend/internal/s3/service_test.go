@@ -34,9 +34,9 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 		&S3Destination{},
 		&settings.SettingVariable{},
 	))
-	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_runs (s3_destination_id text, remote_snapshot_id text)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_runs (s3_destination_id text, remote_snapshot_id text, status text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
-	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text)").Error)
+	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
 	crypto.InitEncryption(crypto.Config{

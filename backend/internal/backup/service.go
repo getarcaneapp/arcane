@@ -1168,7 +1168,16 @@ func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string,
 		}
 		expired = append(expired, ids...)
 	}
-	return expired, nil
+	var offsite []string
+	if err := db.WithContext(ctx).
+		Table(table).
+		Where("policy_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", policyID).
+		Order("created_at DESC").
+		Limit(keep).
+		Pluck("id", &offsite).Error; err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(expired, func(id string) bool { return slices.Contains(offsite, id) }), nil
 }
 
 // ExpiredUnmanagedRunIDs updates orphan marks and returns a random batch of expired runs, so runs that keep failing to
@@ -1248,10 +1257,8 @@ func ResolveDestination(ctx context.Context, req DestinationRequest) (Destinatio
 	if s3DestinationID == "" {
 		return DestinationOptions{}, "", common.Classify(req.Class, fmt.Errorf("select an S3 destination for the %s backup", req.Domain))
 	}
-	if req.S3Destinations != nil {
-		if _, err := req.S3Destinations.Configuration(ctx, s3DestinationID); err != nil {
-			return DestinationOptions{}, "", fmt.Errorf("load S3 destination: %w", err)
-		}
+	if _, err := req.S3Destinations.Configuration(ctx, s3DestinationID); err != nil {
+		return DestinationOptions{}, "", fmt.Errorf("load S3 destination: %w", err)
 	}
 	return selected, s3DestinationID, nil
 }
