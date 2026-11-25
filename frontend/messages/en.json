@@ -4858,5 +4858,8 @@
   "share_original_project_data": "Share data with the original project",
   "share_original_project_data_description": "External volumes you do not restore keep their names, and bind mounts into the original project's folder keep their paths, so the new project uses the original project's data.",
   "agent_profiling_upgrade_required": "Upgrade this agent to collect profiling dumps and pprof profiles.",
-  "project_backups_empty_description": "Back up this project to keep a copy of its files and volume data."
+  "project_backups_empty_description": "Back up this project to keep a copy of its files and volume data.",
+  "preview": "Preview",
+  "markdown_view": "Markdown view",
+  "markdown_render_failed": "Markdown could not be rendered."
 }
