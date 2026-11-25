@@ -765,6 +765,23 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 }
 
 func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, roots []string) (backupSourceLayout, error) {
+	data := path.Clean(filepath.ToSlash(layout.dataDirectory))
+	for index, first := range mounts {
+		for _, second := range mounts[index+1:] {
+			if first.Type != mount.TypeVolume || second.Type != mount.TypeVolume || first.Name != second.Name {
+				continue
+			}
+			if slices.ContainsFunc([]string{first.Destination, second.Destination}, func(destination string) bool {
+				return kit.FilePathMatches(path.Clean(destination), data) || kit.FilePathMatches(data, path.Clean(destination))
+			}) {
+				return backupSourceLayout{}, common.Classify(common.ErrValidation, fmt.Errorf(
+					"the volume %s is mounted at both %s and %s, and Docker does not report which part of the volume each mount uses, "+
+						"so a system backup cannot tell Arcane's files from projects; mount the volume once before creating system backups",
+					first.Name, first.Destination, second.Destination,
+				))
+			}
+		}
+	}
 	excluded, err := projectRootsInData(mounts, layout.dataDirectory, roots)
 	if err != nil {
 		return backupSourceLayout{}, err
@@ -774,6 +791,12 @@ func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, r
 	}
 	excludes := slices.Clone(layout.excludes)
 	for _, relative := range excluded {
+		if normalized, normalizeErr := kit.NormalizeRelativePath(relative); normalizeErr != nil || normalized != relative {
+			return backupSourceLayout{}, common.Classify(common.ErrValidation, fmt.Errorf(
+				"the projects folder %q inside Arcane's data folder starts or ends with a space, which a restore cannot match; rename it before creating system backups",
+				path.Join(data, relative),
+			))
+		}
 		excludes = append(excludes, globEscaper.Replace(relative))
 	}
 	return backupSourceLayout{

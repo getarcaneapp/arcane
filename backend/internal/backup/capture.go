@@ -1,7 +1,6 @@
 package backup
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"path"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
@@ -39,6 +37,7 @@ type (
 
 	ArchiveOutput struct {
 		Add   func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error
+		Exec  func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		Image string
 		Parts []mount.Mount
 	}
@@ -179,38 +178,26 @@ func (o ArchiveOutput) Write(ctx context.Context, dockerService *dockerInternal.
 	if err != nil {
 		return err
 	}
-	helper, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-			Config:     &container.Config{Image: o.Image, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()},
-			HostConfig: volumes.HostConfig(o.Image, nil, o.Parts),
-		})
-	})
+	helperID, removeHelper, err := StartHelper(ctx, dockerService, o.Image, o.Parts)
 	if err != nil {
-		return fmt.Errorf("create archive helper: %w", err)
+		return err
 	}
-	defer func() {
-		_, _ = dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, helper.ID, volumes.RemoveOptions())
-		})
-	}()
-	if _, err = dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, helper.ID, client.ContainerStartOptions{})
-	}); err != nil {
-		return fmt.Errorf("start archive helper: %w", err)
-	}
-	if mkdirErr := runInHelper(ctx, dockerClient, helper.ID, "mkdir", "-p", archiveDir); mkdirErr != nil {
+	defer removeHelper()
+	if _, _, mkdirErr := o.Exec(ctx, helperID, "", []string{"mkdir", "-p", archiveDir}); mkdirErr != nil {
 		return mkdirErr
 	}
 	for index, part := range o.Parts {
 		archive := path.Join(archiveDir, strconv.Itoa(index)+".tar.gz")
-		if tarErr := runInHelper(ctx, dockerClient, helper.ID, "tar", "-czf", archive, "-C", part.Target, "."); tarErr != nil {
+		if _, _, tarErr := o.Exec(ctx, helperID, "", []string{"tar", "-czf", archive, "-C", part.Target, "."}); tarErr != nil {
 			return fmt.Errorf("archive %s: %w", part.Source, tarErr)
 		}
-		if addErr := o.add(ctx, dockerClient, helper.ID, archive, part); addErr != nil {
+		if addErr := o.add(ctx, dockerClient, helperID, archive, part); addErr != nil {
 			return addErr
 		}
-		if rmErr := runInHelper(ctx, dockerClient, helper.ID, "rm", "-f", archive); rmErr != nil {
-			return rmErr
+		if index+1 < len(o.Parts) {
+			if _, _, rmErr := o.Exec(ctx, helperID, "", []string{"rm", "-f", archive}); rmErr != nil {
+				return rmErr
+			}
 		}
 	}
 	return nil
@@ -225,19 +212,26 @@ func (o ArchiveOutput) add(ctx context.Context, dockerClient *client.Client, con
 	return o.Add(ctx, part, size, reader)
 }
 
-func runInHelper(ctx context.Context, dockerClient *client.Client, containerID string, cmd ...string) error {
-	var output bytes.Buffer
-	exitCode, err := docker.ExecInContainer(ctx, dockerClient, docker.ExecRequest{
-		Stdout:      &output,
-		Stderr:      &output,
-		ContainerID: containerID,
-		Options:     client.ExecCreateOptions{AttachStdout: true, AttachStderr: true, Cmd: cmd},
+func StartHelper(ctx context.Context, dockerService *dockerInternal.DockerClientService, image string, mounts []mount.Mount) (string, func(), error) {
+	helper, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+			Config:     &container.Config{Image: image, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()},
+			HostConfig: volumes.HostConfig(image, nil, mounts),
+		})
 	})
 	if err != nil {
-		return err
+		return "", nil, fmt.Errorf("create helper container: %w", err)
 	}
-	if exitCode != 0 {
-		return fmt.Errorf("%s exited with code %d: %s", cmd[0], exitCode, strings.TrimSpace(output.String()))
+	remove := func() {
+		_, _ = dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, helper.ID, volumes.RemoveOptions())
+		})
 	}
-	return nil
+	if _, err = dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, helper.ID, client.ContainerStartOptions{})
+	}); err != nil {
+		remove()
+		return "", nil, fmt.Errorf("start helper container: %w", err)
+	}
+	return helper.ID, remove, nil
 }

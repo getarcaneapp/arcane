@@ -2,16 +2,17 @@ package project
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/moby/moby/api/types/container"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
 	"getarcane.dev/arcane/v3/internal/project/children/bundle"
+	"getarcane.dev/arcane/v3/internal/project/children/listing"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -44,13 +45,14 @@ type (
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
 		Policies       *backup.Policies
+		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 		LockVolumes    func(ctx context.Context, names []string) (func(), error)
 	}
 )
 
 func New(p ModuleParams) *Module {
-	local := localTransferEnvironment{
+	base := localTransferEnvironment{
 		projects: p.Service,
 		deps:     p.Transfer,
 	}
@@ -65,7 +67,8 @@ func New(p ModuleParams) *Module {
 		LockVolumes:    p.Backups.LockVolumes,
 		Project:        p.Service.GetProjectDetails,
 		StopProject:    p.Service.stopProject,
-		Volume:         local.Volume,
+		Containers:     p.Backups.Containers,
+		Volume:         base.Volume,
 		BackupStore:    p.Backups.Repository.StorageVolume,
 		LockProject:    p.Service.LockProject,
 		SoleDirectory:  p.Service.soleDirectory,
@@ -75,6 +78,14 @@ func New(p ModuleParams) *Module {
 				return false, err
 			}
 			return p.Service.runsArcane(ctx, proj), nil
+		},
+		ProjectContainers: func(ctx context.Context, projectID string) ([]container.Summary, error) {
+			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
+			if err != nil {
+				return nil, err
+			}
+			containers, err := p.Service.details.ComposeContainers(ctx)
+			return listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj)), err
 		},
 		GitOpsOwned: func(ctx context.Context, projectID string) (bool, error) {
 			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
@@ -103,7 +114,7 @@ func New(p ModuleParams) *Module {
 			}
 			return projectRecords(all), nil
 		},
-		DeleteVolume: local.DeleteVolume,
+		DeleteVolume: base.DeleteVolume,
 		Activities:   p.Activity,
 		Config:       p.Service.config,
 		Ctx:          p.Backups.Ctx,
@@ -111,14 +122,14 @@ func New(p ModuleParams) *Module {
 		Admission:    p.Backups.Admission,
 	})
 	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
-	local.bundles = bundle.New(bundle.Dependencies{
+	bundles := bundle.New(bundle.Dependencies{
 		Backups:             backups,
 		Docker:              p.Service.dockerService,
 		Uploads:             p.Service.uploads,
 		BackupStore:         p.Backups.Repository.StorageVolume,
-		Project:             local.Project,
-		Volume:              local.Volume,
-		ComposeProjectInUse: local.ComposeProjectInUse,
+		Project:             base.Project,
+		Volume:              base.Volume,
+		ComposeProjectInUse: base.ComposeProjectInUse,
 		ExportProject:       p.Service.ExportProjectArchive,
 		ImportProject: func(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
 			imported, err := p.Service.ImportProjectArchive(ctx, request, user)
@@ -135,7 +146,7 @@ func New(p ModuleParams) *Module {
 		LockVolumes:    p.Backups.LockVolumes,
 		ArchiveVolumes: p.Transfer.ArchiveVolumes,
 		RestoreVolume:  p.Transfer.RestoreVolume,
-		DeleteVolume:   local.DeleteVolume,
+		DeleteVolume:   base.DeleteVolume,
 		CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
 			proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
 				Restore:   project.Fill,
@@ -154,10 +165,14 @@ func New(p ModuleParams) *Module {
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles:  local.bundles,
+		bundles:  bundles,
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
-				Local:     local,
+				Local: localTransferEnvironment{
+					projects: p.Service,
+					deps:     p.Transfer,
+					bundles:  bundles,
+				},
 				Transport: p.Transfer.Transport,
 				Tunnels:   p.Transfer.Tunnels,
 			}.Get,
@@ -192,12 +207,8 @@ func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
 	m.backups.RegisterJobsOnStartup(ctx)
 }
 
-func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) {
-	go func() {
-		if err := m.backups.DiscoverAfterRestore(ctx); err != nil {
-			slog.WarnContext(ctx, "Project backup discovery after a system restore failed; it runs again on the next start", "error", err)
-		}
-	}()
+func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) error {
+	return m.backups.DiscoverAfterRestore(ctx)
 }
 
 func (m *Module) PruneUnmanagedBackups(ctx context.Context) error {

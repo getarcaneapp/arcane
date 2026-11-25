@@ -391,7 +391,7 @@ func (s *Service) prepareBackup(
 
 func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup, err error) error {
 	// A shutdown-cancelled workflow task is handed back with its row still running; any other cancel records the failure.
-	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
+	if backup.HandedBack(ctx) {
 		return ctx.Err()
 	}
 	if err == nil && entry.Status != types.VolumeBackupStatusSucceeded {
@@ -932,6 +932,7 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 			}
 			return nil
 		},
+		Exec:  s.deps.Exec,
 		Image: helperImage,
 		Parts: []mount.Mount{backup.VolumePart(volumeName)},
 	}.Write(ctx, s.deps.Docker)
@@ -1123,7 +1124,7 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 	}
 	if destinationID == "" {
 		return &types.VolumeBackup{
-			ID:              snapshot.LocalRunID(),
+			ID:              cmp.Or(snapshot.RunID(), "local-"+snapshot.ID),
 			VolumeName:      volumeName,
 			Size:            snapshot.Summary.TotalBytesProcessed,
 			CreatedAt:       createdAt,

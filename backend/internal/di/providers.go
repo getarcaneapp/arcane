@@ -1,10 +1,12 @@
 package di
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 	"uuid"
 
@@ -127,6 +129,7 @@ type (
 
 		Repository     *backup.VolumeRepository
 		Policies       *backup.Policies
+		Containers     *backup.Containers
 		S3Destinations *s3.S3DestinationService
 	}
 
@@ -173,7 +176,7 @@ func provideVolumeRepository(p volumeRepositoryParams) *backup.VolumeRepository 
 		Settings:         p.Settings,
 		S3Destinations:   p.S3Destinations,
 		RecoveryKeys:     p.RecoveryKeys,
-		BackupVolumeName: p.Config.BackupVolumeName,
+		BackupVolumeName: cmp.Or(strings.TrimSpace(p.Config.BackupVolumeName), "arcane-backups"),
 		EncryptionKey:    p.Config.EncryptionKey,
 	})
 }
@@ -205,6 +208,7 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Engine:         p.Backups,
 			Repository:     p.Repository,
 			Policies:       p.Policies,
+			Containers:     p.Containers,
 			S3Destinations: p.S3Destinations,
 			LockVolumes:    p.Volumes.LockVolumes,
 		},
