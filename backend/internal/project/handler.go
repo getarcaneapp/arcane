@@ -608,7 +608,6 @@ func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *R
 	if err != nil {
 		return nil, err
 	}
-	// The new project holds the backed up project's files, so reading that project is required too.
 	required := append([]string{authz.PermProjectsRead}, authz.ProjectImportConditions.Required("start", strconv.FormatBool(input.Body.Start))...)
 	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, required); permErr != nil {
 		return nil, permErr

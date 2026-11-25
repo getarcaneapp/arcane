@@ -173,7 +173,6 @@ func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	// map to a volume backup.
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x"}))
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x", Label: "arcane-system-recovery"}))
-	// Project snapshots share the repository but are labeled with the project name.
 	require.Nil(t, discoveredVolumeBackup("destination-1", "instance-a", backup.DiscoveredSnapshot{ID: "x", Label: "web", Tags: []string{backup.ProjectSnapshotTag, "arcane-project:p1"}}))
 
 	fallback := discoveredVolumeBackup("d", "r", backup.DiscoveredSnapshot{ID: "x", Label: "vol"})

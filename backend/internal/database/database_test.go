@@ -1013,8 +1013,6 @@ func TestMigration120_CreatesProjectBackupsAndGrantsProjectsBackup(t *testing.T)
 		('bk2', 'Mixed key', 'hash-bk2', 'bk2'),
 		('bk3', 'Other env key', 'hash-bk3', 'bk3')`)
 	require.NoError(t, err)
-	// bk2 can read projects everywhere and back up volumes in environment 0, so it may back up projects there;
-	// bk3's grants are in different environments, so it gets nothing.
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
 		('bp1', 'bk1', 'volumes:backup', NULL),
 		('bp2', 'bk1', 'projects:read', NULL),
@@ -1075,8 +1073,6 @@ func TestMigration121_GrantsProjectsRestore(t *testing.T) {
 		('k2', 'Mixed key', 'hash-k2', 'k2'),
 		('k3', 'Other env key', 'hash-k3', 'k3')`)
 	require.NoError(t, err)
-	// k2 reads projects everywhere but backs up volumes only in environment 0, so it may restore projects only there;
-	// k3's grants are in different environments, so it gets nothing.
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
 		('p1', 'k1', 'volumes:backup', NULL),
 		('p2', 'k1', 'projects:read', NULL),

@@ -90,7 +90,6 @@ func TestEnrichVolumesWithUsageData(t *testing.T) {
 	}
 }
 
-// newBackupVolumeTestRepository resolves backups to the arcane-backups volume, as outside a container.
 func newBackupVolumeTestRepository(t *testing.T) *backup.VolumeRepository {
 	t.Helper()
 	server := httptest.NewServer(http.NotFoundHandler())
