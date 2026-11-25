@@ -1168,7 +1168,7 @@
 	{/if}
 {/snippet}
 
-{#if !resourceSortSupported && !groupByProject}
+{#if !resourceSortSupported && !groupByProject && environmentStore.shown.length > 0}
 	<Alert.Root class="mb-4">
 		<InfoIcon class="size-4" />
 		<Alert.Title>{m.containers_resource_sort_unsupported()}</Alert.Title>

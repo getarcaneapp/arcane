@@ -295,13 +295,30 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 	return errors.Join(rescheduleErrors...)
 }
 
+func requiresLocalDocker(jobID string) bool {
+	return slices.Contains([]string{
+		"auto-update",
+		"auto-patch",
+		"auto-heal",
+		"scheduled-prune",
+		"vulnerability-scan",
+		"image-polling",
+		"docker-client-refresh",
+		"filesystem-watcher",
+	}, jobID)
+}
+
 func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, error) {
 	allMetadata := types.GetAllJobMetadata()
 	jobs := make([]types.JobStatus, 0, len(allMetadata))
 
 	for _, jobMeta := range allMetadata {
+		// Local Docker jobs do not run when local Docker is off, whatever the saved settings say.
+		localDockerOff := !s.cfg.LocalDockerEnabled && requiresLocalDocker(jobMeta.ID)
 		schedule := func() string {
 			switch {
+			case localDockerOff:
+				return ""
 			// Continuous jobs with a settings key (image-polling) are event-driven but
 			// also poll on that cron schedule, so surface the real expression.
 			case jobMeta.IsContinuous && jobMeta.SettingsKey == "":
@@ -314,7 +331,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 			return s.settings.GetStringSetting(ctx, jobMeta.SettingsKey)
 		}()
 		runtimeState, hasRuntimeState := s.scheduler.GetJobRuntimeState(jobMeta.ID)
-		useRuntimeState := hasRuntimeState && (jobMeta.SettingsKey != "" || jobMeta.ID == "upgrade-log-cleanup") && jobMeta.ID != "environment-health"
+		useRuntimeState := !localDockerOff && hasRuntimeState && (jobMeta.SettingsKey != "" || jobMeta.ID == "upgrade-log-cleanup") && jobMeta.ID != "environment-health"
 		jobs = append(jobs, jobMeta.ToJobStatus(
 			cmp.Or(kit.Ternary(useRuntimeState, runtimeState.Schedule, ""), schedule),
 			kit.Ternary(useRuntimeState, runtimeState.NextRun, func() *time.Time {
@@ -327,7 +344,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 				}
 				return new(sched.Next(time.Now().In(s.location)))
 			}()),
-			(jobMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, jobMeta.EnabledKey)),
+			!localDockerOff && (jobMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, jobMeta.EnabledKey)),
 			s.evaluatePrerequisites(ctx, jobMeta),
 		))
 	}
@@ -487,6 +504,9 @@ func (s *JobService) validateLocalJob(ctx context.Context, jobID string) error {
 		if s.cfg.AgentEnabled && metadata.ManagerOnly {
 			return errors.New("job is manager-only")
 		}
+		if !s.cfg.LocalDockerEnabled && requiresLocalDocker(jobID) {
+			return errors.New("job is disabled")
+		}
 		if metadata.EnabledKey != "" && !s.settings.GetBoolSetting(ctx, metadata.EnabledKey) {
 			return errors.New("job is disabled")
 		}
@@ -553,9 +573,13 @@ func (s *JobService) executeRun(ctx context.Context, run types.SchedulerRun) (re
 	if run.EnvironmentID != "0" {
 		return s.remote.Deliver(ctx, run)
 	}
-	if slices.Contains([]string{"auto-update", "auto-patch", "auto-heal", "scheduled-prune", "vulnerability-scan", "image-polling"}, run.JobID) ||
+	if requiresLocalDocker(run.JobID) ||
 		strings.HasPrefix(run.JobID, "gitops-sync:") || strings.HasPrefix(run.JobID, "volume-backup:") || strings.HasPrefix(run.JobID, "system-backup:") {
 		status, err := s.environment.TestConnection(ctx, "0")
+		if errors.Is(err, common.ErrLocalDockerDisabled) {
+			// Waiting would retry forever; local Docker stays off until the manager restarts.
+			return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Local Docker is disabled"}, nil
+		}
 		if err != nil || status != "online" {
 			return types.SchedulerOutcome{Status: types.RunStatusWaiting, Message: "Waiting for Docker"}, err
 		}

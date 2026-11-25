@@ -176,7 +176,7 @@ func OwnLinks(ctx context.Context, projectPath string, sourceDirs []string, repo
 			return fs.SkipDir
 		case err != nil:
 			return err
-		case entry.IsDir() && IsInternalScratchDirName(entry.Name()):
+		case hostPath != resolvedRoot && entry.IsDir() && IsInternalScratchDirName(entry.Name()):
 			return fs.SkipDir
 		case entry.Type()&fs.ModeSymlink == 0:
 			return nil

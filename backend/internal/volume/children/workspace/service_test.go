@@ -26,7 +26,6 @@ import (
 	"gorm.io/gorm"
 
 	acfstypes "kit.getarcane.app/acfs/types"
-	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
@@ -615,5 +614,5 @@ func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *dock
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
 }
