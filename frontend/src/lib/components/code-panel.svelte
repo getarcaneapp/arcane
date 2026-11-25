@@ -6,6 +6,8 @@
 		DiagnosticSummary,
 		EditorContext
 	} from '#lib/components/code-editor/analysis/types.js';
+	import MarkdownContent from '#lib/components/markdown-content.svelte';
+	import SegmentToggle from '#lib/components/segment-toggle.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
@@ -71,6 +73,32 @@
 	const effectiveAutoHeight = $derived(autoHeight || isMobile.current);
 	const editUrl = $derived(readOnly && !(enableDiff && diffOpen) && gitEditUrl ? gitEditUrl : null);
 
+	// Markdown opens rendered; Raw sticks only to the file it was chosen for.
+	let rawMarkdownFile = $state<string | null>(null);
+	const isMarkdown = $derived(language === 'markdown');
+	const showMarkdownPreview = $derived(isMarkdown && rawMarkdownFile !== title);
+	const markdownViewOptions = $derived([
+		{ value: 'preview', label: m.preview() },
+		{ value: 'raw', label: m.common_raw() }
+	]);
+
+	let lastEditorTools: { outline: boolean; diff: boolean; palette: boolean } | null = null;
+	// The outline, diff, and command palette live in the editor, so opening one leaves the preview.
+	$effect(() => {
+		const tools = { outline: outlineOpen, diff: diffOpen, palette: commandPaletteOpen };
+		const opened =
+			!!lastEditorTools &&
+			((tools.outline && !lastEditorTools.outline) ||
+				(tools.diff && !lastEditorTools.diff) ||
+				(tools.palette && !lastEditorTools.palette));
+		lastEditorTools = tools;
+		if (opened && isMarkdown) rawMarkdownFile = title;
+	});
+
+	function selectMarkdownView(view: string) {
+		rawMarkdownFile = view === 'raw' ? title : null;
+	}
+
 	// CodeMirror's gutters, search panel and tooltips share this wrapper.
 	function isEditorText(target: EventTarget | null): boolean {
 		return target instanceof Element && !!target.closest('.cm-content');
@@ -89,6 +117,31 @@
 		window.open(editUrl, '_blank', 'noopener,noreferrer');
 	}
 </script>
+
+{#snippet markdownViewToggle()}
+	<SegmentToggle
+		label={m.markdown_view()}
+		options={markdownViewOptions}
+		current={showMarkdownPreview ? 'preview' : 'raw'}
+		onSelect={selectMarkdownView}
+	/>
+{/snippet}
+
+{#snippet markdownPreview()}
+	<div class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0">
+		<div class="{effectiveAutoHeight ? '' : 'absolute inset-0 overflow-y-auto'} px-4 py-3">
+			<MarkdownContent markdown={value} class="max-w-4xl" />
+		</div>
+	</div>
+{/snippet}
+
+{#snippet panelBody()}
+	{#if showMarkdownPreview}
+		{@render markdownPreview()}
+	{:else}
+		{@render editorBody()}
+	{/if}
+{/snippet}
 
 {#snippet editorBody()}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -146,7 +199,12 @@
 
 {#if variant === 'plain'}
 	<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
-		{@render editorBody()}
+		{#if isMarkdown}
+			<div class="flex shrink-0 justify-end px-2 pb-1.5">
+				{@render markdownViewToggle()}
+			</div>
+		{/if}
+		{@render panelBody()}
 	</div>
 {:else}
 	<Card.Root class="flex {effectiveAutoHeight ? '' : 'flex-1'} min-h-0 flex-col overflow-hidden" data-open={open}>
@@ -156,6 +214,9 @@
 			</Card.Title>
 			<Card.Action>
 				<div class="flex items-center gap-1 pt-1">
+					{#if isMarkdown}
+						{@render markdownViewToggle()}
+					{/if}
 					<ArcaneButton
 						action="base"
 						tone={outlineOpen ? 'outline-primary' : 'ghost'}
@@ -189,7 +250,7 @@
 			</Card.Action>
 		</Card.Header>
 		<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible">
-			{@render editorBody()}
+			{@render panelBody()}
 		</div>
 	</Card.Root>
 {/if}
