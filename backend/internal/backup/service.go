@@ -1154,6 +1154,8 @@ func (p *Policies) List(ctx context.Context, kind, subjectID string) ([]Policy, 
 }
 
 func (p *Policies) Reconcile[U any](ctx context.Context, r PolicyReconciliation[U], updates []U) error {
+	p.Lock()
+	defer p.Unlock()
 	existing, err := p.List(ctx, r.Kind, r.SubjectID)
 	if err != nil {
 		return err

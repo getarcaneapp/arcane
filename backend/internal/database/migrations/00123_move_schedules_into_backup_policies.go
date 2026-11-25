@@ -52,14 +52,14 @@ SELECT p ->> 'id', 'volume', '',
     COALESCE((p ->> 'localEnabled')::boolean, false),
     COALESCE((p ->> 's3Enabled')::boolean, false),
     COALESCE(p ->> 's3DestinationId', ''),
-    jsonb_build_object(
+    json_build_object(
         'selectionMode', COALESCE(p ->> 'selectionMode', ''),
-        'volumeNames', COALESCE(p -> 'volumeNames', 'null'::jsonb),
+        'volumeNames', COALESCE(p -> 'volumeNames', 'null'::json),
         'ignoreAnonymous', COALESCE((p ->> 'ignoreAnonymous')::boolean, false)
     )::text,
     CURRENT_TIMESTAMP + ord * interval '1 second'
-FROM settings, jsonb_array_elements(settings.value::jsonb -> 'policies') WITH ORDINALITY AS t(p, ord)
-WHERE settings.key = 'systemVolumeBackupConfig' AND jsonb_typeof(settings.value::jsonb -> 'policies') = 'array'
+FROM settings, json_array_elements(settings.value::json -> 'policies') WITH ORDINALITY AS t(p, ord)
+WHERE settings.key = 'systemVolumeBackupConfig' AND json_typeof(settings.value::json -> 'policies') = 'array'
     AND COALESCE(p ->> 'id', '') <> '';
 DELETE FROM settings WHERE key = 'systemVolumeBackupConfig';
 `
