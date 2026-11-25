@@ -845,11 +845,13 @@
 			return false;
 		}
 
-		const formValues = form.data();
-		const validated = gitOwnsFiles ? formValues : form.validate();
-		if (!validated) return false;
+		if (!gitOwnsFiles && !form.validate()) return false;
 
-		const { composeContent, envContent, overrideContent } = validated;
+		// The form trims strings, so file contents are read from the editors verbatim.
+		// Trimmed contents never match the server copy and resubmit unchanged files.
+		const composeContent = inputs.composeContent.value;
+		const envContent = inputs.envContent.value;
+		const overrideContent = inputs.overrideContent.value;
 		let editedFields: Pick<ProjectUpdate, ProjectWritable> = {
 			name: effectiveName,
 			composeContent,
