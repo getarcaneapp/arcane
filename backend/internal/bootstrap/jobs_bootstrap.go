@@ -317,11 +317,7 @@ func registerManagerJobs(params registerManagerJobsParams) error {
 			return params.Scheduler.AddJob(params.AppCtx, params.ApnsOutbox)
 		})
 	})
-	unsubLDAP := params.Settings.SubscribeSettingsChanges([]string{"ldapEnabled", "ldapSyncInterval"}, func(_ []types.SettingUpdate) {
-		if err := params.Scheduler.AddJob(params.AppCtx, params.LdapSync); err != nil {
-			slog.WarnContext(params.AppCtx, "Failed to reschedule job", "job", params.LdapSync.Name(), "error", err)
-		}
-	})
+	unsubLDAP := params.Settings.SubscribeSettingsChanges([]string{"ldapEnabled", "ldapSyncInterval"}, rescheduleJob(params.AppCtx, params.Scheduler, params.LdapSync))
 	params.Lifecycle.Append(fx.Hook{
 		OnStop: func(context.Context) error {
 			unsubLDAP()
@@ -330,6 +326,14 @@ func registerManagerJobs(params registerManagerJobsParams) error {
 		},
 	})
 	return nil
+}
+
+func rescheduleJob(ctx context.Context, jobScheduler settingsEffectsScheduler, schedulerJob types.SchedulerJob) func([]types.SettingUpdate) {
+	return func(_ []types.SettingUpdate) {
+		if err := jobScheduler.AddJob(ctx, schedulerJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule job", "job", schedulerJob.Name(), "error", err)
+		}
+	}
 }
 
 func registerDynamicJobs(params dynamicJobsParams) {
@@ -355,11 +359,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 		unsubscribes = append(unsubscribes, params.Settings.SubscribeSettingsChanges(keys, callback))
 	}
 	rescheduleOn := func(keys []string, job types.SchedulerJob) {
-		subscribe(keys, func(_ []types.SettingUpdate) {
-			if err := params.Scheduler.AddJob(params.LifecycleCtx, job); err != nil {
-				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule job", "job", job.Name(), "error", err)
-			}
-		})
+		subscribe(keys, rescheduleJob(params.LifecycleCtx, params.Scheduler, job))
 	}
 	subscribe([]string{"pollingEnabled", "pollingInterval"}, func(_ []types.SettingUpdate) {
 		params.ImageUpdateWatcher.RefreshSchedule()

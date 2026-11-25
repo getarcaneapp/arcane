@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/pprof"
 	"strconv"
@@ -108,7 +109,7 @@ func capProfileSeconds(handler http.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		req := c.Request()
 		query := req.URL.Query()
-		if seconds, err := strconv.Atoi(query.Get("seconds")); err == nil && seconds > maxProfileSeconds {
+		if seconds, err := strconv.ParseFloat(query.Get("seconds"), 64); err == nil && (seconds > maxProfileSeconds || math.IsNaN(seconds)) {
 			query.Set("seconds", strconv.Itoa(maxProfileSeconds))
 			req = req.Clone(req.Context())
 			req.URL.RawQuery = query.Encode()
