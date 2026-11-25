@@ -25,6 +25,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/backupbrowser"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/volumes"
@@ -50,7 +51,7 @@ type (
 		HoldLocal       func(ctx context.Context) (context.Context, func(), error)
 		TempContainer   func(ctx context.Context, target mount.Mount) (string, func(), error)
 		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
-		DeleteVolume    func(ctx context.Context, name string, force bool, user types.Actor) error
+		AcquireRun      func(ctx context.Context, volumeName string) (*runs.Lease, error)
 		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 	}
 
@@ -64,6 +65,7 @@ type (
 		Write      func(ctx context.Context) error
 		User       types.Actor
 		VolumeName string
+		Repository string
 	}
 
 	snapshotSource struct {
@@ -125,7 +127,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	if err != nil {
 		return err
 	}
-	if entry.VolumeName != volumeName {
+	if entry.VolumeName != volumeName || entry.Status != types.VolumeBackupStatusSucceeded {
 		return common.ErrVolumeBackupWrongVolume
 	}
 	unlock := s.deps.Locks.Lock(volumeName)
@@ -137,10 +139,10 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	write := func(ctx context.Context) error {
 		return s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, nil)
 	}
+	var source snapshotSource
 	if entry.Format != types.VolumeBackupFormatArchive {
-		source, sourceErr := s.snapshotSource(ctx, dockerClient, entry)
-		if sourceErr != nil {
-			return sourceErr
+		if source, err = s.snapshotSource(ctx, dockerClient, entry); err != nil {
+			return err
 		}
 		write = func(ctx context.Context) error { return s.restoreSnapshot(ctx, dockerClient, volumeName, source) }
 	}
@@ -148,7 +150,13 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	if err != nil {
 		return fmt.Errorf("failed to inspect volume for restore: %w", err)
 	}
-	run := runOptions{VolumeName: volumeName, User: user, Create: nil, Write: write}
+	run := runOptions{
+		VolumeName: volumeName,
+		User:       user,
+		Create:     nil,
+		Write:      write,
+		Repository: source.repository.ID,
+	}
 	if !exists {
 		run.Create = new(client.VolumeCreateOptions{Name: volumeName})
 	}
@@ -176,17 +184,18 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 }
 
 func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts runOptions) (string, error) {
+	lease, leaseErr := s.deps.AcquireRun(ctx, opts.VolumeName)
+	if leaseErr != nil {
+		return "", leaseErr
+	}
+	defer lease.Release(ctx)
 	var stopped []container.Summary
 	var safetyID string
 	steps := backup.RestoreSteps{
 		Subject: "the volume",
 		Report:  nil,
-		Hold:    s.deps.HoldLocal,
-		Stop: func(ctx context.Context, _ backup.RestoreState) error {
-			more, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{opts.VolumeName}, RefuseArcaneWriters: true}, opts.User)
-			stopped = append(stopped, more...)
-			return err
-		},
+		Hold:    nil,
+		Stop:    nil,
 		Deploy: func(ctx context.Context) error {
 			if len(stopped) == 0 {
 				return nil
@@ -209,23 +218,55 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			return s.RestoreSnapshot(ctx, dockerClient, entry, opts.VolumeName)
 		},
 		Verify: nil,
-		DeleteVolume: func(ctx context.Context, name string, user types.Actor) error {
-			return s.deps.DeleteVolume(ctx, name, false, user)
+		DeleteVolume: func(ctx context.Context, name string, _ types.Actor) error {
+			_, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
+				return dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
+			})
+			return err
 		},
 		Discard: nil,
 		User:    opts.User,
 	}
-	state := backup.RestoreState{Redeploy: new(true), SafetyID: "", Create: nil, MayStop: true, Running: true}
+	state := backup.RestoreState{Redeploy: new(false), SafetyID: "", Create: nil, MayStop: true, Running: true}
 	if opts.Create != nil {
 		state.Create = []client.VolumeCreateOptions{*opts.Create}
 	} else {
+		steps.Hold = func(ctx context.Context) (context.Context, func(), error) {
+			held, releaseLocal, err := s.deps.HoldLocal(ctx)
+			if err != nil || opts.Repository == "" {
+				return held, releaseLocal, err
+			}
+			source, releaseSource, err := s.deps.Engine.HoldRepository(held, opts.Repository)
+			if err != nil {
+				releaseLocal()
+				return nil, nil, err
+			}
+			return source, func() {
+				releaseSource()
+				releaseLocal()
+			}, nil
+		}
+		steps.Stop = func(ctx context.Context, _ backup.RestoreState) error {
+			more, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{opts.VolumeName}, RefuseArcaneWriters: true}, opts.User)
+			stopped = append(stopped, more...)
+			return err
+		}
 		steps.Safety = func(ctx context.Context) (string, error) {
 			id, err := s.deps.SafetyBackup(ctx, opts.VolumeName, opts.User)
 			safetyID = id
 			return id, err
 		}
+		steps.InUse = func(ctx context.Context) error {
+			return backup.CheckNoWriters(ctx, s.deps.Docker, []string{opts.VolumeName})
+		}
 	}
-	return safetyID, steps.Apply(ctx, state)
+	if applyErr := steps.Apply(ctx, state); applyErr != nil {
+		return safetyID, applyErr
+	}
+	if deployErr := steps.Deploy(ctx); deployErr != nil {
+		return safetyID, fmt.Errorf("the volume was restored, but its containers could not be started again: %w", deployErr)
+	}
+	return safetyID, nil
 }
 
 func (s *Service) snapshotSource(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (snapshotSource, error) {
@@ -377,7 +418,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 	if err != nil {
 		return err
 	}
-	if entry.VolumeName != volumeName {
+	if entry.VolumeName != volumeName || entry.Status != types.VolumeBackupStatusSucceeded {
 		return common.ErrVolumeBackupWrongVolume
 	}
 	unlock := s.deps.Locks.Lock(volumeName)
@@ -405,6 +446,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 		Write: func(ctx context.Context) error {
 			return s.restoreSelection(ctx, dockerClient, volumeName, backupID, entry, repository, snapshotID, resolvedSelection)
 		},
+		Repository: repository.ID,
 	})
 	if err != nil {
 		return err

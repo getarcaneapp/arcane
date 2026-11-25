@@ -579,11 +579,16 @@ func VolumeOwnerFromTags(tags []string) (VolumeOwner, bool) {
 }
 
 func (o VolumeOwner) Apply(ctx context.Context, exec HelperExec, containerID string) error {
-	if _, _, err := exec(ctx, containerID, "", []string{"chown", fmt.Sprintf("%d:%d", o.UID, o.GID), "/volume"}); err != nil {
-		return fmt.Errorf("failed to restore volume root ownership: %w", err)
-	}
-	if _, _, err := exec(ctx, containerID, "", []string{"chmod", strconv.FormatInt(o.Mode&0o7777, 8), "/volume"}); err != nil {
-		return fmt.Errorf("failed to restore volume root mode: %w", err)
+	if _, _, err := exec(ctx, containerID, "", []string{
+		"sh",
+		"-c",
+		`[ "$(stat -c %u:%g:%a /volume)" = "$1" ] || { chown "$2" /volume && chmod "$3" /volume; }`,
+		"sh",
+		fmt.Sprintf("%d:%d:%s", o.UID, o.GID, strconv.FormatInt(o.Mode&0o7777, 8)),
+		fmt.Sprintf("%d:%d", o.UID, o.GID),
+		strconv.FormatInt(o.Mode&0o7777, 8),
+	}); err != nil {
+		return fmt.Errorf("failed to restore volume root ownership and mode: %w", err)
 	}
 	return nil
 }
@@ -1705,7 +1710,11 @@ func (r *VolumeRepository) WriteRunSnapshots(ctx context.Context, dockerClient *
 	}
 	return r.writeRunSnapshot(ctx, dockerClient, run, SnapshotWrite{
 		Capture: func(ctx context.Context, repository Repository, password string) (Snapshot, error) {
-			snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, local, *run.Snapshots.LocalID, repository, password, run.Label, run.Tags...)
+			source, _, findErr := r.deps.Engine.FindRunSnapshot(ctx, dockerClient, local, password, "", *run.Snapshots.LocalID)
+			if findErr != nil {
+				return Snapshot{}, findErr
+			}
+			snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, local, *run.Snapshots.LocalID, repository, password, run.Label, source.Tags...)
 			if replicateErr != nil {
 				return Snapshot{}, fmt.Errorf("failed to create S3 Rustic snapshot: %w", replicateErr)
 			}

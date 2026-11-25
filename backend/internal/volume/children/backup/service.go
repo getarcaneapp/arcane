@@ -86,7 +86,6 @@ type (
 		PolicyOverridden error
 		HelperImage      func(ctx context.Context) (string, error)
 		AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
-		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
 		Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		Ctx              context.Context
 		Scheduler        types.DynamicScheduler
@@ -198,7 +197,7 @@ func NewService(deps Dependencies) *Service {
 		HoldLocal:       deps.Repository.HoldLocal,
 		TempContainer:   s.createBackupTempContainerWithMount,
 		AcquireHelper:   deps.AcquireHelper,
-		DeleteVolume:    deps.DeleteVolume,
+		AcquireRun:      s.acquireVolumeRun,
 		Exec:            deps.Exec,
 	})
 	return s
@@ -357,7 +356,7 @@ func (s *Service) prepareBackup(
 		lease.Release(ctx)
 		return nil, backupPlan{}, nil, err
 	}
-	if lease == nil {
+	if lease == nil && trigger != types.VolumeBackupTriggerSafety {
 		if lease, err = s.acquireVolumeRun(ctx, volumeName); err != nil {
 			return nil, backupPlan{}, nil, err
 		}
@@ -425,55 +424,8 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	if err != nil {
 		return err
 	}
-	capture := backup.CapturePlan{
-		Inspect: func(ctx context.Context, name string) (types.Volume, bool, error) {
-			return backup.InspectVolume(ctx, dockerClient, name)
-		},
-		Stop:     nil,
-		Rejected: nil,
-		Mounts:   []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true}},
-		Volumes:  []string{volumeName},
-	}
-	if plan.Policy != nil && plan.Policy.StopContainers {
-		capture.Stop = func(ctx context.Context) (func(context.Context) error, error) {
-			stopped, stopErr := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}}, user)
-			start := func(ctx context.Context) error {
-				_, startErr := s.deps.Containers.StartContainers(ctx, stopped, user)
-				return startErr
-			}
-			return start, stopErr
-		}
-	}
-	hold := s.deps.Repository.HoldLocal
-	if !plan.LocalEnabled {
-		remote, remoteErr := s.deps.Repository.Remote(ctx, plan.S3DestinationID, "")
-		if remoteErr != nil {
-			return remoteErr
-		}
-		hold = func(ctx context.Context) (context.Context, func(), error) {
-			return s.deps.Engine.HoldRepository(ctx, remote.ID)
-		}
-	}
-	held, releaseRepository, err := hold(ctx)
-	if err != nil {
-		return err
-	}
-	defer releaseRepository()
-	captureErr := backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
-		containerID, remove, helperErr := s.createBackupTempContainerWithMount(ctx, mounts[0])
-		if helperErr != nil {
-			return helperErr
-		}
-		ownerTag, ownerErr := backup.ReadVolumeOwnerTag(ctx, s.deps.Exec, containerID)
-		remove()
-		if ownerErr != nil {
-			return ownerErr
-		}
-		return s.createSnapshots(ctx, dockerClient, entry, plan, mounts[0], ownerTag)
-	})
-	releaseRepository()
-	if captureErr != nil {
-		return captureErr
+	if snapshotErr := s.createSnapshots(ctx, dockerClient, entry, plan, user); snapshotErr != nil {
+		return snapshotErr
 	}
 	// Retention failures must not fail the run, or the backup would hide from ExpiredRunIDs forever.
 	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 &&
@@ -502,19 +454,81 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	return ctx.Err()
 }
 
-func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, source mount.Mount, ownerTag string) error {
-	run := snapshotRun(entry, plan, ownerTag)
-	input := backup.RootSnapshotInput(source, run.Tags...)
-	return s.deps.Repository.WriteRunSnapshots(ctx, dockerClient, run, backup.SnapshotWrite{
+func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor) error {
+	return s.deps.Repository.WriteRunSnapshots(ctx, dockerClient, snapshotRun(entry, plan), backup.SnapshotWrite{
 		Capture: func(ctx context.Context, repository backup.Repository, password string) (backup.Snapshot, error) {
-			snapshot, err := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, entry.VolumeName, input)
-			if err != nil {
-				return backup.Snapshot{}, fmt.Errorf("failed to create %s Rustic snapshot: %w", kit.Ternary(plan.LocalEnabled, "local", "S3"), err)
-			}
-			return snapshot, nil
+			return s.captureSnapshot(ctx, dockerClient, entry, plan, user, repository, password)
 		},
 		Save: func(ctx context.Context) error { return s.deps.Store.Save(ctx, entry) },
 	})
+}
+
+func (s *Service) captureSnapshot(
+	ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor, repository backup.Repository, password string,
+) (backup.Snapshot, error) {
+	volumeName := entry.VolumeName
+	held, releaseRepository, err := s.deps.Engine.HoldRepository(ctx, repository.ID)
+	if err != nil {
+		return backup.Snapshot{}, err
+	}
+	defer releaseRepository()
+	var snapshot backup.Snapshot
+	reject := func(ctx context.Context, err error) error {
+		cleanupCtx, cancelCleanup := context.WithTimeout(ctx, time.Minute)
+		defer cancelCleanup()
+		return errors.Join(
+			s.deps.Store.Fail(ctx, entry.ID, err.Error()),
+			s.deps.Engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, password, []string{snapshot.ID}),
+		)
+	}
+	capture := backup.CapturePlan{
+		Inspect: func(ctx context.Context, name string) (types.Volume, bool, error) {
+			return backup.InspectVolume(ctx, dockerClient, name)
+		},
+		Stop:     nil,
+		Rejected: reject,
+		Mounts:   []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true}},
+		Volumes:  []string{volumeName},
+	}
+	if plan.Policy != nil && plan.Policy.StopContainers {
+		capture.Stop = func(ctx context.Context) (func(context.Context) error, error) {
+			stopped, stopErr := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}}, user)
+			start := func(ctx context.Context) error {
+				remaining, startErr := s.deps.Containers.StartContainers(ctx, stopped, user)
+				if startErr == nil || len(remaining) == 0 {
+					return startErr
+				}
+				_, retryErr := s.deps.Containers.StartContainers(ctx, remaining, user)
+				return errors.Join(startErr, retryErr)
+			}
+			return start, stopErr
+		}
+	}
+	err = backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
+		containerID, remove, helperErr := s.createBackupTempContainerWithMount(ctx, mounts[0])
+		if helperErr != nil {
+			return helperErr
+		}
+		ownerTag, ownerErr := backup.ReadVolumeOwnerTag(ctx, s.deps.Exec, containerID)
+		remove()
+		if ownerErr != nil {
+			return ownerErr
+		}
+		created, snapshotErr := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, volumeName, backup.RootSnapshotInput(mounts[0], ownerTag))
+		if snapshotErr != nil {
+			return fmt.Errorf("failed to create %s Rustic snapshot: %w", kit.Ternary(plan.LocalEnabled, "local", "S3"), snapshotErr)
+		}
+		snapshot = created
+		return nil
+	})
+	if err != nil {
+		return backup.Snapshot{}, err
+	}
+	confirmed, err := s.deps.Engine.ConfirmRunSnapshot(held, dockerClient, repository, password, entry.ID, snapshot.ID)
+	if err != nil {
+		return backup.Snapshot{}, errors.Join(err, reject(context.WithoutCancel(held), err))
+	}
+	return confirmed, nil
 }
 
 func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*types.VolumeBackup, error) {
@@ -576,6 +590,11 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types
 	if err != nil {
 		return err
 	}
+	unlock, locked := s.deps.Locks.TryLock(entry.VolumeName)
+	if !locked {
+		return s.deps.AlreadyRunning
+	}
+	defer unlock()
 	// Deletes share the run lease so a slow operation cannot resurrect or double-forget snapshots.
 	lease, err := s.acquireVolumeRun(ctx, entry.VolumeName)
 	if err != nil {
