@@ -5,6 +5,7 @@ import { APIError } from '#lib/services/api-service.js';
 import { systemBackupService } from '#lib/services/system-backup-service.js';
 import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 import type {
 	SystemBackupDestination,
 	BackupManagementType,
@@ -14,6 +15,7 @@ import type {
 	S3Destination
 } from '#lib/types/backup.js';
 import type { ProjectBackupVolume, ProjectVolume } from '#lib/types/project.js';
+import { GLOBAL_SCOPE } from '#lib/types/role.js';
 import type { BackupPolicy, BackupRun } from '#lib/types/ui/backup.js';
 import type { VolumeBackupDestination } from '#lib/types/volume.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -132,6 +134,7 @@ export function backupPolicyUpdateFromPolicy(policy: BackupPolicy, includeStopCo
 }
 
 export async function discoverDestinationBackups(destinationId: string): Promise<void> {
+	if (!userStore.hasPermission('system-backups:update', GLOBAL_SCOPE)) return;
 	const policiesResult = await tryCatch(systemBackupService.getPolicies());
 	if (policiesResult.error !== null || !policiesResult.data.recoveryKeyStored) return;
 	const systemResult = await tryCatch(systemBackupService.discover(destinationId, ''));
@@ -141,8 +144,13 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	const projectResult = await tryCatch(systemBackupService.discoverProjectBackups(destinationId));
 	if (projectResult.error !== null) {
 		toast.error(m.failed_to_discover_project_backups(), { description: extractApiErrorMessage(projectResult.error) });
-	} else if (projectResult.data > 0) {
-		toast.success(m.found_project_backups({ count: projectResult.data }));
+	} else {
+		if (projectResult.data.count > 0) {
+			toast.success(m.found_project_backups({ count: projectResult.data.count }));
+		}
+		for (const failure of projectResult.data.errors ?? []) {
+			toast.warning(m.failed_to_discover_project_backups(), { description: failure });
+		}
 	}
 	const volumeResult = await tryCatch(volumeBackupService.discoverBackups(destinationId, LOCAL_DOCKER_ENVIRONMENT_ID));
 	if (volumeResult.error === null) {
@@ -184,13 +192,19 @@ export async function runAutomaticBackupDiscovery(
 		return found;
 	};
 	const localProjects = local
-		? await discover(systemBackupService.discoverProjectBackups('', 'local'), m.failed_to_discover_project_backups)
+		? await discover(
+				systemBackupService.discoverProjectBackups('', 'local').then((result) => result.count),
+				m.failed_to_discover_project_backups
+			)
 		: 0;
 	const counts = await Promise.all([
 		discoverSystem(),
 		...(local ? [discoverVolumes('', 'local')] : []),
 		...destinations.flatMap((item) => [
-			discover(systemBackupService.discoverProjectBackups(item.id), m.failed_to_discover_project_backups),
+			discover(
+				systemBackupService.discoverProjectBackups(item.id).then((result) => result.count),
+				m.failed_to_discover_project_backups
+			),
 			discoverVolumes(item.id, 's3')
 		])
 	]);

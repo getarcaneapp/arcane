@@ -41,7 +41,7 @@ type (
 		ListProjects   func(ctx context.Context) ([]types.ProjectReference, error)
 		CheckVolumes   func(ctx context.Context, projectID string, keys []string) error
 		Authorize      func(ctx context.Context, requester types.BackupRequester, permissions ...string) error
-		LatestRun      func(ctx context.Context, policyID string) (*types.ProjectBackup, error)
+		LatestRun      func(ctx context.Context, query, series string) (*types.ProjectBackup, error)
 		Resume         func(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recoveryData []byte) error
 		BackUp         func(ctx context.Context, run ScheduledBackup) error
 		Expire         func(ctx context.Context, seriesID string, keep int) error
@@ -141,7 +141,7 @@ func (s *Service) Policies(ctx context.Context, projectID string) (types.Project
 	destinations := s.deps.S3Destinations.DestinationsByID(ctx)
 	dtos := make([]types.ProjectBackupPolicy, 0, len(policies))
 	for i := range policies {
-		lastRun, latestErr := s.deps.LatestRun(ctx, policies[i].ID)
+		lastRun, latestErr := s.deps.LatestRun(ctx, "policy_id = ?", policies[i].ID)
 		if latestErr != nil {
 			return types.ProjectBackupPolicyCollection{}, latestErr
 		}
@@ -318,7 +318,7 @@ func (s *Service) reschedule(ctx context.Context, policy *backup.Policy) {
 		ScheduleFn:  s.deps.Policies.Schedule(policyID, policy.Schedule),
 		ShouldRunFn: func(context.Context) bool { return s.deps.Config.LocalDockerEnabled },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
-			outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous)
+			outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous, policyID)
 			if resumed || resumeErr != nil {
 				return outcome, resumeErr
 			}
@@ -333,7 +333,7 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 		return nil, decodeErr
 	}
 	previous, _ := jobcontext.Run(ctx)
-	if outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous); resumed || resumeErr != nil {
+	if outcome, resumed, resumeErr := s.resumeScheduled(ctx, previous, input.PolicyID); resumed || resumeErr != nil {
 		return outcome, resumeErr
 	}
 	canceled := types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}
@@ -369,20 +369,22 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, nil
 }
 
-func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, bool, error) {
+func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerRun, policyID string) (types.SchedulerOutcome, bool, error) {
 	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ResourceType == backup.ProjectTargetType && len(target.RecoveryData) > 0
 	})
 	if index < 0 {
 		return types.SchedulerOutcome{}, false, nil
 	}
-	err := s.deps.Resume(ctx, previous, nil, previous.Outcome.Targets[index].RecoveryData)
+	target := previous.Outcome.Targets[index]
+	err := s.deps.Resume(ctx, previous, nil, target.RecoveryData)
 	switch {
 	case errors.Is(err, backup.ErrBackupSettled):
 		return types.SchedulerOutcome{}, false, nil
 	case err != nil:
 		return types.SchedulerOutcome{}, true, err
 	}
+	s.retain(ctx, &backup.Policy{ID: policyID, SubjectID: target.ID}, target.ID, policyID)
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, true, nil
 }
 
@@ -446,7 +448,7 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 	destinations := s.deps.S3Destinations.DestinationsByID(ctx)
 	dtos := make([]types.GlobalProjectBackupPolicy, 0, len(policies))
 	for _, policy := range policies {
-		lastRun, latestErr := s.deps.LatestRun(ctx, policy.ID)
+		lastRun, latestErr := s.deps.LatestRun(ctx, "policy_id LIKE ?", seriesID(policy.ID, "%"))
 		if latestErr != nil {
 			return types.GlobalProjectBackupPolicyCollection{}, latestErr
 		}
@@ -638,6 +640,7 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 	}
 	defer lease.Release(context.WithoutCancel(ctx))
 	finished := make(map[string]types.TargetOutcome)
+	var resumed []string
 	report := func(projectID string, backupErr error) error {
 		status, message := types.RunStatusSucceeded, ""
 		switch {
@@ -667,6 +670,8 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			return types.SchedulerOutcome{}, resumeErr
 		case errors.Is(resumeErr, backup.ErrBackupSettled):
 			continue
+		case resumeErr == nil:
+			resumed = append(resumed, target.ID)
 		}
 		if reportErr := report(target.ID, resumeErr); reportErr != nil {
 			return types.SchedulerOutcome{}, reportErr
@@ -678,6 +683,9 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 	}
 	if policy == nil || !policy.Enabled {
 		return canceled, nil
+	}
+	for _, projectID := range resumed {
+		s.retain(ctx, policy, projectID, seriesID(input.PolicyID, projectID))
 	}
 	references, err := s.deps.ListProjects(ctx)
 	if err != nil {
@@ -728,11 +736,7 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 	if policy == nil || !policy.Enabled {
 		return types.CreateProjectBackupRequest{}, false, errPolicyGone
 	}
-	references, err := s.deps.ListProjects(ctx)
-	if err != nil {
-		return types.CreateProjectBackupRequest{}, false, err
-	}
-	if !slices.ContainsFunc(selectProjects(*policy, references), func(project types.ProjectReference) bool { return project.ID == projectID }) {
+	if !policy.Options.SelectionMode.Selects(slices.Contains(policy.Options.ProjectIDs, projectID)) {
 		return types.CreateProjectBackupRequest{}, false, errProjectSkipped
 	}
 	own, err := s.deps.Policies.HasEnabled(ctx, backup.PolicyProject, projectID)

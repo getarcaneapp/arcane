@@ -443,7 +443,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 121))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -1036,7 +1036,7 @@ func TestMigration120_CreatesProjectBackupsAndGrantsProjectsBackup(t *testing.T)
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
 	objects, backups, volumesOnly, keyGrants := state()
 	assert.Equal(t, 2, objects)
-	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:backup"]`, backups)
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:backup","projects:restore"]`, backups)
 	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, volumesOnly)
 	assert.Equal(t, 1, keyGrants)
 	var mixedScope string
@@ -1060,10 +1060,10 @@ func TestMigration120_CreatesProjectBackupsAndGrantsProjectsBackup(t *testing.T)
 	assert.Zero(t, keyGrants)
 }
 
-func TestMigration121_GrantsProjectsRestore(t *testing.T) {
+func TestMigration120_GrantsProjectsRestore(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-project-restore.db")
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 119))
 	_, err := rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions) VALUES
 		('r1', 'Backups', '["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]'),
 		('r2', 'Volumes only', '["volumes:list","volumes:read","volumes:backup"]')`)
@@ -1100,12 +1100,12 @@ func TestMigration121_GrantsProjectsRestore(t *testing.T) {
 		return grants
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 121))
-	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:restore"]`, role("r1"))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
+	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup","projects:backup","projects:restore"]`, role("r1"))
 	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, role("r2"))
 	assert.Equal(t, map[string]string{"k1": "*", "k2": "0"}, keyGrants())
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 120))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 119))
 	assert.JSONEq(t, `["projects:list","projects:read","volumes:list","volumes:read","volumes:backup"]`, role("r1"))
 	assert.JSONEq(t, `["volumes:list","volumes:read","volumes:backup"]`, role("r2"))
 	assert.Empty(t, keyGrants())
@@ -1114,7 +1114,7 @@ func TestMigration121_GrantsProjectsRestore(t *testing.T) {
 func TestMigration122_MovesVolumePoliciesIntoBackupPolicies(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-backup-policies.db")
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 121))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
 	_, err := rawDB.ExecContext(ctx, `INSERT INTO project_backups (id, project_id, project_name, created_at) VALUES ('pb1', 'p1', 'web', CURRENT_TIMESTAMP)`)
 	require.NoError(t, err)
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO volume_backup_policies
@@ -1159,7 +1159,7 @@ func TestMigration122_MovesVolumePoliciesIntoBackupPolicies(t *testing.T) {
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO backup_policies (id, subject_kind, subject_id, schedule) VALUES ('pp1', 'project', 'p1', '0 2 * * *')`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 121))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 120))
 	assert.Equal(t, map[string]bool{"volume_backup_policies": true}, tables())
 	assert.Zero(t, projectColumns())
 	var volumes []string

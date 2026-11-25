@@ -20,7 +20,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
-	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
@@ -98,27 +97,7 @@ func (s *Service) createBackupTempContainerWithMount(ctx context.Context, backup
 	if err != nil {
 		return "", nil, err
 	}
-	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-			Config:     &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()},
-			HostConfig: volumes.HostConfig(helperImage, nil, []mount.Mount{backupMount}),
-		})
-	})
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to create backup temp container: %w", err)
-	}
-	remove := func() {
-		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
-		})
-	}
-	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
-	}); containerStartErr != nil {
-		remove()
-		return "", nil, fmt.Errorf("failed to start backup temp container: %w", containerStartErr)
-	}
-	return resp.ID, remove, nil
+	return backup.StartHelper(ctx, s.deps.Docker, helperImage, []mount.Mount{backupMount})
 }
 
 func (s *Service) createBackupTempContainer(ctx context.Context, target string, readOnly bool) (string, func(), error) {

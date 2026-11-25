@@ -61,11 +61,11 @@ type (
 	}
 
 	runOptions struct {
-		Create     *client.VolumeCreateOptions
 		Write      func(ctx context.Context) error
 		User       types.Actor
 		VolumeName string
 		Repository string
+		Create     []client.VolumeCreateOptions
 	}
 
 	snapshotSource struct {
@@ -136,31 +136,28 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	if err != nil {
 		return err
 	}
-	write := func(ctx context.Context) error {
-		return s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, nil)
-	}
 	var source snapshotSource
 	if entry.Format != types.VolumeBackupFormatArchive {
 		if source, err = s.snapshotSource(ctx, dockerClient, entry); err != nil {
 			return err
 		}
-		write = func(ctx context.Context) error { return s.restoreSnapshot(ctx, dockerClient, volumeName, source) }
 	}
 	_, exists, err := backup.InspectVolume(ctx, dockerClient, volumeName)
 	if err != nil {
 		return fmt.Errorf("failed to inspect volume for restore: %w", err)
 	}
-	run := runOptions{
+	safetyID, err := s.run(ctx, dockerClient, runOptions{
 		VolumeName: volumeName,
 		User:       user,
-		Create:     nil,
-		Write:      write,
+		Create:     kit.Ternary(exists, nil, []client.VolumeCreateOptions{{Name: volumeName}}),
+		Write: func(ctx context.Context) error {
+			if entry.Format == types.VolumeBackupFormatArchive {
+				return s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, nil)
+			}
+			return s.restoreSnapshot(ctx, dockerClient, volumeName, source)
+		},
 		Repository: source.repository.ID,
-	}
-	if !exists {
-		run.Create = new(client.VolumeCreateOptions{Name: volumeName})
-	}
-	safetyID, err := s.run(ctx, dockerClient, run)
+	})
 	if err != nil {
 		return err
 	}
@@ -194,8 +191,32 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 	steps := backup.RestoreSteps{
 		Subject: "the volume",
 		Report:  nil,
-		Hold:    nil,
-		Stop:    nil,
+		Hold: func(ctx context.Context) (context.Context, func(), error) {
+			if len(opts.Create) > 0 {
+				return ctx, func() {}, nil
+			}
+			held, releaseLocal, err := s.deps.HoldLocal(ctx)
+			if err != nil || opts.Repository == "" {
+				return held, releaseLocal, err
+			}
+			source, releaseSource, err := s.deps.Engine.HoldRepository(held, opts.Repository)
+			if err != nil {
+				releaseLocal()
+				return nil, nil, err
+			}
+			return source, func() {
+				releaseSource()
+				releaseLocal()
+			}, nil
+		},
+		Stop: func(ctx context.Context, _ backup.RestoreState) error {
+			if len(opts.Create) > 0 {
+				return nil
+			}
+			more, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{opts.VolumeName}, RefuseArcaneWriters: true}, opts.User)
+			stopped = append(stopped, more...)
+			return err
+		},
 		Deploy: func(ctx context.Context) error {
 			if len(stopped) == 0 {
 				return nil
@@ -204,8 +225,20 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			stopped = left
 			return err
 		},
-		Safety: nil,
-		InUse:  nil,
+		Safety: func(ctx context.Context) (string, error) {
+			if len(opts.Create) > 0 {
+				return "", nil
+			}
+			id, err := s.deps.SafetyBackup(ctx, opts.VolumeName, opts.User)
+			safetyID = id
+			return id, err
+		},
+		InUse: func(ctx context.Context) error {
+			if len(opts.Create) > 0 {
+				return nil
+			}
+			return backup.CheckNoWriters(ctx, s.deps.Docker, []string{opts.VolumeName})
+		},
 		Docker: s.deps.Docker,
 		Write: func(ctx context.Context, safety string) error {
 			if safety == "" {
@@ -227,40 +260,12 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 		Discard: nil,
 		User:    opts.User,
 	}
-	state := backup.RestoreState{Redeploy: new(false), SafetyID: "", Create: nil, MayStop: true, Running: true}
-	if opts.Create != nil {
-		state.Create = []client.VolumeCreateOptions{*opts.Create}
-	} else {
-		steps.Hold = func(ctx context.Context) (context.Context, func(), error) {
-			held, releaseLocal, err := s.deps.HoldLocal(ctx)
-			if err != nil || opts.Repository == "" {
-				return held, releaseLocal, err
-			}
-			source, releaseSource, err := s.deps.Engine.HoldRepository(held, opts.Repository)
-			if err != nil {
-				releaseLocal()
-				return nil, nil, err
-			}
-			return source, func() {
-				releaseSource()
-				releaseLocal()
-			}, nil
-		}
-		steps.Stop = func(ctx context.Context, _ backup.RestoreState) error {
-			more, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{opts.VolumeName}, RefuseArcaneWriters: true}, opts.User)
-			stopped = append(stopped, more...)
-			return err
-		}
-		steps.Safety = func(ctx context.Context) (string, error) {
-			id, err := s.deps.SafetyBackup(ctx, opts.VolumeName, opts.User)
-			safetyID = id
-			return id, err
-		}
-		steps.InUse = func(ctx context.Context) error {
-			return backup.CheckNoWriters(ctx, s.deps.Docker, []string{opts.VolumeName})
-		}
-	}
-	if applyErr := steps.Apply(ctx, state); applyErr != nil {
+	if applyErr := steps.Apply(ctx, backup.RestoreState{
+		Redeploy: new(false),
+		Create:   opts.Create,
+		MayStop:  true,
+		Running:  true,
+	}); applyErr != nil {
 		return safetyID, applyErr
 	}
 	if deployErr := steps.Deploy(ctx); deployErr != nil {
@@ -292,7 +297,7 @@ func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Clie
 func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Client, volumeName string, source snapshotSource) error {
 	snapshot, _, err := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, source.repository, source.password, "", source.snapshotID)
 	if err != nil {
-		return err
+		return backup.UnchangedError{Err: err}
 	}
 	target := mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume"}
 	if err = s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.snapshotID, target, backup.RestoreOptions{DeleteExtra: true}); err != nil {
@@ -587,19 +592,29 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	if err != nil {
 		return err
 	}
-	run := runOptions{VolumeName: volumeName, User: user, Create: nil, Write: nil}
+	var create []client.VolumeCreateOptions
 	if composeVolume != nil {
 		createOptions, optionsErr := projects.ComposeVolumeTargetCreateOptions(volumeName, *composeVolume)
 		if optionsErr != nil {
 			return optionsErr
 		}
-		run.Create = &createOptions
+		create = []client.VolumeCreateOptions{createOptions}
 	}
 	newVolume := composeVolume != nil
-	run.Write = func(ctx context.Context) error {
-		return s.writeUpload(ctx, dockerClient, uploadWrite{volumeName: volumeName, archive: archive, root: first, archiveRoot: archiveRoot, newVolume: newVolume})
-	}
-	preBackupID, err := s.run(ctx, dockerClient, run)
+	preBackupID, err := s.run(ctx, dockerClient, runOptions{
+		VolumeName: volumeName,
+		User:       user,
+		Create:     create,
+		Write: func(ctx context.Context) error {
+			return s.writeUpload(ctx, dockerClient, uploadWrite{
+				archive:     archive,
+				root:        first,
+				volumeName:  volumeName,
+				archiveRoot: archiveRoot,
+				newVolume:   newVolume,
+			})
+		},
+	})
 	if err != nil {
 		return err
 	}
@@ -666,7 +681,7 @@ func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, 
 		}
 	}
 	if upload.newVolume && upload.archiveRoot {
-		owner := backup.VolumeOwner{UID: upload.root.Uid, GID: upload.root.Gid, Mode: upload.root.Mode}
+		owner := backup.VolumeOwner{UID: uint32(upload.root.Uid), GID: uint32(upload.root.Gid), Mode: upload.root.Mode}
 		if applyErr := owner.Apply(ctx, s.deps.Exec, containerID); applyErr != nil {
 			return applyErr
 		}

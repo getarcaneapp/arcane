@@ -202,9 +202,9 @@ type (
 
 	RestoreProjectBackupAsNewRequest struct {
 		Name                 string   `json:"name" required:"true" minLength:"1" doc:"Name of the project to create"`
-		Volumes              []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore into new volumes; omitted means every included volume except external ones, which keep their names"`
+		Volumes              []string `json:"volumes,omitzero" doc:"Compose keys of the volumes to restore into new volumes; omitted means every included volume except external ones"`
 		Start                bool     `json:"start,omitempty" doc:"Deploy the new project after the restore, which requires projects:deploy"`
-		ShareExternalVolumes bool     `json:"shareExternalVolumes,omitempty" doc:"Let the new project use the external volumes it does not restore, sharing their data with the original project"`
+		ShareExternalVolumes bool     `json:"shareExternalVolumes,omitempty" doc:"Let the new project share unrestored external volumes and bind mounts into the original project's folder"`
 	}
 
 	ProjectBackupRestore struct {
@@ -746,6 +746,7 @@ const (
 	ProjectTransferComposeInvalid                                 = "compose_invalid"
 	ProjectTransferVolumeMissing                                  = "volume_missing"
 	ProjectTransferVolumeShared                                   = "volume_shared"
+	ProjectTransferTargetSpace                                    = "target_space"
 
 	ProjectVolumeNamed      ProjectVolumeKind = "named"
 	ProjectVolumeExternal   ProjectVolumeKind = "external"

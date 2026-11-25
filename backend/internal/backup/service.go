@@ -70,8 +70,8 @@ type (
 	}
 
 	VolumeOwner struct {
-		UID  int
-		GID  int
+		UID  uint32
+		GID  uint32
 		Mode int64
 	}
 
@@ -128,7 +128,7 @@ type (
 		repositories map[string]chan struct{}
 		// held parks admission a manual start won until the run that won it takes it over.
 		held      map[types.SchedulerAdmissionKey]heldLease
-		authorize func(context.Context, types.BackupRequester) error
+		Authorize func(context.Context, types.BackupRequester) error
 		mu        sync.Mutex
 	}
 
@@ -337,7 +337,7 @@ func NewEngine(admission *runs.Admission, imageService *image.ImageService, auth
 	return &Engine{
 		imageService: imageService,
 		admission:    admission,
-		authorize:    authorize,
+		Authorize:    authorize,
 		repositories: make(map[string]chan struct{}),
 		held:         make(map[types.SchedulerAdmissionKey]heldLease),
 	}
@@ -396,10 +396,6 @@ func (e *Engine) AcquireRun(ctx context.Context, scope, id, run string) (*runs.L
 	return e.TryAcquireRun(ctx, scope, id)
 }
 
-func (e *Engine) Authorize(ctx context.Context, requester types.BackupRequester) error {
-	return e.authorize(ctx, requester)
-}
-
 func (e *Engine) Stop(ctx context.Context) error {
 	e.mu.Lock()
 	held := e.held
@@ -427,7 +423,7 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 	if decoded.ID == "" {
 		return Snapshot{}, errors.New("rustic did not return a snapshot ID")
 	}
-	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed, Tags: nil}, nil
+	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed}, nil
 }
 
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
@@ -505,7 +501,7 @@ func markSnapshotDirectories(files []string, longOutput string) ([]string, error
 		}
 		return []string{}, nil
 	}
-	lines := strings.Split(strings.ReplaceAll(longOutput, "\r\n", "\n"), "\n")
+	lines := strings.Split(strings.ReplaceAll(strings.TrimSpace(longOutput), "\r\n", "\n"), "\n")
 	if len(lines) != len(files) {
 		return nil, errors.New("rustic file and metadata listings have different lengths")
 	}
@@ -555,13 +551,13 @@ func VolumeOwnerFromTags(tags []string) (VolumeOwner, bool) {
 		if len(fields) != 3 {
 			return VolumeOwner{}, false
 		}
-		uid, uidErr := strconv.Atoi(fields[0])
-		gid, gidErr := strconv.Atoi(fields[1])
+		uid, uidErr := strconv.ParseUint(fields[0], 10, 32)
+		gid, gidErr := strconv.ParseUint(fields[1], 10, 32)
 		mode, modeErr := strconv.ParseInt(fields[2], 8, 64)
-		if uidErr != nil || gidErr != nil || modeErr != nil || uid < 0 || gid < 0 || mode < 0 || mode > 0o7777 {
+		if uidErr != nil || gidErr != nil || modeErr != nil || mode < 0 || mode > 0o7777 {
 			return VolumeOwner{}, false
 		}
-		return VolumeOwner{UID: uid, GID: gid, Mode: mode}, true
+		return VolumeOwner{UID: uint32(uid), GID: uint32(gid), Mode: mode}, true
 	}
 	return VolumeOwner{}, false
 }
@@ -581,13 +577,13 @@ func (o VolumeOwner) Apply(ctx context.Context, exec HelperExec, containerID str
 	return nil
 }
 
-func (s DiscoveredSnapshot) LocalRunID() string {
+func (s DiscoveredSnapshot) RunID() string {
 	for _, tag := range s.Tags {
 		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok && runID != "" {
 			return runID
 		}
 	}
-	return "local-" + s.ID
+	return ""
 }
 
 func RecordDiscovered[T any](ctx context.Context, records DiscoveredRecords[T]) (int, error) {
@@ -1471,11 +1467,16 @@ func ResolveDestination(ctx context.Context, req DestinationRequest) (Destinatio
 	return selected, s3DestinationID, nil
 }
 
+func HandedBack(ctx context.Context) bool {
+	_, resumable := jobcontext.Run(ctx)
+	return resumable && errors.Is(context.Cause(ctx), context.Canceled)
+}
+
 func SettleFailure(ctx context.Context, err error, fail func(ctx context.Context, message string) error) error {
-	if err == nil || ctx.Err() != nil || errors.Is(err, actor.ErrJobRejected) || errors.Is(err, ErrBackupSettled) {
+	if err == nil || HandedBack(ctx) || (ctx.Err() == nil && errors.Is(err, actor.ErrJobRejected)) || errors.Is(err, ErrBackupSettled) {
 		return err
 	}
-	return errors.Join(err, fail(ctx, err.Error()))
+	return errors.Join(err, fail(context.WithoutCancel(ctx), err.Error()))
 }
 
 func FailStoppedRun(ctx context.Context, fail func(ctx context.Context, message string) error) error {

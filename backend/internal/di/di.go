@@ -300,6 +300,7 @@ var (
 			scheduler.NewUploadSessionsCleanupJob,
 			scheduler.NewGitCloneCleanupJob,
 			scheduler.NewBackupRepositoryPruneJob,
+			scheduler.NewProjectBackupDiscoveryJob,
 			fx.Annotate(scheduler.NewUpgradeLogCleanupJob, fx.ResultTags(`name:"upgrade-log-cleanup"`)),
 		),
 		managerJobOptions,

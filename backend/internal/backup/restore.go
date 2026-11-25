@@ -46,6 +46,7 @@ type (
 		Verify       func(ctx context.Context) error
 		Discard      func(ctx context.Context) (bool, []string)
 		Subject      string
+		SafetyStep   string
 		User         types.Actor
 	}
 
@@ -68,7 +69,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 		return err
 	}
 	defer release()
-	subject := r.subject()
+	subject := cmp.Or(r.Subject, "the project")
 	if r.Stop != nil {
 		if state.Running {
 			r.report(held, "Stopping "+subject)
@@ -78,7 +79,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 		}
 	}
 	if r.Safety != nil {
-		r.report(held, "Taking a safety backup")
+		r.report(held, cmp.Or(r.SafetyStep, "Taking a safety backup"))
 		var safetyID string
 		if safetyID, err = r.Safety(held); err != nil {
 			return r.Rollback(held, state, fmt.Errorf("take a safety backup: %w", err))
@@ -95,7 +96,9 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	}
 	r.report(held, "Restoring the backup")
 	for _, options := range state.Create {
-		if err = CreateVolume(held, r.Docker, options); err != nil {
+		if _, err = r.Docker.Call(held, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+			return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
+		}); err != nil {
 			return r.Rollback(held, state, fmt.Errorf("create the missing volumes: %w", err))
 		}
 		state.Created = append(state.Created, options.Name)
@@ -110,7 +113,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	if err == nil && r.Verify != nil {
 		err = r.Verify(held)
 	}
-	if unchanged := (UnchangedError{}); errors.As(err, &unchanged) {
+	if _, ok := errors.AsType[UnchangedError](err); ok {
 		state.SafetyID = ""
 	}
 	if err != nil {
@@ -133,7 +136,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 
 func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, cause error) error {
 	ctx = context.WithoutCancel(ctx)
-	subject := r.subject()
+	subject := cmp.Or(r.Subject, "the project")
 	if r.Discard != nil {
 		leftovers := r.removeAll(ctx, state.Created)
 		discarded, left := r.Discard(ctx)
@@ -231,15 +234,6 @@ func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string 
 func (e UnchangedError) Error() string { return e.Err.Error() }
 
 func (e UnchangedError) Unwrap() error { return e.Err }
-
-func (r RestoreSteps) subject() string { return cmp.Or(r.Subject, "the project") }
-
-func CreateVolume(ctx context.Context, dockerService *dockerInternal.DockerClientService, options client.VolumeCreateOptions) error {
-	_, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
-		return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
-	})
-	return err
-}
 
 func (r RestoreSteps) record(ctx context.Context, state RestoreState) error {
 	if r.Record == nil {

@@ -2602,10 +2602,16 @@
 					projectId={project.id}
 					environmentId={envId}
 					running={projectRunning}
-					onRestored={({ files, succeeded }) =>
-						files && succeeded
-							? refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true })
-							: refreshProjectDetails()}
+					onRestored={async ({ files, succeeded }) => {
+						if (!files || !succeeded) {
+							await refreshProjectDetails();
+							return;
+						}
+						await refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true });
+						await queryClient.invalidateQueries({
+							queryKey: queryKeys.projects.workspace(envId, projectId)
+						});
+					}}
 				/>
 			</Tabs.Content>
 		{/snippet}
