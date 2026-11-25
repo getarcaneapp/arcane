@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
-	"runtime/trace"
 	"slices"
 	"strconv"
 	"strings"
@@ -194,41 +193,6 @@ func (s *DiagnosticsService) Goroutines() (types.GoroutineProfile, error) {
 	}
 	slices.SortStableFunc(profile.Groups, func(a, b types.GoroutineGroup) int { return cmp.Compare(b.Count, a.Count) })
 	return profile, nil
-}
-
-func (s *DiagnosticsService) Profile(ctx context.Context, name string, seconds, debugLevel int) ([]byte, error) {
-	var buf bytes.Buffer
-	sample := func() {
-		timer := time.NewTimer(time.Duration(seconds) * time.Second)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-		case <-ctx.Done():
-		}
-	}
-	switch name {
-	case "profile":
-		if err := pprof.StartCPUProfile(&buf); err != nil {
-			return nil, fmt.Errorf("start CPU profile: %w", err)
-		}
-		sample()
-		pprof.StopCPUProfile()
-	case "trace":
-		if err := trace.Start(&buf); err != nil {
-			return nil, fmt.Errorf("start trace: %w", err)
-		}
-		sample()
-		trace.Stop()
-	default:
-		p := pprof.Lookup(name)
-		if p == nil {
-			return nil, fmt.Errorf("unknown profile %q", name)
-		}
-		if err := p.WriteTo(&buf, debugLevel); err != nil {
-			return nil, fmt.Errorf("write %s profile: %w", name, err)
-		}
-	}
-	return buf.Bytes(), ctx.Err()
 }
 
 func (s *DiagnosticsService) CollectActors(ctx context.Context) (types.ActorDiagnostics, error) {

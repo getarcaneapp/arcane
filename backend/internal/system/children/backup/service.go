@@ -104,6 +104,7 @@ type (
 		Docker                *dockerInternal.DockerClientService
 		Volumes               *volume.VolumeService
 		Engine                *backup.Engine
+		Repository            *backup.VolumeRepository
 		S3Destinations        *s3.S3DestinationService
 		Activity              *activity.ActivityService
 		Settings              *settings.SettingsService
@@ -124,6 +125,7 @@ type (
 		dockerService         *dockerInternal.DockerClientService
 		volumeService         *volume.VolumeService
 		engine                *backup.Engine
+		repository            *backup.VolumeRepository
 		s3Destinations        *s3.S3DestinationService
 		activityService       *activity.ActivityService
 		settingsService       *settings.SettingsService
@@ -186,6 +188,7 @@ func NewService(deps Dependencies) *Service {
 		dockerService:         deps.Docker,
 		volumeService:         deps.Volumes,
 		engine:                deps.Engine,
+		repository:            deps.Repository,
 		s3Destinations:        deps.S3Destinations,
 		activityService:       deps.Activity,
 		settingsService:       deps.Settings,
@@ -425,7 +428,7 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	}
 	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
 		Class:           common.ErrValidation,
-		S3Destinations:  nil,
+		S3Destinations:  s.s3Destinations,
 		Domain:          "system",
 		Destination:     string(destination),
 		S3DestinationID: s3DestinationID,
@@ -1173,6 +1176,8 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 		},
 		ProjectsSetting:            s.settingsService.GetStringSetting(ctx, "projectsDirectory"),
 		ProjectsDirectoriesSetting: s.settingsService.GetStringSetting(ctx, "projectsDirectories"),
+		TemplatesSetting:           s.settingsService.GetStringSetting(ctx, "templatesDirectory"),
+		FollowSymlinksSetting:      s.settingsService.GetStringSetting(ctx, "followProjectSymlinks"),
 		ProjectsIncluded:           plan.ProjectsIncluded,
 		Stages:                     plan.Stages,
 		RollbackStages:             rollbackStages,
@@ -1301,14 +1306,19 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, runningVolumeBackupsErr
 	}
-	if rekeyErr := s.rekeyRepositories(ctx, previous, recoveryKey); rekeyErr != nil {
+	held, releaseRepository, err := s.repository.HoldLocal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseRepository()
+	if rekeyErr := s.rekeyRepositories(held, previous, recoveryKey); rekeyErr != nil {
 		return nil, rekeyErr
 	}
 	rollback := func(cause error) error {
 		if previous == "" {
 			return cause
 		}
-		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(ctx), recoveryKey, previous))
+		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(held), recoveryKey, previous))
 	}
 	runningVolumeBackups, countErr = s.store.CountRunningVolumeBackups(ctx)
 	if countErr != nil {
@@ -1317,7 +1327,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, rollback(runningVolumeBackupsErr)
 	}
-	if setErr := s.recoveryKeys.Set(ctx, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
+	if setErr := s.recoveryKeys.Set(held, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
 		return nil, rollback(setErr)
 	}
 	return &types.SystemBackupRecoveryKeyStatus{Configured: true}, nil
@@ -1612,7 +1622,7 @@ func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *back
 				"s3DestinationId": policy.S3DestinationID,
 			},
 		},
-		ScheduleFn: s.policies.Schedule(policyID),
+		ScheduleFn: s.policies.Schedule(policyID, policy.Schedule),
 		// System backups are written through the manager's own Docker.
 		ShouldRunFn: func(context.Context) bool { return s.dockerService.LocalDockerEnabled() },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {

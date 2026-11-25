@@ -569,7 +569,7 @@ func TestProjectTransfer(t *testing.T) {
 				SourceStopped:   true,
 			},
 			verify: func(t *testing.T, source, target *fakeEnvironment, _ []types.ProjectWebhookRetarget) {
-				require.Equal(t, []string{"down:volume", "deploy:volume"}, source.callList())
+				require.Equal(t, []string{"deploy:volume"}, source.callList())
 				require.Equal(t, []string{"destroy:imported", "delete-volume:copy_data"}, target.callList())
 				require.Empty(t, target.volumes)
 			},
@@ -630,7 +630,7 @@ func TestProjectTransfer(t *testing.T) {
 				require.Eventually(t, func() bool {
 					return slices.Equal([]string{"import:compose-archive", "restore:copy_data", "destroy:imported", "delete-volume:copy_data"}, target.callList())
 				}, time.Second, 10*time.Millisecond)
-				require.Equal(t, []string{"down:volume", "export-project:data", "down:volume", "deploy:volume"}, source.callList())
+				require.Equal(t, []string{"down:volume", "export-project:data", "deploy:volume"}, source.callList())
 				require.Empty(t, target.projects)
 				require.Empty(t, target.volumes)
 				require.Equal(t, 1, source.projects["volume"].RunningCount)
@@ -700,7 +700,7 @@ func TestProjectTransfer(t *testing.T) {
 					TargetEnvironmentID: "0",
 					TargetProjectID:     "plain",
 				}}, webhooks)
-				require.Equal(t, []string{"down:plain", "deploy:plain"}, source.callList())
+				require.Equal(t, []string{"deploy:plain"}, source.callList())
 				require.Equal(t, []string{"destroy:imported"}, target.callList())
 			},
 			wantStatus:  types.RunStatusFailed,

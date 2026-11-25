@@ -26,6 +26,7 @@ const (
 	TunnelCapabilityForwardedGlobalAdmin = "forwarded-global-admin-v1"
 	TunnelCapabilityProjectTransfer      = "project-transfer-v2"
 	tunnelCapabilityProjectTransferV1    = "project-transfer-v1"
+	TunnelCapabilityDiagnosticsProfiling = "diagnostics-profiling-v1"
 	tunnelCapabilityMuxWindowPrefix      = "mux-window-mib:"
 	tunnelCapabilityReadinessLease       = "readiness-lease-v1"
 

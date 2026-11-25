@@ -144,12 +144,12 @@ func runSnapshots(entry *types.VolumeBackup) backup.RunSnapshots {
 	}
 }
 
-func snapshotRun(entry *types.VolumeBackup, plan backupPlan, tags ...string) backup.SnapshotRun {
+func snapshotRun(entry *types.VolumeBackup, plan backupPlan) backup.SnapshotRun {
 	return backup.SnapshotRun{
 		Snapshots:          runSnapshots(entry),
 		RunID:              entry.ID,
 		Label:              entry.VolumeName,
-		Tags:               append([]string{backup.RunSnapshotTag(entry.ID)}, tags...),
+		Tags:               []string{backup.RunSnapshotTag(entry.ID)},
 		DestinationOptions: backup.DestinationOptions{Local: plan.LocalEnabled, Remote: plan.S3Enabled},
 	}
 }

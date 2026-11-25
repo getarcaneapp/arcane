@@ -138,6 +138,9 @@ func PackProjectDirectory(ctx context.Context, projectPath string, w io.Writer) 
 
 func ReadExternalEnvFile(ctx context.Context, projectPath string) (content []byte, perm os.FileMode, external bool, err error) {
 	envPath, perm, isSymlink, err := resolveEnvFileWriteTarget(ctx, filepath.Join(projectPath, EffectiveEnvFileName))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, 0, false, nil
+	}
 	if err != nil || !isSymlink {
 		return nil, 0, false, err
 	}

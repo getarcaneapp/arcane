@@ -237,7 +237,7 @@ func (s *Service) reschedule(ctx context.Context, policy *backup.Policy) {
 				"localEnabled": policy.LocalEnabled, "s3Enabled": policy.S3Enabled, "s3DestinationId": policy.S3DestinationID,
 			},
 		},
-		ScheduleFn:  s.deps.Policies.Schedule(policyID),
+		ScheduleFn:  s.deps.Policies.Schedule(policyID, policy.Schedule),
 		ShouldRunFn: func(context.Context) bool { return s.deps.Docker.LocalDockerEnabled() },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.deps.Reconcile(ctx, previous, volumeName)
@@ -264,11 +264,10 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 
 func (s *Service) Remove(ctx context.Context, volumeName string) {
 	policies, err := s.deps.Policies.Remove(ctx, backup.PolicyVolume, volumeName)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to delete volume backup policy", "volume", volumeName, "error", err)
-		return
-	}
 	for i := range policies {
 		s.jobs.Unregister(ctx, policies[i].ID)
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to delete volume backup policy", "volume", volumeName, "error", err)
 	}
 }

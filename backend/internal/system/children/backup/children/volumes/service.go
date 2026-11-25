@@ -676,7 +676,7 @@ func (s *Service) rescheduleSystemVolumeBackup(ctx context.Context, policy *back
 				"schedule": policy.Schedule,
 			},
 		},
-		ScheduleFn:  s.policies.Schedule(policyID),
+		ScheduleFn:  s.policies.Schedule(policyID, policy.Schedule),
 		ShouldRunFn: func(context.Context) bool { return s.config.LocalDockerEnabled },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.resumeSelection(ctx, previous, "")
