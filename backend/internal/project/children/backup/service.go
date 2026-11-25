@@ -251,6 +251,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 		Volumes:           backupVolumes(p.Volumes),
 		Size:              0,
 		StoppedContainers: false,
+		Files:             p.Files,
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		release(ctx, leases)
@@ -892,8 +893,11 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", common.Classify(common.ErrValidation, err)
 	}
-	files := *cmp.Or(opts.Request.Files, new(true))
-	if !files && len(keys) == 0 {
+	files := *cmp.Or(opts.Request.Files, new(entry.Files))
+	switch {
+	case files && !entry.Files:
+		return "", common.Classify(common.ErrValidation, errors.New("the backup does not include the project files; restore only its volumes"))
+	case !files && len(keys) == 0:
 		return "", common.Classify(common.ErrValidation, errors.New("select the project files or at least one volume to restore"))
 	}
 	targets, err := restoreTargets(project, entry.Volumes, keys)
@@ -904,12 +908,21 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	if err != nil {
 		return "", err
 	}
+	manifest, err := s.Manifest(ctx, opts.ProjectID, entry.ID)
+	if err != nil {
+		return "", err
+	}
+	create, err := s.missingVolumes(ctx, project, manifest, targets)
+	if err != nil {
+		return "", err
+	}
 	p := restorePlan{
 		Redeploy:  opts.Request.Redeploy,
 		ID:        uuid.New().String(),
 		BackupID:  entry.ID,
 		ProjectID: project.ID,
 		Volumes:   targets,
+		Create:    create,
 		Files:     files,
 		MayStop:   len(active) > 0,
 	}
@@ -963,7 +976,10 @@ func restoreTargets(project types.Project, captured []types.ProjectBackupVolume,
 }
 
 func (p restorePlan) extraPermissions() []string {
-	permissions := kit.Ternary(p.Files, []string{authz.PermProjectsUpdate}, nil)
+	permissions := slices.Concat(
+		kit.Ternary(p.Files, []string{authz.PermProjectsUpdate}, nil),
+		kit.Ternary(len(p.Create) > 0, []string{authz.PermVolumesCreate}, nil),
+	)
 	switch {
 	case p.MayStop:
 		return append(permissions, stopPermissions...)
@@ -1005,17 +1021,12 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 		return nil, err
 	}
 	defer unlock()
-	if authorizeErr := s.authorize(ctx, input.Requester, append([]string{input.Requester.Permission}, input.Plan.extraPermissions()...)...); authorizeErr != nil {
-		return nil, authorizeErr
-	}
 	p, err := s.prepareRestore(ctx, input.Plan)
 	if err != nil {
 		return nil, err
 	}
-	if len(p.Create) > 0 {
-		if authorizeErr := s.authorize(ctx, input.Requester, authz.PermVolumesCreate); authorizeErr != nil {
-			return nil, authorizeErr
-		}
+	if authorizeErr := s.authorize(ctx, input.Requester, append([]string{input.Requester.Permission}, p.extraPermissions()...)...); authorizeErr != nil {
+		return nil, authorizeErr
 	}
 	if recordErr := s.record(ctx, p.ID, p); recordErr != nil {
 		return nil, recordErr
@@ -1396,6 +1407,7 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 		Volumes:           backupVolumes(captured),
 		Size:              0,
 		StoppedContainers: false,
+		Files:             p.Files,
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return "", fmt.Errorf("failed to save the safety backup: %w", createErr)

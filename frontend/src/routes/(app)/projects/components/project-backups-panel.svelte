@@ -81,6 +81,7 @@
 	const canBackup = $derived(hasPermission('projects:backup', environmentId));
 	const canRestore = $derived(hasPermission('projects:restore', environmentId));
 	const canRestoreAsNew = $derived(hasPermission('projects:create', environmentId));
+	const canRestoreFiles = $derived(hasPermission('projects:update', environmentId));
 	const canStartRestored = $derived(hasPermission('projects:deploy', environmentId));
 	const canTrackActivities = $derived(hasPermission('activities:list', environmentId));
 	const canReadActivities = $derived(hasPermission('activities:read', environmentId));
@@ -259,7 +260,7 @@
 
 	function resetRestore(backup: ProjectBackup) {
 		restoreItem = backup;
-		restoreFiles = true;
+		restoreFiles = backup.files && canRestoreFiles;
 		restoreOverrides = {};
 		redeploy = true;
 		restoreName = `${backup.projectName}-restored`;
@@ -397,7 +398,7 @@
 					{m.volumes_backups_restore()}
 				</DropdownMenu.Item>
 			{/if}
-			{#if canRestoreAsNew}
+			{#if canRestoreAsNew && item.files}
 				<DropdownMenu.Item disabled={item.status !== 'succeeded'} onclick={() => openRestoreAsNew(item)}>
 					<CopyIcon class="size-4" />
 					{m.restore_as_new_project()}
@@ -422,7 +423,7 @@
 					id="project-restore-files"
 					class="mt-0.5"
 					checked={filesRequired || restoreFiles}
-					disabled={filesRequired || restoring}
+					disabled={filesRequired || restoring || !restoreItem?.files || !canRestoreFiles}
 					onCheckedChange={(checked) => (restoreFiles = checked === true)}
 				/>
 				<Label for="project-restore-files" class="mb-0">{m.project_files()}</Label>

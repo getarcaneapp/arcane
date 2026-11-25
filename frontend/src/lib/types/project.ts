@@ -304,6 +304,7 @@ export type ProjectBackup = BackupRun & {
 	completedAt?: string;
 	volumes: ProjectBackupVolume[];
 	stoppedContainers: boolean;
+	files: boolean;
 };
 
 export interface ImportProjectArchiveRequest {

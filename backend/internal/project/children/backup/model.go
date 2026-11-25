@@ -26,6 +26,7 @@ type (
 		Volumes           []types.ProjectBackupVolume   `gorm:"column:volumes;serializer:json"`
 		Size              int64                         `gorm:"column:size"`
 		StoppedContainers bool                          `gorm:"column:stopped_containers"`
+		Files             bool                          `gorm:"column:files"`
 	}
 
 	DTOOptions struct {
@@ -58,6 +59,7 @@ func (b *ProjectBackup) DTO(opts DTOOptions) types.ProjectBackup {
 		Volumes:           b.Volumes,
 		Size:              b.Size,
 		StoppedContainers: b.StoppedContainers,
+		Files:             b.Files,
 	}
 }
 
