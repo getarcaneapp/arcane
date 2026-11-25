@@ -52,9 +52,6 @@ var (
 				return user.New(service, tokens.InvalidateUser, settingsService)
 			},
 		),
-		fx.Invoke(func(lc fx.Lifecycle, service *webhook.WebhookService) {
-			lc.Append(fx.Hook{OnStart: service.LoadTokenHashes})
-		}),
 	)
 
 	managerJobOptions = fx.Options(

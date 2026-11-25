@@ -23,6 +23,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/user"
+	"getarcane.dev/arcane/v3/internal/webhook"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/cookie"
@@ -65,7 +66,19 @@ func managerOptions(agentEnabled bool) fx.Option {
 	if agentEnabled {
 		return fx.Options()
 	}
-	return fx.Invoke(initializeManagerStartupState, registerManagerJobs)
+	return fx.Invoke(registerWebhookLifecycle, initializeManagerStartupState, registerManagerJobs)
+}
+
+func registerWebhookLifecycle(lc fx.Lifecycle, service *webhook.WebhookService) {
+	lc.Append(fx.Hook{
+		OnStart: service.LoadTokenHashes,
+		OnStop: func(ctx context.Context) error {
+			if err := service.DrainActions(ctx); err != nil {
+				slog.WarnContext(ctx, "shutdown proceeding with webhook actions still in flight", "error", err)
+			}
+			return nil
+		},
+	})
 }
 
 func routerProvider(agentEnabled bool) any {
