@@ -4804,7 +4804,7 @@
   "not_created_yet_nothing_to_back_up": "Not created yet, so it has no data to back up.",
   "no_volumes_files_only": "This project has no volumes; only its files are backed up.",
   "files_only": "Files only",
-  "project_backup": "Project backup",
+  "project_backup": "project backup",
   "remove_this_backup": "Remove this backup? Its snapshots are deleted from the backup repository and cannot be restored.",
   "failed_to_start_project_backup": "Failed to start the project backup",
   "backup_store_not_exported": "Holds Arcane's backups, so its data is not exported.",
@@ -4860,5 +4860,6 @@
   "arcane_only_backup_description": "Back up Arcane's own data. Projects are backed up with project backups.",
   "restore_leaves_projects_description": "Backups made without projects leave project folders as they are; restore projects from their project backups. Backups that include projects, such as older backups and safety backups, restore them too.",
   "found_project_backups": "Found {count} project backup(s).",
-  "failed_to_discover_project_backups": "Failed to discover project backups."
+  "failed_to_discover_project_backups": "Failed to discover project backups.",
+  "project_backups_empty_description": "Back up this project to keep a copy of its files and volume data."
 }
