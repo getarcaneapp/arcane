@@ -2,7 +2,7 @@
 	import { createTable, createTableState, renderComponent, renderSnippet } from '@tanstack/svelte-table';
 	import type { ColumnFiltersState, RowSelectionState, SortingState, ColumnVisibilityState } from '@tanstack/table-core';
 	import { PersistedState } from 'runed';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import type { Component } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -92,6 +92,7 @@
 		groupIcon,
 		groupCollapsedState = $bindable<Record<string, boolean>>({}),
 		onGroupToggle,
+		onDisplayedRowsChange,
 		imageNameFilterOptions,
 		expandedRowContent,
 		emptyState
@@ -140,6 +141,7 @@
 		groupIcon?: (groupName: string) => Component;
 		groupCollapsedState?: Record<string, boolean>;
 		onGroupToggle?: (groupName: string) => void;
+		onDisplayedRowsChange?: (items: TData[]) => void;
 		imageNameFilterOptions?: string[];
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		emptyState?: Snippet;
@@ -680,12 +682,20 @@
 		}));
 	});
 
-	const orderedRowIds = $derived.by((): string[] => {
+	const desktopRows = $derived.by(() => {
 		const groups = effectiveGroupedRows;
-		if (!groups || groups.length === 0) return table.getRowModel().rows.map((row) => row.id);
+		if (!groups?.length) return table.getRowModel().rows;
 		return groups.flatMap((group) =>
-			(groupCollapsedState[group.groupName] ?? true) ? [] : getTableRowsForItems(rowIndex, group.items).map((row) => row.id)
+			(groupCollapsedState[group.groupName] ?? true) ? [] : getTableRowsForItems(rowIndex, group.items)
 		);
+	});
+	const orderedRowIds = $derived(desktopRows.map((row) => row.id));
+
+	$effect(() => {
+		const onChange = onDisplayedRowsChange;
+		if (!onChange || isMobile.current) return;
+		const displayed = desktopRows.map((row) => row.original);
+		untrack(() => onChange(displayed));
 	});
 
 	function getGroupSelectionState(groupItems: TData[]): GroupSelectionState {
@@ -798,6 +808,7 @@
 		{mobileFieldVisibility}
 		groupedRows={effectiveGroupedRows}
 		{groupIcon}
+		{onDisplayedRowsChange}
 		{expandedRowContent}
 		{expandedRows}
 		onToggleRowExpanded={toggleRowExpanded}

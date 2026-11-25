@@ -25,6 +25,7 @@ var (
 
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/containers", CommandName: "container.list"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/containers/counts", CommandName: "container.counts"},
+		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/containers/swarm-tasks/hostnames", CommandName: "container.swarm_task_hostnames"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/containers", CommandName: "container.create"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/containers/{containerId}", CommandName: "container.inspect"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/containers/{containerId}/config", CommandName: "container.edit_config"},

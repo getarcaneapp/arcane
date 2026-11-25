@@ -102,6 +102,15 @@ func RegisterContainers(
 	}, authz.PermContainersRead, h.GetContainer)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-swarm-task-hostnames",
+		Method:      http.MethodPost,
+		Path:        "/agents/{id}/containers/swarm-tasks/hostnames",
+		Summary:     "Get Swarm task hostnames",
+		Tags:        []string{"Containers"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermContainersRead, h.GetSwarmTaskHostnames)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-container-processes",
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/containers/{containerId}/processes",

@@ -359,6 +359,118 @@ test.describe('Management', () => {
 	});
 });
 
+test('shows configured Swarm task hostnames when enabled in the container view', async ({
+	page
+}) => {
+	const fixtures = [
+		{
+			id: 'a'.repeat(64),
+			name: 'traefik_traefik.node-a.task-a',
+			hostname: 'traefik-01',
+			swarm: true
+		},
+		{
+			id: 'b'.repeat(64),
+			name: 'traefik_traefik.node-b.task-b',
+			hostname: '',
+			swarm: true
+		},
+		{ id: 'c'.repeat(64), name: 'standalone', hostname: '', swarm: false },
+		{
+			id: 'd'.repeat(64),
+			name: 'traefik_traefik.node-d.task-d',
+			hostname: 'traefik-03',
+			swarm: true
+		}
+	];
+	const batches: string[][] = [];
+	const failedTask = fixtures[3];
+	await page.route(/\/api\/agents\/0\/containers(?:\?.*)?$/, (route) =>
+		route.fulfill({
+			json: {
+				data: fixtures.map(({ id, name, swarm }) => ({
+					id,
+					names: [name],
+					image: 'traefik:latest',
+					imageId: 'test-image',
+					created: 1_700_000_000,
+					labels: swarm ? { 'com.docker.swarm.task.id': id } : {},
+					state: 'running',
+					status: 'Up',
+					ports: []
+				})),
+				counts: {
+					runningContainers: fixtures.length,
+					stoppedContainers: 0,
+					totalContainers: fixtures.length
+				},
+				pagination: { totalPages: 1, totalItems: fixtures.length, currentPage: 1, itemsPerPage: 20 }
+			}
+		})
+	);
+	await page.route('**/api/agents/0/containers/swarm-tasks/hostnames', (route) => {
+		const { containerIds } = route.request().postDataJSON() as { containerIds: string[] };
+		batches.push(containerIds);
+		const results = fixtures.filter(
+			({ id }) => containerIds.includes(id) && (id !== failedTask.id || batches.length > 1)
+		);
+		return route.fulfill({
+			json: { data: Object.fromEntries(results.map(({ id, hostname }) => [id, hostname])) }
+		});
+	});
+
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto('/containers');
+	const view = page.getByRole('button', { name: 'View', exact: true });
+	const toggle = page.getByRole('menuitemcheckbox', {
+		name: 'Show Swarm Task Hostnames',
+		exact: true
+	});
+	await expect(page.getByRole('link', { name: fixtures[0].name, exact: true })).toBeVisible();
+	await view.click();
+	await expect(toggle).toHaveAttribute('aria-checked', 'false');
+	expect(batches).toHaveLength(0);
+	await toggle.click();
+	await page.keyboard.press('Escape');
+
+	const link = page.getByRole('link', { name: 'traefik-01', exact: true });
+	await expect(link).toHaveAttribute('href', `/containers/${fixtures[0].id}?env=0`);
+	// The custom name and the default-name result are applied from the same batch.
+	await expect(page.getByRole('link', { name: fixtures[1].name, exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: fixtures[2].name, exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: failedTask.name, exact: true })).toBeVisible();
+	expect(batches.map((batch) => [...batch].sort())).toEqual([
+		[fixtures[0].id, fixtures[1].id, failedTask.id]
+	]);
+
+	await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+	await expect(page.getByRole('link', { name: failedTask.hostname, exact: true })).toBeVisible();
+	expect(batches.slice(1)).toEqual([[failedTask.id]]);
+
+	await page.setViewportSize({ width: 390, height: 840 });
+	const mobileLink = page
+		.locator('[data-table-scroll="mobile"]')
+		.getByRole('link', { name: 'traefik-01', exact: true });
+	await expect(mobileLink).toHaveAttribute('aria-label', 'traefik-01');
+	await page.setViewportSize({ width: 1440, height: 900 });
+
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const preferences = JSON.parse(localStorage.getItem('arcane-container-table') ?? '{}');
+				return preferences.c?.showSwarmTaskHostnames;
+			})
+		)
+		.toBe(true);
+	await page.reload();
+	await expect(link).toBeVisible();
+	await view.click();
+	await expect(toggle).toHaveAttribute('aria-checked', 'true');
+	await toggle.click();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('link', { name: fixtures[0].name, exact: true })).toBeVisible();
+});
+
 test.describe('Lifecycle', () => {
 	const TEST_IMAGE = 'public.ecr.aws/docker/library/busybox:1.37';
 

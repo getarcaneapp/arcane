@@ -22,6 +22,7 @@
 		mobileFieldVisibility,
 		groupedRows = null,
 		groupIcon,
+		onDisplayedRowsChange,
 		expandedRowContent,
 		expandedRows,
 		onToggleRowExpanded,
@@ -42,6 +43,7 @@
 		mobileFieldVisibility: Record<string, boolean>;
 		groupedRows?: GroupedData<TData>[] | null;
 		groupIcon?: (groupName: string) => Component;
+		onDisplayedRowsChange?: (items: TData[]) => void;
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		expandedRows?: Set<string>;
 		onToggleRowExpanded?: (rowId: string) => void;
@@ -75,6 +77,13 @@
 		return collapsed;
 	});
 	const entries = $derived(getTableDisplayEntries(table.getRowModel().rows, rowIndex, groupedRows, collapsedGroups));
+	$effect(() => {
+		const onChange = onDisplayedRowsChange;
+		if (!onChange) return;
+		const displayed = entries.flatMap((entry) => (entry.kind === 'row' ? [entry.row.original] : []));
+		untrack(() => onChange(displayed));
+	});
+
 	const getItemKey = $derived.by(() => {
 		const displayed = entries;
 		return (index: number) => displayed[index]?.key ?? index;
