@@ -33,7 +33,6 @@ import (
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
-	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -1289,7 +1288,7 @@ func TestContainerServiceGetContainerProcessesPodmanFallback(t *testing.T) {
 			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 			},
-			Host:       func() string { return server.URL },
+			Host:       func() (string, error) { return server.URL, nil },
 			NewSystemd: func(bool) libpodman.Systemd { return &quadletTestSystemd{} },
 		}),
 	})
@@ -2052,8 +2051,8 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 			},
-			Host: func() string {
-				return libpodServer.URL
+			Host: func() (string, error) {
+				return libpodServer.URL, nil
 			},
 			NewSystemd: func(bool) libpodman.Systemd {
 				return systemd
@@ -2204,5 +2203,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, bus.Config{}).WithClient(dockerClient)
+	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
 }

@@ -558,7 +558,11 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		return "", common.Classify(common.ErrValidation, err)
 	}
 	included := make([]types.ProjectVolume, 0, len(selected))
+	var shared []string
 	for _, volume := range manifest.Volumes {
+		if volume.Kind == types.ProjectVolumeExternal && !slices.Contains(selected, volume.Key) && !slices.Contains(shared, volume.Name) {
+			shared = append(shared, volume.Name)
+		}
 		if !volume.Included || !slices.Contains(selected, volume.Key) {
 			continue
 		}
@@ -576,6 +580,12 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	}
 	if len(included) > 0 && !opts.RestoreVolumes {
 		return "", common.Classify(common.ErrForbidden, errors.New("permission denied: restoring the backup's volumes requires volumes:create"))
+	}
+	if len(shared) > 0 && !request.ShareExternalVolumes {
+		return "", common.Classify(common.ErrValidation, fmt.Errorf(
+			"the new project would use the external volumes %s under the same names and share their data with the original project; restore them into new volumes or allow sharing them",
+			strings.Join(shared, ", "),
+		))
 	}
 	if nameErr := s.checkComposeNameFree(ctx, request.Name); nameErr != nil {
 		return "", nameErr
@@ -626,7 +636,7 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		state.Create, restores, err = newVolumes(target, included)
 	}
 	if err != nil {
-		return "", steps.Rollback(ctx, state, nil, err)
+		return "", steps.Rollback(ctx, state, err)
 	}
 	steps.Write = func(ctx context.Context, _ string) error {
 		return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{

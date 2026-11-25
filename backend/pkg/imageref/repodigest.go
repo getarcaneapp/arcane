@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"kit.getarcane.app/updater/digest"
 	"kit.getarcane.app/updater/refs"
 )
 
@@ -33,4 +34,22 @@ func RepoDigestRepository(repoDigests []string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// RepositoryDigests returns the digests in an image's RepoDigests that belong
+// to imageRef's repository.
+func RepositoryDigests(repoDigests []string, imageRef string) []string {
+	requested, err := refs.NormalizeReference(imageRef)
+	if err != nil {
+		return nil
+	}
+	var digests []string
+	for _, repoDigest := range repoDigests {
+		digestValue, ok := digest.FromReferenceSuffix(repoDigest)
+		repository, parseErr := refs.NormalizeReference(repoDigest)
+		if ok && parseErr == nil && repository.RegistryHost == requested.RegistryHost && repository.Repository == requested.Repository {
+			digests = append(digests, digestValue)
+		}
+	}
+	return digests
 }

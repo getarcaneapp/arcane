@@ -33,6 +33,10 @@ func (j *DockerClientRefreshJob) Name() string {
 	return DockerClientRefreshJobName
 }
 
+func (j *DockerClientRefreshJob) ShouldSchedule(context.Context) bool {
+	return j.dockerClientService.LocalDockerEnabled()
+}
+
 func (j *DockerClientRefreshJob) Schedule(ctx context.Context) string {
 	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "dockerClientRefreshInterval"), dockerClientRefreshDefaultSchedule, "docker-client-refresh")
 }

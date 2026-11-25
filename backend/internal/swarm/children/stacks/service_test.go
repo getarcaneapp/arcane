@@ -17,8 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app/docker/streams/bus"
-
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -411,7 +409,7 @@ func newDownStackTestService(t *testing.T, removed *[]string) *Service {
 	t.Cleanup(func() { _ = cli.Close() })
 
 	return NewService(ServiceParams{
-		DockerService:   docker.NewDockerClientService(ctx, db, settingsSvc, bus.Config{}).WithClient(cli),
+		DockerService:   docker.NewDockerClientService(ctx, db, settingsSvc, docker.ClientServiceOptions{}).WithClient(cli),
 		EnsureManager:   func(context.Context) error { return nil },
 		SettingsService: settingsSvc,
 	})

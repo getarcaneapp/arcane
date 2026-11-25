@@ -51,6 +51,7 @@ type (
 	}
 
 	AutoHealJob struct {
+		dockerService       *dockerInternal.DockerClientService
 		settingsService     *settings.SettingsService
 		eventService        *event.EventService
 		notificationService *notification.NotificationService
@@ -90,6 +91,7 @@ const (
 
 func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
 	return &AutoHealJob{
+		dockerService:       p.DockerClientService,
 		settingsService:     p.SettingsService,
 		eventService:        p.EventService,
 		notificationService: p.NotificationService,
@@ -107,7 +109,7 @@ func (j *AutoHealJob) Name() string {
 }
 
 func (j *AutoHealJob) ShouldSchedule(ctx context.Context) bool {
-	return j.settingsService.GetBoolSetting(ctx, "autoHealEnabled")
+	return j.dockerService.LocalDockerEnabled() && j.settingsService.GetBoolSetting(ctx, "autoHealEnabled")
 }
 
 func (j *AutoHealJob) Schedule(ctx context.Context) string {

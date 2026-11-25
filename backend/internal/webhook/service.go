@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -42,6 +43,14 @@ type (
 	remoteWebhookTarget struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
+	}
+
+	remoteWebhookCall struct {
+		Method     string
+		Path       string
+		Body       []byte
+		WantResult bool
+		WantCheck  bool
 	}
 
 	WebhookService struct {
@@ -735,7 +744,13 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 				slog.ErrorContext(execCtx, "webhook action panicked", "webhookId", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", panicErr)
 			}
 		}()
-		if _, executeWebhookActionErr := s.executeWebhookAction(execCtx, wh, actionType); executeWebhookActionErr != nil {
+		result, executeWebhookActionErr := s.executeWebhookAction(execCtx, wh, actionType)
+		if executeWebhookActionErr == nil {
+			if failedErr := failedUpdateError(result); failedErr != nil {
+				executeWebhookActionErr = s.wrapWebhookActionError(execCtx, wh, wh.TargetType, actionType, failedErr)
+			}
+		}
+		if executeWebhookActionErr != nil {
 			// Action failures are recorded as error events by wrapWebhookActionError.
 			slog.ErrorContext(execCtx, "webhook action failed", "webhookId", wh.ID, "webhookName", wh.Name, "actionType", actionType, "error", executeWebhookActionErr)
 			return
@@ -773,69 +788,90 @@ func (s *WebhookService) executeWebhookAction(ctx context.Context, wh *Webhook, 
 	}
 }
 
-func remoteWebhookRequest(wh *Webhook, actionType string) (method, path string, wantResult bool, err error) {
+func remoteWebhookRequest(wh *Webhook, actionType string) ([]remoteWebhookCall, error) {
 	apiPrefix := "/api/agents/" + types.LocalDockerEnvironmentID
 
 	switch wh.TargetType {
 	case WebhookTargetTypeContainer:
 		ref := cmp.Or(strings.TrimSpace(wh.TargetRef), strings.TrimSpace(wh.TargetID))
 		if ref == "" {
-			return "", "", false, ErrWebhookMissingTarget
+			return nil, ErrWebhookMissingTarget
 		}
 		containerPath := apiPrefix + "/containers/" + url.PathEscape(ref)
 		switch actionType {
 		case WebhookActionTypeUpdate:
-			return http.MethodPost, containerPath + "/update", true, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/update", WantResult: true}}, nil
 		case WebhookActionTypeStart, WebhookActionTypeStop, WebhookActionTypeRestart:
-			return http.MethodPost, containerPath + "?action=" + actionType, false, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "?action=" + actionType}}, nil
 		case WebhookActionTypeRedeploy:
-			return http.MethodPost, containerPath + "/redeploy", false, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: containerPath + "/redeploy"}}, nil
 		}
-		return "", "", false, ErrWebhookInvalidAction
+		return nil, ErrWebhookInvalidAction
 	case WebhookTargetTypeProject:
 		projectPath := apiPrefix + "/projects/" + url.PathEscape(wh.TargetID)
 		switch actionType {
 		case WebhookActionTypeUpdate:
-			return http.MethodPost, projectPath + "?action=updateservices", false, nil
+			// Same check-then-apply the UI's project update uses.
+			body, err := json.Marshal(types.UpdaterOptions{Type: "project", ResourceIds: []string{wh.TargetID}})
+			if err != nil {
+				return nil, fmt.Errorf("encode project update request: %w", err)
+			}
+			return []remoteWebhookCall{
+				{Method: http.MethodPost, Path: apiPrefix + "/updater/projects/" + url.PathEscape(wh.TargetID) + "/check", WantCheck: true},
+				{Method: http.MethodPost, Path: apiPrefix + "/updater/run", Body: body, WantResult: true},
+			}, nil
 		case WebhookActionTypeDown, WebhookActionTypeRestart:
-			return http.MethodPost, projectPath + "?action=" + actionType, false, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "?action=" + actionType}}, nil
 		case WebhookActionTypeUp, WebhookActionTypeRedeploy:
-			return http.MethodPost, projectPath + "/deploy?action=" + actionType, false, nil
+			return []remoteWebhookCall{{Method: http.MethodPost, Path: projectPath + "/deploy?action=" + actionType}}, nil
 		}
-		return "", "", false, ErrWebhookInvalidAction
+		return nil, ErrWebhookInvalidAction
 	case WebhookTargetTypeUpdater:
 		if actionType != WebhookActionTypeRun {
-			return "", "", false, ErrWebhookInvalidAction
+			return nil, ErrWebhookInvalidAction
 		}
-		return http.MethodPost, apiPrefix + "/updater/run?automatic=true", true, nil
+		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/updater/run?automatic=true", WantResult: true}}, nil
 	case WebhookTargetTypeGitOps:
 		if actionType != WebhookActionTypeSync {
-			return "", "", false, ErrWebhookInvalidAction
+			return nil, ErrWebhookInvalidAction
 		}
-		return http.MethodPost, apiPrefix + "/gitops/syncs/" + url.PathEscape(wh.TargetID) + "?action=sync", false, nil
+		return []remoteWebhookCall{{Method: http.MethodPost, Path: apiPrefix + "/gitops/syncs/" + url.PathEscape(wh.TargetID) + "?action=sync"}}, nil
 	default:
-		return "", "", false, ErrWebhookInvalidType
+		return nil, ErrWebhookInvalidType
 	}
 }
 
 func (s *WebhookService) executeRemoteWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
-	method, path, wantResult, err := remoteWebhookRequest(wh, actionType)
+	calls, err := remoteWebhookRequest(wh, actionType)
 	if err != nil {
 		return nil, err
 	}
 
 	var result *types.UpdaterResult
-	if wantResult {
-		var out types.ApiResponse[*types.UpdaterResult]
-		if proxyJSONRequestErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, method, path, nil, &out); proxyJSONRequestErr != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyJSONRequestErr)
+	var checkErr error
+	for _, call := range calls {
+		switch {
+		case call.WantResult:
+			var out types.ApiResponse[*types.UpdaterResult]
+			if proxyJSONRequestErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, call.Method, call.Path, call.Body, &out); proxyJSONRequestErr != nil {
+				return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, errors.Join(checkErr, proxyJSONRequestErr))
+			}
+			result = out.Data
+		case call.WantCheck:
+			var out types.ApiResponse[*types.ProjectUpdateInfo]
+			if proxyCheckErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, call.Method, call.Path, call.Body, &out); proxyCheckErr != nil {
+				return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyCheckErr)
+			}
+			checkErr = projectCheckError(out.Data)
+		default:
+			var out types.ApiResponse[any]
+			if proxyServiceActionErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, call.Method, call.Path, call.Body, &out); proxyServiceActionErr != nil {
+				return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyServiceActionErr)
+			}
 		}
-		result = out.Data
-	} else {
-		var out types.ApiResponse[any]
-		if proxyServiceActionErr := s.environmentService.ProxyJSONRequest(ctx, wh.EnvironmentID, method, path, nil, &out); proxyServiceActionErr != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, proxyServiceActionErr)
-		}
+	}
+	if checkErr != nil {
+		return nil, s.wrapWebhookActionError(ctx, wh, wh.TargetType, actionType, errors.Join(checkErr, failedUpdateError(result)))
 	}
 
 	return result, nil
@@ -936,13 +972,25 @@ func (s *WebhookService) syncWebhookContainerTarget(ctx context.Context, wh *Web
 func (s *WebhookService) executeProjectWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
 	switch actionType {
 	case WebhookActionTypeUpdate:
-		if err := s.projectService.UpdateProjectServices(ctx, wh.TargetID, project.ServiceUpdateOptions{
-			User:         types.SystemUser,
-			DiscoverTags: true,
-		}); err != nil {
+		// Same check-then-apply the UI's project update uses; the webhook names the project, so exclusions do not apply.
+		// Failed image checks still let cleanly checked services update, but the webhook reports them as failed.
+		info, err := s.updaterService.CheckProjectUpdates(ctx, wh.TargetID)
+		if err != nil {
 			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
 		}
-		return nil, nil
+		checkErr := projectCheckError(info)
+		result, err := s.updaterService.ApplyPending(ctx, types.UpdaterOptions{
+			Type:                     "project",
+			ResourceIds:              []string{wh.TargetID},
+			IgnoreSettingsExclusions: true,
+		})
+		if err != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, errors.Join(checkErr, err))
+		}
+		if checkErr != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, errors.Join(checkErr, failedUpdateError(result)))
+		}
+		return result, nil
 	case WebhookActionTypeUp:
 		if err := s.projectService.DeployProject(ctx, wh.TargetID, types.SystemUser, nil); err != nil {
 			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
@@ -1004,6 +1052,28 @@ func (s *WebhookService) wrapWebhookActionError(ctx context.Context, wh *Webhook
 		return fmt.Errorf("%s %s failed: %w", targetKind, actionType, err)
 	}
 	return nil
+}
+
+// projectCheckError reports image checks that failed in a project update check, which the UI shows as a failed check.
+func projectCheckError(info *types.ProjectUpdateInfo) error {
+	if kit.FromPtr(info).ErrorCount == 0 {
+		return nil
+	}
+	return fmt.Errorf("update check failed for %d image(s): %s", info.ErrorCount, kit.FromPtr(info.ErrorMessage))
+}
+
+// failedUpdateError reports failed or blocked items in an update result, which the UI treats as a failed update.
+func failedUpdateError(result *types.UpdaterResult) error {
+	var errs []error
+	for _, item := range kit.FromPtr(result).Items {
+		if item.Status == types.UpdaterStatusFailed || item.Status == types.UpdaterStatusBlocked {
+			errs = append(errs, fmt.Errorf("%s: %s", cmp.Or(item.ResourceName, item.ResourceID), cmp.Or(item.Error, item.Status)))
+		}
+	}
+	if len(errs) == 0 && kit.FromPtr(result).Failed > 0 {
+		errs = append(errs, fmt.Errorf("%d update(s) failed", result.Failed))
+	}
+	return errors.Join(errs...)
 }
 
 func (s *WebhookService) logWebhookEvent(ctx context.Context, wh *Webhook, actionType string, severity event.EventSeverity, errMsg string) {

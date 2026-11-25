@@ -141,6 +141,7 @@ func NewService(deps Dependencies) *Service {
 	s.policies = policies.NewService(policies.Dependencies{
 		DB:             deps.DB,
 		Policies:       deps.Policies,
+		Docker:         deps.Docker,
 		S3Destinations: deps.S3Destinations,
 		Settings:       deps.Settings,
 		Ctx:            deps.Ctx,

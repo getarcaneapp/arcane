@@ -1859,7 +1859,7 @@ func TestUpdaterProjectChecksWithoutContainers(t *testing.T) {
 				require.NoError(t, loadErr)
 				localConfig = model.Services[tt.name]
 			}
-			record := service.checkProjectService(t.Context(), "project", localConfig, nil)
+			record := service.checkProjectService(t.Context(), "project", localConfig, nil, nil)
 			require.Nil(t, record.LastError)
 			require.Equal(t, tt.available, record.HasUpdate)
 			require.Equal(t, tt.target, *record.LatestVersion)
