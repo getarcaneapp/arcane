@@ -50,7 +50,7 @@ type (
 		websocket bool
 	}
 
-	commandRoute struct {
+	CommandRoute struct {
 		Method      string
 		PathPattern string
 		CommandName string
@@ -65,7 +65,7 @@ type (
 	commandRouteNode struct {
 		static map[string]*commandRouteNode
 		param  *commandRouteNode
-		route  *commandRoute
+		route  *CommandRoute
 	}
 
 	commandRouteIndex map[commandRouteKey]*commandRouteNode

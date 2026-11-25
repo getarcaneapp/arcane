@@ -4856,5 +4856,6 @@
   "manager_update_manually": "Local Docker is disabled on the manager, so update its container yourself.",
   "local_docker_disabled_backups_unavailable": "System backups are stored in a local Docker volume, so they are unavailable while ARCANE_LOCAL_DOCKER_ENABLED=false. Existing backups stay listed.",
   "share_external_volumes": "Share external volumes with the original project",
-  "share_external_volumes_description": "External volumes you do not restore keep their names, so the new project uses the original project's data."
+  "share_external_volumes_description": "External volumes you do not restore keep their names, so the new project uses the original project's data.",
+  "agent_profiling_upgrade_required": "Upgrade this agent to collect profiling dumps and pprof profiles."
 }

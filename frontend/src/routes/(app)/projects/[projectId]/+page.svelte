@@ -2602,8 +2602,8 @@
 					projectId={project.id}
 					environmentId={envId}
 					running={projectRunning}
-					onRestored={({ files }) =>
-						files
+					onRestored={({ files, succeeded }) =>
+						files && succeeded
 							? refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true })
 							: refreshProjectDetails()}
 				/>
