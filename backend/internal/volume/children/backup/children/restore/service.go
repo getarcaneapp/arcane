@@ -297,7 +297,7 @@ func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Clie
 func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Client, volumeName string, source snapshotSource) error {
 	snapshot, _, err := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, source.repository, source.password, "", source.snapshotID)
 	if err != nil {
-		return err
+		return backup.UnchangedError{Err: err}
 	}
 	target := mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume"}
 	if err = s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.snapshotID, target, backup.RestoreOptions{DeleteExtra: true}); err != nil {

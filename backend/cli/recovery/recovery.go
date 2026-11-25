@@ -112,7 +112,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 			return startErr
 		},
 	}
-	restart := func() { _ = arcane.start(ctx) }
+	restart := func(err error) error { return errors.Join(err, arcane.start(ctx)) }
 	rustic := func(ctx context.Context, stage types.RecoveryRestoreStage) error {
 		trust, trustErr := rusticruntime.TrustMounts(ctx, dockerClient, "/app/data", inspect.Container.Mounts)
 		if trustErr != nil {
@@ -136,14 +136,12 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	}
 	manifest, err := readRestoredManifest(ctx, "/app/data")
 	if err != nil {
-		restart()
-		return err
+		return restart(err)
 	}
 	if config.DirectAgentRequested(func(name string) string {
 		return manifest.Environment[name]
 	}) && manifest.Environment["ARCANE_AGENT"] != "true" {
-		restart()
-		return fmt.Errorf("refusing to recover Arcane container: %w", config.ErrDirectAgentRemoved)
+		return restart(fmt.Errorf("refusing to recover Arcane container: %w", config.ErrDirectAgentRemoved))
 	}
 	// Projects were restored into the current directory, so the recovered
 	// configuration must keep pointing there rather than at the backup-time path.
@@ -359,7 +357,8 @@ func restoreData(
 	arcane arcaneContainer,
 ) error {
 	steps := backup.RestoreSteps{
-		Subject: "Arcane",
+		Subject:    "Arcane",
+		SafetyStep: "Using the system backup taken before the restore as the safety backup",
 		Report: func(ctx context.Context, message string) {
 			slog.InfoContext(ctx, "System restore step", "step", message)
 		},
@@ -395,7 +394,11 @@ func restoreData(
 		Verify:  nil,
 		Discard: nil,
 	}
-	state := backup.RestoreState{Redeploy: new(false), SafetyID: "", Create: nil, MayStop: true, Running: true}
+	state := backup.RestoreState{
+		Redeploy: new(false),
+		MayStop:  true,
+		Running:  true,
+	}
 	if err := steps.Apply(ctx, state); err != nil {
 		return fmt.Errorf("system restore failed: %w", err)
 	}

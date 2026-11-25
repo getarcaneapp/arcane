@@ -107,7 +107,7 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 	if readErr := read(ctx, plan.Mounts); readErr != nil {
 		return readErr
 	}
-	err = unchanged(context.WithoutCancel(ctx))
+	err = unchanged(ctx)
 	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
 	if err == nil {
 		var after map[string]string
