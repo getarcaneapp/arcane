@@ -530,13 +530,13 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
-func (s DiscoveredSnapshot) LocalRunID() string {
+func (s DiscoveredSnapshot) RunID() string {
 	for _, tag := range s.Tags {
 		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok && runID != "" {
 			return runID
 		}
 	}
-	return "local-" + s.ID
+	return ""
 }
 
 func RecordDiscovered[T any](ctx context.Context, records DiscoveredRecords[T]) (int, error) {

@@ -1297,7 +1297,7 @@ func (s *Service) DiscoverAfterRestore(ctx context.Context) error {
 func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Client, found []foundSnapshot) (int, error) {
 	groups := make(map[string][]foundSnapshot)
 	for _, snapshot := range found {
-		if backupID := snapshotTag(snapshot.snapshot.Tags, backup.RunSnapshotTag("")); backupID != "" {
+		if backupID := snapshot.snapshot.RunID(); backupID != "" {
 			groups[backupID] = append(groups[backupID], snapshot)
 		}
 	}
@@ -1360,7 +1360,7 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 			continue
 		}
 		trigger, policyID := snapshotTag(first.snapshot.Tags, triggerTagPrefix), snapshotTag(first.snapshot.Tags, policyTagPrefix)
-		if trigger != types.VolumeBackupTriggerScheduled || !managed[policyID] {
+		if trigger != types.VolumeBackupTriggerSafety && (trigger != types.VolumeBackupTriggerScheduled || !managed[policyID]) {
 			trigger, policyID = types.VolumeBackupTriggerManual, ""
 		}
 		releaseBackups, holdErr := s.HoldBackups(ctx, projectID)
@@ -1385,22 +1385,24 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 			releaseBackups(ctx)
 			continue
 		}
-		createdAt := slices.MinFunc(snapshots, func(a, b foundSnapshot) int { return a.snapshot.Time.Compare(b.snapshot.Time) }).snapshot.Time
-		entry := ProjectBackup{
-			BaseModel:        database.BaseModel{ID: backupID, CreatedAt: createdAt},
-			CompletedAt:      new(createdAt),
-			ProjectID:        projectID,
-			ProjectName:      cmp.Or(first.snapshot.Label, manifest.Project.Name),
-			ComposeName:      manifest.Project.ComposeName,
-			Status:           types.VolumeBackupStatusSucceeded,
-			Trigger:          trigger,
-			Destination:      backup.Destination(backup.DestinationOptions{Local: localSnapshot.snapshot.ID != "", Remote: remoteSnapshot.snapshot.ID != ""}),
-			LocalSnapshotID:  localSnapshot.snapshot.ID,
-			RemoteSnapshotID: remoteSnapshot.snapshot.ID,
-			S3DestinationID:  remoteSnapshot.s3DestinationID,
-			PolicyID:         policyID,
-			Volumes:          backupVolumes(manifest.Volumes),
-			Size:             largest.snapshot.Summary.TotalBytesProcessed,
+		createdAt := cmp.Or(manifest.CreatedAt, slices.MinFunc(snapshots, func(a, b foundSnapshot) int { return a.snapshot.Time.Compare(b.snapshot.Time) }).snapshot.Time)
+		entry := ProjectBackup{ //exhaustruct:enforce
+			BaseModel:         database.BaseModel{ID: backupID, CreatedAt: createdAt, UpdatedAt: nil},
+			CompletedAt:       new(createdAt),
+			ProjectID:         projectID,
+			ProjectName:       cmp.Or(first.snapshot.Label, manifest.Project.Name),
+			ComposeName:       manifest.Project.ComposeName,
+			Status:            types.VolumeBackupStatusSucceeded,
+			Trigger:           trigger,
+			Destination:       backup.Destination(backup.DestinationOptions{Local: localSnapshot.snapshot.ID != "", Remote: remoteSnapshot.snapshot.ID != ""}),
+			LocalSnapshotID:   localSnapshot.snapshot.ID,
+			RemoteSnapshotID:  remoteSnapshot.snapshot.ID,
+			S3DestinationID:   remoteSnapshot.s3DestinationID,
+			PolicyID:          policyID,
+			Error:             "",
+			Volumes:           backupVolumes(manifest.Volumes),
+			Size:              largest.snapshot.Summary.TotalBytesProcessed,
+			StoppedContainers: false,
 		}
 		createErr := s.deps.DB.WithContext(ctx).Create(&entry).Error
 		releaseBackups(ctx)

@@ -1,217 +1,173 @@
-import { resolve } from "$app/paths";
-import type { ResolvedPathname } from "$app/types";
+import { resolve } from '$app/paths';
+import type { ResolvedPathname } from '$app/types';
 
-import { m } from "#lib/paraglide/messages.js";
-import { APIError } from "#lib/services/api-service.js";
-import { environmentStore } from "#lib/stores/environment.store.svelte.js";
-import userStore from "#lib/stores/user-store.svelte.js";
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from "#lib/types/role.js";
-import type { PermissionsManifest } from "#lib/types/role.js";
-import type { User } from "#lib/types/user.js";
+import { m } from '#lib/paraglide/messages.js';
+import { APIError } from '#lib/services/api-service.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import userStore from '#lib/stores/user-store.svelte.js';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/role.js';
+import type { PermissionsManifest } from '#lib/types/role.js';
+import type { User } from '#lib/types/user.js';
 import {
-  canReachAccessSurface,
-  getFallbackAccessSurfaces,
-  getRouteAccessSurfaces,
-  pathMatchesAccessSurface,
-} from "#lib/utils/access-policy.js";
+	canReachAccessSurface,
+	getFallbackAccessSurfaces,
+	getRouteAccessSurfaces,
+	pathMatchesAccessSurface
+} from '#lib/utils/access-policy.js';
 
-export function normalizeAuthenticationError(
-  error: unknown,
-  fallback: string,
-): { kind: "proxy" | "other"; message: string } {
-  if (error instanceof APIError) {
-    const responseData: unknown = error.response?.data;
-    const responseText = typeof responseData === "string" ? responseData : "";
-    const lowerResponse = responseText.toLowerCase();
-    const isGatewayHTML =
-      error.status === 502 &&
-      (lowerResponse.includes("<html") ||
-        lowerResponse.includes("bad gateway") ||
-        lowerResponse.includes("openresty"));
-    const isHeaderLimit =
-      error.status === 431 ||
-      (error.status === 400 &&
-        (lowerResponse.includes("request header") ||
-          lowerResponse.includes("cookie")) &&
-        (lowerResponse.includes("large") || lowerResponse.includes("too big")));
+export function normalizeAuthenticationError(error: unknown, fallback: string): { kind: 'proxy' | 'other'; message: string } {
+	if (error instanceof APIError) {
+		const responseData: unknown = error.response?.data;
+		const responseText = typeof responseData === 'string' ? responseData : '';
+		const lowerResponse = responseText.toLowerCase();
+		const isGatewayHTML =
+			error.status === 502 &&
+			(lowerResponse.includes('<html') || lowerResponse.includes('bad gateway') || lowerResponse.includes('openresty'));
+		const isHeaderLimit =
+			error.status === 431 ||
+			(error.status === 400 &&
+				(lowerResponse.includes('request header') || lowerResponse.includes('cookie')) &&
+				(lowerResponse.includes('large') || lowerResponse.includes('too big')));
 
-    if (isGatewayHTML || isHeaderLimit) {
-      return { kind: "proxy", message: m.auth_proxy_login_error() };
-    }
-    if (responseText.trimStart().startsWith("<")) {
-      return { kind: "other", message: fallback };
-    }
-  }
+		if (isGatewayHTML || isHeaderLimit) {
+			return { kind: 'proxy', message: m.auth_proxy_login_error() };
+		}
+		if (responseText.trimStart().startsWith('<')) {
+			return { kind: 'other', message: fallback };
+		}
+	}
 
-  return {
-    kind: "other",
-    message: error instanceof Error ? error.message : fallback,
-  };
+	return {
+		kind: 'other',
+		message: error instanceof Error ? error.message : fallback
+	};
 }
 
 export function hasPermission(perm: string, envId: string): boolean {
-  return userStore.hasPermission(perm, envId);
+	return userStore.hasPermission(perm, envId);
 }
 
 export function hasAnyPermission(perms: string[], envId: string): boolean {
-  return userStore.hasAnyPermission(perms, envId);
+	return userStore.hasAnyPermission(perms, envId);
 }
 
 export function isGlobalAdmin(): boolean {
-  return userStore.isGlobalAdmin();
+	return userStore.isGlobalAdmin();
 }
 
 const PROTECTED_PREFIXES = [
-  "/account",
-  "/dashboard",
-  "/containers",
-  "/events",
-  "/agents",
-  "/gitops",
-  "/images",
-  "/projects",
-  "/volumes",
-  "/networks",
-  "/podman",
-  "/ports",
-  "/settings",
-  "/swarm",
-  "/system",
-  "/updates",
+	'/account',
+	'/dashboard',
+	'/containers',
+	'/events',
+	'/agents',
+	'/gitops',
+	'/images',
+	'/projects',
+	'/volumes',
+	'/networks',
+	'/podman',
+	'/ports',
+	'/settings',
+	'/swarm',
+	'/system',
+	'/updates'
 ];
 
-const UNAUTHENTICATED_ONLY_PREFIXES = [
-  "/login",
-  "/oidc/login",
-  "/img",
-  "/favicon.ico",
-];
-const AUTH_CALLBACK_PREFIXES = ["/oidc/callback", "/auth/oidc/callback"];
+const UNAUTHENTICATED_ONLY_PREFIXES = ['/login', '/oidc/login', '/img', '/favicon.ico'];
+const AUTH_CALLBACK_PREFIXES = ['/oidc/callback', '/auth/oidc/callback'];
 
 export function userIsGlobalAdmin(user: User | null | undefined): boolean {
-  if (!user) return false;
-  if (typeof user.isGlobalAdmin === "boolean") return user.isGlobalAdmin;
-  return (
-    user.permissionsByEnv?.[GLOBAL_SCOPE]?.includes(SUDO_PERMISSION) ?? false
-  );
+	if (!user) return false;
+	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
+	return user.permissionsByEnv?.[GLOBAL_SCOPE]?.includes(SUDO_PERMISSION) ?? false;
 }
 
-export function userHasPermission(
-  user: User | null | undefined,
-  permission: string,
-  envId?: string,
-): boolean {
-  if (!user?.permissionsByEnv) return false;
-  const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
-  if (global.includes(SUDO_PERMISSION) || global.includes(permission))
-    return true;
-  return envId
-    ? (user.permissionsByEnv[envId] ?? []).includes(permission)
-    : false;
+export function userHasPermission(user: User | null | undefined, permission: string, envId?: string): boolean {
+	if (!user?.permissionsByEnv) return false;
+	const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
+	if (global.includes(SUDO_PERMISSION) || global.includes(permission)) return true;
+	return envId ? (user.permissionsByEnv[envId] ?? []).includes(permission) : false;
 }
 
 const matchesAny = (path: string, prefixes: string[]) =>
-  prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+	prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
 export function userHasAnyAccess(user: User): boolean {
-  if (!user.permissionsByEnv) return false;
-  for (const perms of Object.values(user.permissionsByEnv)) {
-    if (perms.length > 0) return true;
-  }
-  return false;
+	if (!user.permissionsByEnv) return false;
+	for (const perms of Object.values(user.permissionsByEnv)) {
+		if (perms.length > 0) return true;
+	}
+	return false;
 }
 
 export function canReachShownAccessSurface(
-  accessManifest: PermissionsManifest | null | undefined,
-  surfaceId: string | undefined,
-  user: User,
+	accessManifest: PermissionsManifest | null | undefined,
+	surfaceId: string | undefined,
+	user: User
 ): boolean {
-  return [undefined, ...environmentStore.enabled.map((env) => env.id)].some(
-    (id) => canReachAccessSurface(accessManifest, surfaceId, user, id),
-  );
+	return [undefined, ...environmentStore.enabled.map((env) => env.id)].some((id) =>
+		canReachAccessSurface(accessManifest, surfaceId, user, id)
+	);
 }
 
 export function canReachAccessSurfaceUrl(
-  accessManifest: PermissionsManifest | null | undefined,
-  url: string,
-  user: User | null | undefined,
+	accessManifest: PermissionsManifest | null | undefined,
+	url: string,
+	user: User | null | undefined
 ): boolean {
-  if (!user) return false;
-  return canReachShownAccessSurface(
-    accessManifest,
-    accessManifest?.accessSurfaces?.find((entry) => entry.url === url)?.id,
-    user,
-  );
+	if (!user) return false;
+	return canReachShownAccessSurface(accessManifest, accessManifest?.accessSurfaces?.find((entry) => entry.url === url)?.id, user);
 }
 
-export function isInAppPath(
-  value: string | null | undefined,
-): value is ResolvedPathname {
-  return (
-    !!value &&
-    value.startsWith("/") &&
-    !value.startsWith("//") &&
-    !value.startsWith("/\\")
-  );
+export function isInAppPath(value: string | null | undefined): value is ResolvedPathname {
+	return !!value && value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\');
 }
 
-function pickFallbackRoute(
-  user: User,
-  accessManifest: PermissionsManifest | null | undefined,
-): ResolvedPathname {
-  for (const surface of getFallbackAccessSurfaces(accessManifest)) {
-    if (canReachShownAccessSurface(accessManifest, surface.id, user)) {
-      return isInAppPath(surface.url)
-        ? surface.url
-        : resolve("/(app)/no-access");
-    }
-  }
-  return resolve("/(app)/dashboard");
+function pickFallbackRoute(user: User, accessManifest: PermissionsManifest | null | undefined): ResolvedPathname {
+	for (const surface of getFallbackAccessSurfaces(accessManifest)) {
+		if (canReachShownAccessSurface(accessManifest, surface.id, user)) {
+			return isInAppPath(surface.url) ? surface.url : resolve('/(app)/no-access');
+		}
+	}
+	return resolve('/(app)/dashboard');
 }
 
 export function getAuthRedirectPath(
-  path: string,
-  user: User | null,
-  accessManifest?: PermissionsManifest | null,
-  accessManifestLoadFailed = false,
-  landingPath: ResolvedPathname = resolve("/(app)/dashboard"),
+	path: string,
+	user: User | null,
+	accessManifest?: PermissionsManifest | null,
+	accessManifestLoadFailed = false,
+	landingPath: ResolvedPathname = resolve('/(app)/dashboard')
 ): ResolvedPathname | null {
-  if (path === "/") {
-    return user ? landingPath : resolve("/(auth)/login/[[mode]]", {});
-  }
+	if (path === '/') {
+		return user ? landingPath : resolve('/(auth)/login/[[mode]]', {});
+	}
 
-  if (matchesAny(path, AUTH_CALLBACK_PREFIXES)) {
-    return null;
-  }
+	if (matchesAny(path, AUTH_CALLBACK_PREFIXES)) {
+		return null;
+	}
 
-  if (!user)
-    return matchesAny(path, PROTECTED_PREFIXES)
-      ? resolve("/(auth)/login/[[mode]]", {})
-      : null;
-  if (matchesAny(path, UNAUTHENTICATED_ONLY_PREFIXES)) return landingPath;
-  if (
-    !accessManifestLoadFailed &&
-    path !== "/no-access" &&
-    !accessManifest?.accessSurfaces?.length &&
-    matchesAny(path, PROTECTED_PREFIXES)
-  ) {
-    return resolve("/(app)/no-access");
-  }
+	if (!user) return matchesAny(path, PROTECTED_PREFIXES) ? resolve('/(auth)/login/[[mode]]', {}) : null;
+	if (matchesAny(path, UNAUTHENTICATED_ONLY_PREFIXES)) return landingPath;
+	if (
+		!accessManifestLoadFailed &&
+		path !== '/no-access' &&
+		!accessManifest?.accessSurfaces?.length &&
+		matchesAny(path, PROTECTED_PREFIXES)
+	) {
+		return resolve('/(app)/no-access');
+	}
 
-  if (path !== "/no-access" && !userHasAnyAccess(user)) {
-    return resolve("/(app)/no-access");
-  }
+	if (path !== '/no-access' && !userHasAnyAccess(user)) {
+		return resolve('/(app)/no-access');
+	}
 
-  const surface = getRouteAccessSurfaces(accessManifest).find((candidate) =>
-    pathMatchesAccessSurface(path, candidate),
-  );
-  if (
-    surface &&
-    !canReachShownAccessSurface(accessManifest, surface.id, user)
-  ) {
-    const fallback = pickFallbackRoute(user, accessManifest);
-    return fallback === path ? resolve("/(app)/no-access") : fallback;
-  }
+	const surface = getRouteAccessSurfaces(accessManifest).find((candidate) => pathMatchesAccessSurface(path, candidate));
+	if (surface && !canReachShownAccessSurface(accessManifest, surface.id, user)) {
+		const fallback = pickFallbackRoute(user, accessManifest);
+		return fallback === path ? resolve('/(app)/no-access') : fallback;
+	}
 
-  return null;
+	return null;
 }

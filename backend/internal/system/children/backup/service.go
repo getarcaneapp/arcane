@@ -1020,7 +1020,7 @@ func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverSys
 func discoveredRun(destinationID string, snapshot backup.DiscoveredSnapshot) *types.SystemBackupRun {
 	if destinationID == "" {
 		return &types.SystemBackupRun{
-			ID:              snapshot.LocalRunID(),
+			ID:              cmp.Or(snapshot.RunID(), "local-"+snapshot.ID),
 			Size:            snapshot.Summary.TotalBytesProcessed,
 			CreatedAt:       kit.Ternary(snapshot.Time.IsZero(), time.Now().UTC(), snapshot.Time),
 			Status:          types.SystemBackupStatusSucceeded,

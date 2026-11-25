@@ -2,7 +2,6 @@ package project
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -194,12 +193,8 @@ func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
 	m.backups.RegisterJobsOnStartup(ctx)
 }
 
-func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) {
-	go func() {
-		if err := m.backups.DiscoverAfterRestore(ctx); err != nil {
-			slog.WarnContext(ctx, "Project backup discovery after a system restore failed; it runs again on the next start", "error", err)
-		}
-	}()
+func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) error {
+	return m.backups.DiscoverAfterRestore(ctx)
 }
 
 func (m *Module) PruneUnmanagedBackups(ctx context.Context) error {

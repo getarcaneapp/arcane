@@ -1,250 +1,201 @@
-import type { RowData } from "@tanstack/table-core";
-import type { ColumnFiltersState } from "@tanstack/table-core";
+import type { RowData } from '@tanstack/table-core';
+import type { ColumnFiltersState } from '@tanstack/table-core';
 
-import type { EnvironmentRef } from "#lib/stores/environment.store.svelte.js";
-import type {
-  FilterMap,
-  FilterValue,
-  SearchPaginationSortRequest,
-} from "#lib/types/ui/pagination.js";
-import type { TableDisplayEntry } from "#lib/types/ui/tabledisplay.js";
-import type { PersistedPreferencesSnapshot } from "#lib/types/ui/tablepreferences.js";
-import {
-  ENVIRONMENT_FILTER,
-  environmentFilterIds,
-  rowKey,
-} from "#lib/utils/environments.js";
+import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { TableDisplayEntry } from '#lib/types/ui/tabledisplay.js';
+import type { PersistedPreferencesSnapshot } from '#lib/types/ui/tablepreferences.js';
+import { ENVIRONMENT_FILTER, environmentFilterIds, rowKey } from '#lib/utils/environments.js';
 
-import type {
-  CardSlot,
-  CompactTablePrefs,
-  GroupedData,
-} from "./arcane-table.types.svelte";
-import { decodeFilters, decodeSort } from "./arcane-table.types.svelte";
-import type { ArcaneRow } from "./table-features";
+import type { CardSlot, CompactTablePrefs, GroupedData } from './arcane-table.types.svelte';
+import { decodeFilters, decodeSort } from './arcane-table.types.svelte';
+import type { ArcaneRow } from './table-features';
 
 export function toFilterMap(filters: ColumnFiltersState): FilterMap {
-  const out: FilterMap = {};
-  for (const f of filters ?? []) {
-    const id = f.id;
-    let value: unknown = f.value;
+	const out: FilterMap = {};
+	for (const f of filters ?? []) {
+		const id = f.id;
+		let value: unknown = f.value;
 
-    if (value instanceof Set) {
-      value = Array.from(value);
-    }
+		if (value instanceof Set) {
+			value = Array.from(value);
+		}
 
-    // Filter values originate from facet options / inputs, so they always fit
-    // FilterValue; the cast bridges tanstack's `unknown` at this one boundary.
-    if (Array.isArray(value)) {
-      if (value.length === 0) continue;
-      out[id] = value as FilterValue;
-    } else if (
-      typeof value === "number" ||
-      typeof value === "boolean" ||
-      (typeof value === "string" && value.trim() !== "")
-    ) {
-      out[id] = value as FilterValue;
-    }
-  }
-  return out;
+		// Filter values originate from facet options / inputs, so they always fit
+		// FilterValue; the cast bridges tanstack's `unknown` at this one boundary.
+		if (Array.isArray(value)) {
+			if (value.length === 0) continue;
+			out[id] = value as FilterValue;
+		} else if (typeof value === 'number' || typeof value === 'boolean' || (typeof value === 'string' && value.trim() !== '')) {
+			out[id] = value as FilterValue;
+		}
+	}
+	return out;
 }
 
-export function fromFilterMap(
-  map?: FilterMap,
-  environmentScope?: EnvironmentRef[],
-): ColumnFiltersState {
-  if (!map) return [];
-  const out: ColumnFiltersState = [];
-  for (const [id, value] of Object.entries(map)) {
-    if (value === undefined || value === null) continue;
-    if (Array.isArray(value) && value.length === 0) continue;
-    if (id === ENVIRONMENT_FILTER) {
-      const environmentIds = environmentFilterIds(value, environmentScope);
-      if (environmentIds.length > 0) out.push({ id, value: environmentIds });
-      continue;
-    }
-    out.push({ id, value });
-  }
-  return out;
+export function fromFilterMap(map?: FilterMap, environmentScope?: EnvironmentRef[]): ColumnFiltersState {
+	if (!map) return [];
+	const out: ColumnFiltersState = [];
+	for (const [id, value] of Object.entries(map)) {
+		if (value === undefined || value === null) continue;
+		if (Array.isArray(value) && value.length === 0) continue;
+		if (id === ENVIRONMENT_FILTER) {
+			const environmentIds = environmentFilterIds(value, environmentScope);
+			if (environmentIds.length > 0) out.push({ id, value: environmentIds });
+			continue;
+		}
+		out.push({ id, value });
+	}
+	return out;
 }
 
-function filterValuesEqual(
-  a: FilterValue | undefined,
-  b: FilterValue | undefined,
-): boolean {
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return (
-      Array.isArray(a) &&
-      Array.isArray(b) &&
-      a.length === b.length &&
-      a.every((value, index) => String(value) === String(b[index]))
-    );
-  }
-  if (a === b) return true;
-  return a !== undefined && b !== undefined && String(a) === String(b);
+function filterValuesEqual(a: FilterValue | undefined, b: FilterValue | undefined): boolean {
+	if (Array.isArray(a) || Array.isArray(b)) {
+		return (
+			Array.isArray(a) &&
+			Array.isArray(b) &&
+			a.length === b.length &&
+			a.every((value, index) => String(value) === String(b[index]))
+		);
+	}
+	if (a === b) return true;
+	return a !== undefined && b !== undefined && String(a) === String(b);
 }
 
 function filterMapsEqual(a?: FilterMap, b?: FilterMap): boolean {
-  const keys = Object.keys(a ?? {});
-  return (
-    keys.length === Object.keys(b ?? {}).length &&
-    keys.every((key) => filterValuesEqual(a?.[key], b?.[key]))
-  );
+	const keys = Object.keys(a ?? {});
+	return keys.length === Object.keys(b ?? {}).length && keys.every((key) => filterValuesEqual(a?.[key], b?.[key]));
 }
 
 export function restoreTableRequestOptions(
-  current: SearchPaginationSortRequest,
-  snapshot: PersistedPreferencesSnapshot,
-  fallbackLimit: number,
+	current: SearchPaginationSortRequest,
+	snapshot: PersistedPreferencesSnapshot,
+	fallbackLimit: number
 ): SearchPaginationSortRequest {
-  let next = current;
-  function apply(patch: Partial<SearchPaginationSortRequest>) {
-    next = {
-      ...next,
-      pagination: { page: 1, limit: next?.pagination?.limit ?? fallbackLimit },
-      ...patch,
-    };
-  }
+	let next = current;
+	function apply(patch: Partial<SearchPaginationSortRequest>) {
+		next = { ...next, pagination: { page: 1, limit: next?.pagination?.limit ?? fallbackLimit }, ...patch };
+	}
 
-  const filters = Object.keys(snapshot.filtersMap).length
-    ? snapshot.filtersMap
-    : undefined;
-  if (!filterMapsEqual(filters, current?.filters)) apply({ filters });
+	const filters = Object.keys(snapshot.filtersMap).length ? snapshot.filtersMap : undefined;
+	if (!filterMapsEqual(filters, current?.filters)) apply({ filters });
 
-  const currentSearch = (current?.search ?? "").trim();
-  const search = currentSearch || snapshot.search;
-  if (search !== currentSearch) apply({ search: search || undefined });
+	const currentSearch = (current?.search ?? '').trim();
+	const search = currentSearch || snapshot.search;
+	if (search !== currentSearch) apply({ search: search || undefined });
 
-  if (snapshot.limit !== (next?.pagination?.limit ?? fallbackLimit)) {
-    apply({ pagination: { page: 1, limit: snapshot.limit } });
-  }
+	if (snapshot.limit !== (next?.pagination?.limit ?? fallbackLimit)) {
+		apply({ pagination: { page: 1, limit: snapshot.limit } });
+	}
 
-  const sort = snapshot.sort;
-  if (
-    sort &&
-    (next?.sort?.column !== sort.column ||
-      next?.sort?.direction !== sort.direction)
-  )
-    apply({ sort });
-  return next;
+	const sort = snapshot.sort;
+	if (sort && (next?.sort?.column !== sort.column || next?.sort?.direction !== sort.direction)) apply({ sort });
+	return next;
 }
 
 export function extractPersistedPreferences(
-  current: CompactTablePrefs | undefined,
-  fallbackLimit: number,
+	current: CompactTablePrefs | undefined,
+	fallbackLimit: number
 ): PersistedPreferencesSnapshot {
-  const prefs = current ?? { v: [], f: [], g: "", l: fallbackLimit };
-  const restoredFilters = decodeFilters(prefs.f);
-  const filtersMap = toFilterMap(restoredFilters);
-  const search = (prefs.g ?? "").trim();
-  const sort = decodeSort(prefs.s);
-  const limit = prefs.l ?? fallbackLimit;
+	const prefs = current ?? { v: [], f: [], g: '', l: fallbackLimit };
+	const restoredFilters = decodeFilters(prefs.f);
+	const filtersMap = toFilterMap(restoredFilters);
+	const search = (prefs.g ?? '').trim();
+	const sort = decodeSort(prefs.s);
+	const limit = prefs.l ?? fallbackLimit;
 
-  return {
-    hiddenColumns: prefs.v ?? [],
-    restoredFilters,
-    filtersMap,
-    search,
-    sort,
-    limit,
-    mobileVisibility: prefs.m,
-    viewMode: prefs.d,
-    customSettings: prefs.c,
-  };
+	return {
+		hiddenColumns: prefs.v ?? [],
+		restoredFilters,
+		filtersMap,
+		search,
+		sort,
+		limit,
+		mobileVisibility: prefs.m,
+		viewMode: prefs.d,
+		customSettings: prefs.c
+	};
 }
 
 export function getTableRowsForItems<T extends RowData>(
-  rowIndex: ReadonlyMap<string, { row: ArcaneRow<T>; index: number }>,
-  groupItems: Array<{ id: string; environmentId?: string }>,
+	rowIndex: ReadonlyMap<string, { row: ArcaneRow<T>; index: number }>,
+	groupItems: Array<{ id: string; environmentId?: string }>
 ): ArcaneRow<T>[] {
-  const ids = new Set(groupItems.map((item) => rowKey(item)));
-  return Array.from(ids)
-    .flatMap((id) => {
-      const entry = rowIndex.get(id);
-      return entry ? [entry] : [];
-    })
-    .sort((a, b) => a.index - b.index)
-    .map((entry) => entry.row);
+	const ids = new Set(groupItems.map((item) => rowKey(item)));
+	return Array.from(ids)
+		.flatMap((id) => {
+			const entry = rowIndex.get(id);
+			return entry ? [entry] : [];
+		})
+		.sort((a, b) => a.index - b.index)
+		.map((entry) => entry.row);
 }
 
 export function getTableDisplayEntries<T extends RowData & { id: string }>(
-  rows: ArcaneRow<T>[],
-  rowIndex: ReadonlyMap<string, { row: ArcaneRow<T>; index: number }>,
-  groups: GroupedData<T>[] | null,
-  collapsed: Record<string, boolean>,
-  expanded?: ReadonlySet<string>,
+	rows: ArcaneRow<T>[],
+	rowIndex: ReadonlyMap<string, { row: ArcaneRow<T>; index: number }>,
+	groups: GroupedData<T>[] | null,
+	collapsed: Record<string, boolean>,
+	expanded?: ReadonlySet<string>
 ): TableDisplayEntry<T>[] {
-  const entries: TableDisplayEntry<T>[] = [];
-  const appendRows = (groupRows: ArcaneRow<T>[], groupName?: string) => {
-    for (const row of groupRows) {
-      const key = `${groupName ?? ""}\u0000${row.id}`;
-      entries.push({
-        kind: "row",
-        key: `row:${key}`,
-        row,
-        grouped: groupName !== undefined,
-      });
-      if (expanded?.has(row.id)) {
-        entries.push({
-          kind: "detail",
-          key: `detail:${key}`,
-          row,
-          grouped: groupName !== undefined,
-        });
-      }
-    }
-  };
-  if (groups?.length) {
-    for (const group of groups) {
-      entries.push({ kind: "group", key: `group:${group.groupName}`, group });
-      if (!(collapsed[group.groupName] ?? true)) {
-        appendRows(
-          getTableRowsForItems(rowIndex, group.items),
-          group.groupName,
-        );
-      }
-    }
-  } else {
-    appendRows(rows);
-  }
-  return entries;
+	const entries: TableDisplayEntry<T>[] = [];
+	const appendRows = (groupRows: ArcaneRow<T>[], groupName?: string) => {
+		for (const row of groupRows) {
+			const key = `${groupName ?? ''}\u0000${row.id}`;
+			entries.push({ kind: 'row', key: `row:${key}`, row, grouped: groupName !== undefined });
+			if (expanded?.has(row.id)) {
+				entries.push({ kind: 'detail', key: `detail:${key}`, row, grouped: groupName !== undefined });
+			}
+		}
+	};
+	if (groups?.length) {
+		for (const group of groups) {
+			entries.push({ kind: 'group', key: `group:${group.groupName}`, group });
+			if (!(collapsed[group.groupName] ?? true)) {
+				appendRows(getTableRowsForItems(rowIndex, group.items), group.groupName);
+			}
+		}
+	} else {
+		appendRows(rows);
+	}
+	return entries;
 }
 
 const BADGE_COLUMNS = new Set([
-  "status",
-  "state",
-  "updates",
-  "update",
-  "enabled",
-  "inUse",
-  "severity",
-  "vulnSeverity",
-  "vulnerabilities",
-  "lastSyncStatus",
-  "availability",
-  "desiredState",
-  "currentState",
-  "backupState",
-  "isPublished",
-  "builtIn",
+	'status',
+	'state',
+	'updates',
+	'update',
+	'enabled',
+	'inUse',
+	'severity',
+	'vulnSeverity',
+	'vulnerabilities',
+	'lastSyncStatus',
+	'availability',
+	'desiredState',
+	'currentState',
+	'backupState',
+	'isPublished',
+	'builtIn'
 ]);
 const FOOTER_COLUMNS = new Set([
-  "createdAt",
-  "created",
-  "updatedAt",
-  "checkedAt",
-  "lastUsedAt",
-  "timestamp",
-  "scanTime",
-  "lastSyncAt",
-  "lastTriggeredAt",
-  "expiresAt",
+	'createdAt',
+	'created',
+	'updatedAt',
+	'checkedAt',
+	'lastUsedAt',
+	'timestamp',
+	'scanTime',
+	'lastSyncAt',
+	'lastTriggeredAt',
+	'expiresAt'
 ]);
 
 export function getCardSlot(columnId: string, explicit?: CardSlot): CardSlot {
-  if (explicit) return explicit;
-  if (columnId === ENVIRONMENT_FILTER) return "context";
-  if (BADGE_COLUMNS.has(columnId)) return "badge";
-  if (FOOTER_COLUMNS.has(columnId)) return "footer";
-  return "field";
+	if (explicit) return explicit;
+	if (columnId === ENVIRONMENT_FILTER) return 'context';
+	if (BADGE_COLUMNS.has(columnId)) return 'badge';
+	if (FOOTER_COLUMNS.has(columnId)) return 'footer';
+	return 'field';
 }

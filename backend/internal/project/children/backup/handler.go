@@ -117,7 +117,7 @@ func (h *Handler) Restore(ctx context.Context, input *RestoreInput) (*handleruti
 	return handlerutil.MessageOutput("Project restore started", activityID), nil
 }
 
-func (h *Handler) Discover(ctx context.Context, input *DiscoverInput) (*handlerutil.Out[int], error) {
+func (h *Handler) Discover(ctx context.Context, input *DiscoverInput) (*handlerutil.Out[types.DiscoverVolumeBackupsResponse], error) {
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
@@ -130,8 +130,17 @@ func (h *Handler) Discover(ctx context.Context, input *DiscoverInput) (*handleru
 		destinationIDs = []string{input.Body.S3DestinationID}
 	}
 	count, err := h.service.DiscoverBackups(ctx, DiscoverOptions{S3DestinationIDs: destinationIDs, Local: local})
-	if err != nil {
+	if err != nil && count == 0 {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
-	return &handlerutil.Out[int]{Body: types.ApiResponse[int]{Success: true, Data: count}}, nil
+	var failures []string
+	if err != nil {
+		failures = append(failures, err.Error())
+	}
+	return &handlerutil.Out[types.DiscoverVolumeBackupsResponse]{
+		Body: types.ApiResponse[types.DiscoverVolumeBackupsResponse]{
+			Success: true,
+			Data:    types.DiscoverVolumeBackupsResponse{Count: count, Errors: failures},
+		},
+	}, nil
 }

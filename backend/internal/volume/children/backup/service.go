@@ -1085,7 +1085,7 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 	}
 	if destinationID == "" {
 		return &types.VolumeBackup{
-			ID:              snapshot.LocalRunID(),
+			ID:              cmp.Or(snapshot.RunID(), "local-"+snapshot.ID),
 			VolumeName:      volumeName,
 			Size:            snapshot.Summary.TotalBytesProcessed,
 			CreatedAt:       createdAt,
