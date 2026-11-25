@@ -207,6 +207,88 @@ test.describe('Build workspace provider flows', () => {
 		);
 	});
 
+	test('shows the ten newest successful builds and restores one without submitting it', async ({
+		page
+	}) => {
+		const contextDir = 'https://example.com/team/build.git#main:docker/app';
+		const data = Array.from({ length: 11 }, (_, index) => ({
+			id: `recent-${index + 1}`,
+			environmentId: '0',
+			status: 'success',
+			provider: 'local',
+			contextDir,
+			dockerfile: 'Dockerfile.prod',
+			tags: [`e2e/recent:v${index + 1}`, 'e2e/recent:latest'],
+			load: true,
+			createdAt: new Date(Date.UTC(2026, 0, 11 - index)).toISOString()
+		}));
+		const history = [
+			{
+				...data[0],
+				id: 'running-build',
+				status: 'running',
+				tags: ['e2e/recent:running'],
+				createdAt: '2026-01-13T00:00:00Z'
+			},
+			{
+				...data[0],
+				id: 'failed-build',
+				status: 'failed',
+				tags: ['e2e/recent:failed'],
+				createdAt: '2026-01-12T00:00:00Z'
+			},
+			...data
+		];
+		await page.route(/\/api\/agents\/0\/images\/builds(?:\?.*)?$/, (route) => {
+			const params = new URL(route.request().url()).searchParams;
+			const status = params.get('status');
+			const limit = Number(params.get('limit') ?? 20);
+			const matching = status ? history.filter((build) => build.status === status) : history;
+			return route.fulfill({
+				json: {
+					data: matching.slice(0, limit),
+					pagination: {
+						totalPages: Math.ceil(matching.length / limit),
+						totalItems: matching.length,
+						currentPage: 1,
+						itemsPerPage: limit
+					}
+				}
+			});
+		});
+		let buildRequests = 0;
+		await page.route('**/api/agents/*/images/build', (route) => {
+			buildRequests += 1;
+			return route.abort();
+		});
+
+		await navigateToBuildWorkspace(page);
+		const shortcut = page.getByRole('button', { name: 'Build History', exact: true });
+		await shortcut.click();
+		const menu = page.getByRole('menu');
+		const builds = menu.getByRole('menuitem', { name: /e2e\/recent:/ });
+		await expect(builds).toHaveCount(10);
+		await expect(builds.first()).toContainText('e2e/recent:v1, e2e/recent:latest');
+		await expect(builds.last()).toContainText('e2e/recent:v10, e2e/recent:latest');
+		await expect(menu.getByText(/e2e\/recent:(failed|running)/)).toHaveCount(0);
+		await builds.first().click();
+
+		await expect(menu).toBeHidden();
+		await expect(page.getByRole('tab', { name: 'Git repository', exact: true })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(page.locator('#remote-context-url')).toHaveValue(contextDir);
+		await expect(page.locator('#image-tags')).toHaveValue('e2e/recent:v1, e2e/recent:latest');
+		await expect(page.locator('#dockerfile')).toHaveValue('Dockerfile.prod');
+		expect(buildRequests).toBe(0);
+
+		await shortcut.click();
+		await menu.getByRole('menuitem', { name: 'View All' }).click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('history');
+		await expect(page.getByText('e2e/recent:failed', { exact: true }).first()).toBeVisible();
+	});
+
 	test('submits remote git build context from the dedicated context mode', async ({ page }) => {
 		await navigateToBuildWorkspace(page);
 		await switchContextMode(page, 'Git repository');
