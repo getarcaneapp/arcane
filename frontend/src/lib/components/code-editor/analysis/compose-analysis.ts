@@ -202,7 +202,7 @@ function toSchemaDiagnostic(error: ErrorObject, doc: YamlDocLike, source: string
 	return {
 		from: range.from,
 		to: range.to,
-		severity: 'error',
+		severity: 'warning',
 		message
 	};
 }

@@ -4857,9 +4857,14 @@
   "share_original_project_data": "Share data with the original project",
   "share_original_project_data_description": "External volumes you do not restore keep their names, and bind mounts into the original project's folder keep their paths, so the new project uses the original project's data.",
   "agent_profiling_upgrade_required": "Upgrade this agent to collect profiling dumps and pprof profiles.",
+  "project_backups_empty_description": "Back up this project to keep a copy of its files and volume data.",
+  "preview": "Preview",
+  "markdown_view": "Markdown view",
+  "markdown_render_failed": "Markdown could not be rendered.",
+  "show_swarm_task_hostnames": "Show Swarm Task Hostnames",
+  "search_and_sort_use_docker_names": "Search and sort use Docker names.",
   "arcane_only_backup_description": "Back up Arcane's own data. Projects are backed up with project backups.",
   "restore_leaves_projects_description": "Backups made without projects leave project folders as they are; restore projects from their project backups. Backups that include projects, such as older backups and safety backups, restore them too.",
   "found_project_backups": "Found {count} project backup(s).",
-  "failed_to_discover_project_backups": "Failed to discover project backups.",
-  "project_backups_empty_description": "Back up this project to keep a copy of its files and volume data."
+  "failed_to_discover_project_backups": "Failed to discover project backups."
 }

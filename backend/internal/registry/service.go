@@ -943,7 +943,10 @@ func (s *ContainerRegistryService) InspectImageDigest(
 			if clientErr != nil {
 				return nil, clientErr
 			}
-			return s.inspectDigestViaDaemon(ctx, dockerClient, parts, externalCreds)
+			deadline, hasDeadline := ctx.Deadline()
+			daemonCtx, cancelDaemon := context.WithTimeout(ctx, kit.Ternary(hasDeadline, time.Until(deadline), timeouts.DefaultRegistry)/2)
+			defer cancelDaemon()
+			return s.inspectDigestViaDaemon(daemonCtx, dockerClient, parts, externalCreds)
 		}()
 		lastResult, lastErr = result, daemonErr
 		if daemonErr == nil {
