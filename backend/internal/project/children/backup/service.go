@@ -181,7 +181,6 @@ const (
 
 var (
 	errAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
-	stopPermissions   = []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
 	projectDetails    = types.ProjectDetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeIncludeFiles:   true,
@@ -200,6 +199,7 @@ func NewService(deps Dependencies) *Service {
 		ProjectName:    deps.ProjectName,
 		ListProjects:   deps.ListProjects,
 		CheckVolumes:   s.checkVolumes,
+		Authorize:      s.authorize,
 		LatestRun:      s.latestRun,
 		Resume:         s.resumeScheduled,
 		BackUp:         s.backUpScheduled,
@@ -260,7 +260,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 			return types.ProjectBackup{}, activeErr
 		}
 		if len(active) > 0 {
-			if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, opts.EnvironmentID, stopPermissions)); permErr != nil {
+			if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, opts.EnvironmentID, policies.StopPermissions)); permErr != nil {
 				return types.ProjectBackup{}, permErr
 			}
 		}
@@ -594,7 +594,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	defer removeMeta()
 	if p.StopContainers && len(active) > 0 {
 		if requester != nil {
-			if authorizeErr := s.authorize(ctx, *requester, stopPermissions...); authorizeErr != nil {
+			if authorizeErr := s.authorize(ctx, *requester, policies.StopPermissions...); authorizeErr != nil {
 				return backup.Snapshot{}, authorizeErr
 			}
 		}
@@ -1004,7 +1004,7 @@ func (s *Service) backUpScheduled(ctx context.Context, run policies.ScheduledBac
 		return err
 	}
 	defer release(context.WithoutCancel(ctx), admitted.leases)
-	err = s.backUpAdmitted(ctx, admitted)
+	err = s.backUpAdmitted(ctx, admitted, run.Requester)
 	run.Retain(ctx)
 	return err
 }
@@ -1040,22 +1040,39 @@ func (s *Service) admitScheduled(
 		}
 		leases = append(leases, lease)
 	}
-	return admittedRun{policyID: policyID, project: project, plan: p, leases: leases}, nil
+	request, err = read(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	current, err := s.resolvePlan(ctx, project, request)
+	if err != nil {
+		return fail(err)
+	}
+	if !slices.Equal(current.volumeNames(), p.volumeNames()) {
+		return fail(common.Classify(common.ErrConflict, errors.New("the backup policy's volumes changed while the backup waited for another backup")))
+	}
+	return admittedRun{policyID: policyID, project: project, plan: current, leases: leases}, nil
 }
 
-func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun) (err error) {
+func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun, requester *types.BackupRequester) (err error) {
 	p := admitted.plan
-	entry := &ProjectBackup{
-		BaseModel:       database.BaseModel{ID: uuid.New().String(), CreatedAt: time.Now()},
-		ProjectID:       admitted.project.ID,
-		ProjectName:     admitted.project.Name,
-		ComposeName:     admitted.project.ComposeName,
-		Status:          types.VolumeBackupStatusRunning,
-		Trigger:         types.VolumeBackupTriggerScheduled,
-		Destination:     backup.Destination(backup.DestinationOptions{Local: p.LocalEnabled, Remote: p.S3Enabled}),
-		S3DestinationID: p.S3DestinationID,
-		PolicyID:        admitted.policyID,
-		Volumes:         backupVolumes(p.Volumes),
+	entry := &ProjectBackup{ //exhaustruct:enforce
+		BaseModel:         database.BaseModel{ID: p.BackupID, CreatedAt: time.Now(), UpdatedAt: nil},
+		CompletedAt:       nil,
+		ProjectID:         admitted.project.ID,
+		ProjectName:       admitted.project.Name,
+		ComposeName:       admitted.project.ComposeName,
+		Status:            types.VolumeBackupStatusRunning,
+		Trigger:           types.VolumeBackupTriggerScheduled,
+		Destination:       backup.Destination(backup.DestinationOptions{Local: p.LocalEnabled, Remote: p.S3Enabled}),
+		LocalSnapshotID:   "",
+		RemoteSnapshotID:  "",
+		S3DestinationID:   p.S3DestinationID,
+		PolicyID:          admitted.policyID,
+		Error:             "",
+		Volumes:           backupVolumes(p.Volumes),
+		Size:              0,
+		StoppedContainers: false,
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return fmt.Errorf("failed to save project backup: %w", createErr)
@@ -1065,11 +1082,10 @@ func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun) (err
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 		}
 	}()
-	p.BackupID = entry.ID
 	if recordErr := s.record(ctx, p.ProjectID, checkpoint{Plan: p}); recordErr != nil {
 		return recordErr
 	}
-	localChecked, executeErr := s.execute(ctx, entry, p, nil)
+	localChecked, executeErr := s.execute(ctx, entry, p, requester)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -1093,7 +1109,11 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 	if days <= 0 {
 		return nil
 	}
-	expired, err := s.expiredUnmanaged(ctx, types.UnmanagedBackupSweep{Now: time.Now(), Retention: time.Duration(days) * 24 * time.Hour})
+	sweep := types.UnmanagedBackupSweep{
+		Now:       time.Now(),
+		Retention: time.Duration(days) * 24 * time.Hour,
+	}
+	expired, err := s.expiredUnmanaged(ctx, sweep)
 	if err != nil {
 		return err
 	}
@@ -1106,7 +1126,7 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 		byProject[entry.ProjectID] = append(byProject[entry.ProjectID], entry)
 	}
 	var pruneErr error
-	var held []*ProjectBackup
+	var held []string
 	var releases []func(context.Context)
 	defer func() {
 		for _, releaseBackups := range releases {
@@ -1122,9 +1142,26 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 			continue
 		}
 		releases = append(releases, releaseBackups)
-		held = append(held, group...)
+		for _, entry := range group {
+			held = append(held, entry.ID)
+		}
 	}
-	return errors.Join(pruneErr, s.removeAll(ctx, held))
+	if len(held) == 0 {
+		return pruneErr
+	}
+	confirmed, err := s.expiredUnmanaged(ctx, types.UnmanagedBackupSweep{
+		Now:       sweep.Now,
+		Within:    held,
+		Retention: sweep.Retention,
+	})
+	if err != nil {
+		return errors.Join(pruneErr, err)
+	}
+	confirmedEntries, err := s.backupsByID(ctx, confirmed)
+	if err != nil {
+		return errors.Join(pruneErr, err)
+	}
+	return errors.Join(pruneErr, s.removeAll(ctx, confirmedEntries))
 }
 
 func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
@@ -1243,7 +1280,7 @@ func (p restorePlan) extraPermissions() []string {
 	permissions := kit.Ternary(p.Files, []string{authz.PermProjectsUpdate}, nil)
 	switch {
 	case p.MayStop:
-		return append(permissions, stopPermissions...)
+		return append(permissions, policies.StopPermissions...)
 	case kit.FromPtr(p.Redeploy):
 		return append(permissions, authz.PermProjectsDeploy)
 	}

@@ -443,6 +443,7 @@
 			result: await tryCatch(projectService.getBackup(backup.resourceId ?? '', backup.id, backup.environmentId)),
 			message: m.failed_to_restore_backup(),
 			onSuccess: (loaded) => {
+				if (restoreAsNewOpen) return;
 				restoreAsNewBackup = loaded;
 				restoreAsNewEnvironmentId = backup.environmentId;
 				restoreAsNewOpen = true;
