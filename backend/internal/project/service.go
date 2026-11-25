@@ -4206,7 +4206,7 @@ func (s *ProjectService) projectServices(ctx context.Context, projectID string) 
 	containers, listErr := s.details.ComposeContainers(ctx)
 	matched := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*projectFromDb))
 	composeProject, derr := s.getCachedComposeProject(ctx, projectFromDb, nil)
-	if errors.Is(derr, common.ErrProjectEnvUnreadable) {
+	if errors.Is(derr, common.ErrProjectEnvUnreadable) || (derr != nil && len(matched) > 0) {
 		// The Compose file cannot be loaded, so derive services from labeled containers.
 		if listErr != nil {
 			return nil, listErr

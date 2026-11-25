@@ -718,6 +718,7 @@ func ValidateComposeContentForUpdate(ctx context.Context, req ValidateComposeReq
 	err = WithTransientValidationEnvFile(ctx, req.ProjectPath, req.EnvContent, func() error {
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
+			opts.SkipValidation = true
 			if validationProjectName != "" {
 				opts.SetProjectName(validationProjectName, false)
 			}
