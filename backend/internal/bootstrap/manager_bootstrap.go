@@ -234,9 +234,7 @@ func newRouter(p RouterParams) *echo.Echo {
 	}))
 	apiGroup.Use(envProxyMiddleware)
 
-	if p.TunnelServer != nil {
-		middleware.RegisterEchoRoutes(apiGroup, tunnelRoutes(p.TunnelServer))
-	}
+	middleware.RegisterEchoRoutes(apiGroup, tunnelRoutes(p.TunnelServer))
 
 	humaAPI := api.SetupAPI(api.SetupParams{
 		Echo:        e,

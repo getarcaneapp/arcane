@@ -155,6 +155,7 @@ func TestNewRouter_StrictTransportSecurity(t *testing.T) {
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: agent.NewTunnelRegistry(),
+		TunnelServer:   agent.NewTunnelServer(agent.TunnelServerOptions{Registry: agent.NewTunnelRegistry(), MTLS: agent.NewMTLS(agent.MTLSConfig{})}),
 	})
 
 	tests := []struct {
