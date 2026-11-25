@@ -137,14 +137,14 @@
 			{@const canRestoreAsNew = hasPermission('projects:create', item.environmentId)}
 			<!-- A deleted project's page is gone, so its retained backups are restored or deleted from here. -->
 			{#if canRestoreAsNew}
-				<DropdownMenu.Item onclick={() => onRestoreProjectAsNew(item)} disabled={item.status !== 'succeeded'}
+				<DropdownMenu.Item onclick={() => onRestoreProjectAsNew(item)} disabled={unavailable || item.status !== 'succeeded'}
 					><CopyIcon class="size-4" />{m.restore_as_new_project()}</DropdownMenu.Item
 				>
 			{/if}
 			{#if hasPermission('projects:backup', item.environmentId)}
 				<RemoveMenuItem
 					onclick={() => onDelete(item)}
-					disabled={item.status === 'running'}
+					disabled={unavailable || item.status === 'running'}
 					withSeparator={canRestoreAsNew}
 					label={m.common_delete()}
 				/>

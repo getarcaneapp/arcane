@@ -122,6 +122,7 @@ type (
 		Volumes           []ProjectBackupVolume   `json:"volumes"`
 		Size              int64                   `json:"size" doc:"Total size of the captured files"`
 		StoppedContainers bool                    `json:"stoppedContainers" doc:"Whether the project's containers were stopped for the snapshot"`
+		Files             bool                    `json:"files" doc:"Whether the backup includes the project files"`
 	}
 
 	ProjectBackupPolicy struct {
@@ -195,7 +196,7 @@ type (
 	}
 
 	RestoreProjectBackupRequest struct {
-		Files    *bool    `json:"files,omitempty" doc:"Restore the project files; defaults to true"`
+		Files    *bool    `json:"files,omitempty" doc:"Restore the project files; defaults to whether the backup includes them"`
 		Redeploy *bool    `json:"redeploy,omitempty" doc:"Deploy the project after the restore, which requires projects:deploy; defaults to true when it runs"`
 		Volumes  []string `json:"volumes,omitzero" doc:"Compose keys of the backup's volumes to restore; omitted means every volume the backup includes, empty means none"`
 	}
