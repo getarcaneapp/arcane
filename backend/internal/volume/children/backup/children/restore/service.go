@@ -647,7 +647,9 @@ func (s *Service) createComposeVolume(ctx context.Context, volumeName string, ta
 	if err != nil {
 		return err
 	}
-	if createErr := backup.CreateVolume(ctx, s.deps.Docker, createOptions); createErr != nil {
+	if _, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+		return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, createOptions)
+	}); createErr != nil {
 		return createErr
 	}
 	slog.InfoContext(ctx, "Created compose volume for restore", "volume", volumeName, "project", target.Project, "key", target.Key)

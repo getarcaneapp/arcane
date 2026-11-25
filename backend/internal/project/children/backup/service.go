@@ -62,6 +62,7 @@ type (
 		LockVolumes        func(ctx context.Context, names []string) (func(), error)
 		Project            func(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error)
 		StopProject        func(ctx context.Context, projectID string, services []string, user types.Actor) error
+		StartProject       func(ctx context.Context, projectID string, services []string, user types.Actor) error
 		Volume             func(ctx context.Context, name string) (types.Volume, bool, error)
 		BackupStore        func(ctx context.Context) string
 		LockProject        func(ctx context.Context, op, projectID string) (func(), error)
@@ -496,7 +497,7 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 		return nil
 	}
 	if len(recorded.Stopped) > 0 {
-		return errors.Join(s.startContainers(ctx, recorded.Stopped), backup.FailStoppedRun(ctx, func(ctx context.Context, message string) error {
+		return errors.Join(s.deps.StartProject(ctx, entry.ProjectID, recorded.Stopped, recorded.Plan.User), backup.FailStoppedRun(ctx, func(ctx context.Context, message string) error {
 			return s.fail(ctx, entry.ID, message)
 		}))
 	}
@@ -562,6 +563,40 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan, req
 	return s.snapshot(ctx, entry, p, requester, repository, password)
 }
 
+func (s *Service) captureStop(
+	entry *ProjectBackup, p plan, requester *types.BackupRequester, project types.Project, active []container.Summary,
+) func(context.Context) (func(context.Context) error, error) {
+	if !p.StopContainers || len(active) == 0 {
+		return nil
+	}
+	return func(ctx context.Context) (func(context.Context) error, error) {
+		if requester != nil {
+			if authorizeErr := s.authorize(ctx, *requester, policies.StopPermissions...); authorizeErr != nil {
+				return nil, authorizeErr
+			}
+		}
+		stopped := projects.ContainerServices(active)
+		if recordErr := s.record(ctx, p.ProjectID, checkpoint{Plan: p, Stopped: stopped}); recordErr != nil {
+			return nil, recordErr
+		}
+		start := func(ctx context.Context) error {
+			if startErr := s.deps.StartProject(ctx, entry.ProjectID, stopped, p.User); startErr != nil {
+				return startErr
+			}
+			return s.record(ctx, p.ProjectID, checkpoint{Plan: p})
+		}
+		entry.StoppedContainers = true
+		return start, backup.ProjectStop{
+			Docker:    s.deps.Docker,
+			Stop:      s.deps.StopProject,
+			User:      p.User,
+			ProjectID: entry.ProjectID,
+			Compose:   project.ComposeName,
+			Active:    active,
+		}.Run(ctx)
+	}
+}
+
 func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, requester *types.BackupRequester, repository backup.Repository, password string) (backup.Snapshot, error) {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -597,46 +632,14 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 			s.deps.Engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, password, []string{snapshot.ID}),
 		)
 	}
-	capture := backup.CapturePlan{
+	err = backup.Capture(held, backup.CapturePlan{
 		Inspect:  s.deps.Volume,
-		Stop:     nil,
+		Stop:     s.captureStop(entry, p, requester, project, active),
 		Verify:   nil,
 		Rejected: reject,
 		Mounts:   projectMounts,
 		Volumes:  p.volumeNames(),
-	}
-	if p.StopContainers && len(active) > 0 {
-		capture.Stop = func(ctx context.Context) (func(context.Context) error, error) {
-			if requester != nil {
-				if authorizeErr := s.authorize(ctx, *requester, policies.StopPermissions...); authorizeErr != nil {
-					return nil, authorizeErr
-				}
-			}
-			stopped := make([]string, 0, len(active))
-			for _, c := range active {
-				stopped = append(stopped, c.ID)
-			}
-			if recordErr := s.record(ctx, p.ProjectID, checkpoint{Plan: p, Stopped: stopped}); recordErr != nil {
-				return nil, recordErr
-			}
-			start := func(ctx context.Context) error {
-				if startErr := s.startContainers(ctx, stopped); startErr != nil {
-					return startErr
-				}
-				return s.record(ctx, p.ProjectID, checkpoint{Plan: p})
-			}
-			entry.StoppedContainers = true
-			return start, backup.ProjectStop{
-				Docker:    s.deps.Docker,
-				Stop:      s.deps.StopProject,
-				User:      p.User,
-				ProjectID: entry.ProjectID,
-				Compose:   project.ComposeName,
-				Active:    active,
-			}.Run(ctx)
-		}
-	}
-	err = backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
+	}, func(ctx context.Context, mounts []mount.Mount) error {
 		var env []byte
 		var externalEnv bool
 		if p.Files {
@@ -689,23 +692,6 @@ func (s *Service) containerUse(ctx context.Context, composeName string) (active 
 	}
 	active, inUse = projects.ProjectContainerUse(composeName, running)
 	return active, inUse, nil
-}
-
-func (s *Service) startContainers(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	errs := make([]error, 0, len(ids))
-	for _, id := range ids {
-		if _, startErr := dockerClient.ContainerStart(ctx, id, client.ContainerStartOptions{}); startErr != nil {
-			errs = append(errs, fmt.Errorf("start container %s: %w", id, startErr))
-		}
-	}
-	return errors.Join(errs...)
 }
 
 func (s *Service) authorize(ctx context.Context, requester types.BackupRequester, permissions ...string) error {

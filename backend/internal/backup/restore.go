@@ -89,7 +89,9 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	}
 	r.report(held, "Restoring the backup")
 	for _, options := range state.Create {
-		if err = CreateVolume(held, r.Docker, options); err != nil {
+		if _, err = r.Docker.Call(held, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+			return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
+		}); err != nil {
 			return r.Rollback(held, state, fmt.Errorf("create the missing volumes: %w", err))
 		}
 		state.Created = append(state.Created, options.Name)
@@ -212,13 +214,6 @@ func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string 
 		}
 	}
 	return leftovers
-}
-
-func CreateVolume(ctx context.Context, dockerService *dockerInternal.DockerClientService, options client.VolumeCreateOptions) error {
-	_, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
-		return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
-	})
-	return err
 }
 
 func (r RestoreSteps) record(ctx context.Context, state RestoreState) error {

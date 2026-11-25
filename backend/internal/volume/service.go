@@ -207,7 +207,12 @@ func (s *VolumeService) ArchiveVolumes(ctx context.Context, parts []mount.Mount,
 	if err != nil {
 		return err
 	}
-	return backup.ArchiveOutput{Add: add, Image: helperImage, Parts: parts}.Write(ctx, s.dockerService)
+	return backup.ArchiveOutput{
+		Add:   add,
+		Exec:  s.execInContainer,
+		Image: helperImage,
+		Parts: parts,
+	}.Write(ctx, s.dockerService)
 }
 
 func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {

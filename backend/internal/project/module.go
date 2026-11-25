@@ -51,7 +51,7 @@ type (
 )
 
 func New(p ModuleParams) *Module {
-	local := localTransferEnvironment{
+	base := localTransferEnvironment{
 		projects: p.Service,
 		deps:     p.Transfer,
 	}
@@ -66,7 +66,8 @@ func New(p ModuleParams) *Module {
 		LockVolumes:    p.Backups.LockVolumes,
 		Project:        p.Service.GetProjectDetails,
 		StopProject:    p.Service.stopProject,
-		Volume:         local.Volume,
+		StartProject:   p.Service.startProject,
+		Volume:         base.Volume,
 		BackupStore:    p.Backups.Repository.StorageVolume,
 		LockProject:    p.Service.LockProject,
 		SoleDirectory:  p.Service.soleDirectory,
@@ -112,7 +113,7 @@ func New(p ModuleParams) *Module {
 			}
 			return projectRecords(all), nil
 		},
-		DeleteVolume: local.DeleteVolume,
+		DeleteVolume: base.DeleteVolume,
 		Activities:   p.Activity,
 		Config:       p.Service.config,
 		Ctx:          p.Backups.Ctx,
@@ -120,14 +121,14 @@ func New(p ModuleParams) *Module {
 		Admission:    p.Backups.Admission,
 	})
 	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
-	local.bundles = bundle.New(bundle.Dependencies{
+	bundles := bundle.New(bundle.Dependencies{
 		Backups:             backups,
 		Docker:              p.Service.dockerService,
 		Uploads:             p.Service.uploads,
 		BackupStore:         p.Backups.Repository.StorageVolume,
-		Project:             local.Project,
-		Volume:              local.Volume,
-		ComposeProjectInUse: local.ComposeProjectInUse,
+		Project:             base.Project,
+		Volume:              base.Volume,
+		ComposeProjectInUse: base.ComposeProjectInUse,
 		ExportProject:       p.Service.ExportProjectArchive,
 		ImportProject: func(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
 			imported, err := p.Service.ImportProjectArchive(ctx, request, user)
@@ -144,7 +145,7 @@ func New(p ModuleParams) *Module {
 		LockVolumes:    p.Backups.LockVolumes,
 		ArchiveVolumes: p.Transfer.ArchiveVolumes,
 		RestoreVolume:  p.Transfer.RestoreVolume,
-		DeleteVolume:   local.DeleteVolume,
+		DeleteVolume:   base.DeleteVolume,
 		CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
 			proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
 				Restore:   project.Fill,
@@ -163,10 +164,14 @@ func New(p ModuleParams) *Module {
 	return &Module{
 		service:  p.Service,
 		activity: p.Activity,
-		bundles:  local.bundles,
+		bundles:  bundles,
 		transfer: transfer.NewService(transfer.Dependencies{
 			Environment: transfer.Environments{
-				Local:     local,
+				Local: localTransferEnvironment{
+					projects: p.Service,
+					deps:     p.Transfer,
+					bundles:  bundles,
+				},
 				Transport: p.Transfer.Transport,
 				Tunnels:   p.Transfer.Tunnels,
 			}.Get,

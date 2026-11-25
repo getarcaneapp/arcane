@@ -314,42 +314,18 @@ func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, 
 		return err
 	}
 	defer unlock()
-	plan := backup.CapturePlan{
-		Inspect:  s.deps.Volume,
-		Stop:     nil,
-		Verify:   nil,
-		Rejected: nil,
-		Mounts:   make([]mount.Mount, 0, len(names)),
-		Volumes:  names,
-	}
+	mounts := make([]mount.Mount, 0, len(names))
 	for _, name := range names {
-		plan.Mounts = append(plan.Mounts, backup.VolumePart(name))
+		mounts = append(mounts, backup.VolumePart(name))
 	}
-	if state.active && opts.Request.StopProject {
-		plan.Stop = func(ctx context.Context) (func(context.Context) error, error) {
-			services := projects.ContainerServices(state.containers)
-			start := func(ctx context.Context) error {
-				return s.deps.StartProject(ctx, opts.ProjectID, services, opts.User)
-			}
-			if stopErr := (backup.ProjectStop{
-				Docker:    s.deps.Docker,
-				Stop:      s.deps.StopProject,
-				User:      opts.User,
-				ProjectID: opts.ProjectID,
-				Compose:   manifest.Project.ComposeName,
-				Active:    state.containers,
-			}).Run(ctx); stopErr != nil {
-				return start, fmt.Errorf("stop project %s: %w", manifest.Project.Name, stopErr)
-			}
-			return start, nil
-		}
-	}
-	if manifest.Consistent {
-		plan.Verify = func(ctx context.Context) error {
-			return backup.CheckNoWriters(ctx, s.deps.Docker, names)
-		}
-	}
-	return backup.Capture(ctx, plan, func(ctx context.Context, mounts []mount.Mount) error {
+	return backup.Capture(ctx, backup.CapturePlan{
+		Inspect:  s.deps.Volume,
+		Stop:     s.captureStop(opts, manifest, state),
+		Verify:   s.captureVerify(manifest.Consistent, names),
+		Rejected: nil,
+		Mounts:   mounts,
+		Volumes:  names,
+	}, func(ctx context.Context, mounts []mount.Mount) error {
 		writer, writerErr := projects.NewProjectBundleWriter(w, manifest)
 		if writerErr != nil {
 			return writerErr
@@ -374,6 +350,38 @@ func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, 
 		}
 		return writer.Close()
 	})
+}
+
+func (s *Service) captureStop(opts ExportOptions, manifest types.ProjectManifest, state exportState) func(context.Context) (func(context.Context) error, error) {
+	if !state.active || !opts.Request.StopProject {
+		return nil
+	}
+	return func(ctx context.Context) (func(context.Context) error, error) {
+		services := projects.ContainerServices(state.containers)
+		start := func(ctx context.Context) error {
+			return s.deps.StartProject(ctx, opts.ProjectID, services, opts.User)
+		}
+		if stopErr := (backup.ProjectStop{
+			Docker:    s.deps.Docker,
+			Stop:      s.deps.StopProject,
+			User:      opts.User,
+			ProjectID: opts.ProjectID,
+			Compose:   manifest.Project.ComposeName,
+			Active:    state.containers,
+		}).Run(ctx); stopErr != nil {
+			return start, fmt.Errorf("stop project %s: %w", manifest.Project.Name, stopErr)
+		}
+		return start, nil
+	}
+}
+
+func (s *Service) captureVerify(consistent bool, names []string) func(context.Context) error {
+	if !consistent {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		return backup.CheckNoWriters(ctx, s.deps.Docker, names)
+	}
 }
 
 func (s *Service) Import(ctx context.Context, opts ImportOptions) (string, error) {

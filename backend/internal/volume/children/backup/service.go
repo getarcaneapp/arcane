@@ -890,6 +890,7 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 			}
 			return nil
 		},
+		Exec:  s.deps.Exec,
 		Image: helperImage,
 		Parts: []mount.Mount{backup.VolumePart(volumeName)},
 	}.Write(ctx, s.deps.Docker)
