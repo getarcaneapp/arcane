@@ -46,6 +46,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	s3util "getarcane.dev/arcane/v3/pkg/s3"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
@@ -180,6 +181,7 @@ type (
 	foundSnapshot struct {
 		source          snapshotSource
 		s3DestinationID string
+		instanceID      string
 		snapshot        backup.DiscoveredSnapshot
 	}
 )
@@ -314,6 +316,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 		Size:              0,
 		StoppedContainers: false,
 		Files:             p.Files,
+		RemoteInstanceID:  "",
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		release(ctx, leases)
@@ -906,7 +909,7 @@ func (s *Service) List(ctx context.Context, projectID string, params pagination.
 	describe := s.deps.Repository.DescribeRemote(ctx)
 	backups := make([]types.ProjectBackup, 0, len(entries))
 	for i := range entries {
-		name, available := describe(entries[i].S3DestinationID, "", entries[i].RemoteSnapshotID)
+		name, available := describe(entries[i].S3DestinationID, entries[i].RemoteInstanceID, entries[i].RemoteSnapshotID)
 		backups = append(backups, entries[i].DTO(DTOOptions{S3DestinationName: name, RemoteAvailable: available}))
 	}
 	return backups, page, nil
@@ -1102,6 +1105,7 @@ func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun, requ
 		Size:              0,
 		StoppedContainers: false,
 		Files:             p.Files,
+		RemoteInstanceID:  "",
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return fmt.Errorf("failed to save project backup: %w", createErr)
@@ -1196,7 +1200,7 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
 	var candidates []ProjectBackup
 	if err := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).Select("id", "policy_id").
-		Where("status <> ? AND trigger = ? AND policy_id <> ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled).
+		Where("status <> ? AND trigger = ? AND policy_id <> '' AND remote_instance_id = ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled).
 		Find(&candidates).Error; err != nil {
 		return nil, fmt.Errorf("failed to load unmanaged project backups: %w", err)
 	}
@@ -1219,32 +1223,36 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 		return 0, err
 	}
 	var repositories []backup.Repository
-	var destinationIDs []string
+	var destinationIDs, instanceIDs []string
 	var listErr error
 	if opts.Local {
 		local, localErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 		if localErr != nil {
 			listErr = fmt.Errorf("open the local repository: %w", localErr)
 		} else {
-			repositories, destinationIDs = append(repositories, local), append(destinationIDs, "")
+			repositories, destinationIDs, instanceIDs = append(repositories, local), append(destinationIDs, ""), append(instanceIDs, "")
 		}
 	}
-	root := path.Join(backup.VolumeRoot, s.deps.Settings.GetSettingsConfig().InstanceID.Value)
+	ownInstance := s.deps.Settings.GetSettingsConfig().InstanceID.Value
 	for _, destinationID := range opts.S3DestinationIDs {
-		observation, checkErr := backup.CheckRemoteRepository(ctx, s.deps.S3Destinations, destinationID, root)
-		if checkErr != nil {
-			listErr = errors.Join(listErr, fmt.Errorf("check S3 destination %s: %w", destinationID, checkErr))
+		configuration, configErr := s.deps.S3Destinations.Configuration(ctx, destinationID)
+		if configErr != nil {
+			listErr = errors.Join(listErr, fmt.Errorf("open S3 destination %s: %w", destinationID, configErr))
 			continue
 		}
-		if !observation.Available {
+		roots, rootsErr := s3util.ListRepositoryRoots(ctx, configuration, backup.VolumeRoot)
+		if rootsErr != nil {
+			listErr = errors.Join(listErr, fmt.Errorf("list repositories in S3 destination %s: %w", destinationID, rootsErr))
 			continue
 		}
-		remote, remoteErr := s.deps.Repository.Remote(ctx, destinationID, "")
-		if remoteErr != nil {
-			listErr = errors.Join(listErr, fmt.Errorf("open S3 destination %s: %w", destinationID, remoteErr))
-			continue
+		for _, root := range roots {
+			remote, remoteErr := s.deps.Repository.Remote(ctx, destinationID, root)
+			if remoteErr != nil {
+				listErr = errors.Join(listErr, fmt.Errorf("open S3 destination %s instance %s: %w", destinationID, root, remoteErr))
+				continue
+			}
+			repositories, destinationIDs, instanceIDs = append(repositories, remote), append(destinationIDs, destinationID), append(instanceIDs, kit.Ternary(root == ownInstance, "", root))
 		}
-		repositories, destinationIDs = append(repositories, remote), append(destinationIDs, destinationID)
 	}
 	var found []foundSnapshot
 	for index, repository := range repositories {
@@ -1266,6 +1274,7 @@ func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (in
 				found = append(found, foundSnapshot{
 					snapshot:        snapshot,
 					s3DestinationID: destinationIDs[index],
+					instanceID:      instanceIDs[index],
 					source:          snapshotSource{password: password, id: snapshot.ID, repository: repository},
 				})
 			}
@@ -1411,6 +1420,7 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 			Size:              largest.snapshot.Summary.TotalBytesProcessed,
 			StoppedContainers: false,
 			Files:             !slices.Contains(first.snapshot.Tags, volumesOnlyTag),
+			RemoteInstanceID:  remoteSnapshot.instanceID,
 		}
 		createErr := s.deps.DB.WithContext(ctx).Create(&entry).Error
 		releaseBackups(ctx)
@@ -1435,7 +1445,7 @@ func (s *Service) addFoundCopies(ctx context.Context, entry ProjectBackup, local
 		updates["local_snapshot_id"] = localSnapshot.snapshot.ID
 	}
 	if addRemote {
-		updates["remote_snapshot_id"], updates["s3_destination_id"] = remoteSnapshot.snapshot.ID, remoteSnapshot.s3DestinationID
+		updates["remote_snapshot_id"], updates["s3_destination_id"], updates["remote_instance_id"] = remoteSnapshot.snapshot.ID, remoteSnapshot.s3DestinationID, remoteSnapshot.instanceID
 	}
 	if interrupted {
 		updates["status"], updates["error"], updates["size"] = types.VolumeBackupStatusSucceeded, "", size
@@ -2001,6 +2011,7 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 		Size:              0,
 		StoppedContainers: false,
 		Files:             p.Files,
+		RemoteInstanceID:  "",
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return "", fmt.Errorf("failed to save the safety backup: %w", createErr)
@@ -2240,7 +2251,7 @@ func (s *Service) open(ctx context.Context, dockerClient *client.Client, entry *
 		if id == "" {
 			continue
 		}
-		repository, err := s.repository(ctx, dockerClient, entry.S3DestinationID, remote)
+		repository, err := s.repository(ctx, dockerClient, entry, remote)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -2260,9 +2271,9 @@ func (s *Service) open(ctx context.Context, dockerClient *client.Client, entry *
 	return snapshotSource{}, types.ProjectManifest{}, errors.Join(errs...)
 }
 
-func (s *Service) repository(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool) (backup.Repository, error) {
+func (s *Service) repository(ctx context.Context, dockerClient *client.Client, entry *ProjectBackup, remote bool) (backup.Repository, error) {
 	if remote {
-		return s.deps.Repository.Remote(ctx, s3DestinationID, "")
+		return s.deps.Repository.Remote(ctx, entry.S3DestinationID, entry.RemoteInstanceID)
 	}
 	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 }
