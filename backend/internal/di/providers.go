@@ -97,6 +97,7 @@ type (
 		DB            *database.DB
 		LocalSettings *settings.SettingsService
 		EventService  *event.EventService
+		Config        *config.Config
 	}
 
 	authMiddlewareParams struct {
@@ -269,10 +270,13 @@ func provideTunnelRegistry(lc fx.Lifecycle) *agent.TunnelRegistry {
 }
 
 func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClientService {
-	service := docker.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, bus.Config{OnDrop: func(message events.Message) {
-		// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
-		p.EventService.RecordDockerEvent(p.Ctx, message)
-	}})
+	service := docker.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, docker.ClientServiceOptions{
+		EventBus: bus.Config{OnDrop: func(message events.Message) {
+			// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
+			p.EventService.RecordDockerEvent(p.Ctx, message)
+		}},
+		LocalDockerDisabled: !p.Config.LocalDockerEnabled,
+	})
 	var stopStream, stopLog func(context.Context) error
 	var unsubscribe func()
 	p.Lifecycle.Append(fx.Hook{
@@ -283,6 +287,9 @@ func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClien
 				Run:  run,
 				Name: "Docker event log",
 			}).Stop
+			if !service.LocalDockerEnabled() {
+				return nil
+			}
 			stopStream = concurrency.Supervise(p.Ctx, concurrency.SuperviseConfig{
 				Run: func(runCtx context.Context) error {
 					service.WatchEvents(runCtx)

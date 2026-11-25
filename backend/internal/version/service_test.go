@@ -27,7 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app/docker/streams/bus"
 	"kit.getarcane.app/updater/labels"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -239,7 +238,7 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 
 func newVersionDockerService(t *testing.T, settingsService *settings.SettingsService, server *httptest.Server) *docker.DockerClientService {
 	t.Helper()
-	return docker.NewDockerClientService(t.Context(), nil, settingsService, bus.Config{}).WithClient(newTestDockerClient(t, server))
+	return docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newTestDockerClient(t, server))
 }
 
 func TestVersionService_IsChannelBuild(t *testing.T) {

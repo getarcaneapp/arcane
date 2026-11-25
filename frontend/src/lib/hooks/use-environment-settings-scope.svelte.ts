@@ -5,7 +5,7 @@ import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import { environmentSettingsAcrossQuery } from '#lib/query/environments.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { settingsService } from '#lib/services/settings-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { environmentStore, isLocalDockerDisabled } from '#lib/stores/environment.store.svelte.js';
 import type { SettingKey, Settings } from '#lib/types/settings.js';
 import type { ResolvedSettings } from '#lib/types/ui/settings.js';
 import { hasPermission } from '#lib/utils/auth.js';
@@ -17,7 +17,7 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 	let revision = $state(0);
 	const selectedId = $derived(page.url.searchParams.get('env') ?? '');
 	const readable = $derived(
-		environmentStore.shown.filter((env) =>
+		environmentStore.enabled.filter((env) =>
 			['environment-settings:read', ...permissions()].every((permission) => hasPermission(permission, env.id))
 		)
 	);
@@ -26,7 +26,8 @@ export function useEnvironmentSettingsScope(permissions: () => string[]) {
 			(env) => readable.some((ref) => ref.id === env.id) && (!selectedId || env.id === selectedId)
 		)
 	);
-	const online = $derived(candidates.filter(isEnvironmentOnline));
+	// Settings need no Docker, so a manager without local Docker loads whatever status its last check saved.
+	const online = $derived(candidates.filter((env) => isEnvironmentOnline(env) || isLocalDockerDisabled(env)));
 	const onlineScope = $derived(online.map((env) => env.id).join(','));
 	const results = createQuery(() => {
 		const environments = online;

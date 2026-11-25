@@ -17,6 +17,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/volume/children/backup/children/policies"
@@ -106,6 +107,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 		DB:             db,
 		Engine:         engine,
 		AlreadyRunning: errors.New("a backup is already running for this volume"),
+		Docker:         &docker.DockerClientService{},
 		Ctx:            t.Context(),
 		Scheduler:      jobScheduler,
 		Admission:      gate,

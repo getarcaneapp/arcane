@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -14,7 +15,7 @@ const (
 )
 
 // Interrupted runs that cannot resume fall back to frozen-plan recovery.
-func NewAutoUpdateJob(engine *flow.Engine, updaterService *updater.UpdaterService, settingsService *settings.SettingsService) *flow.Job {
+func NewAutoUpdateJob(engine *flow.Engine, updaterService *updater.UpdaterService, settingsService *settings.SettingsService, dockerService *docker.DockerClientService) *flow.Job {
 	return &flow.Job{
 		Engine:   engine,
 		Workflow: updaterService.AutoUpdateWorkflow(),
@@ -23,7 +24,7 @@ func NewAutoUpdateJob(engine *flow.Engine, updaterService *updater.UpdaterServic
 			return schedule.Or(ctx, settingsService.GetStringSetting(ctx, "autoUpdateInterval"), autoUpdateDefaultSchedule, "auto-update")
 		},
 		ShouldRunFn: func(ctx context.Context) bool {
-			return settingsService.GetBoolSetting(ctx, "autoUpdate") && settingsService.GetBoolSetting(ctx, "pollingEnabled")
+			return dockerService.LocalDockerEnabled() && settingsService.GetBoolSetting(ctx, "autoUpdate") && settingsService.GetBoolSetting(ctx, "pollingEnabled")
 		},
 		FallbackFn:      updaterService.ReconcilePending,
 		ValidateRetryFn: updaterService.ValidateAutoUpdateRetry,

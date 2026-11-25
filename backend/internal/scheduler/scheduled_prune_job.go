@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/notification"
 	scheduleutil "getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -14,6 +15,7 @@ import (
 
 type (
 	ScheduledPruneJob struct {
+		dockerService       *docker.DockerClientService
 		systemService       *system.SystemService
 		settingsService     *settings.SettingsService
 		notificationService *notification.NotificationService
@@ -24,8 +26,14 @@ const (
 	ScheduledPruneJobName = "scheduled-prune"
 )
 
-func NewScheduledPruneJob(systemService *system.SystemService, settingsService *settings.SettingsService, notificationService *notification.NotificationService) *ScheduledPruneJob {
+func NewScheduledPruneJob(
+	systemService *system.SystemService,
+	settingsService *settings.SettingsService,
+	notificationService *notification.NotificationService,
+	dockerService *docker.DockerClientService,
+) *ScheduledPruneJob {
 	return &ScheduledPruneJob{
+		dockerService:       dockerService,
 		systemService:       systemService,
 		settingsService:     settingsService,
 		notificationService: notificationService,
@@ -37,7 +45,7 @@ func (j *ScheduledPruneJob) Name() string {
 }
 
 func (j *ScheduledPruneJob) ShouldSchedule(ctx context.Context) bool {
-	return j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled")
+	return j.dockerService.LocalDockerEnabled() && j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled")
 }
 
 func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {

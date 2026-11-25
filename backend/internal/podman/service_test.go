@@ -123,8 +123,8 @@ func newTestService(t *testing.T, host *testHost) *Service {
 		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 			return compat.EngineCompatibilityInfo{Name: host.engine}, nil
 		},
-		Host: func() string {
-			return server.URL
+		Host: func() (string, error) {
+			return server.URL, nil
 		},
 		NewSystemd: func(rootless bool) libpodman.Systemd {
 			assert.Equal(t, host.rootless, rootless)
@@ -156,8 +156,8 @@ func TestServiceStatusEngineErrorReportsNotDetected(t *testing.T) {
 		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 			return compat.EngineCompatibilityInfo{}, errors.New("daemon unreachable")
 		},
-		Host: func() string {
-			return "unix:///run/podman/podman.sock"
+		Host: func() (string, error) {
+			return "unix:///run/podman/podman.sock", nil
 		},
 	})
 
@@ -211,8 +211,8 @@ func TestServiceStatusOnPodman(t *testing.T) {
 		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
 			return compat.EngineCompatibilityInfo{Name: "podman"}, nil
 		},
-		Host: func() string {
-			return hostURL
+		Host: func() (string, error) {
+			return hostURL, nil
 		},
 		NewSystemd: func(bool) libpodman.Systemd {
 			return host.systemd

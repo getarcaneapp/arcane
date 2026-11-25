@@ -7,6 +7,10 @@ export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
 
 export type EnvironmentRef = Pick<Environment, 'id' | 'name'>;
 
+export function isLocalDockerDisabled(env: Environment | null | undefined): boolean {
+	return env?.id === LOCAL_DOCKER_ENVIRONMENT_ID && env.localDockerEnabled === false;
+}
+
 function createEnvironmentManagementStore() {
 	let _availableEnvironments = $state.raw<Environment[]>([]);
 	let _initialized = false;
@@ -30,14 +34,23 @@ function createEnvironmentManagementStore() {
 		return sorted;
 	}
 
+	function _enabledEnvironments(): Environment[] {
+		return _availableEnvironments
+			.filter((env) => env.enabled)
+			.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+	}
+
 	return {
 		get available(): Environment[] {
 			return _availableEnvironments;
 		},
+		/** Enabled environments, including a local environment whose Docker is turned off; use for permissions and settings. */
+		get enabled(): EnvironmentRef[] {
+			return _enabledEnvironments();
+		},
+		/** Environments whose Docker resources the UI shows. */
 		get shown(): EnvironmentRef[] {
-			return _availableEnvironments
-				.filter((env) => env.enabled)
-				.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+			return _enabledEnvironments().filter((env) => !isLocalDockerDisabled(env));
 		},
 		get shownKey(): string {
 			return this.shown.map((env) => env.id).join(',');
