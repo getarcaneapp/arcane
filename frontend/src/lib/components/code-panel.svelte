@@ -132,6 +132,16 @@
 {#snippet markdownPreview()}
 	<div class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0">
 		<div class="{effectiveAutoHeight ? '' : 'absolute inset-0 overflow-y-auto'} px-4 py-3">
+			{#if editUrl}
+				<a
+					href={editUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="mb-3 inline-block text-sm text-primary hover:underline"
+				>
+					{m.git_edit_file_in_repository()}
+				</a>
+			{/if}
 			<MarkdownContent markdown={value} class="max-w-4xl" />
 		</div>
 	</div>
@@ -140,7 +150,8 @@
 {#snippet panelBody()}
 	{#if showMarkdownPreview}
 		{@render markdownPreview()}
-	{:else}
+	{/if}
+	{#if !showMarkdownPreview || !readOnly}
 		{@render editorBody()}
 	{/if}
 {/snippet}
@@ -149,6 +160,7 @@
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
 		class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0 {editUrl ? 'cursor-pointer' : ''}"
+		class:hidden={showMarkdownPreview}
 		role={editUrl ? 'link' : undefined}
 		tabindex={editUrl ? 0 : undefined}
 		title={editUrl ? m.git_edit_file_in_repository() : undefined}
@@ -194,7 +206,7 @@
 			</svelte:boundary>
 		</div>
 	</div>
-	{#if error}
+	{#if error && !showMarkdownPreview}
 		<p class="px-4 py-2 text-xs text-destructive">{error}</p>
 	{/if}
 {/snippet}
