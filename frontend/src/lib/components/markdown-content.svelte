@@ -9,7 +9,11 @@
 				// External links open in a new tab so they never navigate away from unsaved edits.
 				DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 					if (node.localName !== 'a' && node.localName !== 'area') return;
-					const href = node.getAttribute('href')?.trim();
+					const href = (
+						node.getAttribute('href') ??
+						node.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ??
+						node.getAttribute('xlink:href')
+					)?.trim();
 					if (!href || href.startsWith('#')) return;
 					node.setAttribute('target', '_blank');
 					node.setAttribute('rel', 'noopener noreferrer');
