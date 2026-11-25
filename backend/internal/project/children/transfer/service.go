@@ -544,12 +544,22 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	if !targetReady {
 		return nil
 	}
-	return targetChecks(ctx, plan, project, target, request, targetVolumes, externalVolumes)
+	var bundleSize int64
+	if request.IncludeVolumes {
+		for _, name := range slices.Compact(slices.Sorted(slices.Values(sourceVolumes))) {
+			volume, _, volumeErr := source.Volume(ctx, name)
+			if volumeErr != nil {
+				return fmt.Errorf("inspect source volume %s: %w", name, volumeErr)
+			}
+			bundleSize += max(volume.Size, 0)
+		}
+	}
+	return targetChecks(ctx, plan, project, target, request, targetVolumes, externalVolumes, bundleSize)
 }
 
 func targetChecks(
 	ctx context.Context, plan *types.ProjectTransferPreflight, project types.Project, target Environment,
-	request types.ProjectTransferRequest, targetVolumes, externalVolumes []string,
+	request types.ProjectTransferRequest, targetVolumes, externalVolumes []string, bundleSize int64,
 ) error {
 	existing, err := target.Projects(ctx, "")
 	if err != nil {
@@ -598,6 +608,25 @@ func targetChecks(
 				Message:  fmt.Sprintf("External volume %s does not exist on the target environment.", name),
 				Resource: name,
 			})
+		}
+	}
+	if bundleSize > 0 {
+		probe, probeErr := target.CreateUpload(ctx, types.UploadKindProjectArchive, types.CreateUploadSessionRequest{
+			Filename:  projects.SanitizeProjectName(request.Name) + types.ProjectBundleExtension,
+			Size:      bundleSize,
+			ChunkSize: types.UploadDefaultChunkSize,
+		})
+		if probeErr != nil {
+			plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+				Code:     types.ProjectTransferTargetSpace,
+				Severity: types.ProjectTransferSeverityError,
+				Message: fmt.Sprintf(
+					"The target environment cannot store the %s of volume data of project %s: %v",
+					units.BytesSize(float64(bundleSize)), project.Name, probeErr,
+				),
+			})
+		} else if deleteErr := target.DeleteUpload(ctx, types.UploadKindProjectArchive, probe.ID); deleteErr != nil {
+			return fmt.Errorf("remove the free space check upload on the target environment: %w", deleteErr)
 		}
 	}
 	for _, key := range slices.Sorted(maps.Keys(project.Networks)) {

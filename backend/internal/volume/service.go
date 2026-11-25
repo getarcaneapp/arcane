@@ -180,11 +180,6 @@ func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 	s.backup.RegisterJobsOnStartup(ctx)
 }
 
-// BackupStorageMount resolves the repository mount shared with system-backup operations.
-func (s *VolumeService) BackupStorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
-	return s.repository.StorageMount(ctx, dockerClient, target, readOnly)
-}
-
 // HasEnabledBackupPolicy reports whether a volume-level schedule takes precedence over centralized backups.
 func (s *VolumeService) HasEnabledBackupPolicy(ctx context.Context, volumeName string) (bool, error) {
 	return s.policies.HasEnabled(ctx, backup.PolicyVolume, volumeName)
@@ -211,7 +206,12 @@ func (s *VolumeService) ArchiveVolumes(ctx context.Context, parts []mount.Mount,
 	if err != nil {
 		return err
 	}
-	return backup.ArchiveOutput{Add: add, Image: helperImage, Parts: parts}.Write(ctx, s.dockerService)
+	return backup.ArchiveOutput{
+		Add:   add,
+		Exec:  s.execInContainer,
+		Image: helperImage,
+		Parts: parts,
+	}.Write(ctx, s.dockerService)
 }
 
 func (s *VolumeService) RestoreVolumeUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {

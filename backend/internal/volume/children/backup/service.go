@@ -14,7 +14,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/containerd/errdefs"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/mount"
@@ -391,7 +390,7 @@ func (s *Service) prepareBackup(
 
 func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup, err error) error {
 	// A shutdown-cancelled workflow task is handed back with its row still running; any other cancel records the failure.
-	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
+	if backup.HandedBack(ctx) {
 		return ctx.Err()
 	}
 	if err == nil && entry.Status != types.VolumeBackupStatusSucceeded {
@@ -910,13 +909,15 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 		return nil, err
 	}
 	defer unlock()
-	if _, err = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
-	}); errdefs.IsNotFound(err) {
-		return nil, common.Classify(common.ErrNotFound, fmt.Errorf("volume %s not found", volumeName))
-	}
+	exists, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
+		_, found, inspectErr := backup.InspectVolume(ctx, dockerClient, volumeName)
+		return found, inspectErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect volume for export: %w", err)
+	}
+	if !exists {
+		return nil, common.Classify(common.ErrNotFound, fmt.Errorf("volume %s not found", volumeName))
 	}
 	helperImage, err := s.deps.HelperImage(ctx)
 	if err != nil {
@@ -932,6 +933,7 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 			}
 			return nil
 		},
+		Exec:  s.deps.Exec,
 		Image: helperImage,
 		Parts: []mount.Mount{backup.VolumePart(volumeName)},
 	}.Write(ctx, s.deps.Docker)
@@ -1123,7 +1125,7 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 	}
 	if destinationID == "" {
 		return &types.VolumeBackup{
-			ID:              snapshot.LocalRunID(),
+			ID:              cmp.Or(snapshot.RunID(), "local-"+snapshot.ID),
 			VolumeName:      volumeName,
 			Size:            snapshot.Summary.TotalBytesProcessed,
 			CreatedAt:       createdAt,
