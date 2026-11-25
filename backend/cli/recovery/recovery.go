@@ -145,7 +145,6 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// readRestoredManifest reads and removes the recovery manifest a restore put back in directory.
 func readRestoredManifest(ctx context.Context, directory string) (types.RecoveryManifest, error) {
 	root := acfs.Root{Path: directory}
 	manifestData, err := root.ReadFile(ctx, "/.arcane-recovery.json")
@@ -206,7 +205,6 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	if preserveSafetyBackupErr := preserveSafetyBackup(db, request.SafetyBackup); preserveSafetyBackupErr != nil {
 		return preserveSafetyBackupErr
 	}
-	// The restored database keeps the current project folders and discovers later project backups on its next start.
 	for key, value := range map[string]string{
 		"projectsDirectory":               request.ProjectsSetting,
 		"projectsDirectories":             request.ProjectsDirectoriesSetting,
@@ -316,7 +314,6 @@ func finalizeRestoredActivity(db *gorm.DB, activityID string) error {
 	}).Error
 }
 
-// failRestoredProjectRestores fails the project restores the system backup caught running.
 func failRestoredProjectRestores(db *gorm.DB) error {
 	var entries []activity.Activity
 	if err := db.Where("status = ?", types.ActivityStatusRunning).Find(&entries).Error; err != nil {
@@ -338,8 +335,6 @@ func failRestoredProjectRestores(db *gorm.DB) error {
 	return nil
 }
 
-// restoreData applies the restore stages. A failure before live data changed restarts Arcane; a later one rolls back to
-// the pre-restore backup and restarts Arcane only when that succeeds.
 func restoreData(
 	ctx context.Context,
 	request types.RecoveryRestoreRequest,
@@ -372,8 +367,6 @@ func restoreData(
 	return fmt.Errorf("%w; the pre-restore system backup was restored", err)
 }
 
-// runStages applies stages in order and reports whether live data changed: a staged stage changes it only once its swap
-// applies, a direct stage as soon as Rustic starts.
 func runStages(ctx context.Context, stages []types.RecoveryRestoreStage, rustic func(context.Context, types.RecoveryRestoreStage) error) (bool, error) {
 	touched := false
 	for _, stage := range stages {

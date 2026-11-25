@@ -264,7 +264,6 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	slog.InfoContext(ctx, "Registered scheduled volume backup jobs", "count", len(policies))
 }
 
-// Remove unschedules and deletes a removed volume's policies.
 func (s *Service) Remove(ctx context.Context, volumeName string) {
 	policies, err := s.deps.Policies.Remove(ctx, backup.PolicyVolume, volumeName)
 	if err != nil {

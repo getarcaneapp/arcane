@@ -37,9 +37,7 @@ type (
 		Backups  BackupDependencies
 	}
 
-	// BackupDependencies are the shared backup plumbing project backups run on.
 	BackupDependencies struct {
-		// Ctx is Arcane's context, which the policies' scheduled jobs run on.
 		Ctx            context.Context
 		Scheduler      types.DynamicScheduler
 		Admission      *runs.Admission
@@ -86,7 +84,6 @@ func New(p ModuleParams) *Module {
 			owned, err := p.Service.gitOpsOwnedWorkspacePaths(ctx, proj)
 			return len(owned) > 0, err
 		},
-		// A restore holds the project lock, so it deploys the project without taking it again.
 		Deploy:             p.Service.deployProject,
 		RewriteComposeName: p.Service.rewriteComposeName,
 		ProjectName: func(ctx context.Context, projectID string) (string, error) {
@@ -113,7 +110,6 @@ func New(p ModuleParams) *Module {
 		Scheduler:    p.Backups.Scheduler,
 		Admission:    p.Backups.Admission,
 	})
-	// A deleted project's policies stop running, and their backups age out as unmanaged ones.
 	p.Service.Deleted.Subscribe(func(projectID string) { backups.RemovePolicies(p.Backups.Ctx, projectID) })
 	return &Module{
 		service:  p.Service,
@@ -136,7 +132,6 @@ func New(p ModuleParams) *Module {
 			ExportVolume:        p.Transfer.ExportVolume,
 			RestoreVolume:       p.Transfer.RestoreVolume,
 			DeleteVolume:        local.DeleteVolume,
-			// A restore as a new project fills the project directory from the backup's snapshot.
 			CreateProject: func(ctx context.Context, project bundle.NewProject) (string, error) {
 				proj, err := p.Service.importArchive(ctx, CreateProjectOptions{
 					Restore:   project.Fill,
@@ -181,17 +176,14 @@ func (m *Module) RegisterWorkflows(engine *flow.Engine) error {
 	return m.backups.RegisterWorkflows(engine)
 }
 
-// ReconcileInterruptedBackups fails project backups the previous process left running, except protected ones that resume.
 func (m *Module) ReconcileInterruptedBackups(ctx context.Context, protectedIDs ...string) error {
 	return m.backups.ReconcileInterruptedBackups(ctx, protectedIDs...)
 }
 
-// RegisterBackupJobsOnStartup schedules the enabled project backup policies.
 func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
 	m.backups.RegisterJobsOnStartup(ctx)
 }
 
-// DiscoverBackupsAfterRestore records, in the background, the project backups whose rows a system restore left out.
 func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) {
 	go func() {
 		if err := m.backups.DiscoverAfterRestore(ctx); err != nil {
@@ -200,7 +192,6 @@ func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) {
 	}()
 }
 
-// PruneUnmanagedBackups deletes project backups that have been unmanaged for the unmanaged backup retention.
 func (m *Module) PruneUnmanagedBackups(ctx context.Context) error {
 	return m.backups.PruneUnmanagedBackups(ctx)
 }
@@ -416,7 +407,6 @@ func RegisterProjects(api huma.API, h *ProjectHandler) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermProjectsExport, h.GetProjectExportOptions)
 
-	// A backup picks its volumes from the same options, under the backup permission rather than the export one.
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-backup-options",
 		Method:      http.MethodGet,

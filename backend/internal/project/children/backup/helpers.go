@@ -18,8 +18,6 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-// mountedVolumeNames are every volume of the project, captured or not, so no volume backup or restore starts or stops
-// the project's containers during the capture.
 func (p plan) mountedVolumeNames() []string {
 	var names []string
 	for _, volume := range p.Volumes {
@@ -42,7 +40,6 @@ func (p plan) volumeNames() []string {
 	return slices.Compact(names)
 }
 
-// admissions are the project's run and a volume-backup run for each volume, in the order every run takes them.
 func admissions(projectID string, volumeNames []string) []types.SchedulerAdmissionKey {
 	return append([]types.SchedulerAdmissionKey{{Scope: admissionScope, ID: projectID}}, volumeAdmissions(volumeNames)...)
 }
@@ -61,7 +58,6 @@ func release(ctx context.Context, leases []*runs.Lease) {
 	}
 }
 
-// markInUse returns the volumes with InUse set on each included one that a container outside the project mounts.
 func markInUse(planned []types.ProjectVolume, inUse map[string]bool) []types.ProjectVolume {
 	marked := make([]types.ProjectVolume, 0, len(planned))
 	for _, volume := range planned {
@@ -82,7 +78,6 @@ func markInUse(planned []types.ProjectVolume, inUse map[string]bool) []types.Pro
 	return marked
 }
 
-// snapshotTags name the backup's project, run, trigger and policy, so discovery can record a backup whose row is missing.
 func snapshotTags(entry *ProjectBackup) []string {
 	tags := []string{backup.ProjectSnapshotTag, projectTagPrefix + entry.ProjectID, backup.RunSnapshotTag(entry.ID), triggerTagPrefix + entry.Trigger}
 	if entry.PolicyID != "" {
@@ -91,7 +86,6 @@ func snapshotTags(entry *ProjectBackup) []string {
 	return tags
 }
 
-// snapshotRun is the backup writing the plan's snapshot, labeled with its project.
 func snapshotRun(entry *ProjectBackup, p plan) backup.SnapshotRun {
 	return backup.SnapshotRun{
 		Snapshots:          entry.snapshots(),
@@ -102,8 +96,6 @@ func snapshotRun(entry *ProjectBackup, p plan) backup.SnapshotRun {
 	}
 }
 
-// snapshotInput lays the project out under /snapshot: its files at project/, each captured volume at
-// volumes/<name>/, and the manifest at meta/.
 func snapshotInput(projectMounts []mount.Mount, metaVolume string, entry *ProjectBackup, p plan) backup.CreateSnapshotInput {
 	mounts := slices.Clone(projectMounts)
 	for _, name := range p.volumeNames() {
@@ -113,7 +105,6 @@ func snapshotInput(projectMounts []mount.Mount, metaVolume string, entry *Projec
 	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{snapshotRoot}, AsPath: "/", Tags: snapshotTags(entry)}
 }
 
-// nestedTargets names the mounts inside a project folder, given the folder's own mount first.
 func nestedTargets(mounts []mount.Mount) []string {
 	targets := make([]string, 0, len(mounts)-1)
 	for _, nested := range mounts[1:] {
@@ -122,7 +113,6 @@ func nestedTargets(mounts []mount.Mount) []string {
 	return targets
 }
 
-// projectSourceMounts resolves the host mounts behind the project directory source names.
 func projectSourceMounts(ctx context.Context, dockerClient *client.Client, source backup.SourceMountOptions) ([]mount.Mount, error) {
 	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
@@ -142,7 +132,6 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 }
 
 func backupManifest(project types.Project, p plan, externalEnv bool) types.ProjectManifest {
-	// A directory that doesn't resolve has only its configured path; the snapshot then fails to copy it anyway.
 	resolved, _ := filepath.EvalSymlinks(project.Path)
 	return types.ProjectManifest{ //exhaustruct:enforce
 		CreatedAt:     time.Now().UTC(),

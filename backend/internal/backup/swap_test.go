@@ -60,7 +60,6 @@ func TestSwapReplacesArcaneDataAndLeavesPreservedPaths(t *testing.T) {
 
 	plan, err := PlanSwap(t.Context(), types.RecoveryRestoreSwap{Directory: data, ID: "snap", Preserve: []string{"projects", "projects-link", "projects-link/demo", "stacks/apps"}})
 	require.NoError(t, err)
-	// Removals run before any staged entry moves in, so stale SQLite sidecars are gone before the database is replaced.
 	require.Subset(t, plan.removals, []string{"arcane.db-shm", "arcane.db-wal", "gone.txt", "stacks/notes.txt"})
 	require.NotContains(t, plan.removals, "arcane.db")
 	require.NoError(t, plan.Apply(t.Context()))

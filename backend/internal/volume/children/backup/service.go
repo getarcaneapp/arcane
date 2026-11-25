@@ -239,7 +239,6 @@ func (s *Service) List(ctx context.Context, volumeName string, params pagination
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
-	// Discovered backups live under the instance that wrote them, not necessarily this one.
 	describe := s.deps.Repository.DescribeRemote(ctx)
 	for i := range backups {
 		backups[i].S3DestinationName, backups[i].RemoteAvailable = describe(backups[i].S3DestinationID, backups[i].RemoteInstanceID, backups[i].RemoteSnapshotID)
@@ -264,7 +263,6 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	if policy != nil {
 		defaults, s3DestinationID = backup.DestinationOptions{Local: policy.LocalEnabled, Remote: policy.S3Enabled}, policy.S3DestinationID
 	}
-	// A safety backup is always local.
 	destination := kit.Ternary(trigger == types.VolumeBackupTriggerSafety, types.VolumeBackupDestinationLocal, request.Destination)
 	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
 		Class:           common.ErrBadRequest,
@@ -1076,7 +1074,6 @@ func (s *Service) discoverRemoteBackups(ctx context.Context, destinationID strin
 	return created, failures, err
 }
 
-// discoveredVolumeBackup maps a snapshot to a backup record via its volume label; unlabeled, system, and project snapshots map to nil.
 func discoveredVolumeBackup(destinationID, root string, snapshot backup.DiscoveredSnapshot) *types.VolumeBackup {
 	volumeName := strings.TrimSpace(snapshot.Label)
 	if volumeName == "" || volumeName == systemRecoverySnapshotLabel || slices.Contains(snapshot.Tags, backup.ProjectSnapshotTag) {
@@ -1146,7 +1143,6 @@ func (s *Service) WatchAcceptedBackups(ctx context.Context) error {
 	return s.watch.WatchAccepted(ctx)
 }
 
-// failRunning fails a backup whose row still runs.
 func (s *Service) failRunning(ctx context.Context, backupID, message string) error {
 	current, err := s.deps.Store.Run(ctx, backupID)
 	if err != nil || current.Status != types.VolumeBackupStatusRunning {

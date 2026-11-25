@@ -65,8 +65,6 @@ func IsHelperContainer(c container.Summary) bool {
 	})
 }
 
-// ListRunningContainers lists the running containers that may write to volumes, leaving out Arcane's file-browser
-// helpers: an idle one mounting a volume only writes while a file operation holds the volume's lock.
 func ListRunningContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 	running, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
 	if err != nil {

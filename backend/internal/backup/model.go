@@ -12,8 +12,6 @@ type (
 		EncryptedRecoveryKey string `gorm:"column:encrypted_recovery_key;type:text;not null"`
 	}
 
-	// Policy schedules backups of one subject: a volume, a project, or, with no SubjectID, the projects a global project
-	// policy selects.
 	Policy struct {
 		database.BaseModel
 
@@ -29,11 +27,8 @@ type (
 		S3Enabled       bool          `json:"s3Enabled" gorm:"column:s3_enabled;not null"`
 	}
 
-	// PolicyOptions holds the settings only some subjects' policies have.
 	PolicyOptions struct {
-		// Volumes selects a project policy's volumes; nil follows the project's volumes.
-		Volumes []string `json:"volumes"`
-		// SelectionMode and ProjectIDs select the projects of a global project policy.
+		Volumes       []string                        `json:"volumes"`
 		SelectionMode types.SystemVolumeSelectionMode `json:"selectionMode"`
 		ProjectIDs    []string                        `json:"projectIds"`
 	}

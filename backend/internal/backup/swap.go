@@ -23,7 +23,6 @@ import (
 )
 
 type (
-	// SwapPlan moves a staged restore into a data folder without entering its preserved paths.
 	SwapPlan struct {
 		root       acfs.Root
 		staging    string
@@ -33,7 +32,6 @@ type (
 	}
 
 	swapPlacement struct {
-		// folder is set for a missing protected parent, which is created rather than moved in.
 		folder  *acfstypes.Entry
 		path    string
 		replace bool
@@ -45,11 +43,8 @@ const (
 	SwapTrashPrefix   = ".arcane-snapshot-trash-"
 )
 
-// ErrSwapNotApplied marks a failed swap that changed nothing or undid every change it made.
 var ErrSwapNotApplied = errors.New("the live data was left as it was")
 
-// RemoveSwapLeftovers removes the folders with the prefix that earlier staged restores left in directory. A trash folder
-// may hold live entries a failed swap could not put back, so only a swap that applied removes trash folders.
 func RemoveSwapLeftovers(ctx context.Context, directory, prefix string) error {
 	root := acfs.Root{Path: directory}
 	entries, err := root.List(ctx, "/")
@@ -65,7 +60,6 @@ func RemoveSwapLeftovers(ctx context.Context, directory, prefix string) error {
 	return removeErr
 }
 
-// PlanSwap checks the staged restore of swap.Directory and lists every change before any is made.
 func PlanSwap(ctx context.Context, swap types.RecoveryRestoreSwap) (SwapPlan, error) {
 	if !filepath.IsAbs(swap.Directory) {
 		return SwapPlan{}, fmt.Errorf("the restore folder %q is not absolute", swap.Directory)
@@ -100,11 +94,9 @@ func PlanSwap(ctx context.Context, swap types.RecoveryRestoreSwap) (SwapPlan, er
 			parents[parent] = struct{}{}
 		}
 	}
-	// A preserved path is never entered, so folders inside it are not parents to protect.
 	maps.DeleteFunc(parents, func(parent string, _ struct{}) bool {
 		return slices.ContainsFunc(swap.Preserve, func(candidate string) bool { return kit.FilePathMatches(parent, candidate) })
 	})
-	// A protected parent must be a real folder on both sides, so the swap never follows a link out of the data folder.
 	for _, parent := range slices.Sorted(maps.Keys(parents)) {
 		for _, logical := range []string{"/" + parent, "/" + path.Join(plan.staging, parent)} {
 			entry, statErr := plan.root.Stat(ctx, logical, acfstypes.StatOptions{})
@@ -125,7 +117,6 @@ func PlanSwap(ctx context.Context, swap types.RecoveryRestoreSwap) (SwapPlan, er
 	return plan, nil
 }
 
-// visit plans the folder at relative, which is the data folder itself or a protected parent.
 func (p *SwapPlan) visit(ctx context.Context, relative string, preserved, parents map[string]struct{}) error {
 	live, err := p.children(ctx, relative)
 	if err != nil {
@@ -183,9 +174,6 @@ func (p *SwapPlan) children(ctx context.Context, relative string) (map[string]ac
 	return children, nil
 }
 
-// Apply moves removed and replaced live entries to the trash, removals first so stale SQLite sidecars go before a
-// database moves in, then moves each staged entry into place, and removes every trash folder the restored data replaced.
-// A failed swap undoes its steps and reports ErrSwapNotApplied.
 func (p SwapPlan) Apply(ctx context.Context) (err error) {
 	if err = p.root.Mkdir(ctx, "/"+p.trash, 0o700); err != nil {
 		return fmt.Errorf("create the restore trash folder: %w; %w", err, ErrSwapNotApplied)
