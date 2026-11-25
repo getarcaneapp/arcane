@@ -117,7 +117,7 @@ type (
 		repositories map[string]chan struct{}
 		// held parks admission a manual start won until the run that won it takes it over.
 		held      map[types.SchedulerAdmissionKey]heldLease
-		authorize func(context.Context, types.BackupRequester) error
+		Authorize func(context.Context, types.BackupRequester) error
 		mu        sync.Mutex
 	}
 
@@ -335,7 +335,7 @@ func NewEngine(admission *runs.Admission, imageService *image.ImageService, auth
 	return &Engine{
 		imageService: imageService,
 		admission:    admission,
-		authorize:    authorize,
+		Authorize:    authorize,
 		repositories: make(map[string]chan struct{}),
 		held:         make(map[types.SchedulerAdmissionKey]heldLease),
 	}
@@ -392,10 +392,6 @@ func (e *Engine) AcquireRun(ctx context.Context, scope, id, run string) (*runs.L
 		return held.lease, true, nil
 	}
 	return e.TryAcquireRun(ctx, scope, id)
-}
-
-func (e *Engine) Authorize(ctx context.Context, requester types.BackupRequester) error {
-	return e.authorize(ctx, requester)
 }
 
 func (e *Engine) Stop(ctx context.Context) error {
@@ -497,7 +493,7 @@ func markSnapshotDirectories(files []string, longOutput string) ([]string, error
 		}
 		return []string{}, nil
 	}
-	lines := strings.Split(strings.ReplaceAll(longOutput, "\r\n", "\n"), "\n")
+	lines := strings.Split(strings.ReplaceAll(strings.TrimSpace(longOutput), "\r\n", "\n"), "\n")
 	if len(lines) != len(files) {
 		return nil, errors.New("rustic file and metadata listings have different lengths")
 	}
