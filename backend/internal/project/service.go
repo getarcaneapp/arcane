@@ -460,6 +460,26 @@ func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error
 	return s.updates.RecoverAll(ctx)
 }
 
+func (s *ProjectService) RemoveRestoreScratchDirectories(ctx context.Context) error {
+	roots, err := s.EnabledProjectsRoots(ctx)
+	if err != nil {
+		return err
+	}
+	var errs error
+	for _, projectsRoot := range roots {
+		entries, listErr := acfs.Root{Path: projectsRoot}.List(ctx, "/")
+		if listErr != nil && !errors.Is(listErr, os.ErrNotExist) {
+			errs = errors.Join(errs, listErr)
+		}
+		for _, entry := range entries {
+			if entry.IsDirectory && strings.HasPrefix(entry.Name, projects.RestoreScratchPrefix) {
+				errs = errors.Join(errs, acfs.Root{Path: projectsRoot}.RemoveAll(ctx, entry.Path))
+			}
+		}
+	}
+	return errs
+}
+
 func (s *ProjectService) RecoverStuckProjectStatuses(ctx context.Context) error {
 	var stuck []Project
 	if err := s.db.WithContext(ctx).Where("status IN ?", []ProjectStatus{ProjectStatusDeploying, ProjectStatusRestarting}).Find(&stuck).Error; err != nil {

@@ -374,7 +374,7 @@ func (s *Service) databaseFile() (string, error) {
 }
 
 func (s *Service) localRepository(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
-	storage, err := s.volumeService.BackupStorageMount(ctx, dockerClient, "/repository", readOnly)
+	storage, err := s.repository.StorageMount(ctx, dockerClient, "/repository", readOnly)
 	if err != nil {
 		return backup.Repository{}, err
 	}

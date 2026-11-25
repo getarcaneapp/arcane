@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 	"uuid"
 
+	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -102,6 +104,7 @@ type (
 		restores    map[string]int
 		composeName string
 		volumes     []types.ProjectVolume
+		services    []composeTypes.ServiceConfig
 	}
 
 	volumeRestore struct {
@@ -544,7 +547,7 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		if !volume.Included || !slices.Contains(selected, volume.Key) {
 			continue
 		}
-		included = append(included, types.ProjectVolume{
+		included = append(included, types.ProjectVolume{ //exhaustruct:enforce
 			Labels:       volume.Labels,
 			DockerLabels: volume.DockerLabels,
 			Key:          volume.Key,
@@ -553,6 +556,9 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 			Driver:       volume.Driver,
 			Archive:      volume.Name,
 			Included:     true,
+			Missing:      false,
+			InUse:        false,
+			BackupStore:  false,
 		})
 	}
 	if len(included) > 0 && !opts.RestoreVolumes {
@@ -595,6 +601,12 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		return "", err
 	}
 	target, err := s.importTarget(ctx, projectID, included)
+	if binds := sharedBinds(target.services, manifest.ProjectDirs); err == nil && len(binds) > 0 && !request.ShareExternalVolumes {
+		err = common.Classify(common.ErrValidation, fmt.Errorf(
+			"the new project would bind-mount %s from the original project's folder and share that data with the original project; change those bind mounts or allow sharing them",
+			strings.Join(binds, ", "),
+		))
+	}
 	var created []string
 	if err == nil {
 		created, err = s.restoreBackupVolumes(ctx, opts, target, included)
@@ -614,6 +626,20 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 		return "", fmt.Errorf("project %s was restored but could not be started: %w", request.Name, deployErr)
 	}
 	return projectID, nil
+}
+
+func sharedBinds(services []composeTypes.ServiceConfig, projectDirs []string) []string {
+	var shared []string
+	for _, service := range services {
+		for _, volume := range service.Volumes {
+			if volume.Type == composeTypes.VolumeTypeBind && !slices.Contains(shared, volume.Source) && slices.ContainsFunc(projectDirs, func(dir string) bool {
+				return kit.FilePathMatches(filepath.Clean(volume.Source), filepath.Clean(dir))
+			}) {
+				shared = append(shared, volume.Source)
+			}
+		}
+	}
+	return shared
 }
 
 func (s *Service) restoreBackupVolumes(ctx context.Context, opts RestoreAsNewOptions, target importTarget, included []types.ProjectVolume) ([]string, error) {
@@ -671,6 +697,7 @@ func (s *Service) importTarget(ctx context.Context, projectID string, included [
 		restores:    restores,
 		composeName: imported.ComposeName,
 		volumes:     resolved,
+		services:    imported.Services,
 	}, nil
 }
 

@@ -89,5 +89,5 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 		message := cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
 		return "", fmt.Errorf("rustic exited with code %d: %s", status.StatusCode, message)
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.String(), nil
 }

@@ -315,7 +315,7 @@
 						name: restoreName.trim(),
 						volumes: selectedRestoreVolumes.map((volume) => volume.key),
 						start: startRestored && canStartRestored,
-						shareExternalVolumes: sharesExternalVolumes && shareExternalVolumes
+						shareExternalVolumes
 					},
 					environmentId
 				)
@@ -707,16 +707,14 @@
 			/>
 		</div>
 		{@render RestoreParts(true)}
-		{#if sharesExternalVolumes}
-			<LabeledSwitch
-				id="project-restore-share-external"
-				checked={shareExternalVolumes}
-				label={m.share_external_volumes()}
-				description={m.share_external_volumes_description()}
-				disabled={restoring}
-				onCheckedChange={(next) => (shareExternalVolumes = next)}
-			/>
-		{/if}
+		<LabeledSwitch
+			id="project-restore-share-external"
+			checked={shareExternalVolumes}
+			label={m.share_original_project_data()}
+			description={m.share_original_project_data_description()}
+			disabled={restoring}
+			onCheckedChange={(next) => (shareExternalVolumes = next)}
+		/>
 		<LabeledSwitch
 			id="project-restore-start"
 			checked={startRestored && canStartRestored}
