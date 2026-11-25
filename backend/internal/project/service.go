@@ -443,8 +443,11 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 					"name": journal.OldName, "path": journal.OldPath, "dir_name": journal.OldDirName,
 				}).Error
 			},
-			PersistEnv: func(ctx context.Context, projectPath string, values map[string]string) error {
-				return s.persistServiceImageEnv(ctx, projectPath, values)
+			ResolveEnv: func(ctx context.Context, projectPath string, effective *composeTypes.Project, values map[string]string) (*composeTypes.Project, string, error) {
+				return s.resolveServiceImageEnv(ctx, projectPath, effective, values)
+			},
+			PersistEnv: func(ctx context.Context, projectPath, content string) error {
+				return s.persistServiceImageEnv(ctx, projectPath, content)
 			},
 		}),
 		containerRegistryService:    p.ContainerRegistryService,
@@ -4012,40 +4015,74 @@ func (s *ProjectService) saveProjectServiceImages(ctx context.Context, projectID
 	return services, nil
 }
 
-func (s *ProjectService) persistServiceImageEnv(ctx context.Context, projectPath string, values map[string]string) error {
+func (s *ProjectService) resolveServiceImageEnv(ctx context.Context, projectPath string, effective *composeTypes.Project, values map[string]string) (*composeTypes.Project, string, error) {
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	if readableErr := update.EnsureProjectEnvReadable(ctx, projectsDirectory, projectPath); readableErr != nil {
-		return readableErr
+		return nil, "", readableErr
 	}
 	current, _, err := projectEnvDetails(ctx, projectPath)
 	if err != nil {
-		return err
+		return nil, "", err
+	}
+	currentEnv, err := projects.BuildValidationEnvironment(ctx, projectsDirectory, projectPath, &current)
+	if err != nil {
+		return nil, "", fmt.Errorf("check project .env: %w", err)
+	}
+	globalEnv, err := projects.ParseValidationEnvFile(ctx, filepath.Join(projectsDirectory, projects.GlobalEnvFileName), nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("check project .env: %w", err)
 	}
 	names := slices.Sorted(maps.Keys(values))
 	var overrides strings.Builder
 	for _, name := range names {
 		overrides.WriteString(name + "=" + values[name] + "\n")
 	}
-	candidate, err := projects.BuildEffectiveEnvContent(current, overrides.String())
+	candidate, err := projects.BuildEffectiveEnvContent(current, overrides.String(), globalEnv)
 	if err != nil {
-		return fmt.Errorf("update project .env: %w", err)
+		return nil, "", fmt.Errorf("update project .env: %w", err)
 	}
 	runtimeEnv, err := projects.BuildValidationEnvironment(ctx, projectsDirectory, projectPath, &candidate)
 	if err != nil {
-		return fmt.Errorf("check project .env: %w", err)
+		return nil, "", fmt.Errorf("check project .env: %w", err)
 	}
 	for _, name := range names {
 		if runtimeEnv[name] != values[name] {
-			return fmt.Errorf("cannot set %s in the project .env: COMPOSE_ENV_FILES or COMPOSE_DISABLE_ENV_FILE overrides it; update %s where it is set", name, name)
+			return nil, "", fmt.Errorf("cannot set %s in the project .env: COMPOSE_ENV_FILES or COMPOSE_DISABLE_ENV_FILE overrides it; update %s where it is set", name, name)
 		}
 	}
-	if candidate == current {
+	if !slices.Equal(projects.ComposeFileEntriesFromEnv(runtimeEnv), projects.ComposeFileEntriesFromEnv(currentEnv)) {
+		return nil, "", fmt.Errorf("cannot set %s in the project .env: COMPOSE_FILE depends on it and would select a different Compose file; update the project manually", strings.Join(names, ", "))
+	}
+	updated, err := projects.LoadComposeProject(ctx, projects.LoadOptions{
+		PathMapper:        s.projectPathMapper(ctx),
+		EnvOverride:       runtimeEnv,
+		ComposeFile:       effective.ComposeFiles[0],
+		ProjectName:       effective.Name,
+		ProjectsDirectory: projectsDirectory,
+		AutoInjectEnv:     kit.ParseOrDefault(s.settingsService.GetSettingsConfig().AutoInjectEnv.Value, false, strconv.ParseBool),
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("load project with the updated .env: %w", err)
+	}
+	return updated, candidate, nil
+}
+
+func (s *ProjectService) persistServiceImageEnv(ctx context.Context, projectPath, content string) error {
+	projectsDirectory, err := s.GetProjectsDirectory(ctx)
+	if err != nil {
+		return err
+	}
+	current, _, err := projectEnvDetails(ctx, projectPath)
+	if err != nil {
+		return err
+	}
+	if content == current {
 		return nil
 	}
-	return projectsync.PersistEffectiveEnvContent(ctx, projectPath, projectsDirectory, candidate)
+	return projectsync.PersistEffectiveEnvContent(ctx, projectPath, projectsDirectory, content)
 }
 
 func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID, folderPath string) (*types.Workspace, error) {

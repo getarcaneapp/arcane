@@ -47,7 +47,8 @@ type (
 		credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
 		projectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
 		restoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
-		persistEnv      func(ctx context.Context, projectPath string, values map[string]string) error
+		resolveEnv      func(ctx context.Context, projectPath string, effective *composeTypes.Project, values map[string]string) (*composeTypes.Project, string, error)
+		persistEnv      func(ctx context.Context, projectPath, content string) error
 	}
 
 	Params struct {
@@ -57,20 +58,15 @@ type (
 		Credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
 		ProjectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
 		RestoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
-		PersistEnv      func(ctx context.Context, projectPath string, values map[string]string) error
+		ResolveEnv      func(ctx context.Context, projectPath string, effective *composeTypes.Project, values map[string]string) (*composeTypes.Project, string, error)
+		PersistEnv      func(ctx context.Context, projectPath, content string) error
 	}
 
 	ImageEdits struct {
 		Compose   []byte
 		Env       map[string]string
-		Followers map[string]ImageFollower
+		Followers []string
 		Services  []string
-	}
-
-	ImageFollower struct {
-		Variable     string
-		Image        string
-		LocallyBuilt bool
 	}
 
 	SyncState struct {
@@ -99,6 +95,7 @@ func New(p Params) *Service {
 		credentials:     p.Credentials,
 		projectState:    p.ProjectState,
 		restoreState:    p.RestoreState,
+		resolveEnv:      p.ResolveEnv,
 		persistEnv:      p.PersistEnv,
 	}
 }
@@ -507,47 +504,30 @@ func PrepareProjectServiceImages(source []byte, effective *composeTypes.Project,
 		edits = append(edits, edit)
 		serviceNames = append(serviceNames, name)
 	}
-	followers, err := imageFollowers(servicesNode, effective, changes, env)
-	if err != nil {
-		return ImageEdits{}, err
-	}
-	serviceNames = slices.Concat(serviceNames, slices.Collect(maps.Keys(followers)))
-	slices.Sort(serviceNames)
 	return ImageEdits{
 		Compose:   projects.ApplyScalarEdits(source, edits),
 		Env:       env,
-		Followers: followers,
+		Followers: imageFollowers(servicesNode, effective, changes, env),
 		Services:  serviceNames,
 	}, nil
 }
 
-func imageFollowers(servicesNode *yaml.Node, effective *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange, env map[string]string) (map[string]ImageFollower, error) {
-	candidates := make(composeTypes.Services, len(effective.Services))
-	maps.Copy(candidates, effective.Services)
-	for name, service := range effective.DisabledServices {
-		if service.HasProfile(effective.Profiles) {
-			candidates[name] = service
-		}
-	}
-	followers := make(map[string]ImageFollower)
-	for _, name := range slices.Sorted(maps.Keys(candidates)) {
-		imageNode := composeImageField(composeImageField(servicesNode, name), "image")
+func imageFollowers(servicesNode *yaml.Node, effective *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange, env map[string]string) []string {
+	var followers []string
+	for i := 0; i+1 < len(servicesNode.Content); i += 2 {
+		name := servicesNode.Content[i].Value
+		imageNode := composeImageField(servicesNode.Content[i+1], "image")
 		if _, changed := changes[name]; changed || kit.FromPtr(imageNode).Kind != yaml.ScalarNode {
 			continue
 		}
-		for _, variable := range slices.Sorted(maps.Keys(env)) {
-			if marked, err := substituteImage(imageNode.Value, effective.Environment, map[string]string{variable: imageVariableMarker}); err != nil || !strings.Contains(marked, imageVariableMarker) {
-				continue
+		for variable := range env {
+			if marked, err := substituteImage(imageNode.Value, effective.Environment, map[string]string{variable: imageVariableMarker}); err == nil && strings.Contains(marked, imageVariableMarker) {
+				followers = append(followers, name)
+				break
 			}
-			image, err := substituteImage(imageNode.Value, effective.Environment, env)
-			if err != nil {
-				return nil, fmt.Errorf("service %s image: %w", name, err)
-			}
-			followers[name] = ImageFollower{Variable: variable, Image: image, LocallyBuilt: candidates[name].Build != nil}
-			break
 		}
 	}
-	return followers, nil
+	return followers
 }
 
 func substituteImage(raw string, env composeTypes.Mapping, overrides map[string]string) (string, error) {
@@ -678,49 +658,90 @@ func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, eff
 	if err != nil {
 		return nil, err
 	}
-	if followerErr := s.checkFollowerImages(ctx, edits, changes); followerErr != nil {
-		return nil, followerErr
-	}
+	services := edits.Services
 	if len(edits.Env) > 0 {
+		updated, content, resolveErr := s.resolveEnv(ctx, projectPath, effective, edits.Env)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		followers, followerErr := s.followerImages(ctx, effective, updated, changes, edits)
+		if followerErr != nil {
+			return nil, followerErr
+		}
+		services = slices.Sorted(slices.Values(slices.Concat(services, followers)))
 		if _, sourceErr := checkProjectServiceImagesSource(ctx, projectPath, logical, original); sourceErr != nil {
 			return nil, sourceErr
 		}
-		if persistErr := s.persistEnv(ctx, projectPath, edits.Env); persistErr != nil {
+		if persistErr := s.persistEnv(ctx, projectPath, content); persistErr != nil {
 			return nil, persistErr
 		}
 	}
 	if persistErr := PersistProjectServiceImages(ctx, projectPath, logical, original, edits.Compose); persistErr != nil {
 		return nil, persistErr
 	}
-	return edits.Services, nil
+	return services, nil
 }
 
-func (s *Service) checkFollowerImages(ctx context.Context, edits ImageEdits, changes map[string]updatertypes.ServiceImageChange) error {
+func (s *Service) followerImages(ctx context.Context, effective, updated *composeTypes.Project, changes map[string]updatertypes.ServiceImageChange, edits ImageEdits) ([]string, error) {
+	assignments := make([]string, 0, len(edits.Env))
+	for _, name := range slices.Sorted(maps.Keys(edits.Env)) {
+		assignments = append(assignments, name+"="+edits.Env[name])
+	}
+	edit := strings.Join(assignments, ", ")
 	checked := make([]string, 0, len(changes))
 	for _, change := range changes {
 		checked = append(checked, refs.NormalizeImageUpdateRef(change.TargetRef))
 	}
-	for _, name := range slices.Sorted(maps.Keys(edits.Followers)) {
-		follower := edits.Followers[name]
-		if follower.LocallyBuilt || refs.IsDigestPinnedReference(follower.Image) || slices.Contains(checked, refs.NormalizeImageUpdateRef(follower.Image)) {
+	policy := updater.DefaultLabelPolicy()
+	var followers []string
+	for _, name := range slices.Sorted(maps.Keys(updated.Services)) {
+		service := updated.Services[name]
+		previous, active := effective.Services[name]
+		if !active {
+			previous = effective.DisabledServices[name]
+		}
+		if _, changed := changes[name]; changed || (service.Image == previous.Image && !slices.Contains(edits.Followers, name)) {
 			continue
 		}
-		parsed, tags, err := s.imageTags(ctx, name, follower.Image)
+		followers = append(followers, name)
+		if service.Build != nil || refs.IsDigestPinnedReference(service.Image) {
+			continue
+		}
+		parsed, err := refs.NormalizeReference(service.Image)
 		if err != nil {
-			return fmt.Errorf(
-				"cannot set %s to %s: service %s also uses it, and Arcane could not check that %s is published: %w",
-				follower.Variable, edits.Env[follower.Variable], name, follower.Image, err,
+			return nil, fmt.Errorf("cannot set %s: service %s also uses it, and its image %s is not valid: %w", edit, name, service.Image, err)
+		}
+		if limits := policy.TagPolicy(service.Labels); limits.Constraint != "" || limits.TagPattern != "" {
+			current, currentErr := refs.NormalizeReference(previous.Image)
+			if currentErr != nil {
+				return nil, fmt.Errorf("parse service %s image: %w", name, currentErr)
+			}
+			if allowed, selectErr := tagpolicy.Select(current.Tag, []string{parsed.Tag}, limits); selectErr != nil || allowed != parsed.Tag {
+				return nil, fmt.Errorf(
+					"cannot set %s: service %s also uses it, and its update policy does not allow %s; update %s manually",
+					edit, name, service.Image, name,
+				)
+			}
+		}
+		if slices.Contains(checked, refs.NormalizeImageUpdateRef(service.Image)) {
+			continue
+		}
+		_, tags, err := s.imageTags(ctx, name, service.Image)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"cannot set %s: service %s also uses it, and Arcane could not check that %s is published: %w",
+				edit, name, service.Image, err,
 			)
 		}
 		if !slices.Contains(tags, parsed.Tag) {
-			return fmt.Errorf(
-				"cannot set %s to %s: service %s also uses it, and %s is not published yet; update once it is available",
-				follower.Variable, edits.Env[follower.Variable], name, follower.Image,
+			return nil, fmt.Errorf(
+				"cannot set %s: service %s also uses it, and %s is not published yet; update once it is available",
+				edit, name, service.Image,
 			)
 		}
-		checked = append(checked, refs.NormalizeImageUpdateRef(follower.Image))
+		checked = append(checked, refs.NormalizeImageUpdateRef(service.Image))
 	}
-	return nil
+	return followers, nil
 }
 
 func (s *Service) imageTags(ctx context.Context, name, image string) (*refs.Reference, []string, error) {
