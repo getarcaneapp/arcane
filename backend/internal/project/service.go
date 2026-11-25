@@ -102,8 +102,7 @@ type (
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 		FilesChanged                *concurrency.Signal[string]
-		// Deleted publishes the ID of each project removed from the database.
-		Deleted *concurrency.Signal[string]
+		Deleted                     *concurrency.Signal[string]
 
 		opLock concurrency.KeyedMutex
 
@@ -114,11 +113,9 @@ type (
 	}
 
 	CreateProjectOptions struct {
-		EnvContent *string
-		Uploads    map[int][]byte
-		TagColors  map[string]types.ProjectTagColor
-		// Restore fills the new project directory the way Archive would. It fills a scratch directory before the project
-		// lock is taken, which then becomes the project directory.
+		EnvContent      *string
+		Uploads         map[int][]byte
+		TagColors       map[string]types.ProjectTagColor
 		Restore         func(ctx context.Context, projectPath string) error
 		Actor           types.Actor
 		Manifest        types.CreateProjectWorkspaceManifest
@@ -133,8 +130,7 @@ type (
 	}
 
 	projectArchiveUnpack struct {
-		Archive io.Reader
-		// Staged is the logical path, in ProjectsDirectory, of a scratch directory that replaces the project directory.
+		Archive            io.Reader
 		Staged             string
 		ProjectsDirectory  string
 		GlobalEnvDirectory string
@@ -553,8 +549,6 @@ func (s *ProjectService) projectsRoots(ctx context.Context) ([]types.ProjectsDir
 	return roots, nil
 }
 
-// ProjectFolders returns every projects directory, enabled or not, the main one first, then, when project symlinks are
-// followed, the resolved folder of each discovered project reached through a link.
 func (s *ProjectService) ProjectFolders(ctx context.Context) ([]string, error) {
 	statuses, err := s.projectsRoots(ctx)
 	if err != nil {
@@ -1622,7 +1616,6 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 		return nil, err
 	}
 
-	// A restore reads its backup before the lock, so creates and syncs never wait on the backup repository.
 	staged, cleanupStaged, err := stageRestore(ctx, projectsDirectory, opts.Restore)
 	if err != nil {
 		return nil, err
@@ -1798,8 +1791,6 @@ func (s *ProjectService) CreateProject(ctx context.Context, opts CreateProjectOp
 	return proj, nil
 }
 
-// stageRestore fills a scratch directory in the projects directory with restore and returns its logical path there;
-// without a restore it stages nothing.
 func stageRestore(ctx context.Context, projectsDirectory string, restore func(ctx context.Context, projectPath string) error) (string, func(), error) {
 	if restore == nil {
 		return "", func() {}, nil
@@ -1809,13 +1800,11 @@ func stageRestore(ctx context.Context, projectsDirectory string, restore func(ct
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create project restore directory: %w", err)
 	}
-	// acfs refuses a cancelled context, so cleanup runs detached; once the directory became the project's, it is gone.
 	cleanup := func() {
 		if removeErr := root.RemoveAll(context.WithoutCancel(ctx), staged); removeErr != nil {
 			slog.WarnContext(ctx, "failed to remove project restore directory", "path", staged, "error", removeErr)
 		}
 	}
-	// It becomes the project directory, so it starts with a project directory's mode, as one created for an import does.
 	if chmodErr := root.Chmod(ctx, staged, fs.DirPerm); chmodErr != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("failed to prepare project restore directory: %w", chmodErr)
@@ -1831,7 +1820,6 @@ func stageRestore(ctx context.Context, projectsDirectory string, restore func(ct
 // identity to the requested name, and returns the compose file path.
 func (s *ProjectService) unpackProjectArchive(ctx context.Context, unpack projectArchiveUnpack) (string, error) {
 	if unpack.Staged != "" {
-		// The new project directory is still empty, so the staged one replaces it.
 		root := acfs.Root{Path: unpack.ProjectsDirectory}
 		projectLogical, err := root.LogicalPath(unpack.ProjectPath)
 		if err == nil {
@@ -1902,7 +1890,6 @@ func (s *ProjectService) ImportProjectArchive(ctx context.Context, request types
 	})
 }
 
-// importArchive creates an imported or restored project under exactly its requested name.
 func (s *ProjectService) importArchive(ctx context.Context, opts CreateProjectOptions) (*Project, error) {
 	proj, err := s.CreateProject(ctx, opts)
 	if errors.Is(err, projects.ErrProjectDirExists) {
@@ -1911,7 +1898,6 @@ func (s *ProjectService) importArchive(ctx context.Context, opts CreateProjectOp
 	return proj, err
 }
 
-// rewriteComposeName sets the Compose project name in the project's files, as an import does.
 func (s *ProjectService) rewriteComposeName(ctx context.Context, projectID, name string) error {
 	projectsDir, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -2071,8 +2057,6 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 	return nil
 }
 
-// runsArcane reports whether the project's containers include the running Arcane container; a failed listing reports
-// false, skipping the guard.
 func (s *ProjectService) runsArcane(ctx context.Context, proj *Project) bool {
 	containers, err := s.details.ComposeContainers(ctx)
 	if err != nil {
@@ -2090,14 +2074,11 @@ func (s *ProjectService) runsArcane(ctx context.Context, proj *Project) bool {
 	})
 }
 
-// soleDirectory refuses a project directory that is a projects directory or holds another project, since restoring
-// its files would replace theirs too.
 func (s *ProjectService) soleDirectory(ctx context.Context, project types.Project) error {
 	roots, err := s.projectsRoots(ctx)
 	if err != nil {
 		return err
 	}
-	// A project recorded through a followed symlink is compared by the directory it resolves to as well.
 	resolve := func(path string) string {
 		resolved, _ := projects.ResolveDirectoryIdentity(path)
 		return cmp.Or(resolved, path)
@@ -2143,7 +2124,6 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return resolveProjectComposeFileErr
 	}
 
-	// Arcane's own container goes through the system upgrade flow.
 	if s.runsArcane(ctx, proj) {
 		return common.ErrSelfRedeployBlocked
 	}

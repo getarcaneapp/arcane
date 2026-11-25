@@ -159,8 +159,6 @@ func NewVolumeService(p VolumeServiceParams) *VolumeService {
 	return service
 }
 
-// LockVolumes waits for each volume's workspace lock, in sorted order so callers never deadlock on each other, and
-// returns one release for all of them; a lock that fails releases those already held.
 func (s *VolumeService) LockVolumes(ctx context.Context, names []string) (func(), error) {
 	var unlocks []func()
 	release := func() {
@@ -209,7 +207,6 @@ func (s *VolumeService) CreateSystemManagedBackup(
 	return volumeBackupFromRecord(entry), err
 }
 
-// ArchiveVolumes tars captured volumes in one helper, each as a volume export archives it, and hands each archive to add.
 func (s *VolumeService) ArchiveVolumes(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error {
 	helperImage, err := s.getVolumeHelperImage(ctx)
 	if err != nil {
@@ -362,7 +359,6 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 	}
 }
 
-// listBackups pages one volume's backup history. Every row is a volume backup, so it ignores a type filter.
 func (s *VolumeService) listBackups(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
 
@@ -801,8 +797,6 @@ func (s *VolumeService) buildVolumePaginationConfig() pagination.Config[types.Vo
 	}
 }
 
-// BackupVolumeMatcher resolves once which volume holds this environment's backups, the one backups mount, and returns
-// whether a volume name is it; none is when backups are kept on a bind mount.
 func (s *VolumeService) BackupVolumeMatcher(ctx context.Context) func(name string) bool {
 	backupVolume := strings.TrimSpace(s.repository.StorageVolume(ctx))
 	return func(name string) bool {

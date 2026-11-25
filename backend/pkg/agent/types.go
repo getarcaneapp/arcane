@@ -71,11 +71,10 @@ type (
 	commandRouteIndex map[commandRouteKey]*commandRouteNode
 
 	AgentTunnel struct {
-		ConnectedAt   time.Time
-		LastHeartbeat time.Time
-		Conn          TunnelConnection
-		HTTPClient    *http.Client
-		// deadlineClient has no response header timeout, so a request's own deadline alone bounds the wait.
+		ConnectedAt    time.Time
+		LastHeartbeat  time.Time
+		Conn           TunnelConnection
+		HTTPClient     *http.Client
 		deadlineClient *http.Client
 		done           chan struct{}
 
