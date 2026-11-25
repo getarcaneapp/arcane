@@ -212,7 +212,6 @@ var (
 func NewService(deps Dependencies) *Service {
 	s := &Service{deps: deps}
 	s.policies = policies.NewService(policies.Dependencies{
-		DB:             deps.DB,
 		Engine:         deps.Engine,
 		Policies:       deps.Policies,
 		S3Destinations: deps.S3Destinations,

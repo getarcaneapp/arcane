@@ -167,13 +167,13 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 }
 
 // policyDTO returns the stored global volume policy in the form its runs freeze and the API returns.
-func policyDTO(policy *backup.Policy) types.SystemVolumeBackupPolicy {
+func policyDTO(policy *backup.Policy, s3DestinationName string, lastRun *types.SystemBackupRun) types.SystemVolumeBackupPolicy {
 	return types.SystemVolumeBackupPolicy{ //exhaustruct:enforce
-		LastRun:           nil,
+		LastRun:           lastRun,
 		ID:                policy.ID,
 		Schedule:          policy.Schedule,
 		S3DestinationID:   policy.S3DestinationID,
-		S3DestinationName: "",
+		S3DestinationName: s3DestinationName,
 		SelectionMode:     policy.Options.SelectionMode,
 		VolumeNames:       policy.Options.VolumeNames,
 		RetentionCount:    policy.RetentionCount,
@@ -193,47 +193,32 @@ func (s *Service) GetConfig(ctx context.Context) (*types.SystemVolumeBackupPolic
 	destinations := s.s3Destinations.DestinationsByID(ctx)
 	policies := make([]types.SystemVolumeBackupPolicy, 0, len(stored))
 	for i := range stored {
-		policy := policyDTO(&stored[i])
 		var lastRun volume.VolumeBackup
 		runErr := s.db.WithContext(ctx).
-			Where("policy_id LIKE ?", types.SystemVolumePolicyPrefix+policy.ID+":%").
+			Where("policy_id LIKE ?", types.SystemVolumePolicyPrefix+stored[i].ID+":%").
 			Order("created_at DESC").First(&lastRun).Error
 		if runErr != nil && !errors.Is(runErr, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("load latest system-managed volume backup: %w", runErr)
 		}
-		policies = append(policies, types.SystemVolumeBackupPolicy{ //exhaustruct:enforce
-			ID:                policy.ID,
-			Enabled:           policy.Enabled,
-			Schedule:          policy.Schedule,
-			RetentionCount:    policy.RetentionCount,
-			StopContainers:    policy.StopContainers,
-			LocalEnabled:      policy.LocalEnabled,
-			S3Enabled:         policy.S3Enabled,
-			S3DestinationID:   policy.S3DestinationID,
-			S3DestinationName: destinations[policy.S3DestinationID].Name,
-			SelectionMode:     policy.SelectionMode,
-			VolumeNames:       policy.VolumeNames,
-			IgnoreAnonymous:   policy.IgnoreAnonymous,
-			LastRun: func() *types.SystemBackupRun {
-				if runErr != nil {
-					return nil
-				}
-				return &types.SystemBackupRun{
-					ID:                lastRun.ID,
-					Size:              lastRun.Size,
-					CreatedAt:         lastRun.CreatedAt,
-					Status:            string(lastRun.Status),
-					Trigger:           string(lastRun.Trigger),
-					Destination:       types.SystemBackupDestination(lastRun.Destination),
-					LocalSnapshotID:   lastRun.LocalSnapshotID,
-					RemoteSnapshotID:  lastRun.RemoteSnapshotID,
-					S3DestinationID:   lastRun.S3DestinationID,
-					S3DestinationName: destinations[lastRun.S3DestinationID].Name,
-					PolicyID:          lastRun.PolicyID,
-					Error:             lastRun.Error,
-				}
-			}(),
-		})
+		policies = append(policies, policyDTO(&stored[i], destinations[stored[i].S3DestinationID].Name, func() *types.SystemBackupRun {
+			if runErr != nil {
+				return nil
+			}
+			return &types.SystemBackupRun{
+				ID:                lastRun.ID,
+				Size:              lastRun.Size,
+				CreatedAt:         lastRun.CreatedAt,
+				Status:            string(lastRun.Status),
+				Trigger:           string(lastRun.Trigger),
+				Destination:       types.SystemBackupDestination(lastRun.Destination),
+				LocalSnapshotID:   lastRun.LocalSnapshotID,
+				RemoteSnapshotID:  lastRun.RemoteSnapshotID,
+				S3DestinationID:   lastRun.S3DestinationID,
+				S3DestinationName: destinations[lastRun.S3DestinationID].Name,
+				PolicyID:          lastRun.PolicyID,
+				Error:             lastRun.Error,
+			}
+		}()))
 	}
 	return &types.SystemVolumeBackupPolicyCollection{Policies: policies}, nil
 }
@@ -264,17 +249,10 @@ func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input t
 }
 
 func (s *Service) UpdateConfig(ctx context.Context, updates []types.UpdateSystemVolumeBackupPolicy) (*types.SystemVolumeBackupPolicyCollection, error) {
-	existing, err := s.policies.List(ctx, backup.PolicyVolume, "")
-	if err != nil {
-		return nil, err
-	}
-	if runErr := (backup.PolicyReconciliation[backup.Policy, types.UpdateSystemVolumeBackupPolicy]{
+	if runErr := s.policies.Reconcile(ctx, backup.PolicyReconciliation[types.UpdateSystemVolumeBackupPolicy]{
+		Kind:     backup.PolicyVolume,
 		Domain:   "system-managed volume",
-		DB:       s.db,
-		Existing: existing,
-		ID:       func(policy *backup.Policy) string { return policy.ID },
 		UpdateID: func(update types.UpdateSystemVolumeBackupPolicy) string { return update.ID },
-		New:      func() backup.Policy { return backup.Policy{SubjectKind: backup.PolicyVolume} },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateSystemVolumeBackupPolicy) error {
 			normalized, normalizeErr := s.normalizeSystemVolumePolicyUpdate(ctx, update)
 			if normalizeErr != nil {
@@ -305,7 +283,7 @@ func (s *Service) UpdateConfig(ctx context.Context, updates []types.UpdateSystem
 			s.jobs.Unregister(ctx, systemVolumeBackupJobPrefix+policyID)
 		},
 		Reschedule: s.rescheduleSystemVolumeBackup,
-	}).Run(ctx, updates); runErr != nil {
+	}, updates); runErr != nil {
 		return nil, runErr
 	}
 	return s.GetConfig(ctx)
@@ -361,7 +339,7 @@ func (s *Service) prepareSystemVolumeBackups(
 			if stored == nil {
 				return nil, common.Classify(common.ErrNotFound, errors.New("system-managed volume backup policy not found"))
 			}
-			return new(policyDTO(stored)), nil
+			return new(policyDTO(stored, "", nil)), nil
 		}
 		if request.Custom == nil {
 			normalized, normalizeErr := s.normalizeSystemVolumePolicyUpdate(ctx, types.UpdateSystemVolumeBackupPolicy{
@@ -699,13 +677,7 @@ func (s *Service) rescheduleSystemVolumeBackup(ctx context.Context, policy *back
 				"schedule": policy.Schedule,
 			},
 		},
-		ScheduleFn: func(ctx context.Context) string {
-			current, err := s.policies.Get(ctx, backup.PolicyVolume, "", policyID)
-			if err != nil || current == nil {
-				return defaultSystemVolumeSchedule
-			}
-			return current.Schedule
-		},
+		ScheduleFn: s.policies.Schedule(policyID),
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.resumeSelection(ctx, previous, "")
 		},
