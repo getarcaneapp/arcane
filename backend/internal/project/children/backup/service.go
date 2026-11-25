@@ -254,7 +254,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	if err != nil {
 		return types.ProjectBackup{}, err
 	}
-	p, err := s.resolvePlan(ctx, project, opts.Request)
+	p, err := s.resolvePlan(ctx, project, opts.Request, false)
 	if err != nil {
 		return types.ProjectBackup{}, err
 	}
@@ -318,7 +318,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 	return entry.DTO(DTOOptions{ActivityID: &activityID}), nil
 }
 
-func (s *Service) resolvePlan(ctx context.Context, project types.Project, request types.CreateProjectBackupRequest) (plan, error) {
+func (s *Service) resolvePlan(ctx context.Context, project types.Project, request types.CreateProjectBackupRequest, scheduled bool) (plan, error) {
 	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
 		Class:           common.ErrBadRequest,
 		S3Destinations:  s.deps.S3Destinations,
@@ -333,7 +333,7 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 	if project.ComposeName == "" {
 		return plan{}, common.Classify(common.ErrValidation, fmt.Errorf("the compose files of project %s cannot be loaded; fix them before backing it up", project.Name))
 	}
-	planned, err := s.inspectVolumes(ctx, project, request.Volumes)
+	planned, err := s.inspectVolumes(ctx, project, request.Volumes, scheduled)
 	if err != nil {
 		return plan{}, err
 	}
@@ -349,7 +349,7 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 	}, nil
 }
 
-func (s *Service) inspectVolumes(ctx context.Context, project types.Project, requested []string) ([]types.ProjectVolume, error) {
+func (s *Service) inspectVolumes(ctx context.Context, project types.Project, requested []string, scheduled bool) ([]types.ProjectVolume, error) {
 	resolved, dockerVolumes, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
 		Project:     project,
 		Inspect:     s.deps.Volume,
@@ -384,7 +384,11 @@ func (s *Service) inspectVolumes(ctx context.Context, project types.Project, req
 		})
 	}
 	for _, key := range requested {
-		if !slices.ContainsFunc(inspected, func(volume types.ProjectVolume) bool { return volume.Key == key }) {
+		switch {
+		case slices.ContainsFunc(inspected, func(volume types.ProjectVolume) bool { return volume.Key == key }):
+		case scheduled:
+			slog.WarnContext(ctx, "Scheduled project backup skipped a removed volume", "projectId", project.ID, "volume", key)
+		default:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("project %s has no volume %s", project.Name, key))
 		}
 	}
@@ -728,7 +732,7 @@ func (s *Service) authorize(ctx context.Context, requester types.BackupRequester
 }
 
 func (s *Service) checkPlanVolumes(ctx context.Context, project types.Project, p plan) error {
-	current, err := s.inspectVolumes(ctx, project, nil)
+	current, err := s.inspectVolumes(ctx, project, nil, false)
 	if err != nil {
 		return err
 	}
@@ -967,7 +971,7 @@ func (s *Service) checkVolumes(ctx context.Context, projectID string, keys []str
 	if err != nil {
 		return err
 	}
-	_, err = s.inspectVolumes(ctx, project, keys)
+	_, err = s.inspectVolumes(ctx, project, keys, false)
 	return err
 }
 
@@ -1024,7 +1028,7 @@ func (s *Service) admitScheduled(
 	if err != nil {
 		return fail(err)
 	}
-	p, err := s.resolvePlan(ctx, project, request)
+	p, err := s.resolvePlan(ctx, project, request, true)
 	if err != nil {
 		return fail(err)
 	}
@@ -1039,7 +1043,7 @@ func (s *Service) admitScheduled(
 	if err != nil {
 		return fail(err)
 	}
-	current, err := s.resolvePlan(ctx, project, request)
+	current, err := s.resolvePlan(ctx, project, request, true)
 	if err != nil {
 		return fail(err)
 	}
@@ -1068,6 +1072,7 @@ func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun, requ
 		Volumes:           backupVolumes(p.Volumes),
 		Size:              0,
 		StoppedContainers: false,
+		Files:             p.Files,
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return fmt.Errorf("failed to save project backup: %w", createErr)
@@ -1691,7 +1696,7 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 	for _, target := range p.safetyVolumes() {
 		existing = append(existing, target.Key)
 	}
-	captured, err := s.inspectVolumes(ctx, project, existing)
+	captured, err := s.inspectVolumes(ctx, project, existing, false)
 	if err != nil {
 		return "", err
 	}
