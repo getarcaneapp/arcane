@@ -47,9 +47,13 @@ type (
 		ArchiveFilename func(backupID string) (string, error)
 		HelperImage     func(ctx context.Context) (string, error)
 		StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
-		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
-		StopHelper      func(ctx context.Context, volumeName string) error
-		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+		// HoldLocal holds the local repository the safety backup writes, before the volume's containers stop.
+		HoldLocal func(ctx context.Context) (context.Context, func(), error)
+		// TempContainer starts a helper with the mount, returning what removes it.
+		TempContainer func(ctx context.Context, target mount.Mount) (string, func(), error)
+		AcquireHelper func(ctx context.Context, volumeName string) (string, func(), error)
+		DeleteVolume  func(ctx context.Context, name string, force bool, user types.Actor) error
+		Exec          func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 	}
 
 	// Service restores volume backups, selected backup files, and uploaded archives into volumes.
@@ -187,6 +191,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 	steps := backup.RestoreSteps{
 		Subject: "the volume",
 		Report:  nil,
+		Hold:    s.deps.HoldLocal,
 		Stop: func(ctx context.Context, _ backup.RestoreState) error {
 			more, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{opts.VolumeName}, RefuseArcaneWriters: true}, opts.User)
 			stopped = append(stopped, more...)
@@ -211,19 +216,11 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			if err != nil {
 				return err
 			}
-			source, err := s.snapshotSource(ctx, dockerClient, entry)
-			if err != nil {
-				return err
-			}
-			return s.restoreSnapshot(ctx, dockerClient, opts.VolumeName, source)
+			return s.RestoreSnapshot(ctx, dockerClient, entry, opts.VolumeName)
 		},
 		Verify: nil,
-		DeleteVolume: func(ctx context.Context, name string, _ types.Actor) error {
-			if err := s.deps.StopHelper(ctx, name); err != nil {
-				return err
-			}
-			_, err := dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
-			return err
+		DeleteVolume: func(ctx context.Context, name string, user types.Actor) error {
+			return s.deps.DeleteVolume(ctx, name, false, user)
 		},
 		Discard: nil,
 		User:    opts.User,
@@ -255,6 +252,15 @@ func (s *Service) snapshotSource(ctx context.Context, dockerClient *client.Clien
 	return snapshotSource{repository: repository, snapshotID: snapshotID, password: password}, nil
 }
 
+// RestoreSnapshot replaces the volume's contents with the backup's snapshot.
+func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, volumeName string) error {
+	source, err := s.snapshotSource(ctx, dockerClient, entry)
+	if err != nil {
+		return err
+	}
+	return s.restoreSnapshot(ctx, dockerClient, volumeName, source)
+}
+
 // restoreSnapshot replaces the volume's contents with the snapshot's.
 func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Client, volumeName string, source snapshotSource) error {
 	snapshot, _, err := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, source.repository, source.password, "", source.snapshotID)
@@ -270,11 +276,12 @@ func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Clie
 	if !recorded {
 		return nil
 	}
-	containerID, release, err := s.deps.AcquireHelper(ctx, volumeName)
+	// Applied by a container removed right after, so none is left holding the volume.
+	containerID, remove, err := s.deps.TempContainer(ctx, target)
 	if err != nil {
 		return err
 	}
-	defer release()
+	defer remove()
 	return owner.Apply(ctx, s.deps.Exec, containerID)
 }
 

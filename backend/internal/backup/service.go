@@ -277,7 +277,8 @@ type (
 		Snapshots RunSnapshots
 		RunID     string
 		Label     string
-		// Tags tag the copies made between repositories; a capture tags its own snapshot.
+		// Tags tag the local snapshot's copy to S3; a capture tags its own snapshot, and a copy from S3 keeps the S3
+		// snapshot's tags.
 		Tags []string
 		DestinationOptions
 	}
@@ -689,8 +690,13 @@ func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Cl
 	return snapshot, nil
 }
 
+// FindRunSnapshot finds the run's snapshot by its ID when one is recorded, without listing the whole repository, and
+// by the run's tag otherwise.
 func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, bool, error) {
-	snapshots, err := e.ListSnapshots(ctx, dockerClient, repository, password)
+	snapshots, err := e.ListSnapshots(ctx, dockerClient, repository, password, kit.Ternary(snapshotID == "", nil, []string{snapshotID})...)
+	if err != nil && snapshotID != "" {
+		return Snapshot{}, false, fmt.Errorf("recorded backup snapshot is unavailable: %w", err)
+	}
 	if err != nil {
 		return Snapshot{}, false, err
 	}
@@ -710,8 +716,9 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 	return found, found.ID != "", nil
 }
 
-func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string) ([]DiscoveredSnapshot, error) {
-	output, err := e.run(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
+// ListSnapshots lists the repository's snapshots, or only those with the given IDs.
+func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string, ids ...string) ([]DiscoveredSnapshot, error) {
+	output, err := e.run(ctx, dockerClient, repository, password, append([]string{"snapshots", "--json", "--"}, ids...))
 	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
 		return nil, fmt.Errorf("%w: %w", ErrRepositoryMissing, err)
 	}
@@ -1839,6 +1846,7 @@ func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *
 			*snapshots.LocalID, *snapshots.Size = snapshot.ID, snapshot.Size
 		}
 	}
+	var remoteSnapshot Snapshot
 	if run.Remote && (*snapshots.RemoteID != "" || attempted("remote")) {
 		snapshot, found, findErr := r.deps.Engine.FindRunSnapshot(ctx, dockerClient, remote, password, run.RunID, *snapshots.RemoteID)
 		if findErr != nil {
@@ -1846,10 +1854,13 @@ func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *
 		}
 		if found {
 			*snapshots.RemoteID, *snapshots.Size = snapshot.ID, cmp.Or(*snapshots.Size, snapshot.Size)
+			remoteSnapshot = snapshot
 		}
 	}
 	if run.Local && *snapshots.LocalID == "" && *snapshots.RemoteID != "" {
-		snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, remote, *snapshots.RemoteID, local, password, run.Label, run.Tags...)
+		// The copy keeps the S3 snapshot's tags, which record what the capture read, such as a volume root's owner.
+		tags := kit.Ternary(remoteSnapshot.ID != "", remoteSnapshot.Tags, run.Tags)
+		snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, remote, *snapshots.RemoteID, local, password, run.Label, tags...)
 		if replicateErr != nil {
 			return replicateErr
 		}
