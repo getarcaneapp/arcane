@@ -39,8 +39,7 @@ type (
 )
 
 const (
-	ArcaneTrashPrefix = ".arcane-trash-"
-	// RestoreScratchPrefix names the directory a restored project's files are staged in before the project is created.
+	ArcaneTrashPrefix    = ".arcane-trash-"
 	RestoreScratchPrefix = ".project-restore-"
 )
 

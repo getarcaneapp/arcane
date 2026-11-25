@@ -2180,8 +2180,6 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 	instanceID := s.settingsService.GetSettingsConfig().InstanceID.Value
 	decorated := make([]types.SystemVolumeBackupHistoryEntry, 0, len(history))
 	for _, entry := range history {
-		// Volume backups discovered from another instance live under that instance's root; project backups share the
-		// volumes repository.
 		root := func() string {
 			owner := cmp.Or(entry.RemoteInstanceID, instanceID)
 			switch {

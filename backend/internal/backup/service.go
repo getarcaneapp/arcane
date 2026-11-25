@@ -82,7 +82,6 @@ type (
 		DestinationPath string
 		// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
 		ExtraMounts []mount.Mount
-		// Globs filter what is restored; --delete still removes destination paths they exclude.
 		Globs       []string
 		DeleteExtra bool
 	}
@@ -92,16 +91,13 @@ type (
 		Target        string
 		Mounts        []container.MountPoint
 		InContainer   bool
-		// Writable mounts the source read-write, for a restore into it.
-		Writable bool
+		Writable      bool
 	}
 
-	// LocalRepositoryOptions picks how the local repository's storage is mounted.
 	LocalRepositoryOptions struct {
 		ReadOnly bool
 	}
 
-	// DestinationOptions describes which backup destinations hold snapshots.
 	DestinationOptions struct {
 		Local  bool
 		Remote bool
@@ -118,7 +114,6 @@ type (
 	Engine struct {
 		imageService *image.ImageService
 		admission    *runs.Admission
-		// repositories hold one slot per repository, so waiting for one can be cancelled.
 		repositories map[string]chan struct{}
 		// held parks admission a manual start won until the run that won it takes it over.
 		held      map[types.SchedulerAdmissionKey]heldLease
@@ -131,7 +126,6 @@ type (
 		run   string
 	}
 
-	// heldRepository marks a context whose caller holds the repository, so Rustic runs under it don't wait for it again.
 	heldRepository struct {
 		engine *Engine
 		id     string
@@ -182,27 +176,22 @@ type (
 		LocalEnabled  bool
 	}
 
-	// ScheduledRemoteRequest names the S3 repository a scheduled run checks and the tables recording its snapshots.
 	ScheduledRemoteRequest struct {
 		DestinationID string
 		Root          string
 		Tables        []string
 	}
 
-	// Policies stores the backup policies of every subject kind; each domain schedules and runs its own.
 	Policies struct {
 		db *database.DB
 	}
 
-	// RemoteCheck is what checking a scheduled policy's S3 repository needs.
 	RemoteCheck struct {
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
-		// Reschedule applies the policy once S3, or the policy, was disabled.
-		Reschedule func(ctx context.Context, policy *Policy)
+		Reschedule     func(ctx context.Context, policy *Policy)
 	}
 
-	// VolumeRepository is the volumes data repository that volume and project backups share.
 	VolumeRepository struct {
 		deps           VolumeRepositoryDependencies
 		legacyPassword string
@@ -219,66 +208,51 @@ type (
 		EncryptionKey    string
 	}
 
-	// Containers stops the containers a backup must not run under and starts them again.
 	Containers struct {
 		Docker *dockerInternal.DockerClientService
 		Stop   func(ctx context.Context, containerID string, user types.Actor) error
 		Start  func(ctx context.Context, containerID string, user types.Actor) error
 	}
 
-	// ContainerScope selects the containers mounting any of the volumes.
 	ContainerScope struct {
-		Volumes []string
-		// RefuseArcaneWriters fails instead when an Arcane container mounts one of the volumes.
+		Volumes             []string
 		RefuseArcaneWriters bool
 	}
 
-	// DestinationRequest is a backup's requested destinations.
 	DestinationRequest struct {
-		// Class classifies a rejected request.
-		Class error
-		// S3Destinations, when set, requires the S3 destination to be configured.
-		S3Destinations *s3.S3DestinationService
-		// Domain names the backup in messages, e.g. "volume".
-		Domain string
-		// Destination is the requested destination name; empty keeps Default.
+		Class           error
+		S3Destinations  *s3.S3DestinationService
+		Domain          string
 		Destination     string
 		S3DestinationID string
 		Default         DestinationOptions
 	}
 
-	// RunSnapshots points at the snapshot fields of a backup run's row, which the run helpers read and update.
 	RunSnapshots struct {
-		LocalID         *string
-		RemoteID        *string
-		S3DestinationID *string
-		Size            *int64
-		// RemoteInstanceID names the instance whose S3 root holds a discovered run's snapshot; empty means this one.
+		LocalID          *string
+		RemoteID         *string
+		S3DestinationID  *string
+		Size             *int64
 		RemoteInstanceID string
 	}
 
-	// SnapshotRun is a backup run writing snapshots under one label to its destinations.
 	SnapshotRun struct {
 		Snapshots RunSnapshots
 		RunID     string
 		Label     string
-		// Tags tag the copies made between repositories; a capture tags its own snapshot.
-		Tags []string
+		Tags      []string
 		DestinationOptions
 	}
 
-	// SnapshotWrite takes a run's first snapshot into the repository it is given, and saves the run's row.
 	SnapshotWrite struct {
 		Capture func(ctx context.Context, repository Repository, password string) (Snapshot, error)
 		Save    func(ctx context.Context) error
 	}
 
-	// RunWatch fails the rows of backups whose workflows end without their task completing them.
 	RunWatch struct {
 		Flow     *flow.Engine
 		Workflow *flow.Workflow
-		// Fail records the message on the backup's row while it still runs.
-		Fail func(ctx context.Context, backupID, message string) error
+		Fail     func(ctx context.Context, backupID, message string) error
 	}
 
 	remoteRepositoryKey struct {
@@ -288,9 +262,8 @@ type (
 )
 
 const (
-	VolumeAdmissionScope = "volume-backup"
-	ProjectSnapshotTag   = "arcane-kind:project"
-	// ProjectTargetType marks the run targets of project backups, whose recovery data checkpoints a backup.
+	VolumeAdmissionScope           = "volume-backup"
+	ProjectSnapshotTag             = "arcane-kind:project"
 	ProjectTargetType              = "project_backup"
 	SystemAdmissionScope           = "system-backup"
 	SystemAdmissionID              = "system"
@@ -311,7 +284,6 @@ const (
 	legacyVolumePasswordSalt = "arcane-volume-backups:"
 	legacyEncryptionKey      = "arcane-dev-key-32-characters!!!"
 
-	// defaultPolicySchedule runs a policy whose row can no longer be read; its job is unregistered soon after.
 	defaultPolicySchedule = "0 2 * * *"
 
 	containerRecoveryTimeout  = 30 * time.Second
@@ -324,11 +296,9 @@ var (
 	RecoveryKeyFormat           = regexp.MustCompile(`^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$`)
 
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
-	// ErrRemoteOnlyDisabled stops a scheduled run whose only destination, S3, was just disabled for a missing repository.
-	ErrRemoteOnlyDisabled = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
-	ErrRepositoryMissing  = errors.New("the backup repository does not exist")
+	ErrRemoteOnlyDisabled      = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
+	ErrRepositoryMissing       = errors.New("the backup repository does not exist")
 
-	// VolumeRepositoryTables record the snapshots that volume and project backups write under VolumeRoot.
 	VolumeRepositoryTables = []string{"volume_backups", "project_backups"}
 )
 
@@ -1023,8 +993,6 @@ func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) 
 	return func() { <-lock }, nil
 }
 
-// HoldRepository waits for the repository and holds it until release, so a caller stops containers only once its turn
-// has come; Rustic runs under the returned context use the repository without waiting for it again.
 func (e *Engine) HoldRepository(ctx context.Context, id string) (context.Context, func(), error) {
 	unlock, err := e.lockRepository(ctx, id)
 	if err != nil {
@@ -1187,7 +1155,6 @@ func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemote
 
 func NewPolicies(db *database.DB) *Policies { return &Policies{db: db} }
 
-// List returns the subject's policies, oldest first; an empty subjectID lists the global project policies.
 func (p *Policies) List(ctx context.Context, kind, subjectID string) ([]Policy, error) {
 	var policies []Policy
 	if err := p.db.WithContext(ctx).Where("subject_kind = ? AND subject_id = ?", kind, subjectID).Order("created_at ASC").Find(&policies).Error; err != nil {
@@ -1196,12 +1163,10 @@ func (p *Policies) List(ctx context.Context, kind, subjectID string) ([]Policy, 
 	return policies, nil
 }
 
-// Get returns the subject's policy with the ID, or nil when it has none.
 func (p *Policies) Get(ctx context.Context, kind, subjectID, id string) (*Policy, error) {
 	return p.first(ctx, p.db.Where("id = ? AND subject_kind = ? AND subject_id = ?", id, kind, subjectID))
 }
 
-// Enabled returns the policy while it is enabled, or nil once it was disabled or deleted.
 func (p *Policies) Enabled(ctx context.Context, id string) (*Policy, error) {
 	return p.first(ctx, p.db.Where("id = ? AND enabled = ?", id, true))
 }
@@ -1218,7 +1183,6 @@ func (p *Policies) first(ctx context.Context, query *gorm.DB) (*Policy, error) {
 	return &policy, nil
 }
 
-// AllEnabled returns the enabled policies of every subject of the kind, which startup schedules.
 func (p *Policies) AllEnabled(ctx context.Context, kind string) ([]Policy, error) {
 	var policies []Policy
 	if err := p.db.WithContext(ctx).Where("subject_kind = ? AND enabled = ?", kind, true).Find(&policies).Error; err != nil {
@@ -1227,7 +1191,6 @@ func (p *Policies) AllEnabled(ctx context.Context, kind string) ([]Policy, error
 	return policies, nil
 }
 
-// HasEnabled reports whether the subject has an enabled policy of its own, which replaces the global ones for it.
 func (p *Policies) HasEnabled(ctx context.Context, kind, subjectID string) (bool, error) {
 	var count int64
 	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ? AND subject_id = ? AND enabled = ?", kind, subjectID, true).
@@ -1237,7 +1200,6 @@ func (p *Policies) HasEnabled(ctx context.Context, kind, subjectID string) (bool
 	return count > 0, nil
 }
 
-// IDs returns the IDs of the kind's policies, global ones included.
 func (p *Policies) IDs(ctx context.Context, kind string) ([]string, error) {
 	var ids []string
 	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ?", kind).Pluck("id", &ids).Error; err != nil {
@@ -1246,7 +1208,6 @@ func (p *Policies) IDs(ctx context.Context, kind string) ([]string, error) {
 	return ids, nil
 }
 
-// Subjects returns the subjects that have policies of the kind, global ones left out.
 func (p *Policies) Subjects(ctx context.Context, kind string) ([]string, error) {
 	var subjects []string
 	if err := p.db.WithContext(ctx).Model(&Policy{}).Where("subject_kind = ? AND subject_id <> ''", kind).Distinct().Pluck("subject_id", &subjects).Error; err != nil {
@@ -1255,7 +1216,6 @@ func (p *Policies) Subjects(ctx context.Context, kind string) ([]string, error) 
 	return subjects, nil
 }
 
-// Remove deletes the subject's policies and returns them, so the caller can unschedule them.
 func (p *Policies) Remove(ctx context.Context, kind, subjectID string) ([]Policy, error) {
 	policies, err := p.List(ctx, kind, subjectID)
 	if err != nil || len(policies) == 0 {
@@ -1267,12 +1227,10 @@ func (p *Policies) Remove(ctx context.Context, kind, subjectID string) ([]Policy
 	return policies, nil
 }
 
-// Rename moves the subject's policies to its new ID inside the caller's transaction.
 func (p *Policies) Rename(tx *gorm.DB, kind, oldID, newID string) error {
 	return tx.Model(&Policy{}).Where("subject_kind = ? AND subject_id = ?", kind, oldID).Update("subject_id", newID).Error
 }
 
-// DisableRemote turns off the field of a policy whose S3 repository is missing, unless the policy changed since it was read.
 func (p *Policies) DisableRemote(ctx context.Context, policy *Policy, field string) (bool, error) {
 	return DisableStoredRemote(ctx, p.db, DisableRemoteRequest{
 		Model:         &Policy{},
@@ -1283,10 +1241,6 @@ func (p *Policies) DisableRemote(ctx context.Context, policy *Policy, field stri
 	})
 }
 
-// CheckRemote checks the S3 repository of a scheduled policy about to back up and reports whether it disabled S3. A
-// missing repository disables S3, or the policy with ErrRemoteOnlyDisabled when S3 is its only destination, so the
-// backup never recreates it. A policy edited during the check is left as it is and the missing repository returned, so
-// this run backs nothing up and the next one checks again.
 func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check RemoteCheck) (bool, error) {
 	var remoteErr error
 	if policy.S3Enabled {
@@ -1307,7 +1261,6 @@ func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check Remote
 	case !disabled:
 		return false, nil
 	}
-	// Rescheduled before the backup runs, so a later edit of the policy is not undone afterwards.
 	check.Reschedule(ctx, policy)
 	if !policy.LocalEnabled {
 		return true, ErrRemoteOnlyDisabled
@@ -1315,7 +1268,6 @@ func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check Remote
 	return true, nil
 }
 
-// Schedule reads the policy's schedule each time its job is scheduled, so an edit applies from the next run.
 func (p *Policies) Schedule(policyID string) func(context.Context) string {
 	return func(ctx context.Context) string {
 		var policy Policy
@@ -1326,7 +1278,6 @@ func (p *Policies) Schedule(policyID string) func(context.Context) string {
 	}
 }
 
-// CheckScheduledRemote treats a missing repository as a first backup only when none of the tables retains a snapshot in it.
 func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3.S3DestinationService, req ScheduledRemoteRequest) error {
 	result, err := CheckRemoteRepository(ctx, destinations, req.DestinationID, req.Root)
 	if err != nil || result.Available {
@@ -1414,7 +1365,6 @@ func ExpiredUnmanagedRunIDs(ctx context.Context, db *database.DB, table string, 
 	return expired, err
 }
 
-// Destination names where a backup's snapshots are kept.
 func Destination(opts DestinationOptions) types.VolumeBackupDestination {
 	switch {
 	case opts.Local && opts.Remote:
@@ -1426,8 +1376,6 @@ func Destination(opts DestinationOptions) types.VolumeBackupDestination {
 	}
 }
 
-// ResolveDestination reads a backup's requested destinations and checks them: at least one, and with S3 a selected S3
-// destination. It returns where the backup goes and its S3 destination ID, empty without S3.
 func ResolveDestination(ctx context.Context, req DestinationRequest) (DestinationOptions, string, error) {
 	selected := req.Default
 	switch types.VolumeBackupDestination(req.Destination) {
@@ -1459,8 +1407,6 @@ func ResolveDestination(ctx context.Context, req DestinationRequest) (Destinatio
 	return selected, s3DestinationID, nil
 }
 
-// SettleFailure records a backup task's error on its row and returns it, unless the task is handed back to run again
-// or its row already records why it failed.
 func SettleFailure(ctx context.Context, err error, fail func(ctx context.Context, message string) error) error {
 	if err == nil || ctx.Err() != nil || errors.Is(err, actor.ErrJobRejected) || errors.Is(err, ErrBackupSettled) {
 		return err
@@ -1468,8 +1414,6 @@ func SettleFailure(ctx context.Context, err error, fail func(ctx context.Context
 	return errors.Join(err, fail(ctx, err.Error()))
 }
 
-// FailStoppedRun fails an interrupted backup that had stopped containers, which may have changed since, rather than
-// resuming it.
 func FailStoppedRun(ctx context.Context, fail func(ctx context.Context, message string) error) error {
 	if err := fail(ctx, "Backup was interrupted while its containers were stopped"); err != nil {
 		return err
@@ -1477,7 +1421,6 @@ func FailStoppedRun(ctx context.Context, fail func(ctx context.Context, message 
 	return ErrBackupSettled
 }
 
-// Watch fails the backup's row when its workflow ends without the task completing it.
 func (w RunWatch) Watch(ctx context.Context, backupID, instanceID string) {
 	outcome, err := w.Flow.Wait(ctx, w.Workflow, instanceID)
 	if err != nil || outcome.Status == types.RunStatusSucceeded {
@@ -1488,7 +1431,6 @@ func (w RunWatch) Watch(ctx context.Context, backupID, instanceID string) {
 	}
 }
 
-// WatchAccepted restores, at startup, the watch over accepted backups whose saved workflows resume.
 func (w RunWatch) WatchAccepted(ctx context.Context) error {
 	standalone, err := w.Flow.Standalone(ctx)
 	if err != nil {
@@ -1506,7 +1448,6 @@ func NewVolumeRepository(deps VolumeRepositoryDependencies) *VolumeRepository {
 	return &VolumeRepository{deps: deps, legacyPassword: kit.SHA256Hex(legacyVolumePasswordSalt + cmp.Or(deps.EncryptionKey, legacyEncryptionKey))}
 }
 
-// StorageMount mounts backup storage at target: Arcane's own /backups mount when it has one, otherwise the backup volume.
 func (r *VolumeRepository) StorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil {
@@ -1529,8 +1470,6 @@ func (r *VolumeRepository) StorageMount(ctx context.Context, dockerClient *clien
 	return mount.Mount{Type: mount.TypeVolume, Source: r.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
 }
 
-// StorageVolume names the Docker volume StorageMount mounts: the volume at Arcane's own /backups, or the backup volume
-// when /backups is not mounted. It is empty when /backups is a bind mount, which no Docker volume holds.
 func (r *VolumeRepository) StorageVolume(ctx context.Context) string {
 	inspect, err := r.deps.Docker.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if err == nil {
@@ -1568,7 +1507,6 @@ func (r *VolumeRepository) Local(ctx context.Context, dockerClient *client.Clien
 	}, nil
 }
 
-// LocalInitialized reports false only when the mirrored /backups mount provably has no local repository yet.
 func (r *VolumeRepository) LocalInitialized(ctx context.Context, dockerClient *client.Client) bool {
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
@@ -1578,7 +1516,6 @@ func (r *VolumeRepository) LocalInitialized(ctx context.Context, dockerClient *c
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-// Remote addresses one instance's root on the destination; empty instanceID means this instance.
 func (r *VolumeRepository) Remote(ctx context.Context, destinationID, instanceID string) (Repository, error) {
 	instanceID = cmp.Or(strings.TrimSpace(instanceID), strings.TrimSpace(r.deps.Settings.GetSettingsConfig().InstanceID.Value))
 	if instanceID == "" {
@@ -1594,7 +1531,6 @@ func (r *VolumeRepository) Remote(ctx context.Context, destinationID, instanceID
 	}, nil
 }
 
-// Password returns the recovery key, or the legacy password before one is configured.
 func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Client, repositories ...Repository) (string, error) {
 	key, err := r.deps.RecoveryKeys.Get(ctx, RecoveryKeyConfigID)
 	if errors.Is(err, ErrRecoveryKeyNotConfigured) {
@@ -1603,7 +1539,6 @@ func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Cl
 	if err != nil {
 		return "", err
 	}
-	// Re-key each legacy repository once per process; one that opens with neither password is left for the caller to create or report.
 	for _, repository := range repositories {
 		if done, _ := r.rekeyed.Load(repository.ID); done == key {
 			continue
@@ -1629,7 +1564,6 @@ func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Cl
 	return key, nil
 }
 
-// Rekey re-keys this instance's own volumes repositories to the recovery key; other instances re-key their own roots.
 func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string) error {
 	dockerClient, err := r.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -1660,14 +1594,10 @@ func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string
 	return nil
 }
 
-// HoldLocal holds the local repository, as Engine.HoldRepository does.
 func (r *VolumeRepository) HoldLocal(ctx context.Context) (context.Context, func(), error) {
 	return r.deps.Engine.HoldRepository(ctx, localVolumeRepositoryID)
 }
 
-// WriteRunSnapshots writes the run's missing snapshots: write captures the first into the local repository, or into S3
-// when the run keeps no local copy, and S3 gets a copy of the local snapshot when both are enabled. Each snapshot is
-// saved before the next step.
 func (r *VolumeRepository) WriteRunSnapshots(ctx context.Context, dockerClient *client.Client, run SnapshotRun, write SnapshotWrite) error {
 	if run.Local && *run.Snapshots.LocalID == "" {
 		local, err := r.Local(ctx, dockerClient, LocalRepositoryOptions{})
@@ -1704,8 +1634,6 @@ func (r *VolumeRepository) WriteRunSnapshots(ctx context.Context, dockerClient *
 	}, remote)
 }
 
-// writeRunSnapshot reports and records the snapshot write captures into the repository; a snapshot is recorded even
-// when write rejects it, so it is removed with the failed run.
 func (r *VolumeRepository) writeRunSnapshot(ctx context.Context, dockerClient *client.Client, run SnapshotRun, write SnapshotWrite, repository Repository) error {
 	remote := repository.ID != localVolumeRepositoryID
 	password, err := r.Password(ctx, dockerClient, repository)
@@ -1729,8 +1657,6 @@ func (r *VolumeRepository) writeRunSnapshot(ctx context.Context, dockerClient *c
 	return jobcontext.Progress(ctx, target)
 }
 
-// AdoptRunSnapshots records the snapshots an interrupted run wrote but may not have saved, found by their run tag, and
-// copies its S3 snapshot to the local repository when the local one is missing.
 func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *client.Client, run SnapshotRun, previous types.SchedulerRun) error {
 	snapshots := run.Snapshots
 	var local, remote Repository
@@ -1783,9 +1709,6 @@ func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *
 	return nil
 }
 
-// ForgetRunSnapshots forgets the runs' snapshots, pruning each repository once, and clears the IDs of those it forgot;
-// an S3 repository that no longer exists holds nothing to forget, so its IDs are cleared too. Snapshots a failure left
-// keep their IDs.
 func (r *VolumeRepository) ForgetRunSnapshots(ctx context.Context, dockerClient *client.Client, entries []RunSnapshots, includeRemote bool) error {
 	ownInstance := strings.TrimSpace(r.deps.Settings.GetSettingsConfig().InstanceID.Value)
 	var localIDs []string
@@ -1826,7 +1749,6 @@ func (r *VolumeRepository) ForgetRunSnapshots(ctx context.Context, dockerClient 
 		if err == nil && observation.Available {
 			err = r.Forget(ctx, dockerClient, repository, snapshotIDs)
 		} else if err == nil {
-			// Nothing remains to forget; drop the references so the runs can be removed.
 			slog.WarnContext(ctx, "S3 repository is missing; dropping remote snapshot references", "destinationId", key.destinationID, "snapshots", len(snapshotIDs))
 		}
 		if err != nil {
@@ -1840,7 +1762,6 @@ func (r *VolumeRepository) ForgetRunSnapshots(ctx context.Context, dockerClient 
 	return forgetErr
 }
 
-// Forget forgets the snapshots in the repository and prunes it; no snapshots only prunes it.
 func (r *VolumeRepository) Forget(ctx context.Context, dockerClient *client.Client, repository Repository, snapshotIDs []string) error {
 	password, err := r.Password(ctx, dockerClient, repository)
 	if err != nil {
@@ -1849,8 +1770,6 @@ func (r *VolumeRepository) Forget(ctx context.Context, dockerClient *client.Clie
 	return r.deps.Engine.ForgetSnapshots(ctx, dockerClient, repository, password, snapshotIDs)
 }
 
-// DescribeRemote returns what a backup list shows of a run's S3 copy but its row doesn't store: the S3 destination's
-// name and whether S3 still holds the snapshot. An empty instanceID means this instance.
 func (r *VolumeRepository) DescribeRemote(ctx context.Context) func(destinationID, instanceID, snapshotID string) (string, *bool) {
 	var destinations map[string]types.S3Destination
 	loaded := false
@@ -1868,7 +1787,6 @@ func (r *VolumeRepository) DescribeRemote(ctx context.Context) func(destinationI
 	}
 }
 
-// StopContainers stops the running containers in scope, skipping Arcane's own and its helpers, and returns those it stopped.
 func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, user types.Actor) ([]container.Summary, error) {
 	containers, err := c.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
@@ -1884,7 +1802,6 @@ func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, u
 			arcaneOwned = append(arcaneOwned, candidate)
 			continue
 		}
-		// Arcane helpers auto-remove on stop, which would leave nothing to restart.
 		if strings.EqualFold(candidate.Labels[selfcontainer.InternalResourceLabel], "true") {
 			continue
 		}
@@ -1892,7 +1809,6 @@ func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, u
 	}
 	var selected []string
 	for _, volumeName := range scope.Volumes {
-		// Restores rewrite the volume in place, so refuse rather than corrupt data under a labeled container.
 		if writers := docker.FilterContainersUsingVolume(arcaneOwned, volumeName); scope.RefuseArcaneWriters && len(writers) > 0 {
 			return nil, fmt.Errorf("volume %s is mounted by a running Arcane-managed container; restoring under it would corrupt its data", volumeName)
 		}
@@ -1912,8 +1828,6 @@ func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, u
 	return stopped, nil
 }
 
-// StartContainers starts stopped containers again, or the Compose replicas that replaced them, and returns those it could not start.
-//
 //nolint:gocognit // recovery retries must reconcile IDs, names, and Compose identities in one bounded loop
 func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []container.Summary, user types.Actor) ([]container.Summary, error) {
 	recoveryCtx, cancel := context.WithTimeout(ctx, containerRecoveryTimeout)
@@ -1991,7 +1905,6 @@ func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []co
 	return nil, nil
 }
 
-// CurrentMounts returns Arcane's own mounts when it runs in a container.
 func CurrentMounts(ctx context.Context, dockerClient *client.Client) (mounts []container.MountPoint, inContainer bool, err error) {
 	if !selfcontainer.RunningInContainer() {
 		return nil, false, nil
@@ -2003,7 +1916,6 @@ func CurrentMounts(ctx context.Context, dockerClient *client.Client) (mounts []c
 	return inspect.Mounts, true, nil
 }
 
-// SourceMounts mounts ContainerPath at Target through the host mounts behind it, including nested ones.
 func SourceMounts(opts SourceMountOptions) ([]mount.Mount, error) {
 	if !opts.InContainer {
 		return []mount.Mount{{Type: mount.TypeBind, Source: opts.ContainerPath, Target: opts.Target, ReadOnly: !opts.Writable}}, nil

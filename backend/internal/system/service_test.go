@@ -151,7 +151,6 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.NoError(t, gormDB.Exec(`INSERT INTO project_backups VALUES ('pb1', 'p1', 'web', 'succeeded', 'scheduled', 'local', 'snap', '', '', 'pp1', '', 10, ?),
 		('pb2', 'p2', 'old', 'succeeded', 'manual', 'local', 'snap2', '', '', '', '', 20, ?)`,
 		now.Add(-3*time.Minute), now.Add(-4*time.Minute)).Error)
-	// Only p1 still exists; p2's backup outlived its project.
 	require.NoError(t, gormDB.Exec("CREATE TABLE projects (id TEXT PRIMARY KEY)").Error)
 	require.NoError(t, gormDB.Exec("INSERT INTO projects VALUES ('p1')").Error)
 	db := &database.DB{DB: gormDB}
@@ -170,7 +169,6 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 		Config:          &config.Config{},
 	})
 
-	// System covers only Arcane's own backups.
 	systemRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
 		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
 		Filters: map[string]string{"type": "system"},
@@ -182,7 +180,6 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.Equal(t, "Arcane", systemRows[0].ResourceName)
 	require.Equal(t, "system", systemRows[0].ResourceType)
 
-	// The global volume policies' backups are volume backups.
 	volumeRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
 		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
 		Filters: map[string]string{"type": "volume"},
@@ -196,7 +193,6 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 		require.Equal(t, "volume", row.ResourceType)
 	}
 
-	// Project backups appear with their project, whose ID opens them; a deleted project's backups say it is missing.
 	projectRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
 		Sort: "createdAt", Order: pagination.SortDesc, Limit: 20,
 		Filters: map[string]string{"type": "project"},

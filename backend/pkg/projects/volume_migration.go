@@ -35,9 +35,8 @@ import (
 
 type (
 	ResolveProjectVolumesOptions struct {
-		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
-		InUse   map[string]bool
-		// BackupStore names the volume holding Arcane's local backups. It is never included, so no copy reads it.
+		Inspect     func(ctx context.Context, name string) (types.Volume, bool, error)
+		InUse       map[string]bool
 		BackupStore string
 		Project     types.Project
 	}
@@ -256,8 +255,6 @@ func ProjectContainerUse(composeName string, containers []container.Summary) ([]
 	return active, inUse
 }
 
-// NewComposeVolumeTarget describes how to recreate a project volume for the Compose project: as Compose would, or, for
-// an external volume, with the Docker labels recorded with its data.
 func NewComposeVolumeTarget(composeName string, volume types.ProjectVolume, recordedLabels map[string]string) types.ComposeVolumeTarget {
 	external := volume.Kind == types.ProjectVolumeExternal
 	return types.ComposeVolumeTarget{ //exhaustruct:enforce
@@ -280,8 +277,6 @@ func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTar
 	}, target.Key, name, target.Project), nil)
 }
 
-// CreateNewVolume creates a restore target, refusing one that already exists so a restore never takes over, or later
-// removes, a volume it did not create.
 func CreateNewVolume(ctx context.Context, dockerClient *client.Client, options client.VolumeCreateOptions) error {
 	_, err := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
 	if err == nil {
