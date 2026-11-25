@@ -28,57 +28,42 @@ import (
 )
 
 type (
-	// CapturePlan is one point-in-time read of a subject: its parts, mounted read-only under SnapshotRoot, and how to
-	// quiesce it. The caller holds the locks that keep the parts from changing hands.
 	CapturePlan struct {
-		// Inspect reports a Docker volume, so the capture can tell the volumes it read are the ones it planned.
-		Inspect func(ctx context.Context, name string) (types.Volume, bool, error)
-		// Stop quiesces the subject and returns what starts it again; nil when nothing needs stopping.
-		Stop func(ctx context.Context) (func(context.Context) error, error)
-		// Verify, when set, refuses a read something could have changed: it runs once the subject stopped and again after
-		// the read, before the subject starts again.
-		Verify func(ctx context.Context) error
-		// Rejected records a read the capture rejects after it finished, before the error is returned.
+		Inspect  func(ctx context.Context, name string) (types.Volume, bool, error)
+		Stop     func(ctx context.Context) (func(context.Context) error, error)
+		Verify   func(ctx context.Context) error
 		Rejected func(ctx context.Context, err error) error
 		Mounts   []mount.Mount
-		// Volumes are the Docker volumes among the mounts.
-		Volumes []string
+		Volumes  []string
 	}
 
-	// ArchiveOutput tars mounted parts in one helper, each as a volume export does.
 	ArchiveOutput struct {
-		// Add receives each part's archive, in the order of the parts.
 		Add   func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error
 		Image string
 		Parts []mount.Mount
 	}
 
-	// ProjectStop stops a Compose project's active containers for a capture or a restore.
 	ProjectStop struct {
 		Docker    *dockerInternal.DockerClientService
 		Stop      func(ctx context.Context, projectID string, services []string, user types.Actor) error
 		User      types.Actor
 		ProjectID string
-		// Compose names the Compose project; Active are its running and restarting containers.
-		Compose string
-		Active  []container.Summary
+		Compose   string
+		Active    []container.Summary
 	}
 )
 
 const (
-	// SnapshotRoot is where a capture mounts a subject's parts: project/, volumes/<name>/ and meta/.
 	SnapshotRoot = "/snapshot"
 	archiveDir   = "/archives"
 )
 
 var errVolumeReplaced = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 
-// VolumePart mounts a Docker volume read-only where a capture lays out the subject's volumes.
 func VolumePart(name string) mount.Mount {
 	return mount.Mount{Type: mount.TypeVolume, Source: name, Target: path.Join(SnapshotRoot, "volumes", name), ReadOnly: true}
 }
 
-// InspectVolume reports the Docker volume, or that it does not exist.
 func InspectVolume(ctx context.Context, dockerClient *client.Client, name string) (types.Volume, bool, error) {
 	inspect, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if errdefs.IsNotFound(err) {
@@ -90,11 +75,7 @@ func InspectVolume(ctx context.Context, dockerClient *client.Client, name string
 	return types.NewVolume(inspect.Volume), true, nil
 }
 
-// Capture quiesces the subject once, hands its mounted parts to read, and checks that every volume read is the one
-// planned, before the subject starts again.
 func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Context, mounts []mount.Mount) error) (err error) {
-	// A volume removed while the capture waited would be mounted, and so created, empty; one replaced during the read
-	// would be read empty too. Each must exist now and be the same volume after the read.
 	before, err := volumeIdentities(ctx, plan.Inspect, plan.Volumes)
 	if err != nil {
 		return err
@@ -102,7 +83,6 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 	if plan.Stop != nil {
 		start, stopErr := plan.Stop(ctx)
 		if start != nil {
-			// Started again however the capture ends.
 			defer func() {
 				if startErr := start(context.WithoutCancel(ctx)); startErr != nil {
 					err = errors.Join(err, fmt.Errorf("start the stopped containers again: %w", startErr))
@@ -121,8 +101,6 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 	if readErr := read(ctx, plan.Mounts); readErr != nil {
 		return readErr
 	}
-	// A shutdown can't cut the check short: a cancelled check would reject a read that finished. It is still bounded,
-	// since the subject stays stopped until it returns.
 	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
 	after, err := volumeIdentities(checkCtx, plan.Inspect, plan.Volumes)
 	if err == nil && !maps.Equal(before, after) {
@@ -138,7 +116,6 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 	return err
 }
 
-// volumeIdentities returns when Docker created each volume, refusing one that no longer exists.
 func volumeIdentities(ctx context.Context, inspect func(ctx context.Context, name string) (types.Volume, bool, error), names []string) (map[string]string, error) {
 	created := make(map[string]string, len(names))
 	for _, name := range names {
@@ -154,8 +131,6 @@ func volumeIdentities(ctx context.Context, inspect func(ctx context.Context, nam
 	return created, nil
 }
 
-// Run stops the services of the project's active containers, then refuses any of its containers still running:
-// Compose stops only the services its files name, so a one-off run, a hook or job, or a removed service keeps running.
 func (p ProjectStop) Run(ctx context.Context) error {
 	if err := p.Stop(ctx, p.ProjectID, projects.ContainerServices(p.Active), p.User); err != nil {
 		return err
@@ -177,8 +152,6 @@ func (p ProjectStop) Run(ctx context.Context) error {
 	return nil
 }
 
-// CheckNoWriters refuses volumes a running container mounts writable, so a capture called consistent copies data that
-// nothing changes during the copy.
 func CheckNoWriters(ctx context.Context, dockerService *dockerInternal.DockerClientService, names []string) error {
 	dockerClient, err := dockerService.GetClient(ctx)
 	if err != nil {
@@ -198,8 +171,6 @@ func CheckNoWriters(ctx context.Context, dockerService *dockerInternal.DockerCli
 	return nil
 }
 
-// Write tars each part from its root, so the archive's root entry keeps the part's owner and mode, and hands it to Add.
-// The helper's create, start and removal are bounded by Docker's API timeout; the archiving is not.
 func (o ArchiveOutput) Write(ctx context.Context, dockerService *dockerInternal.DockerClientService) error {
 	if len(o.Parts) == 0 {
 		return nil
@@ -238,7 +209,6 @@ func (o ArchiveOutput) Write(ctx context.Context, dockerService *dockerInternal.
 		if addErr := o.add(ctx, dockerClient, helper.ID, archive, part); addErr != nil {
 			return addErr
 		}
-		// Each archive is dropped once handed over, so the helper never holds more than one.
 		if rmErr := runInHelper(ctx, dockerClient, helper.ID, "rm", "-f", archive); rmErr != nil {
 			return rmErr
 		}

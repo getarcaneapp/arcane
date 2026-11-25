@@ -240,7 +240,6 @@ func (s *Service) List(ctx context.Context, volumeName string, params pagination
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
-	// Discovered backups live under the instance that wrote them, not necessarily this one.
 	describe := s.deps.Repository.DescribeRemote(ctx)
 	for i := range backups {
 		backups[i].S3DestinationName, backups[i].RemoteAvailable = describe(backups[i].S3DestinationID, backups[i].RemoteInstanceID, backups[i].RemoteSnapshotID)
@@ -265,7 +264,6 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	if policy != nil {
 		defaults, s3DestinationID = backup.DestinationOptions{Local: policy.LocalEnabled, Remote: policy.S3Enabled}, policy.S3DestinationID
 	}
-	// A safety backup is always local.
 	destination := kit.Ternary(trigger == types.VolumeBackupTriggerSafety, types.VolumeBackupDestinationLocal, request.Destination)
 	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
 		Class:           common.ErrBadRequest,
@@ -433,9 +431,8 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 		},
 		Stop:     nil,
 		Rejected: nil,
-		// Volume snapshots keep the volume's contents at their root, as every earlier volume backup does.
-		Mounts:  []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true}},
-		Volumes: []string{volumeName},
+		Mounts:   []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true}},
+		Volumes:  []string{volumeName},
 	}
 	if plan.Policy != nil && plan.Policy.StopContainers {
 		capture.Stop = func(ctx context.Context) (func(context.Context) error, error) {
@@ -447,7 +444,6 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 			return start, stopErr
 		}
 	}
-	// The repository is waited for before the containers stop, so they stay stopped only while this backup copies.
 	hold := s.deps.Repository.HoldLocal
 	if !plan.LocalEnabled {
 		remote, remoteErr := s.deps.Repository.Remote(ctx, plan.S3DestinationID, "")
@@ -464,8 +460,6 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	}
 	defer releaseRepository()
 	captureErr := backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
-		// Read in the capture, so the snapshot records the root's owner and mode as of its contents, by a container
-		// removed right after, so none is left holding the volume.
 		containerID, remove, helperErr := s.createBackupTempContainerWithMount(ctx, mounts[0])
 		if helperErr != nil {
 			return helperErr
@@ -508,8 +502,6 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	return ctx.Err()
 }
 
-// createSnapshots writes the plan's missing snapshots of the mounted volume, tagged with its root's owner and mode; S3
-// replicates the local snapshot when both are enabled.
 func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, source mount.Mount, ownerTag string) error {
 	run := snapshotRun(entry, plan, ownerTag)
 	input := backup.RootSnapshotInput(source, run.Tags...)
@@ -564,7 +556,6 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 	if err != nil {
 		return nil, err
 	}
-	// The copy keeps the snapshot's tags, such as its run and the volume root's owner.
 	source, _, err := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, localRepository, password, "", entry.LocalSnapshotID)
 	if err != nil {
 		return nil, err
@@ -865,8 +856,6 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 				return dockerClient.VolumeRemove(ctx, scratchVolume, client.VolumeRemoveOptions{Force: true})
 			})
 		}
-		// Restored as into a volume, so the archive's root entry carries the volume root's owner and mode, as a volume
-		// export's does.
 		if restoreErr := s.restore.RestoreSnapshot(ctx, dockerClient, entry, scratchVolume); restoreErr != nil {
 			removeScratch()
 			return nil, 0, fmt.Errorf("failed to prepare Rustic snapshot for download: %w", restoreErr)
@@ -896,7 +885,6 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	return reader, size, nil
 }
 
-// ExportVolumeArchive tars the volume as a project bundle archives each of its volumes and stores it as an upload.
 func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*types.UploadSession, error) {
 	unlock, err := s.deps.Locks.LockContext(ctx, volumeName)
 	if err != nil {
@@ -1105,7 +1093,6 @@ func (s *Service) discoverRemoteBackups(ctx context.Context, destinationID strin
 	return created, failures, err
 }
 
-// discoveredVolumeBackup maps a snapshot to a backup record via its volume label; unlabeled, system, and project snapshots map to nil.
 func discoveredVolumeBackup(destinationID, root string, snapshot backup.DiscoveredSnapshot) *types.VolumeBackup {
 	volumeName := strings.TrimSpace(snapshot.Label)
 	if volumeName == "" || volumeName == systemRecoverySnapshotLabel || slices.Contains(snapshot.Tags, backup.ProjectSnapshotTag) {
@@ -1175,7 +1162,6 @@ func (s *Service) WatchAcceptedBackups(ctx context.Context) error {
 	return s.watch.WatchAccepted(ctx)
 }
 
-// failRunning fails a backup whose row still runs.
 func (s *Service) failRunning(ctx context.Context, backupID, message string) error {
 	current, err := s.deps.Store.Run(ctx, backupID)
 	if err != nil || current.Status != types.VolumeBackupStatusRunning {

@@ -24,13 +24,10 @@ const (
 
 	TunnelCapabilityForwardedPermissions = "forwarded-permissions-v1"
 	TunnelCapabilityForwardedGlobalAdmin = "forwarded-global-admin-v1"
-	// TunnelCapabilityProjectTransfer marks agents that export and import projects with their volumes as one bundle.
-	TunnelCapabilityProjectTransfer = "project-transfer-v2"
-	// tunnelCapabilityProjectTransferV1 keeps older managers transferring through the project and volume endpoints
-	// that agents still serve.
-	tunnelCapabilityProjectTransferV1 = "project-transfer-v1"
-	tunnelCapabilityMuxWindowPrefix   = "mux-window-mib:"
-	tunnelCapabilityReadinessLease    = "readiness-lease-v1"
+	TunnelCapabilityProjectTransfer      = "project-transfer-v2"
+	tunnelCapabilityProjectTransferV1    = "project-transfer-v1"
+	tunnelCapabilityMuxWindowPrefix      = "mux-window-mib:"
+	tunnelCapabilityReadinessLease       = "readiness-lease-v1"
 
 	MuxAgentBaseURL   = "http://agent.tunnel.arcane.internal"
 	muxManagerBaseURL = "http://manager.tunnel.arcane.internal"

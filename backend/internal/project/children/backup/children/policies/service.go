@@ -36,38 +36,24 @@ type (
 		Policies       *backup.Policies
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
-		// Config tells a manager, which runs the global policies, from an agent.
-		Config *config.Config
-		// ProjectName returns the project's name without loading its compose files.
-		ProjectName func(ctx context.Context, projectID string) (string, error)
-		// ListProjects returns the ID and name of every project on this server.
-		ListProjects func(ctx context.Context) ([]types.ProjectReference, error)
-		// CheckVolumes refuses a volume selection that a manual backup of the project would refuse.
-		CheckVolumes func(ctx context.Context, projectID string, keys []string) error
-		// LatestRun returns the newest backup the policy took, of any project for a global policy, or nil.
-		LatestRun func(ctx context.Context, policyID string) (*types.ProjectBackup, error)
-		// Resume finishes, or fails, the backup an interrupted attempt checkpointed in recoveryData;
-		// backup.ErrBackupSettled means it had already failed, so a new one should run.
-		Resume func(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recoveryData []byte) error
-		// BackUp takes a project's scheduled backup.
-		BackUp func(ctx context.Context, run ScheduledBackup) error
-		// Expire deletes the series' backups beyond its newest keep; the caller holds the project's admission.
-		Expire func(ctx context.Context, seriesID string, keep int) error
-		// Ctx, Scheduler and Admission register the policies' scheduled jobs.
-		Ctx       context.Context
-		Scheduler types.DynamicScheduler
-		Admission *runs.Admission
+		Config         *config.Config
+		ProjectName    func(ctx context.Context, projectID string) (string, error)
+		ListProjects   func(ctx context.Context) ([]types.ProjectReference, error)
+		CheckVolumes   func(ctx context.Context, projectID string, keys []string) error
+		LatestRun      func(ctx context.Context, policyID string) (*types.ProjectBackup, error)
+		Resume         func(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recoveryData []byte) error
+		BackUp         func(ctx context.Context, run ScheduledBackup) error
+		Expire         func(ctx context.Context, seriesID string, keep int) error
+		Ctx            context.Context
+		Scheduler      types.DynamicScheduler
+		Admission      *runs.Admission
 	}
 
-	// ScheduledBackup is one project's backup for a policy.
 	ScheduledBackup struct {
-		// Read reads the policy once the project's admission is held and returns the backup it asks for.
-		Read func(ctx context.Context) (types.CreateProjectBackupRequest, error)
-		// Retain runs under the project's admission once the backup ends, whether or not it succeeded.
+		Read      func(ctx context.Context) (types.CreateProjectBackupRequest, error)
 		Retain    func(ctx context.Context)
 		ProjectID string
-		// SeriesID records the backup under the policy, or under a global policy's series for the project.
-		SeriesID string
+		SeriesID  string
 	}
 
 	Service struct {
@@ -82,14 +68,12 @@ type (
 		PolicyID string `json:"policyId"`
 	}
 
-	// globalRun runs a global policy; a run started by hand also carries its requester.
 	globalRun struct {
 		Requester *types.BackupRequester `json:"requester,omitempty"`
 		PolicyID  string                 `json:"policyId"`
 	}
 )
 
-// globalAdmissionScope keeps one run of each global policy at a time; it is always taken before a project's.
 const globalAdmissionScope = "global-project-backup"
 
 var (
@@ -144,7 +128,6 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	return err
 }
 
-// Policies lists the project's backup policies with the latest backup each one took.
 func (s *Service) Policies(ctx context.Context, projectID string) (types.ProjectBackupPolicyCollection, error) {
 	policies, err := s.deps.Policies.List(ctx, backup.PolicyProject, projectID)
 	if err != nil {
@@ -175,8 +158,6 @@ func (s *Service) Policies(ctx context.Context, projectID string) (types.Project
 	return types.ProjectBackupPolicyCollection{Policies: dtos, S3Available: len(destinations) > 0}, nil
 }
 
-// UpdatePolicies replaces the project's backup policies, schedules the enabled ones and unschedules the rest. A project
-// deleted while they were saved has them removed again, since its deletion may have removed them before the save.
 func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates []types.UpdateProjectBackupPolicy) (types.ProjectBackupPolicyCollection, error) {
 	if _, err := s.deps.ProjectName(ctx, projectID); err != nil {
 		return types.ProjectBackupPolicyCollection{}, err
@@ -200,8 +181,6 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 			volumes := slices.Clone(update.Volumes)
 			slices.Sort(volumes)
 			volumes = slices.Compact(volumes)
-			// No selection follows the project's volumes; a new or changed selection follows the rules of a manual backup.
-			// A saved one is kept as it is, so a volume removed since never blocks editing; the scheduled backup reports it.
 			if volumes != nil && (policy.Options.Volumes == nil || !slices.Equal(volumes, policy.Options.Volumes)) {
 				if checkErr := s.deps.CheckVolumes(ctx, projectID, volumes); checkErr != nil {
 					return checkErr
@@ -235,8 +214,6 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 	return s.Policies(ctx, projectID)
 }
 
-// RegisterJobsOnStartup removes the policies of deleted projects, then schedules every enabled project backup policy
-// and global project backup policy.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	if err := s.removeOrphaned(ctx); err != nil {
 		slog.WarnContext(ctx, "Failed to remove the backup policies of deleted projects", "error", err)
@@ -252,7 +229,6 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	slog.InfoContext(ctx, "Registered scheduled project backup jobs", "count", len(policies))
 }
 
-// Remove unschedules and deletes a deleted project's backup policies, which leaves their backups unmanaged.
 func (s *Service) Remove(ctx context.Context, projectID string) {
 	policies, err := s.deps.Policies.Remove(ctx, backup.PolicyProject, projectID)
 	if err != nil {
@@ -264,9 +240,6 @@ func (s *Service) Remove(ctx context.Context, projectID string) {
 	}
 }
 
-// removeOrphaned removes the policies of projects that no longer exist, which a missed deletion left behind. The
-// policies are listed before the projects, and a policy is only saved for an existing project, so none of a project
-// created meanwhile is removed.
 func (s *Service) removeOrphaned(ctx context.Context) error {
 	subjects, err := s.deps.Policies.Subjects(ctx, backup.PolicyProject)
 	if err != nil || len(subjects) == 0 {
@@ -284,9 +257,6 @@ func (s *Service) removeOrphaned(ctx context.Context) error {
 	return nil
 }
 
-// Managed removes the policies of projects that no longer exist, so their backups become unmanaged, and returns the
-// policy IDs whose backups are managed: every policy's own, and each project series of a global policy while it still
-// selects that project.
 func (s *Service) Managed(ctx context.Context) (map[string]bool, error) {
 	if err := s.removeOrphaned(ctx); err != nil {
 		return nil, err
@@ -315,7 +285,6 @@ func (s *Service) Managed(ctx context.Context) (map[string]bool, error) {
 	return managed, nil
 }
 
-// reschedule schedules an enabled policy's job and unschedules a disabled one; a policy with no project is global.
 func (s *Service) reschedule(ctx context.Context, policy *backup.Policy) {
 	if policy.SubjectID == "" {
 		s.rescheduleGlobal(ctx, policy)
@@ -354,8 +323,6 @@ func (s *Service) reschedule(ctx context.Context, policy *backup.Policy) {
 	})
 }
 
-// runScheduled resumes an interrupted backup of the policy, or backs the project up with the policy as it stands once
-// the project is admitted.
 func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	var input scheduledRun
 	if decodeErr := t.Payload(&input); decodeErr != nil {
@@ -398,8 +365,6 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, nil
 }
 
-// resumeScheduled finishes the backup an interrupted attempt checkpointed; it reports false when there is none, or when
-// that backup already failed and a new one should run.
 func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, bool, error) {
 	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ResourceType == backup.ProjectTargetType && len(target.RecoveryData) > 0
@@ -417,7 +382,6 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled project backup created successfully"}, true, nil
 }
 
-// scheduledPolicy reads the enabled policy under the project's admission and checks its S3 repository.
 func (s *Service) scheduledPolicy(ctx context.Context, policyID string) (types.CreateProjectBackupRequest, bool, error) {
 	policy, err := s.deps.Policies.Enabled(ctx, policyID)
 	if err != nil {
@@ -446,9 +410,6 @@ func (s *Service) checkRemote(ctx context.Context, policy *backup.Policy) (bool,
 	})
 }
 
-// retain deletes the series' backups beyond the policy's newest RetentionCount; it runs under the project's admission.
-// The policy is read again, since an edit or delete made while the backup ran must keep the backups it asks to keep. A
-// global policy keeps its RetentionCount per project, in the project's series.
 func (s *Service) retain(ctx context.Context, policy *backup.Policy, projectID, seriesID string) {
 	current, err := s.deps.Policies.Get(ctx, backup.PolicyProject, policy.SubjectID, policy.ID)
 	if err == nil && current != nil && current.RetentionCount > 0 {
@@ -459,12 +420,10 @@ func (s *Service) retain(ctx context.Context, policy *backup.Policy, projectID, 
 	}
 }
 
-// seriesID is the policy ID that the backups of a project from a global policy are recorded under.
 func seriesID(policyID, projectID string) string {
 	return types.GlobalProjectPolicyPrefix + policyID + ":" + projectID
 }
 
-// selectProjects returns the projects the global policy selects; listed IDs of deleted projects match nothing.
 func selectProjects(policy backup.Policy, references []types.ProjectReference) []types.ProjectReference {
 	selected := make([]types.ProjectReference, 0, len(references))
 	for _, project := range references {
@@ -475,7 +434,6 @@ func selectProjects(policy backup.Policy, references []types.ProjectReference) [
 	return selected
 }
 
-// GlobalPolicies lists the global project backup policies with the latest backup each one took.
 func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackupPolicyCollection, error) {
 	policies, err := s.deps.Policies.List(ctx, backup.PolicyProject, "")
 	if err != nil {
@@ -506,8 +464,6 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 	return types.GlobalProjectBackupPolicyCollection{Policies: dtos}, nil
 }
 
-// UpdateGlobalPolicies replaces the global project backup policies, schedules the enabled ones and unschedules the
-// rest. Listed IDs of projects that do not exist are kept, and match nothing.
 func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
 	existing, err := s.deps.Policies.List(ctx, backup.PolicyProject, "")
 	if err != nil {
@@ -560,7 +516,6 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.Upda
 	return s.GlobalPolicies(ctx)
 }
 
-// GlobalOptions lists the projects a global policy can select, followed by the listed ones that no longer exist.
 func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBackupOption, error) {
 	references, err := s.deps.ListProjects(ctx)
 	if err != nil {
@@ -584,7 +539,6 @@ func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBacku
 	return options, nil
 }
 
-// StartGlobal runs the enabled global policy now, as its schedule does.
 func (s *Service) StartGlobal(ctx context.Context, user types.Actor, policyID string) (types.BackupRunAccepted, error) {
 	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.deps.Engine.Authorize(ctx, requester); err != nil {
@@ -610,7 +564,6 @@ func (s *Service) StartGlobal(ctx context.Context, user types.Actor, policyID st
 }
 
 func (s *Service) rescheduleGlobal(ctx context.Context, policy *backup.Policy) {
-	// Agents run no global policies yet.
 	if s.deps.Config.AgentEnabled {
 		return
 	}
@@ -629,7 +582,6 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *backup.Policy) {
 			Metadata: database.JSON{"action": "scheduled_project_backups", "policyId": policyID, "schedule": policy.Schedule},
 		},
 		ScheduleFn: s.deps.Policies.Schedule(policyID),
-		// A run whose workflow cannot be resumed settles its checkpointed backup and backs up the rest, once.
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.backUpGlobal(ctx, globalRun{PolicyID: policyID}, previous)
 		},
@@ -645,9 +597,6 @@ func (s *Service) runGlobal(ctx context.Context, t flow.Task) (any, error) {
 	return s.backUpGlobal(ctx, input, previous)
 }
 
-// backUpGlobal backs up the projects a global policy selects one at a time, each through the path of a project's
-// scheduled backup. A resumed run first finishes, or fails, the backup the interrupted attempt checkpointed, as a project
-// policy's resumed run does, then backs up the projects that attempt had not finished.
 func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	canceled := types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}
 	lease, err := s.deps.Engine.AwaitRun(ctx, globalAdmissionScope, input.PolicyID)
@@ -684,14 +633,12 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		case errors.Is(resumeErr, actor.ErrJobRejected):
 			return types.SchedulerOutcome{}, resumeErr
 		case errors.Is(resumeErr, backup.ErrBackupSettled):
-			// The backup failed, so a new one runs below, as for a project policy.
 			continue
 		}
 		if reportErr := report(target.ID, resumeErr); reportErr != nil {
 			return types.SchedulerOutcome{}, reportErr
 		}
 	}
-	// The checkpointed backups are settled even when the policy was disabled or deleted since.
 	policy, err := s.deps.Policies.Get(ctx, backup.PolicyProject, "", input.PolicyID)
 	if err != nil {
 		return types.SchedulerOutcome{}, err
@@ -724,7 +671,6 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 			return canceled, nil
 		case errors.Is(backupErr, backup.ErrRemoteOnlyDisabled):
 			return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
-		// Shutdown interrupted this project; its checkpoint resumes it first.
 		case ctx.Err() != nil:
 			return types.SchedulerOutcome{}, ctx.Err()
 		}
@@ -735,8 +681,6 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 	return globalOutcome(finished, remoteDisabled), nil
 }
 
-// globalSettings reads the global policy under the project's admission, checks the requester, that the policy still
-// selects the project and that the project has no enabled policy of its own, then checks the S3 repository.
 func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID string) (types.CreateProjectBackupRequest, bool, error) {
 	if input.Requester != nil {
 		if err := s.deps.Engine.Authorize(ctx, *input.Requester); err != nil {
@@ -775,7 +719,6 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 	}, disabled, nil
 }
 
-// globalOutcome reports a global run; failed projects or disabled remote storage make it partial.
 func globalOutcome(finished map[string]types.TargetOutcome, remoteDisabled bool) types.SchedulerOutcome {
 	succeeded, skipped := 0, 0
 	var failures []types.TargetOutcome

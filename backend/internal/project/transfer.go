@@ -31,19 +31,17 @@ type (
 		Backups          *backup.Engine
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
-		// ArchiveVolumes tars captured volumes in one helper, each as a volume export archives it.
-		ArchiveVolumes func(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error
-		RestoreVolume  func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
-		DeleteVolume   func(ctx context.Context, name string, force bool, user types.Actor) error
-		CreateVolume   func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
-		CreateNetwork  func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
+		ArchiveVolumes   func(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error
+		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
+		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
+		CreateVolume     func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
+		CreateNetwork    func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
 	}
 
 	localTransferEnvironment struct {
 		projects *ProjectService
-		// bundles exports and imports a project with its volumes, as the agent's export and import endpoints do.
-		bundles *bundle.Service
-		deps    TransferDependencies
+		bundles  *bundle.Service
+		deps     TransferDependencies
 	}
 )
 
@@ -126,7 +124,6 @@ func (e localTransferEnvironment) ExportProject(ctx context.Context, projectID s
 	return *session, nil
 }
 
-// ImportProject imports a transfer's archive; the transfer checked the rights to restore its volumes before it started.
 func (e localTransferEnvironment) ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error) {
 	return e.bundles.Import(ctx, bundle.ImportOptions{User: user, Request: request, RestoreVolumes: true})
 }
