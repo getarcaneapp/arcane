@@ -3,6 +3,7 @@ package backup
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"path"
 	"path/filepath"
 	"slices"
@@ -11,7 +12,11 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
+	"kit.getarcane.app"
+	"kit.getarcane.app/docker"
+
 	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/volumes"
@@ -118,15 +123,25 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	if err != nil {
 		return nil, err
 	}
+	containerPath, err := filepath.EvalSymlinks(source.ContainerPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve project directory: %w", err)
+	}
 	resolved, err := backup.SourceMounts(backup.SourceMountOptions{
 		Mounts:        mounts,
-		ContainerPath: source.ContainerPath,
+		ContainerPath: containerPath,
 		Target:        source.Target,
 		InContainer:   inContainer,
 		Writable:      source.Writable,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if store := docker.MountForDestination(mounts, "/backups", "/backups"); store != nil && store.Type == mount.TypeBind && resolved[0].Type == mount.TypeBind &&
+		(kit.FilePathMatches(store.Source, resolved[0].Source) || kit.FilePathMatches(resolved[0].Source, store.Source)) {
+		return nil, common.Classify(common.ErrValidation, fmt.Errorf(
+			"the project folder %s and Arcane's backup folder %s overlap on the host, so the project cannot be backed up or restored", containerPath, store.Source,
+		))
 	}
 	return volumes.BindSubpaths(ctx, dockerClient, resolved)
 }

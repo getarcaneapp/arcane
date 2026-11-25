@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"path"
@@ -108,6 +109,7 @@ type (
 		LocalEnabled    bool                  `json:"localEnabled"`
 		S3Enabled       bool                  `json:"s3Enabled"`
 		StopContainers  bool                  `json:"stopContainers"`
+		Files           bool                  `json:"files"`
 	}
 
 	runInput struct {
@@ -188,6 +190,7 @@ const (
 	manifestName     = "arcane-project.json"
 	envName          = "project.env"
 	backupsTable     = "project_backups"
+	stagingPrefix    = "arcane-project-backup-"
 	projectTagPrefix = "arcane-project:"
 	triggerTagPrefix = "arcane-trigger:"
 	policyTagPrefix  = "arcane-policy:"
@@ -195,7 +198,6 @@ const (
 
 var (
 	errAlreadyRunning = common.Classify(common.ErrConflict, errors.New("a backup or restore of this project is already running"))
-	stopPermissions   = []string{authz.PermProjectsDown, authz.PermProjectsDeploy}
 	projectDetails    = types.ProjectDetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeIncludeFiles:   true,
@@ -214,6 +216,7 @@ func NewService(deps Dependencies) *Service {
 		ProjectName:    deps.ProjectName,
 		ListProjects:   deps.ListProjects,
 		CheckVolumes:   s.checkVolumes,
+		Authorize:      s.authorize,
 		LatestRun:      s.latestRun,
 		Resume:         s.resumeScheduled,
 		BackUp:         s.backUpScheduled,
@@ -274,7 +277,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 			return types.ProjectBackup{}, activeErr
 		}
 		if len(active) > 0 {
-			if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, opts.EnvironmentID, stopPermissions)); permErr != nil {
+			if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, opts.EnvironmentID, policies.StopPermissions)); permErr != nil {
 				return types.ProjectBackup{}, permErr
 			}
 		}
@@ -354,6 +357,7 @@ func (s *Service) resolvePlan(ctx context.Context, project types.Project, reques
 		LocalEnabled:    selected.Local,
 		S3Enabled:       selected.Remote,
 		StopContainers:  *cmp.Or(request.StopContainers, new(true)),
+		Files:           true,
 	}, nil
 }
 
@@ -496,7 +500,7 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 	case types.VolumeBackupStatusSucceeded:
 		return nil
 	}
-	if recorded.Plan.StopContainers {
+	if len(recorded.Stopped) > 0 {
 		return errors.Join(s.startContainers(ctx, recorded.Stopped), backup.FailStoppedRun(ctx, func(ctx context.Context, message string) error {
 			return s.fail(ctx, entry.ID, message)
 		}))
@@ -516,11 +520,12 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 	if saveErr := s.deps.DB.WithContext(ctx).Save(entry).Error; saveErr != nil {
 		return saveErr
 	}
+	adopted := recorded.Plan.LocalEnabled && entry.LocalSnapshotID != ""
 	localChecked, executeErr := s.execute(ctx, entry, recorded.Plan, requester)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	return s.complete(ctx, entry, executeErr, localChecked)
+	return s.complete(ctx, entry, executeErr, adopted || localChecked)
 }
 
 func (s *Service) repository(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool) (backup.Repository, error) {
@@ -581,6 +586,10 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	if planErr := s.checkPlanVolumes(ctx, project, p); planErr != nil {
 		return backup.Snapshot{}, planErr
 	}
+	env, externalEnv, projectMounts, err := s.projectFiles(ctx, dockerClient, project, p.Files)
+	if err != nil {
+		return backup.Snapshot{}, err
+	}
 	held, releaseRepository, err := s.deps.Engine.HoldRepository(ctx, repository.ID)
 	if err != nil {
 		return backup.Snapshot{}, err
@@ -595,22 +604,14 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	env, _, externalEnv, err := projects.ReadExternalEnvFile(ctx, project.Path)
-	if err != nil {
-		return backup.Snapshot{}, fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
-	}
 	metaVolume, removeMeta, err := s.writeManifest(ctx, dockerClient, backupManifest(project, p, externalEnv), env)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
 	defer removeMeta()
-	projectMounts, err := projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: project.Path, Target: path.Join(snapshotRoot, "project")})
-	if err != nil {
-		return backup.Snapshot{}, err
-	}
 	if p.StopContainers && len(active) > 0 {
 		if requester != nil {
-			if authorizeErr := s.authorize(ctx, *requester, stopPermissions...); authorizeErr != nil {
+			if authorizeErr := s.authorize(ctx, *requester, policies.StopPermissions...); authorizeErr != nil {
 				return backup.Snapshot{}, authorizeErr
 			}
 		}
@@ -649,6 +650,24 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 		return snapshot, errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 	}
 	return snapshot, nil
+}
+
+func (s *Service) projectFiles(ctx context.Context, dockerClient *client.Client, project types.Project, files bool) ([]byte, bool, []mount.Mount, error) {
+	if !files {
+		return nil, false, nil, nil
+	}
+	if err := s.deps.SoleDirectory(ctx, project); err != nil {
+		return nil, false, nil, err
+	}
+	env, _, externalEnv, err := projects.ReadExternalEnvFile(ctx, project.Path)
+	if err != nil {
+		return nil, false, nil, fmt.Errorf("read the .env file of project %s: %w", project.Name, err)
+	}
+	projectMounts, err := projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: project.Path, Target: path.Join(snapshotRoot, "project")})
+	if err != nil {
+		return nil, false, nil, err
+	}
+	return env, externalEnv, projectMounts, nil
 }
 
 func (s *Service) volumeIdentities(ctx context.Context, names []string) (map[string]string, error) {
@@ -734,7 +753,7 @@ func (s *Service) checkPlanVolumes(ctx context.Context, project types.Project, p
 	}
 	same := len(current) == len(p.Volumes) && !slices.ContainsFunc(current, func(volume types.ProjectVolume) bool {
 		return !slices.ContainsFunc(p.Volumes, func(planned types.ProjectVolume) bool {
-			return planned.Key == volume.Key && planned.Name == volume.Name && planned.Kind == volume.Kind
+			return planned.Key == volume.Key && planned.Name == volume.Name && planned.Kind == volume.Kind && (!planned.Included || volume.Included)
 		})
 	})
 	if !same {
@@ -760,7 +779,7 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 	if manifest.ExternalEnv {
 		files[envName] = env
 	}
-	name := "arcane-project-backup-" + uuid.New().String()
+	name := stagingPrefix + uuid.New().String()
 	if _, createErr := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name, Labels: volumes.Labels()}); createErr != nil {
 		return "", nil, fmt.Errorf("create project backup manifest volume: %w", createErr)
 	}
@@ -839,7 +858,29 @@ func (s *Service) ReconcileInterruptedBackups(ctx context.Context, protectedIDs 
 	if err := query.Updates(map[string]any{"status": types.VolumeBackupStatusFailed, "error": "Backup interrupted by Arcane restart"}).Error; err != nil {
 		return err
 	}
+	s.removeStagingVolumes(ctx)
 	return s.watch.WatchAccepted(ctx)
+}
+
+func (s *Service) removeStagingVolumes(ctx context.Context) {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to connect to Docker to remove project backup staging volumes", "error", err)
+		return
+	}
+	staged, err := dockerClient.VolumeList(ctx, client.VolumeListOptions{Filters: make(client.Filters).Add("label", volumes.ContainerLabel).Add("dangling", "true")})
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to list project backup staging volumes", "error", err)
+		return
+	}
+	for _, volume := range staged.Items {
+		if !strings.HasPrefix(volume.Name, stagingPrefix) {
+			continue
+		}
+		if _, removeErr := dockerClient.VolumeRemove(ctx, volume.Name, client.VolumeRemoveOptions{}); removeErr != nil {
+			slog.WarnContext(ctx, "Failed to remove a project backup staging volume", "volume", volume.Name, "error", removeErr)
+		}
+	}
 }
 
 func (s *Service) List(ctx context.Context, projectID string, params pagination.Params) ([]types.ProjectBackup, pagination.Response, error) {
@@ -980,7 +1021,7 @@ func (s *Service) backUpScheduled(ctx context.Context, run policies.ScheduledBac
 		return err
 	}
 	defer release(context.WithoutCancel(ctx), admitted.leases)
-	err = s.backUpAdmitted(ctx, admitted)
+	err = s.backUpAdmitted(ctx, admitted, run.Requester)
 	run.Retain(ctx)
 	return err
 }
@@ -1016,22 +1057,39 @@ func (s *Service) admitScheduled(
 		}
 		leases = append(leases, lease)
 	}
-	return admittedRun{policyID: policyID, project: project, plan: p, leases: leases}, nil
+	request, err = read(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	current, err := s.resolvePlan(ctx, project, request)
+	if err != nil {
+		return fail(err)
+	}
+	if !slices.Equal(current.volumeNames(), p.volumeNames()) {
+		return fail(common.Classify(common.ErrConflict, errors.New("the backup policy's volumes changed while the backup waited for another backup")))
+	}
+	return admittedRun{policyID: policyID, project: project, plan: current, leases: leases}, nil
 }
 
-func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun) (err error) {
+func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun, requester *types.BackupRequester) (err error) {
 	p := admitted.plan
-	entry := &ProjectBackup{
-		BaseModel:       database.BaseModel{ID: uuid.New().String(), CreatedAt: time.Now()},
-		ProjectID:       admitted.project.ID,
-		ProjectName:     admitted.project.Name,
-		ComposeName:     admitted.project.ComposeName,
-		Status:          types.VolumeBackupStatusRunning,
-		Trigger:         types.VolumeBackupTriggerScheduled,
-		Destination:     backup.Destination(backup.DestinationOptions{Local: p.LocalEnabled, Remote: p.S3Enabled}),
-		S3DestinationID: p.S3DestinationID,
-		PolicyID:        admitted.policyID,
-		Volumes:         backupVolumes(p.Volumes),
+	entry := &ProjectBackup{ //exhaustruct:enforce
+		BaseModel:         database.BaseModel{ID: p.BackupID, CreatedAt: time.Now(), UpdatedAt: nil},
+		CompletedAt:       nil,
+		ProjectID:         admitted.project.ID,
+		ProjectName:       admitted.project.Name,
+		ComposeName:       admitted.project.ComposeName,
+		Status:            types.VolumeBackupStatusRunning,
+		Trigger:           types.VolumeBackupTriggerScheduled,
+		Destination:       backup.Destination(backup.DestinationOptions{Local: p.LocalEnabled, Remote: p.S3Enabled}),
+		LocalSnapshotID:   "",
+		RemoteSnapshotID:  "",
+		S3DestinationID:   p.S3DestinationID,
+		PolicyID:          admitted.policyID,
+		Error:             "",
+		Volumes:           backupVolumes(p.Volumes),
+		Size:              0,
+		StoppedContainers: false,
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return fmt.Errorf("failed to save project backup: %w", createErr)
@@ -1041,11 +1099,10 @@ func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun) (err
 			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
 		}
 	}()
-	p.BackupID = entry.ID
 	if recordErr := s.record(ctx, p.ProjectID, checkpoint{Plan: p}); recordErr != nil {
 		return recordErr
 	}
-	localChecked, executeErr := s.execute(ctx, entry, p, nil)
+	localChecked, executeErr := s.execute(ctx, entry, p, requester)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -1069,7 +1126,11 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 	if days <= 0 {
 		return nil
 	}
-	expired, err := s.expiredUnmanaged(ctx, types.UnmanagedBackupSweep{Now: time.Now(), Retention: time.Duration(days) * 24 * time.Hour})
+	sweep := types.UnmanagedBackupSweep{
+		Now:       time.Now(),
+		Retention: time.Duration(days) * 24 * time.Hour,
+	}
+	expired, err := s.expiredUnmanaged(ctx, sweep)
 	if err != nil {
 		return err
 	}
@@ -1082,7 +1143,7 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 		byProject[entry.ProjectID] = append(byProject[entry.ProjectID], entry)
 	}
 	var pruneErr error
-	var held []*ProjectBackup
+	var held []string
 	var releases []func(context.Context)
 	defer func() {
 		for _, releaseBackups := range releases {
@@ -1098,9 +1159,26 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 			continue
 		}
 		releases = append(releases, releaseBackups)
-		held = append(held, group...)
+		for _, entry := range group {
+			held = append(held, entry.ID)
+		}
 	}
-	return errors.Join(pruneErr, s.removeAll(ctx, held))
+	if len(held) == 0 {
+		return pruneErr
+	}
+	confirmed, err := s.expiredUnmanaged(ctx, types.UnmanagedBackupSweep{
+		Now:       sweep.Now,
+		Within:    held,
+		Retention: sweep.Retention,
+	})
+	if err != nil {
+		return errors.Join(pruneErr, err)
+	}
+	confirmedEntries, err := s.backupsByID(ctx, confirmed)
+	if err != nil {
+		return errors.Join(pruneErr, err)
+	}
+	return errors.Join(pruneErr, s.removeAll(ctx, confirmedEntries))
 }
 
 func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
@@ -1446,7 +1524,7 @@ func (p restorePlan) extraPermissions() []string {
 	permissions := kit.Ternary(p.Files, []string{authz.PermProjectsUpdate}, nil)
 	switch {
 	case p.MayStop:
-		return append(permissions, stopPermissions...)
+		return append(permissions, policies.StopPermissions...)
 	case kit.FromPtr(p.Redeploy):
 		return append(permissions, authz.PermProjectsDeploy)
 	}
@@ -1491,6 +1569,11 @@ func (s *Service) runRestore(ctx context.Context, t flow.Task) (any, error) {
 	p, err := s.prepareRestore(ctx, input.Plan)
 	if err != nil {
 		return nil, err
+	}
+	if len(p.Create) > 0 {
+		if authorizeErr := s.authorize(ctx, input.Requester, authz.PermVolumesCreate); authorizeErr != nil {
+			return nil, authorizeErr
+		}
 	}
 	if recordErr := s.record(ctx, p.ID, p); recordErr != nil {
 		return nil, recordErr
@@ -1870,7 +1953,7 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return "", fmt.Errorf("failed to save the safety backup: %w", createErr)
 	}
-	safety := plan{BackupID: entry.ID, ProjectID: project.ID, Volumes: captured, LocalEnabled: true}
+	safety := plan{BackupID: entry.ID, ProjectID: project.ID, Volumes: captured, LocalEnabled: true, Files: p.Files}
 	err = s.deps.Repository.WriteRunSnapshots(ctx, dockerClient, snapshotRun(entry, safety), backup.SnapshotWrite{
 		Capture: func(ctx context.Context, repository backup.Repository, password string) (backup.Snapshot, error) {
 			return s.snapshot(ctx, entry, safety, nil, repository, password)
@@ -1959,8 +2042,12 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 	if err != nil {
 		return err
 	}
+	envPath := filepath.Join(opts.ProjectPath, projects.EffectiveEnvFileName)
 	var projectMounts []mount.Mount
+	var liveEnv string
+	var liveErr error
 	if opts.ProjectPath != "" {
+		liveEnv, liveErr = filepath.EvalSymlinks(envPath)
 		projectMounts, err = projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: opts.ProjectPath, Target: path.Join(restoreRoot, "project"), Writable: true})
 		if err != nil {
 			return err
@@ -1974,8 +2061,6 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 	if err != nil {
 		return err
 	}
-	envPath := filepath.Join(opts.ProjectPath, projects.EffectiveEnvFileName)
-	liveEnv, liveErr := filepath.EvalSymlinks(envPath)
 	if restoreErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.id, target, options); restoreErr != nil {
 		return fmt.Errorf("failed to restore the project snapshot: %w", restoreErr)
 	}
@@ -1999,6 +2084,9 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 		return s.restoreEnv(ctx, projectsRoot, opts, "", env)
 	}
 	restoredEnv, err := filepath.EvalSymlinks(envPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s.restoreEnv(ctx, projectsRoot, types.ProjectBackupRestore{ProjectPath: opts.ProjectPath, OwnEnv: true}, "", env)
+	}
 	if err != nil {
 		return fmt.Errorf("resolve the restored .env file: %w", err)
 	}

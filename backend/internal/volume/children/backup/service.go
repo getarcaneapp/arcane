@@ -1195,7 +1195,9 @@ func (s *Service) ReconcileBackup(ctx context.Context, previous types.SchedulerR
 		}
 		defer lease.Release(ctx)
 		if resumeErr := s.resumeBackup(ctx, previous, entry, checkpoint); resumeErr != nil {
-			return outcome, resumeErr
+			return outcome, backup.SettleFailure(ctx, resumeErr, func(ctx context.Context, message string) error {
+				return s.failRunning(ctx, entry.ID, message)
+			})
 		}
 	}
 	target.Status = types.RunStatusSucceeded

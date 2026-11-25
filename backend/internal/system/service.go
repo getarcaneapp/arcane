@@ -89,6 +89,7 @@ type (
 		ProjectService     *project.ProjectService
 		RegistryService    *registry.ContainerRegistryService
 		BackupEngine       *backup.Engine
+		BackupRepository   *backup.VolumeRepository
 		S3Destinations     *s3.S3DestinationService
 		RecoveryKeys       *backup.RecoveryKeyStore
 		Actors             *francis.Runtime
@@ -169,6 +170,7 @@ func NewSystemService(p SystemServiceParams) *SystemService {
 		Docker:                p.DockerService,
 		Volumes:               p.VolumeService,
 		Engine:                p.BackupEngine,
+		Repository:            p.BackupRepository,
 		S3Destinations:        p.S3Destinations,
 		Activity:              p.ActivityService,
 		Settings:              p.SettingsService,

@@ -114,6 +114,7 @@ type (
 		Docker                *dockerInternal.DockerClientService
 		Volumes               *volume.VolumeService
 		Engine                *backup.Engine
+		Repository            *backup.VolumeRepository
 		S3Destinations        *s3.S3DestinationService
 		Activity              *activity.ActivityService
 		Settings              *settings.SettingsService
@@ -132,6 +133,7 @@ type (
 		dockerService         *dockerInternal.DockerClientService
 		volumeService         *volume.VolumeService
 		engine                *backup.Engine
+		repository            *backup.VolumeRepository
 		s3Destinations        *s3.S3DestinationService
 		activityService       *activity.ActivityService
 		settingsService       *settings.SettingsService
@@ -195,6 +197,7 @@ func NewService(deps Dependencies) *Service {
 		dockerService:         deps.Docker,
 		volumeService:         deps.Volumes,
 		engine:                deps.Engine,
+		repository:            deps.Repository,
 		s3Destinations:        deps.S3Destinations,
 		activityService:       deps.Activity,
 		settingsService:       deps.Settings,
@@ -433,7 +436,7 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	}
 	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
 		Class:           common.ErrValidation,
-		S3Destinations:  nil,
+		S3Destinations:  s.s3Destinations,
 		Domain:          "system",
 		Destination:     string(destination),
 		S3DestinationID: s3DestinationID,
@@ -1309,14 +1312,19 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, runningVolumeBackupsErr
 	}
-	if rekeyErr := s.rekeyRepositories(ctx, previous, recoveryKey); rekeyErr != nil {
+	held, releaseRepository, err := s.repository.HoldLocal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseRepository()
+	if rekeyErr := s.rekeyRepositories(held, previous, recoveryKey); rekeyErr != nil {
 		return nil, rekeyErr
 	}
 	rollback := func(cause error) error {
 		if previous == "" {
 			return cause
 		}
-		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(ctx), recoveryKey, previous))
+		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(held), recoveryKey, previous))
 	}
 	runningVolumeBackups, countErr = s.store.CountRunningVolumeBackups(ctx)
 	if countErr != nil {
@@ -1325,7 +1333,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, rollback(runningVolumeBackupsErr)
 	}
-	if setErr := s.recoveryKeys.Set(ctx, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
+	if setErr := s.recoveryKeys.Set(held, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
 		return nil, rollback(setErr)
 	}
 	return &types.SystemBackupRecoveryKeyStatus{Configured: true}, nil

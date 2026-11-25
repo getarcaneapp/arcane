@@ -185,6 +185,7 @@ type (
 
 	Policies struct {
 		db *database.DB
+		sync.Mutex
 	}
 
 	RemoteCheck struct {
@@ -286,8 +287,6 @@ const (
 	localVolumeRepositoryID  = "volumes:local"
 	legacyVolumePasswordSalt = "arcane-volume-backups:"
 	legacyEncryptionKey      = "arcane-dev-key-32-characters!!!"
-
-	defaultPolicySchedule = "0 2 * * *"
 
 	containerRecoveryTimeout  = 30 * time.Second
 	containerRecoveryInterval = 500 * time.Millisecond
@@ -1226,12 +1225,14 @@ func (p *Policies) Subjects(ctx context.Context, kind string) ([]string, error) 
 }
 
 func (p *Policies) Remove(ctx context.Context, kind, subjectID string) ([]Policy, error) {
+	p.Lock()
+	defer p.Unlock()
 	policies, err := p.List(ctx, kind, subjectID)
 	if err != nil || len(policies) == 0 {
 		return nil, err
 	}
 	if deleteErr := p.db.WithContext(ctx).Where("subject_kind = ? AND subject_id = ?", kind, subjectID).Delete(&Policy{}).Error; deleteErr != nil {
-		return nil, fmt.Errorf("failed to delete %s backup policies: %w", kind, deleteErr)
+		return policies, fmt.Errorf("failed to delete %s backup policies: %w", kind, deleteErr)
 	}
 	return policies, nil
 }
@@ -1266,7 +1267,12 @@ func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check Remote
 	case err != nil:
 		return false, err
 	case !disabled && errors.Is(remoteErr, ErrRemoteRepositoryMissing):
-		return false, remoteErr
+		current, getErr := p.Get(ctx, policy.SubjectKind, policy.SubjectID, policy.ID)
+		if getErr != nil || current == nil || current.S3Enabled {
+			return false, cmp.Or(getErr, remoteErr)
+		}
+		*policy = *current
+		return false, nil
 	case !disabled:
 		return false, nil
 	}
@@ -1277,11 +1283,11 @@ func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check Remote
 	return true, nil
 }
 
-func (p *Policies) Schedule(policyID string) func(context.Context) string {
+func (p *Policies) Schedule(policyID, fallback string) func(context.Context) string {
 	return func(ctx context.Context) string {
 		var policy Policy
 		if err := p.db.WithContext(ctx).Where("id = ?", policyID).First(&policy).Error; err != nil {
-			return defaultPolicySchedule
+			return fallback
 		}
 		return policy.Schedule
 	}
@@ -1296,9 +1302,11 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 		var retained int64
 		for _, table := range req.Tables {
 			var count int64
-			if countRetainedSnapshotsErr := db.WithContext(ctx).Table(table).
-				Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID).
-				Count(&count).Error; countRetainedSnapshotsErr != nil {
+			query := db.WithContext(ctx).Table(table).Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID)
+			if table == "volume_backups" {
+				query = query.Where("COALESCE(remote_instance_id, '') = ''")
+			}
+			if countRetainedSnapshotsErr := query.Count(&count).Error; countRetainedSnapshotsErr != nil {
 				return countRetainedSnapshotsErr
 			}
 			retained += count
@@ -1328,7 +1336,16 @@ func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string,
 		}
 		expired = append(expired, ids...)
 	}
-	return expired, nil
+	var offsite []string
+	if err := db.WithContext(ctx).
+		Table(table).
+		Where("policy_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", policyID).
+		Order("created_at DESC").
+		Limit(keep).
+		Pluck("id", &offsite).Error; err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(expired, func(id string) bool { return slices.Contains(offsite, id) }), nil
 }
 
 // ExpiredUnmanagedRunIDs updates orphan marks and returns a random batch of expired runs, so runs that keep failing to
@@ -1408,10 +1425,8 @@ func ResolveDestination(ctx context.Context, req DestinationRequest) (Destinatio
 	if s3DestinationID == "" {
 		return DestinationOptions{}, "", common.Classify(req.Class, fmt.Errorf("select an S3 destination for the %s backup", req.Domain))
 	}
-	if req.S3Destinations != nil {
-		if _, err := req.S3Destinations.Configuration(ctx, s3DestinationID); err != nil {
-			return DestinationOptions{}, "", fmt.Errorf("load S3 destination: %w", err)
-		}
+	if _, err := req.S3Destinations.Configuration(ctx, s3DestinationID); err != nil {
+		return DestinationOptions{}, "", fmt.Errorf("load S3 destination: %w", err)
 	}
 	return selected, s3DestinationID, nil
 }
