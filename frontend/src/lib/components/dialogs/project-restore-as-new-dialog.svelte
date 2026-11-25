@@ -75,7 +75,7 @@
 						name: name.trim(),
 						volumes: selectedVolumes.map((volume) => volume.key),
 						start: start && canStart,
-						shareExternalVolumes: sharesExternalVolumes && shareExternalVolumes
+						shareExternalVolumes
 					},
 					environmentId
 				)
@@ -126,16 +126,14 @@
 				disabled={restoring}
 			/>
 		</div>
-		{#if sharesExternalVolumes}
-			<LabeledSwitch
-				id="project-restore-as-new-share-external"
-				checked={shareExternalVolumes}
-				label={m.share_external_volumes()}
-				description={m.share_external_volumes_description()}
-				disabled={restoring}
-				onCheckedChange={(next) => (shareExternalVolumes = next)}
-			/>
-		{/if}
+		<LabeledSwitch
+			id="project-restore-as-new-share-external"
+			checked={shareExternalVolumes}
+			label={m.share_original_project_data()}
+			description={m.share_original_project_data_description()}
+			disabled={restoring}
+			onCheckedChange={(next) => (shareExternalVolumes = next)}
+		/>
 		<LabeledSwitch
 			id="project-restore-as-new-start"
 			checked={start && canStart}

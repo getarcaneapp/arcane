@@ -391,7 +391,7 @@ func (s *Service) prepareBackup(
 
 func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup, err error) error {
 	// A shutdown-cancelled workflow task is handed back with its row still running; any other cancel records the failure.
-	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
+	if backup.HandedBack(ctx) {
 		return ctx.Err()
 	}
 	if err == nil && entry.Status != types.VolumeBackupStatusSucceeded {
