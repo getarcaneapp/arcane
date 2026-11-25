@@ -18,6 +18,7 @@
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import ProjectVolumeChecklist from '#lib/components/project-volume-checklist.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -29,6 +30,7 @@
 	import {
 		AddIcon,
 		AlertIcon,
+		BackupIcon,
 		ClockIcon,
 		CopyIcon,
 		DownloadIcon,
@@ -345,7 +347,7 @@
 			size: SizeCell
 		}).map((column) => ({ ...column, sortable: false })),
 		{ accessorKey: 'volumes', title: m.resource_volumes_cap(), cell: VolumesCell },
-		{ accessorKey: 'error', title: m.common_error(), cell: ErrorCell, hidden: true }
+		{ accessorKey: 'error', title: m.common_error(), cell: ErrorCell }
 	] satisfies ColumnSpec<ProjectBackup>[];
 
 	// Project backups have no management type.
@@ -380,7 +382,7 @@
 {/snippet}
 
 {#snippet ErrorCell({ item }: { item: ProjectBackup })}
-	<span class="line-clamp-2 max-w-80 text-xs text-destructive">{item.error || '-'}</span>
+	<span class="line-clamp-2 max-w-48 text-xs break-words text-destructive" title={item.error}>{item.error || '-'}</span>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ProjectBackup })}
@@ -493,11 +495,22 @@
 				icon: InfoIcon,
 				iconVariant: 'gray',
 				show: mobileFieldVisibility['size'] ?? true
+			},
+			{
+				label: m.common_error(),
+				getValue: (item) => item.error,
+				icon: AlertIcon,
+				iconVariant: 'red',
+				show: Boolean(item.error)
 			}
 		]}
 		footer={{ label: m.common_created(), getValue: (item) => formatDateTimeShort(item.createdAt), icon: ClockIcon }}
 		rowActions={RowActions}
 	/>
+{/snippet}
+
+{#snippet BackupsEmptyState()}
+	<EmptyState icon={BackupIcon} title={m.system_backups_empty_title()} description={m.project_backups_empty_description()} />
 {/snippet}
 
 <div class="min-w-0 space-y-4" data-testid="project-backups-panel">
@@ -558,6 +571,7 @@
 		{mobileFields}
 		rowActions={RowActions}
 		mobileCard={BackupMobileCard}
+		emptyState={BackupsEmptyState}
 		onRetry={() => backupsQuery.refetch()}
 		refreshError={backupsQuery.error}
 	/>
