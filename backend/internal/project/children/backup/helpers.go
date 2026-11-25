@@ -88,6 +88,9 @@ func snapshotTags(entry *ProjectBackup) []string {
 	if entry.PolicyID != "" {
 		tags = append(tags, policyTagPrefix+entry.PolicyID)
 	}
+	if !entry.Files {
+		tags = append(tags, volumesOnlyTag)
+	}
 	return tags
 }
 

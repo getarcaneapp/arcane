@@ -195,6 +195,7 @@ const (
 	projectTagPrefix = "arcane-project:"
 	triggerTagPrefix = "arcane-trigger:"
 	policyTagPrefix  = "arcane-policy:"
+	volumesOnlyTag   = "arcane-volumes-only"
 	interruptedError = "Backup interrupted by Arcane restart"
 )
 
@@ -1409,7 +1410,7 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 			Volumes:           backupVolumes(manifest.Volumes),
 			Size:              largest.snapshot.Summary.TotalBytesProcessed,
 			StoppedContainers: false,
-			Files:             true,
+			Files:             !slices.Contains(first.snapshot.Tags, volumesOnlyTag),
 		}
 		createErr := s.deps.DB.WithContext(ctx).Create(&entry).Error
 		releaseBackups(ctx)
