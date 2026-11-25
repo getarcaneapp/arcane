@@ -214,6 +214,30 @@ test.describe('All environments', () => {
 		await expect(alert).toHaveCount(0);
 	});
 
+	test('the build history popup warns when an agent fails and no builds are returned', async ({
+		page
+	}) => {
+		await mockRemoteEnvironment(page);
+		await page.route(
+			new RegExp(`/api/agents/0(?:,|%2C)${remoteEnvironment.id}/images/builds(?:\\?.*)?$`),
+			(route) =>
+				route.fulfill({
+					json: {
+						...paginated([]),
+						failedEnvironments: [{ environment: remoteEnvironment, message: 'remote unavailable' }]
+					}
+				})
+		);
+
+		await page.goto('/images/builds');
+		await page.getByRole('button', { name: 'Build History', exact: true }).click();
+		const menu = page.getByRole('menu');
+		await expect(menu.getByRole('alert')).toContainText(
+			`${remoteEnvironment.name} (remote unavailable)`
+		);
+		await expect(menu.getByText('No builds yet', { exact: true })).toHaveCount(0);
+	});
+
 	test('page-wide confirmations count environments without listing them', async ({ page }) => {
 		await mockRemoteEnvironment(page);
 

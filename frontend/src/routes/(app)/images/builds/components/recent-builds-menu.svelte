@@ -3,8 +3,9 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { ClockIcon } from '#lib/icons/index.js';
+	import { AlertIcon, ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { imageBuildListQuery } from '#lib/query/images.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -35,11 +36,14 @@
 	} satisfies Record<ImageBuildStatus, string>;
 
 	let open = $state(false);
+	const environments = $derived(readableEnvironments('images:list'));
 	const historyQuery = createQuery(() => ({
-		...imageBuildListQuery(environmentStore.shownKey, readableEnvironments('images:list'), requestOptions),
+		...imageBuildListQuery(environmentStore.shownKey, environments, requestOptions),
 		enabled: open
 	}));
 	const builds = $derived(historyQuery.data?.data ?? []);
+	const failedEnvironments = $derived(historyQuery.data?.failedEnvironments ?? []);
+	const excludedCount = $derived(historyQuery.data?.excludedEnvironments?.length ?? 0);
 </script>
 
 <DropdownMenu.Root bind:open>
@@ -62,11 +66,33 @@
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content align="end" class="w-80">
 		<DropdownMenu.Label>{m.build_history()}</DropdownMenu.Label>
+		{#if failedEnvironments.length > 0 || excludedCount > 0}
+			<div class="space-y-1 px-1 pb-1 wrap-anywhere">
+				{#if failedEnvironments.length > 0}
+					<Alert.Root
+						variant="warning-subtle"
+						size="sm"
+						icon={AlertIcon}
+						description={m.all_environments_unavailable({
+							environments: failedEnvironments.map(({ environment, message }) => `${environment.name} (${message})`).join(', ')
+						})}
+					/>
+				{/if}
+				{#if excludedCount > 0}
+					<Alert.Root
+						variant="warning-subtle"
+						size="sm"
+						icon={AlertIcon}
+						description={m.all_environments_excluded({ count: excludedCount, limit: environments.length - excludedCount })}
+					/>
+				{/if}
+			</div>
+		{/if}
 		{#if historyQuery.isPending}
 			<p class="px-2 py-1.5 text-sm text-muted-foreground" role="status">{m.common_loading()}</p>
 		{:else if historyQuery.error}
 			<p class="px-2 py-1.5 text-sm text-muted-foreground" role="status">{extractApiErrorMessage(historyQuery.error)}</p>
-		{:else if builds.length === 0}
+		{:else if builds.length === 0 && failedEnvironments.length === 0 && excludedCount === 0}
 			<p class="px-2 py-1.5 text-sm text-muted-foreground" role="status">{m.image_build_history_empty_title()}</p>
 		{:else}
 			{#each builds as build (`${build.environmentId}:${build.id}`)}
