@@ -107,19 +107,18 @@ func (s *Service) createBackupTempContainerWithMount(ctx context.Context, backup
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create backup temp container: %w", err)
 	}
-	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
-	}); containerStartErr != nil {
-		_, _ = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
-		})
-		return "", nil, fmt.Errorf("failed to start backup temp container: %w", containerStartErr)
-	}
-	return resp.ID, func() {
+	remove := func() {
 		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
-	}, nil
+	}
+	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	}); containerStartErr != nil {
+		remove()
+		return "", nil, fmt.Errorf("failed to start backup temp container: %w", containerStartErr)
+	}
+	return resp.ID, remove, nil
 }
 
 func (s *Service) createBackupTempContainer(ctx context.Context, target string, readOnly bool) (string, func(), error) {
