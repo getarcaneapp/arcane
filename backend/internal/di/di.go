@@ -2,7 +2,6 @@ package di
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"os"
 
@@ -14,7 +13,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/apns"
-	"getarcane.dev/arcane/v3/internal/appimages"
 	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/build"
@@ -23,10 +21,8 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
 	"getarcane.dev/arcane/v3/internal/docker"
-	"getarcane.dev/arcane/v3/internal/enrollment"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
-	"getarcane.dev/arcane/v3/internal/federated"
 	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
 	"getarcane.dev/arcane/v3/internal/health"
@@ -37,8 +33,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/notification"
-	"getarcane.dev/arcane/v3/internal/oidc"
-	"getarcane.dev/arcane/v3/internal/passkey"
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/port"
 	"getarcane.dev/arcane/v3/internal/project"
@@ -93,11 +87,8 @@ var (
 					RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
 				})
 			},
-			federated.NewFederatedCredentialService,
 			kv.NewKVService,
-			appimages.NewApplicationImagesService,
 			session.NewSessionService,
-			passkey.NewPasskeyService,
 			environment.NewLister,
 			fx.Annotate(environment.NewRemoteTransport, fx.As(fx.Self()), fx.As(new(environment.RemoteProxy))),
 			func(roles *role.RoleService, tokens *auth.TokenCache) environment.UserInvalidator {
@@ -122,9 +113,7 @@ var (
 			network.NewNetworkService,
 			port.NewPortService,
 			swarm.NewSwarmService,
-			enrollment.NewEnrollmentService,
 			template.NewTemplateService,
-			oidc.NewOidcService,
 			fx.Annotate(provideSystemService, fx.As(fx.Self()), fx.As(new(updater.SelfUpgrader))),
 			diagnostics.NewDiagnosticsService,
 			provideWithWorkflows(gitops.NewGitOpsSyncService),
@@ -138,17 +127,9 @@ var (
 			settings.NewSettingsSearchService,
 			fx.Annotate(settings.NewSettingsService, fx.OnStop(func(ctx context.Context, service *settings.SettingsService) error { return service.Stop(ctx) })),
 			provideVolumeService,
-			fx.Annotate(webhook.NewWebhookService,
-				fx.OnStart(func(ctx context.Context, service *webhook.WebhookService) error { return service.LoadTokenHashes(ctx) }),
-				fx.OnStop(func(ctx context.Context, service *webhook.WebhookService) {
-					if err := service.DrainActions(ctx); err != nil {
-						slog.WarnContext(ctx, "shutdown proceeding with webhook actions still in flight", "error", err)
-					}
-				}),
-			),
+			webhook.NewWebhookService,
 		),
 		fx.Provide(
-			provideJWKSetManager,
 			provideDockerClientService,
 			func(
 				db *database.DB,
@@ -248,24 +229,15 @@ var (
 		),
 		fx.Provide(
 			event.New,
-			role.New,
-			ldap.New,
-			apikey.New,
-			template.New,
 			gitrepo.New,
 			job.New,
-			environment.New,
 			image.New,
 			container.New,
 			swarm.New,
-			enrollment.New,
 			podman.New,
 			system.New,
 			volume.New,
 			updater.New,
-			webhook.New,
-			apns.New,
-			notification.New,
 			vulnerability.New,
 			provideProjectModule,
 			gitops.New,
@@ -305,13 +277,8 @@ var (
 					localEnvironment.QueueRemoteSync(ctx, "registries", localEnvironment.SyncRegistriesToEnvironment)
 				})
 			},
-			func(service *auth.AuthService, userService *user.UserService, settingsService *settings.SettingsService, passkeyService *passkey.PasskeyService) *auth.Module {
-				return auth.New(service, userService, settingsService, passkeyService.BeginMFAAuthentication)
-			},
-			func(service *user.UserService, tokens *auth.TokenCache, settingsService *settings.SettingsService) *user.Module {
-				return user.New(service, tokens.InvalidateUser, settingsService)
-			},
 		),
+		managerServiceOptions,
 	)
 
 	JobOptions = fx.Options(
@@ -322,7 +289,6 @@ var (
 			scheduler.NewAnalyticsJob,
 			scheduler.NewEventCleanupJob,
 			scheduler.NewPruningVolumeHelperJob,
-			scheduler.NewExpiredSessionsCleanupJob,
 			scheduler.NewScheduledPruneJob,
 			provideFilesystemWatcherJob,
 			fx.Annotate(scheduler.NewVulnerabilityScanJob, fx.ResultTags(`name:"vulnerability-scan"`)),
@@ -334,8 +300,7 @@ var (
 			scheduler.NewGitCloneCleanupJob,
 			scheduler.NewBackupRepositoryPruneJob,
 			fx.Annotate(scheduler.NewUpgradeLogCleanupJob, fx.ResultTags(`name:"upgrade-log-cleanup"`)),
-			scheduler.NewApnsOutboxJob,
-			scheduler.NewLdapSyncJob,
 		),
+		managerJobOptions,
 	)
 )

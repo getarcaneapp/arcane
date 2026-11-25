@@ -42,26 +42,37 @@ type (
 		Settings    *settings.SettingsService
 		Volume      *volume.VolumeService
 		System      *system.SystemService
-		Apns        *apns.ApnsService
 
-		AutoUpdate             *flow.Job `name:"auto-update"`
-		ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
-		DockerClientRefresh    *scheduler.DockerClientRefreshJob
-		Analytics              *scheduler.AnalyticsJob
-		UpgradeLogCleanup      types.SchedulerJob `name:"upgrade-log-cleanup"`
-		EventCleanup           *scheduler.EventCleanupJob
-		PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
+		AutoUpdate            *flow.Job `name:"auto-update"`
+		ImageUpdateWatcher    *scheduler.ImageUpdateWatcher
+		DockerClientRefresh   *scheduler.DockerClientRefreshJob
+		Analytics             *scheduler.AnalyticsJob
+		UpgradeLogCleanup     types.SchedulerJob `name:"upgrade-log-cleanup"`
+		EventCleanup          *scheduler.EventCleanupJob
+		PruningVolumeHelper   *scheduler.PruningVolumeHelperJob
+		ScheduledPrune        *scheduler.ScheduledPruneJob
+		FilesystemWatcher     *scheduler.FilesystemWatcherJob
+		VulnerabilityScan     *flow.Job `name:"vulnerability-scan"`
+		VulnerabilityRisk     *scheduler.VulnerabilityRiskJob
+		AutoPatch             *flow.Job `name:"auto-patch"`
+		AutoHeal              *scheduler.AutoHealJob
+		ActivitySweep         *scheduler.ActivitySweepJob
+		UploadSessionsCleanup *scheduler.UploadSessionsCleanupJob
+		GitCloneCleanup       *scheduler.GitCloneCleanupJob
+		BackupRepositoryPrune *scheduler.BackupRepositoryPruneJob
+	}
+
+	registerManagerJobsParams struct {
+		fx.In
+
+		Lifecycle fx.Lifecycle
+		AppCtx    context.Context
+		Config    *config.Config
+		Scheduler types.JobScheduler
+		Settings  *settings.SettingsService
+		Apns      *apns.ApnsService
+
 		ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
-		ScheduledPrune         *scheduler.ScheduledPruneJob
-		FilesystemWatcher      *scheduler.FilesystemWatcherJob
-		VulnerabilityScan      *flow.Job `name:"vulnerability-scan"`
-		VulnerabilityRisk      *scheduler.VulnerabilityRiskJob
-		AutoPatch              *flow.Job `name:"auto-patch"`
-		AutoHeal               *scheduler.AutoHealJob
-		ActivitySweep          *scheduler.ActivitySweepJob
-		UploadSessionsCleanup  *scheduler.UploadSessionsCleanupJob
-		GitCloneCleanup        *scheduler.GitCloneCleanupJob
-		BackupRepositoryPrune  *scheduler.BackupRepositoryPruneJob
 		ApnsOutbox             *scheduler.ApnsOutboxJob
 		LdapSync               *scheduler.LdapSyncJob
 	}
@@ -109,9 +120,6 @@ type (
 		VulnerabilityRisk  *scheduler.VulnerabilityRiskJob
 		AutoPatch          *flow.Job
 		AutoHeal           *scheduler.AutoHealJob
-		Apns               *apns.ApnsService
-		ApnsOutbox         *scheduler.ApnsOutboxJob
-		LdapSync           *scheduler.LdapSyncJob
 	}
 
 	settingsChangeSubscriber interface {
@@ -267,9 +275,6 @@ func registerJobs(params registerJobsParams) error {
 	if params.Config.LocalDockerEnabled {
 		jobs = append(jobs, params.PruningVolumeHelper, params.BackupRepositoryPrune)
 	}
-	if !params.Config.AgentEnabled {
-		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync)
-	}
 	for _, job := range jobs {
 		if err := params.Scheduler.RegisterJob(job); err != nil {
 			return err
@@ -300,13 +305,40 @@ func registerJobs(params registerJobsParams) error {
 		VulnerabilityRisk:  params.VulnerabilityRisk,
 		AutoPatch:          params.AutoPatch,
 		AutoHeal:           params.AutoHeal,
-		Apns:               params.Apns,
-		ApnsOutbox:         params.ApnsOutbox,
-		LdapSync:           params.LdapSync,
 	}); err != nil {
 		return err
 	}
 	return nil
+}
+
+func registerManagerJobs(params registerManagerJobsParams) error {
+	for _, job := range []types.SchedulerJob{params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync} {
+		if err := params.Scheduler.RegisterJob(job); err != nil {
+			return err
+		}
+	}
+	unsubAPNs := params.Settings.SubscribeSettingsChanges([]string{"apnsEnabled"}, func(updates []types.SettingUpdate) {
+		params.Apns.ApplyEnabledUpdates(params.AppCtx, updates, func() error {
+			return params.Scheduler.AddJob(params.AppCtx, params.ApnsOutbox)
+		})
+	})
+	unsubLDAP := params.Settings.SubscribeSettingsChanges([]string{"ldapEnabled", "ldapSyncInterval"}, rescheduleJob(params.AppCtx, params.Scheduler, params.LdapSync))
+	params.Lifecycle.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			unsubLDAP()
+			unsubAPNs()
+			return nil
+		},
+	})
+	return nil
+}
+
+func rescheduleJob(ctx context.Context, jobScheduler settingsEffectsScheduler, schedulerJob types.SchedulerJob) func([]types.SettingUpdate) {
+	return func(_ []types.SettingUpdate) {
+		if err := jobScheduler.AddJob(ctx, schedulerJob); err != nil {
+			slog.WarnContext(ctx, "Failed to reschedule job", "job", schedulerJob.Name(), "error", err)
+		}
+	}
 }
 
 func registerDynamicJobs(params dynamicJobsParams) {
@@ -332,11 +364,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 		unsubscribes = append(unsubscribes, params.Settings.SubscribeSettingsChanges(keys, callback))
 	}
 	rescheduleOn := func(keys []string, job types.SchedulerJob) {
-		subscribe(keys, func(_ []types.SettingUpdate) {
-			if err := params.Scheduler.AddJob(params.LifecycleCtx, job); err != nil {
-				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule job", "job", job.Name(), "error", err)
-			}
-		})
+		subscribe(keys, rescheduleJob(params.LifecycleCtx, params.Scheduler, job))
 	}
 	subscribe([]string{"pollingEnabled", "pollingInterval"}, func(_ []types.SettingUpdate) {
 		params.ImageUpdateWatcher.RefreshSchedule()
@@ -345,15 +373,6 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule auto-update job", "error", err)
 		}
 	})
-
-	if !params.Config.AgentEnabled {
-		subscribe([]string{"apnsEnabled"}, func(updates []types.SettingUpdate) {
-			params.Apns.ApplyEnabledUpdates(params.LifecycleCtx, updates, func() error {
-				return params.Scheduler.AddJob(params.LifecycleCtx, params.ApnsOutbox)
-			})
-		})
-		rescheduleOn([]string{"ldapEnabled", "ldapSyncInterval"}, params.LdapSync)
-	}
 
 	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)
 

@@ -3,6 +3,7 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
@@ -25,10 +26,15 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import type { SettingsStatCard } from '#lib/layouts/types.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { diagnosticsService } from '#lib/services/diagnostics-service.js';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { Diagnostics, GoroutineLeakReport, PprofProfile } from '#lib/types/system.js';
 	import { cn } from '#lib/utils.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { downloadBlob } from '#lib/utils/browser-download.js';
+	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { formatTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { createDiagnosticsWebSocket, type DiagnosticsWebSocket } from '#lib/utils/ws.js';
@@ -220,29 +226,79 @@
 		if (!ws?.refresh()) error = m.disconnected();
 	}
 
+	const DIAGNOSTICS_PROFILING_CAPABILITY = 'diagnostics-profiling-v1';
+
+	let selectedProfileEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
+	const profileAgents = $derived(
+		environmentStore.available.filter((env) => env.id !== LOCAL_DOCKER_ENVIRONMENT_ID && isEnvironmentOnline(env))
+	);
+	const profileEnvironments = $derived([{ id: LOCAL_DOCKER_ENVIRONMENT_ID, name: m.manager() }, ...profileAgents]);
+	const profileEnvId = $derived(
+		profileAgents.some((env) => env.id === selectedProfileEnvId) ? selectedProfileEnvId : LOCAL_DOCKER_ENVIRONMENT_ID
+	);
+	const selectedProfileEnv = $derived(profileAgents.find((env) => env.id === profileEnvId));
+	const selectedProfileEnvSupportsProfiling = $derived(
+		profileEnvId === LOCAL_DOCKER_ENVIRONMENT_ID ||
+			(selectedProfileEnv?.agentCapabilities?.includes(DIAGNOSTICS_PROFILING_CAPABILITY) ?? false)
+	);
+
+	let dumpEnvId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
 	const dumpOpen = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
 	const dumpText = $state<{ goroutine: string; heap: string }>({ goroutine: '', heap: '' });
 	const dumpLoading = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
+	const dumpControllers: Partial<Record<'goroutine' | 'heap', AbortController>> = {};
+	const dumpRequestId = { goroutine: 0, heap: 0 };
+
+	function abortDumps() {
+		dumpControllers.goroutine?.abort();
+		dumpControllers.heap?.abort();
+		delete dumpControllers.goroutine;
+		delete dumpControllers.heap;
+		dumpRequestId.goroutine++;
+		dumpRequestId.heap++;
+	}
+
+	function resetDumps(envId: string) {
+		abortDumps();
+		dumpEnvId = envId;
+		dumpText.goroutine = '';
+		dumpText.heap = '';
+		dumpLoading.goroutine = false;
+		dumpLoading.heap = false;
+		dumpOpen.goroutine = false;
+		dumpOpen.heap = false;
+	}
+
+	function onProfileEnvChange(nextId: string) {
+		if (nextId === profileEnvId) return;
+		selectedProfileEnvId = nextId;
+		downloadController?.abort();
+		downloadController = null;
+		downloading = null;
+		resetDumps(nextId);
+	}
 
 	async function loadDump(name: 'goroutine' | 'heap') {
+		if (!selectedProfileEnvSupportsProfiling) return;
+		const envId = profileEnvId;
+		dumpControllers[name]?.abort();
+		const controller = new AbortController();
+		dumpControllers[name] = controller;
+		const requestId = ++dumpRequestId[name];
 		dumpLoading[name] = true;
-		try {
-			if (!ws) {
-				dumpText[name] = m.disconnected();
-				return;
-			}
-			const dump = await tryCatch(ws.request({ type: 'dump', name }));
-			if (dump.error !== null) {
-				dumpText[name] = dump.error.message || m.diagnostics_error_dump();
-				return;
-			}
-			dumpText[name] = dump.data.text ?? '';
-		} finally {
-			dumpLoading[name] = false;
+		const dump = await tryCatch(diagnosticsService.getProfileDumpForEnvironment(envId, name, controller.signal));
+		if (requestId !== dumpRequestId[name] || envId !== dumpEnvId) return;
+		delete dumpControllers[name];
+		dumpLoading[name] = false;
+		if (dump.error !== null) {
+			dumpText[name] = extractApiErrorMessage(dump.error) || m.diagnostics_error_dump();
+			return;
 		}
+		dumpText[name] = dump.data;
 	}
 
 	function onDumpToggle(name: 'goroutine' | 'heap', open: boolean) {
+		if (dumpEnvId !== profileEnvId) resetDumps(profileEnvId);
 		dumpOpen[name] = open;
 		if (open && !dumpText[name] && !dumpLoading[name]) loadDump(name);
 	}
@@ -271,22 +327,24 @@
 	}
 
 	let downloading = $state<string | null>(null);
+	let downloadController: AbortController | null = null;
 	const canProfile = $derived(hasPermission('diagnostics:profile', GLOBAL_SCOPE));
 
 	async function download(p: PprofProfile) {
+		if (!selectedProfileEnvSupportsProfiling) return;
+		const controller = new AbortController();
+		downloadController = controller;
 		downloading = p;
-		try {
-			if (!ws) {
-				error = m.disconnected();
-				return;
-			}
-			const downloaded = await tryCatch(ws.downloadProfile(p));
-			if (downloaded.error !== null) {
-				error = downloaded.error.message || m.diagnostics_error_download();
-			}
-		} finally {
-			downloading = null;
+		error = null;
+		const downloaded = await tryCatch(diagnosticsService.getProfileForEnvironment(profileEnvId, p, controller.signal));
+		if (controller !== downloadController) return;
+		downloadController = null;
+		downloading = null;
+		if (downloaded.error !== null) {
+			error = extractApiErrorMessage(downloaded.error) || m.diagnostics_error_download();
+			return;
 		}
+		downloadBlob(downloaded.data, `${p}.${p === 'trace' ? 'out' : 'pprof'}`);
 	}
 
 	onMount(() => {
@@ -295,6 +353,8 @@
 		});
 		ws.connect();
 		return () => {
+			abortDumps();
+			downloadController?.abort();
 			ws?.close();
 			ws = null;
 		};
@@ -526,54 +586,75 @@
 
 						{#if canProfile}
 							<section class="space-y-4 border-t border-border/50 pt-8">
-								{@render sectionHeading(m.diagnostics_section_dumps())}
-								<div class="space-y-2">
-									{#each dumps as d (d.id)}
-										<Collapsible.Root open={dumpOpen[d.id]} onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}>
-											<Collapsible.Trigger>
-												{#snippet child({ props })}
-													<button
-														{...props}
-														type="button"
-														class="flex w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-muted/30"
-													>
-														{d.label}
-														<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[d.id] && '-rotate-180')} />
-													</button>
-												{/snippet}
-											</Collapsible.Trigger>
-											<Collapsible.Content>
-												<CodeBlock.Root size="sm" class="mt-1">
-													<CodeBlock.Content
-														code={dumpLoading[d.id] ? m.common_loading() : dumpText[d.id] || m.diagnostics_dump_empty()}
-														class="max-h-96"
-													/>
-												</CodeBlock.Root>
-											</Collapsible.Content>
-										</Collapsible.Root>
-									{/each}
+								<div class="flex flex-wrap items-end justify-between gap-4">
+									{@render sectionHeading(m.diagnostics_section_dumps())}
+									<div class="w-full max-w-xs">
+										<EnvironmentDestinationSelect
+											bind:value={() => profileEnvId, onProfileEnvChange}
+											environments={profileEnvironments}
+											variant="field"
+										/>
+									</div>
 								</div>
+								{#if selectedProfileEnvSupportsProfiling}
+									<div class="space-y-2">
+										{#each dumps as d (d.id)}
+											<Collapsible.Root
+												open={dumpEnvId === profileEnvId && dumpOpen[d.id]}
+												onOpenChange={(o: boolean) => onDumpToggle(d.id, o)}
+											>
+												<Collapsible.Trigger>
+													{#snippet child({ props })}
+														<button
+															{...props}
+															type="button"
+															class="flex w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-sm font-medium hover:bg-muted/30"
+														>
+															{d.label}
+															<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[d.id] && '-rotate-180')} />
+														</button>
+													{/snippet}
+												</Collapsible.Trigger>
+												<Collapsible.Content>
+													<CodeBlock.Root size="sm" class="mt-1">
+														<CodeBlock.Content
+															code={dumpLoading[d.id] ? m.common_loading() : dumpText[d.id] || m.diagnostics_dump_empty()}
+															class="max-h-96"
+														/>
+													</CodeBlock.Root>
+												</Collapsible.Content>
+											</Collapsible.Root>
+										{/each}
+									</div>
+								{:else}
+									<Alert.Root>
+										<AlertIcon class="size-4" />
+										<Alert.Description>{m.agent_profiling_upgrade_required()}</Alert.Description>
+									</Alert.Root>
+								{/if}
 							</section>
 
-							<section class="space-y-4 border-t border-border/50 pt-8">
-								{@render sectionHeading(m.diagnostics_section_profiles(), m.diagnostics_profiles_hint())}
-								<ul class="divide-y divide-border/40">
-									{#each profiles as p (p.id)}
-										<li class="flex items-center justify-between gap-4 py-2.5">
-											<span class="text-sm font-medium">{p.label}</span>
-											<ArcaneButton
-												action="base"
-												tone="outline"
-												icon={DownloadIcon}
-												customLabel={m.diagnostics_download()}
-												loading={downloading === p.id}
-												disabled={downloading !== null}
-												onclick={() => download(p.id)}
-											/>
-										</li>
-									{/each}
-								</ul>
-							</section>
+							{#if selectedProfileEnvSupportsProfiling}
+								<section class="space-y-4 border-t border-border/50 pt-8">
+									{@render sectionHeading(m.diagnostics_section_profiles(), m.diagnostics_profiles_hint())}
+									<ul class="divide-y divide-border/40">
+										{#each profiles as p (p.id)}
+											<li class="flex items-center justify-between gap-4 py-2.5">
+												<span class="text-sm font-medium">{p.label}</span>
+												<ArcaneButton
+													action="base"
+													tone="outline"
+													icon={DownloadIcon}
+													customLabel={m.diagnostics_download()}
+													loading={downloading === p.id}
+													disabled={downloading !== null}
+													onclick={() => download(p.id)}
+												/>
+											</li>
+										{/each}
+									</ul>
+								</section>
+							{/if}
 						{/if}
 					</div>
 				</Tabs.Content>

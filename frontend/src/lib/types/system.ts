@@ -124,9 +124,7 @@ export interface ActorDiagnostics {
 
 export interface DiagnosticsCommand {
 	id: string;
-	type: 'refresh' | 'dump' | 'leakScan' | 'profile';
-	name?: string;
-	seconds?: number;
+	type: 'refresh' | 'leakScan';
 }
 
 export interface DiagnosticsMessage {
@@ -134,8 +132,6 @@ export interface DiagnosticsMessage {
 	id?: string;
 	snapshot?: Diagnostics;
 	leakReport?: GoroutineLeakReport;
-	text?: string;
-	data?: string;
 	error?: string;
 }
 
