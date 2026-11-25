@@ -203,7 +203,7 @@ func TestBuildEffectiveEnvContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			effective, err := BuildEffectiveEnvContent(tt.gitContent, tt.overrideContent)
+			effective, err := BuildEffectiveEnvContent(tt.gitContent, tt.overrideContent, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, effective)
 

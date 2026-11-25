@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 
-	import ReleaseNotes from '#lib/components/release-notes.svelte';
+	import MarkdownContent from '#lib/components/markdown-content.svelte';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ExternalLinkIcon } from '#lib/icons/index.js';
@@ -75,7 +75,7 @@
 				{/if}
 			</div>
 		{:else if notes?.status === 'found'}
-			<ReleaseNotes markdown={notes.notes ?? ''} />
+			<MarkdownContent markdown={notes.notes ?? ''} />
 		{:else if notes?.status === 'not_found'}
 			<p class="text-sm text-muted-foreground">
 				{targetVersion ? m.image_release_notes_not_found({ version: targetVersion }) : m.image_release_notes_unknown_version()}

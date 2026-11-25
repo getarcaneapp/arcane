@@ -126,7 +126,7 @@ func RewriteComposeProjectName(ctx context.Context, rewrite ComposeProjectNameRe
 	if current, ok := env[consts.ComposeProjectName]; !ok || current == rewrite.Name {
 		return nil
 	}
-	updated, err := BuildEffectiveEnvContent(string(envContent), consts.ComposeProjectName+"="+rewrite.Name+"\n")
+	updated, err := BuildEffectiveEnvContent(string(envContent), consts.ComposeProjectName+"="+rewrite.Name+"\n", nil)
 	if err != nil {
 		return fmt.Errorf("rewrite %s: %w", EffectiveEnvFileName, err)
 	}

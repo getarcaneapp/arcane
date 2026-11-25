@@ -28,6 +28,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
+	"golang.org/x/sync/errgroup"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/cache"
@@ -1541,6 +1542,70 @@ func (s *ContainerService) GetContainerByReference(ctx context.Context, ref stri
 	}
 
 	return new(containerInspect.Container), nil
+}
+
+// GetSwarmTaskHostnames omits failed inspections and returns an empty value for a task with a default hostname.
+func (s *ContainerService) GetSwarmTaskHostnames(ctx context.Context, ids []string) (map[string]string, error) {
+	batchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	hostnames := make(map[string]string, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	var mu sync.Mutex
+	group, groupCtx := errgroup.WithContext(batchCtx)
+	group.SetLimit(8)
+	engineHostname := sync.OnceValue(func() string {
+		info, err := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+			return dockerClient.Info(ctx, client.InfoOptions{})
+		})
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(info.Info.Name)
+	})
+	for _, id := range ids {
+		if groupCtx.Err() != nil {
+			break
+		}
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		group.Go(func() error {
+			if err := groupCtx.Err(); err != nil {
+				return err
+			}
+			inspected, err := s.GetContainerByReference(groupCtx, id)
+			if err != nil {
+				return groupCtx.Err()
+			}
+			config := kit.FromPtr(inspected.Config)
+			hostname := strings.TrimSpace(config.Hostname)
+			if !labels.IsSwarmTask(config.Labels) || (len(hostname) == 12 && strings.HasPrefix(inspected.ID, hostname)) {
+				hostname = ""
+			}
+			if hostname != "" && kit.FromPtr(inspected.HostConfig).NetworkMode.IsHost() && hostname == engineHostname() {
+				task, taskErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.TaskInspectResult, error) {
+					return dockerClient.TaskInspect(ctx, config.Labels["com.docker.swarm.task.id"], client.TaskInspectOptions{})
+				})
+				if taskErr != nil {
+					return groupCtx.Err()
+				}
+				if strings.TrimSpace(kit.FromPtr(task.Task.Spec.ContainerSpec).Hostname) == "" {
+					hostname = ""
+				}
+			}
+			mu.Lock()
+			hostnames[id] = hostname
+			mu.Unlock()
+			return nil
+		})
+	}
+	if group.Wait() != nil {
+		// Return completed lookups when the batch budget is exhausted.
+		return hostnames, ctx.Err()
+	}
+	return hostnames, nil
 }
 
 func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (types.ContainerDetails, error) {
