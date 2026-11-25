@@ -20,11 +20,13 @@ import (
 )
 
 type (
-	// RestoreState is what a restore knows about its target; Apply records the safety backup it takes.
+	// RestoreState is what a restore knows about its target; Apply records the safety backup it takes and the volumes it
+	// created.
 	RestoreState struct {
 		Redeploy *bool                        `json:"redeploy,omitempty"`
 		SafetyID string                       `json:"safetyId,omitempty"`
 		Create   []client.VolumeCreateOptions `json:"create,omitempty"`
+		Created  []string                     `json:"created,omitempty"`
 		// MayStop records that the target ran when the restore was requested, so the caller's right to stop it was checked.
 		MayStop bool `json:"mayStop"`
 		Running bool `json:"running"`
@@ -38,6 +40,7 @@ type (
 		// DeleteVolume removes a volume the restore created, as User.
 		DeleteVolume func(ctx context.Context, name string, user types.Actor) error
 		Report       func(ctx context.Context, message string)
+		Record       func(ctx context.Context, state RestoreState) error
 		// Hold waits for the repository the restore and its safety backup use, before the target stops, so the target
 		// stays stopped only for this restore's own copies; nil when nothing needs waiting for.
 		Hold   func(ctx context.Context) (context.Context, func(), error)
@@ -83,42 +86,47 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 		// A stopped container can be started on its own, without the project lock the restore holds, so any running one
 		// is stopped.
 		if err = r.Stop(held, state); err != nil {
-			return r.Rollback(held, state, nil, fmt.Errorf("stop the project: %w", err))
+			return r.Rollback(held, state, fmt.Errorf("stop the project: %w", err))
 		}
 	}
 	if r.Safety != nil {
 		r.report(held, "Taking a safety backup")
 		var safetyID string
 		if safetyID, err = r.Safety(held); err != nil {
-			return r.Rollback(held, state, nil, fmt.Errorf("take a safety backup: %w", err))
+			return r.Rollback(held, state, fmt.Errorf("take a safety backup: %w", err))
 		}
 		// A container started during the safety backup could be using a volume now; nothing has been written yet, so
 		// the rollback leaves the volumes alone.
 		if r.InUse != nil {
 			if err = r.InUse(held); err != nil {
-				return r.Rollback(held, state, nil, err)
+				return r.Rollback(held, state, err)
 			}
 		}
 		state.SafetyID = safetyID
+		if err = r.record(held, state); err != nil {
+			return r.Rollback(held, state, err)
+		}
 	}
 	r.report(held, "Restoring the backup")
 	// Only the volumes this restore created are removed on rollback.
-	var created []string
 	for _, options := range state.Create {
 		if err = CreateVolume(held, r.Docker, options); err != nil {
-			return r.Rollback(held, state, created, fmt.Errorf("create the missing volumes: %w", err))
+			return r.Rollback(held, state, fmt.Errorf("create the missing volumes: %w", err))
 		}
-		created = append(created, options.Name)
+		state.Created = append(state.Created, options.Name)
+		if err = r.record(held, state); err != nil {
+			return r.Rollback(held, state, err)
+		}
 	}
 	err = r.Write(held, "")
 	if r.Written != nil {
-		created = append(created, r.Written()...)
+		state.Created = append(state.Created, r.Written()...)
 	}
 	if err == nil && r.Verify != nil {
 		err = r.Verify(held)
 	}
 	if err != nil {
-		return r.Rollback(held, state, created, err)
+		return r.Rollback(held, state, err)
 	}
 	release()
 	// Deployed when asked, by default when it ran before the restore.
@@ -128,8 +136,11 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	r.report(ctx, "Deploying the project")
 	// The project the restore deploys is its own to stop again on rollback.
 	state.MayStop = true
+	if err = r.record(ctx, state); err != nil {
+		return r.Rollback(ctx, state, err)
+	}
 	if err = r.Deploy(ctx); err != nil {
-		return r.Rollback(ctx, state, created, fmt.Errorf("deploy the restored project: %w", err))
+		return r.Rollback(ctx, state, fmt.Errorf("deploy the restored project: %w", err))
 	}
 	return nil
 }
@@ -137,16 +148,16 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 // Rollback restores the safety backup, removes the volumes the restore created, and deploys the project if it ran; a
 // project whose safety backup could not be restored is left down rather than started on half-restored data, and one
 // that could not be stopped is left as is. A new target is discarded. Callers use it for failures before Apply.
-func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, created []string, cause error) error {
+func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, cause error) error {
 	ctx = context.WithoutCancel(ctx)
 	if r.Discard != nil {
-		leftovers := r.removeAll(ctx, created)
+		leftovers := r.removeAll(ctx, state.Created)
 		discarded, left := r.Discard(ctx)
 		leftovers = append(leftovers, left...)
 		switch {
 		case len(leftovers) > 0:
 			return fmt.Errorf("%w; could not remove %s", cause, strings.Join(leftovers, ", "))
-		case !discarded && len(created) == 0:
+		case !discarded && len(state.Created) == 0:
 			return cause
 		}
 		return fmt.Errorf("%w; the new project and its volumes were removed", cause)
@@ -171,7 +182,7 @@ func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, created 
 	}
 	undoErr := r.Write(held, state.SafetyID)
 	var removeErr error
-	for _, name := range created {
+	for _, name := range state.Created {
 		removeErr = errors.Join(removeErr, r.DeleteVolume(held, name, r.User))
 	}
 	release()
@@ -213,6 +224,13 @@ func CreateVolume(ctx context.Context, dockerService *dockerInternal.DockerClien
 		return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
 	})
 	return err
+}
+
+func (r RestoreSteps) record(ctx context.Context, state RestoreState) error {
+	if r.Record == nil {
+		return nil
+	}
+	return r.Record(ctx, state)
 }
 
 func (r RestoreSteps) report(ctx context.Context, message string) {

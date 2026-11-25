@@ -300,6 +300,10 @@ func ProjectDeploy(envID, projectID, action string) string {
 	return pathf("/api/agents/%s/projects/%s/deploy", envID, projectID) + "?" + url.Values{"action": {action}}.Encode()
 }
 
+func ProjectRuntime(envID, projectID string) string {
+	return pathf("/api/agents/%s/projects/%s/runtime", envID, projectID)
+}
+
 func ProjectBuild(envID, projectID string) string {
 	return pathf("/api/agents/%s/projects/%s/build", envID, projectID)
 }
@@ -365,6 +369,10 @@ func SystemUpgradeJobCurrent(envID string) string {
 func UpdaterStatus(envID string) string { return pathf("/api/agents/%s/updater/status", envID) }
 
 func UpdaterRun(envID string) string { return pathf("/api/agents/%s/updater/run", envID) }
+
+func UpdaterProjectCheck(envID, projectID string) string {
+	return pathf("/api/agents/%s/updater/projects/%s/check", envID, projectID)
+}
 
 func UpdaterHistory(envID string) string {
 	return pathf("/api/agents/%s/updater/history", envID)

@@ -19,7 +19,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
+	import { ENVIRONMENT_FILTER, rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
 	import { trackOverflow, type ScrollOverflow } from '#lib/utils/overflow.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -148,7 +148,12 @@
 	const DEFAULT_LIMIT = 20;
 
 	const [rowSelection, setRowSelection] = createTableState<RowSelectionState>({});
-	const columnFilters = $derived(fromFilterMap(requestOptions?.filters));
+	const environmentFilterScope = $derived.by(() =>
+		columns
+			.find((col) => col.id === ENVIRONMENT_FILTER)
+			?.filterOptions?.map((option) => ({ id: String(option.value), name: option.label }))
+	);
+	const columnFilters = $derived(fromFilterMap(requestOptions?.filters, environmentFilterScope));
 	const serverSort = $derived(requestOptions?.sort);
 	let clientSortOverride = $state.raw<{
 		serverSort: SearchPaginationSortRequest['sort'];
