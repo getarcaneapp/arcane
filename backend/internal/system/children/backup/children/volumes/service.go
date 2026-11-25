@@ -166,7 +166,6 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	return err
 }
 
-// policyDTO returns the stored global volume policy in the form its runs freeze and the API returns.
 func policyDTO(policy *backup.Policy, s3DestinationName string, lastRun *types.SystemBackupRun) types.SystemVolumeBackupPolicy {
 	return types.SystemVolumeBackupPolicy{ //exhaustruct:enforce
 		LastRun:           lastRun,

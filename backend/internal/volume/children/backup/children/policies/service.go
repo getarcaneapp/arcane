@@ -253,7 +253,6 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	}
 	count := 0
 	for i := range policies {
-		// Global volume policies schedule the system-managed series, which registers them itself.
 		if policies[i].SubjectID == "" {
 			continue
 		}
@@ -263,7 +262,6 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 	slog.InfoContext(ctx, "Registered scheduled volume backup jobs", "count", count)
 }
 
-// Remove unschedules and deletes a removed volume's policies.
 func (s *Service) Remove(ctx context.Context, volumeName string) {
 	policies, err := s.deps.Policies.Remove(ctx, backup.PolicyVolume, volumeName)
 	if err != nil {

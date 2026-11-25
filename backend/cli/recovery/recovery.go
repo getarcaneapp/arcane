@@ -159,7 +159,6 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// readRestoredManifest reads and removes the recovery manifest a restore put back in directory.
 func readRestoredManifest(ctx context.Context, directory string) (types.RecoveryManifest, error) {
 	root := acfs.Root{Path: directory}
 	manifestData, err := root.ReadFile(ctx, "/.arcane-recovery.json")
@@ -220,7 +219,6 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	if preserveSafetyBackupErr := preserveSafetyBackup(db, request.SafetyBackup); preserveSafetyBackupErr != nil {
 		return preserveSafetyBackupErr
 	}
-	// The restored database keeps the current project folders and discovers later project backups on its next start.
 	for key, value := range map[string]string{
 		"projectsDirectory":               request.ProjectsSetting,
 		"projectsDirectories":             request.ProjectsDirectoriesSetting,
@@ -330,7 +328,6 @@ func finalizeRestoredActivity(db *gorm.DB, activityID string) error {
 	}).Error
 }
 
-// failRestoredProjectRestores fails the project restores the system backup caught running.
 func failRestoredProjectRestores(db *gorm.DB) error {
 	var entries []activity.Activity
 	if err := db.Where("status = ?", types.ActivityStatusRunning).Find(&entries).Error; err != nil {
@@ -352,10 +349,6 @@ func failRestoredProjectRestores(db *gorm.DB) error {
 	return nil
 }
 
-// restoreData stops Arcane and applies the restore stages through the shared restore runner, with the pre-restore
-// system backup as its safety backup. A failure before live data changed starts Arcane again; a later one rolls back to
-// the pre-restore backup and starts Arcane only when that succeeds. On success Arcane stays stopped for the caller to
-// recreate with the recovered configuration.
 func restoreData(
 	ctx context.Context,
 	request types.RecoveryRestoreRequest,
@@ -399,7 +392,6 @@ func restoreData(
 		Verify:  nil,
 		Discard: nil,
 	}
-	// Arcane ran when the restore was requested; after a successful restore the caller recreates it instead.
 	state := backup.RestoreState{Redeploy: new(false), SafetyID: "", Create: nil, MayStop: true, Running: true}
 	if err := steps.Apply(ctx, state); err != nil {
 		return fmt.Errorf("system restore failed: %w", err)
@@ -407,8 +399,6 @@ func restoreData(
 	return nil
 }
 
-// runStages applies stages in order and reports whether live data changed: a staged stage changes it only once its swap
-// applies, a direct stage as soon as Rustic starts.
 func runStages(ctx context.Context, stages []types.RecoveryRestoreStage, rustic func(context.Context, types.RecoveryRestoreStage) error) (bool, error) {
 	touched := false
 	for _, stage := range stages {

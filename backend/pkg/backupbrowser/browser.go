@@ -130,8 +130,6 @@ func ParentEntries(selection types.BackupRestoreSelection, list func(folder stri
 	return ListParents(normalizedPaths, func(folder string) ([]types.BackupFileEntry, error) { return list(folder, false) })
 }
 
-// ListParents lists the parent folder of each normalized path once and returns every entry listed. A parent missing from
-// the backup, or not a folder in it, lists as empty, so a path below it is absent from the entries.
 func ListParents(paths []string, list func(folder string) ([]types.BackupFileEntry, error)) ([]types.BackupFileEntry, error) {
 	listed := make(map[string][]types.BackupFileEntry)
 	var eligible []types.BackupFileEntry

@@ -154,8 +154,6 @@ type (
 		Policies []UpdateProjectBackupPolicy `json:"policies"`
 	}
 
-	// GlobalProjectBackupPolicy backs up all or selected projects on this server; a project's own enabled policy
-	// replaces it for that project.
 	GlobalProjectBackupPolicy struct {
 		LastRun           *ProjectBackup            `json:"lastRun,omitempty"`
 		ID                string                    `json:"id"`
@@ -190,7 +188,6 @@ type (
 		PolicyID string `json:"policyId"`
 	}
 
-	// GlobalProjectBackupOption is a project a global policy can select; one that no longer exists is unavailable.
 	GlobalProjectBackupOption struct {
 		ID        string `json:"id"`
 		Name      string `json:"name"`
@@ -210,25 +207,16 @@ type (
 		ShareExternalVolumes bool     `json:"shareExternalVolumes,omitempty" doc:"Let the new project use the external volumes it does not restore, sharing their data with the original project"`
 	}
 
-	// ProjectBackupRestore restores parts of a project backup into a project directory and volumes, which need not be
-	// the ones the backup was taken from.
 	ProjectBackupRestore struct {
-		// Report tells the user what the restore left as it is, such as an outside .env another project shares or a
-		// link in a read-only folder; a restore of the project files must set it.
-		Report    func(ctx context.Context, message string)
-		ProjectID string
-		BackupID  string
-		// ProjectPath receives the project files; empty leaves them out.
+		Report      func(ctx context.Context, message string)
+		ProjectID   string
+		BackupID    string
 		ProjectPath string
 		Volumes     []ProjectBackupRestoreVolume
-		// LockVolumes holds the target volumes' backup admissions and locks for the copy, for a caller that holds none.
 		LockVolumes bool
-		// OwnEnv gives a new project its own copy of an outside .env and points its links into the original's directory
-		// at its own files, so it neither shares nor changes the original's files.
-		OwnEnv bool
+		OwnEnv      bool
 	}
 
-	// ProjectBackupRestoreVolume restores the volume the snapshot holds as volumes/<Snapshot> into the Docker volume Name.
 	ProjectBackupRestoreVolume struct {
 		Key      string `json:"key"`
 		Snapshot string `json:"snapshot"`

@@ -55,22 +55,20 @@ type (
 	}
 
 	ServiceParams struct {
-		Engine           *backup.Engine
-		SqlDB            func() (*sql.DB, error)
-		ActorStore       func() (*gorm.DB, error)
-		LocalRepository  func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
-		RemoteRepository func(ctx context.Context, destinationID string) (backup.Repository, error)
-		DatabaseFile     func() (string, error)
-		// ProjectRoots lists the main projects directory first, then the other ones and the followed project links.
+		Engine              *backup.Engine
+		SqlDB               func() (*sql.DB, error)
+		ActorStore          func() (*gorm.DB, error)
+		LocalRepository     func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
+		RemoteRepository    func(ctx context.Context, destinationID string) (backup.Repository, error)
+		DatabaseFile        func() (string, error)
 		ProjectRoots        func(ctx context.Context) ([]string, error)
 		RecoveryEnvironment func(ctx context.Context) map[string]string
 		GitWorkDirectory    string
 	}
 
 	CreateOptions struct {
-		RecoveryKey string
-		BackupID    string
-		// IncludeProjects captures the main projects directory, for safety backups taken before a restore that changes projects.
+		RecoveryKey     string
+		BackupID        string
 		IncludeProjects bool
 	}
 
@@ -108,7 +106,6 @@ type (
 		ProjectsIncluded bool
 	}
 
-	// RestoreTarget is the running Arcane container a full system restore replaces the data of.
 	RestoreTarget struct {
 		DataDirectory string
 		Mounts        []container.MountPoint
@@ -687,7 +684,6 @@ func nestedDataPath(mounts []container.MountPoint, dataDirectory, projectsDirect
 	return strings.TrimPrefix(dataSource, projectsSource+"/"), true, nil
 }
 
-// hostSource identifies the host folder or volume path behind a container directory.
 func hostSource(mounts []container.MountPoint, directory string) (string, bool) {
 	resolved := docker.MountForSubpath(mounts, directory, "")
 	if resolved == nil {
@@ -700,8 +696,6 @@ func hostSource(mounts []container.MountPoint, directory string) (string, bool) 
 	), true
 }
 
-// projectRootsInData returns, relative to the data directory, every project root inside it by container path, link
-// target, host folder or a mount inside the data directory, and refuses a root that is the data directory itself.
 func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roots []string) ([]string, error) {
 	data := path.Clean(filepath.ToSlash(dataDirectory))
 	dataSource, dataMounted := hostSource(mounts, data)
@@ -736,8 +730,6 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 		if !rootMounted {
 			continue
 		}
-		// A mount inside the data directory that shows the root, or part of it, is projects; one that holds the root maps
-		// the root to its path in the data directory. A volume's own subpath is unknown, so it counts as the whole volume.
 		for _, nested := range mounts {
 			destination := path.Clean(filepath.ToSlash(nested.Destination))
 			relative, inside := strings.CutPrefix(destination, data+"/")
@@ -755,8 +747,6 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 	return slices.Compact(relatives), nil
 }
 
-// withoutProjects leaves every project root inside the data directory, and the mounts at or below it, out of a data
-// layout. It refuses a layout a system restore would refuse, so a backup never succeeds where restoring it cannot.
 func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, roots []string) (backupSourceLayout, error) {
 	excluded, err := projectRootsInData(mounts, layout.dataDirectory, roots)
 	if err != nil {
@@ -783,8 +773,6 @@ func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, r
 	}, nil
 }
 
-// dataMountsOutsideProjects returns, relative to the data directory, every mount inside it and outside the project
-// roots, and refuses one that contains a project root, which a restore could not replace without touching projects.
 func dataMountsOutsideProjects(mounts []container.MountPoint, dataDirectory string, projectRoots []string) ([]string, error) {
 	data := path.Clean(filepath.ToSlash(dataDirectory))
 	var nested []string
@@ -1173,8 +1161,6 @@ func restoreStages(
 	}), nil
 }
 
-// stagedRestoreStages restores a backup without projects into a staging folder, swaps Arcane's entries in around every
-// project root and nested mount, and restores each nested mount that holds no project root on its own.
 func stagedRestoreStages(
 	target RestoreTarget,
 	roots []string,
@@ -1202,7 +1188,6 @@ func stagedRestoreStages(
 			outermost = append(outermost, relative)
 		}
 	}
-	// Rustic's CA bundle is written into the data folder for each run and never backed up, so the swap keeps it.
 	preserve := slices.Concat(projectRoots, outermost, []string{rustic.TrustBundleName})
 	slices.Sort(preserve)
 	preserve = slices.Compact(preserve)
@@ -1224,7 +1209,6 @@ func stagedRestoreStages(
 	}}
 	for _, relative := range outermost {
 		destination := path.Join(data, relative)
-		// A read-only or tmpfs mount is not Arcane's to write, so it stays preserved and the restore leaves it as it is.
 		if source := docker.MountForDestination(target.Mounts, destination, ""); source == nil || source.ReadOnly {
 			continue
 		}
@@ -1244,8 +1228,6 @@ func stagedRestoreStages(
 	return stages, nil
 }
 
-// withoutMissingMountStages drops each nested mount stage whose path the snapshot lacks, as Rustic would fail on it
-// after the swap; the preserved mount is left as it is.
 func withoutMissingMountStages(stages []types.RecoveryRestoreStage, list func(folder string) ([]string, error)) ([]types.RecoveryRestoreStage, error) {
 	var mountPaths []string
 	for _, stage := range stages {
@@ -1343,7 +1325,6 @@ func (s *Service) Create(
 		globs = append(globs, "!"+layout.nestedDataPath)
 	}
 	var snapshot backup.Snapshot
-	// Tagging changes the ID; only the original, unconfirmed snapshot is removed.
 	forget := func(ctx context.Context) error {
 		if snapshot.ID == "" {
 			return nil
@@ -1357,7 +1338,6 @@ func (s *Service) Create(
 	}
 	capture := backup.CapturePlan{
 		Inspect: nil,
-		// VACUUM INTO copies the live databases, so the snapshot holds a consistent copy of each.
 		Stop: func(ctx context.Context) (func(context.Context) error, error) {
 			for name, db := range databases {
 				if stageErr := stageDatabase(ctx, db, filepath.Join(layout.dataDirectory, name), filepath.Join(stage, name)); stageErr != nil {
@@ -1395,7 +1375,6 @@ func (s *Service) Create(
 	return confirmed, nil
 }
 
-// sourceFilesUnchanged refuses a capture during which a source file changed, appeared or went away.
 func sourceFilesUnchanged(ctx context.Context, layout backupSourceLayout, files map[string]acfstypes.Entry) error {
 	after, err := snapshotSourceFiles(ctx, layout)
 	if err != nil {
@@ -1420,7 +1399,6 @@ func sourceFilesUnchanged(ctx context.Context, layout backupSourceLayout, files 
 }
 
 func snapshotSourceFiles(ctx context.Context, layout backupSourceLayout) (map[string]acfstypes.Entry, error) {
-	// Project roots are skipped by identity too, so a root reached through a link or another mount is never walked.
 	var projectRoots []acfstypes.Entry
 	for _, root := range append([]string{layout.projectsDirectory}, layout.excludedRoots...) {
 		if root == "" {

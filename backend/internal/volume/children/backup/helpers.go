@@ -134,7 +134,6 @@ func (s *Service) createBackupTempContainer(ctx context.Context, target string, 
 	return s.createBackupTempContainerWithMount(ctx, backupMount)
 }
 
-// runSnapshots points at the backup's snapshot fields.
 func runSnapshots(entry *types.VolumeBackup) backup.RunSnapshots {
 	return backup.RunSnapshots{
 		LocalID:          &entry.LocalSnapshotID,
@@ -145,7 +144,6 @@ func runSnapshots(entry *types.VolumeBackup) backup.RunSnapshots {
 	}
 }
 
-// snapshotRun is the backup writing the plan's snapshots, labeled with its volume.
 func snapshotRun(entry *types.VolumeBackup, plan backupPlan, tags ...string) backup.SnapshotRun {
 	return backup.SnapshotRun{
 		Snapshots:          runSnapshots(entry),

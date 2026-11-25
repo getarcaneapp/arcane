@@ -90,7 +90,6 @@ func TestEnrichVolumesWithUsageData(t *testing.T) {
 	}
 }
 
-// newBackupVolumeTestRepository resolves backups to the arcane-backups volume, as outside a container.
 func newBackupVolumeTestRepository(t *testing.T) *backup.VolumeRepository {
 	t.Helper()
 	server := httptest.NewServer(http.NotFoundHandler())
@@ -164,7 +163,6 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	}
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 
-	// Every backup of a volume, including the global volume policies' ones, is a volume backup.
 	volumeRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{})
 	require.NoError(t, err)
 	require.EqualValues(t, 3, page.TotalItems)

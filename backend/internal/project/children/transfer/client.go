@@ -115,15 +115,11 @@ func (e remoteEnvironment) ComposeProjectInUse(ctx context.Context, name string)
 	return len(response.Data) > 0, err
 }
 
-// ExportProject keeps the agent's export attached to the request, so an export the transfer gives up on stops, and waits
-// for it until the transfer's budget runs out, since the agent answers only once the export finishes.
 func (e remoteEnvironment) ExportProject(ctx context.Context, projectID string, request types.ExportProjectArchive, _ types.Actor) (types.UploadSession, error) {
 	response, err := e.decode[types.ApiResponse[types.UploadSession]](agent.AwaitUntilDeadline(ctx), http.MethodPost, "/projects/"+url.PathEscape(projectID)+"/export?attached=true", request)
 	return response.Data, err
 }
 
-// ImportProject keeps the agent's import attached to the request, so an import the transfer gives up on rolls back, and
-// waits for it until the transfer's budget runs out, since the agent answers only once the import finishes.
 func (e remoteEnvironment) ImportProject(ctx context.Context, request types.ImportProjectArchive, _ types.Actor) (string, error) {
 	response, err := e.decode[types.ApiResponse[types.CreateProjectResponse]](agent.AwaitUntilDeadline(ctx), http.MethodPost, "/projects/import?attached=true", request)
 	return response.Data.ID, err
@@ -211,7 +207,6 @@ func (e remoteEnvironment) call(ctx context.Context, method, path string, body [
 	}
 	switch response.StatusCode {
 	case http.StatusConflict:
-		// The agent's 409 body keeps the lock-wait message, which tells a busy project apart from other conflicts.
 		kind := common.ErrConflict
 		if bytes.Contains(response.Body, []byte(common.ErrProjectLocked.Error())) {
 			kind = common.ErrProjectLocked

@@ -648,7 +648,6 @@ func (s *SystemService) backupStore() systembackup.Store {
 			err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).Where("local_snapshot_id <> ''").Count(&count).Error
 			return count, err
 		},
-		// Project backups share the volumes repository, so they count towards re-keying it.
 		CountVolumeRepositoryRuns: func(ctx context.Context) (int64, error) {
 			var volumeRuns, projectRuns int64
 			err := errors.Join(

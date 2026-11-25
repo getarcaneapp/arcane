@@ -57,8 +57,6 @@ const (
 
 var ErrEnvironmentUnavailable = errors.New("agent is not connected")
 
-// AwaitUntilDeadline lets Do wait for an agent that answers only when its work finishes until ctx's deadline,
-// instead of the proxy's response header timeout.
 func AwaitUntilDeadline(ctx context.Context) context.Context {
 	return context.WithValue(ctx, awaitDeadlineKey{}, true)
 }

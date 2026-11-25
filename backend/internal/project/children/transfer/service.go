@@ -45,9 +45,7 @@ type (
 		CreateVolume(ctx context.Context, volume types.Volume, user types.Actor) error
 		CreateNetwork(ctx context.Context, network types.Network, user types.Actor) error
 		ComposeProjectInUse(ctx context.Context, name string) (bool, error)
-		// ExportProject exports the project's files, or with volumes a bundle of its files and their data.
 		ExportProject(ctx context.Context, projectID string, request types.ExportProjectArchive, user types.Actor) (types.UploadSession, error)
-		// ImportProject imports a project archive or bundle, restoring the bundle's volumes into new ones.
 		ImportProject(ctx context.Context, request types.ImportProjectArchive, user types.Actor) (string, error)
 		CreateUpload(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (types.UploadSession, error)
 		Upload(ctx context.Context, kind, uploadID string) (types.UploadSession, error)
@@ -738,12 +736,8 @@ func (s *Service) prepare(ctx context.Context, r *run) error {
 	return s.save(ctx, r)
 }
 
-// copyProject exports the project, with its volumes when asked, relays the archive to the target environment and
-// imports it there, as an export and an import by hand would. The source is stopped first, so the volume data is
-// consistent, and an import interrupted by a restart is not resumed: the cleanup removes what it may have created.
 func (s *Service) copyProject(ctx context.Context, r *run) error {
 	if r.state.TargetProjectID != "" {
-		// A run started by an earlier Arcane copied the volumes after the import, one at a time.
 		if r.input.Request.IncludeVolumes && len(r.state.CopiedVolumes) < len(r.state.Volumes) {
 			return errors.New("the transfer was interrupted while it copied the volumes; start it again")
 		}
@@ -780,8 +774,6 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 		}
 	}
 	artifact := kit.Ternary(withVolumes, artifactBundle, artifactFiles)
-	// The export and the import each get the time a separate copy of the files and of every volume had; one they give up
-	// on stops, as the agents tie them to the request, so the cleanup finds them ended.
 	budget := operationTimeout * time.Duration(1+len(request.Volumes))
 	source, err := s.resumedSource(ctx, r, types.UploadKindProjectArchive, artifact)
 	if err != nil {
@@ -800,7 +792,6 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
-	// Recorded before the import, so the cleanup can remove the volumes a failed or interrupted import leaves behind.
 	r.state.Importing = true
 	r.state.TargetCompose = projects.NormalizeProjectName(r.input.Request.Name)
 	if withVolumes {
@@ -1037,14 +1028,10 @@ func (s *Service) settle(ctx context.Context, r *run, err error) error {
 	return errors.New(message)
 }
 
-// cleanup gives the source restart and the target cleanup separate deadlines, so a restart that waits on the source's
-// lock cannot use up the time needed to remove what the transfer created on the target.
 func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	var notes []string
 	switch {
 	case r.state.SourceStopped && r.state.SourceRunning:
-		// An export the run gave up on holds the project's lock until it stops. Taking the source down again, as the run
-		// left it, waits for that, so the restart doesn't give up on the lock.
 		restartCtx, cancelRestart := context.WithTimeout(ctx, operationTimeout)
 		err := untilUnlocked(restartCtx, func(ctx context.Context) error {
 			return r.source.DownProject(ctx, r.input.ProjectID, r.input.User)
@@ -1075,8 +1062,6 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	name := r.input.Request.Name
 	targetProjectID := r.state.TargetProjectID
 	if targetProjectID == "" && r.state.Importing {
-		// The import holds the lock of the project it creates from its start to its end, so removing that project waits
-		// for an import the run gave up on to stop, before the volumes it created are removed.
 		targetProjectID = r.input.TargetProjectID
 	}
 	keep := false
@@ -1135,7 +1120,6 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 	return notes
 }
 
-// untilUnlocked retries an operation that gave up waiting for the project's lock while another operation held it.
 func untilUnlocked(ctx context.Context, op func(ctx context.Context) error) error {
 	err := op(ctx)
 	for attempt := 0; errors.Is(err, common.ErrProjectLocked) && attempt < maxLockRetries; attempt++ {

@@ -143,7 +143,6 @@ func startJobScheduler(p startJobSchedulerParams) {
 			if reconcileCoordinatorStartupErr := reconcileCoordinatorStartup(ctx, p); reconcileCoordinatorStartupErr != nil {
 				return fmt.Errorf("reconcile scheduler startup: %w", reconcileCoordinatorStartupErr)
 			}
-			// Discovery skips a backup still marked running, so it starts only once interrupted backups are reconciled.
 			p.Projects.DiscoverBackupsAfterRestore(schedulerCtx)
 			p.GitOpsSync.RegisterAutoSyncJobsOnStartup(ctx)
 			p.GitOpsSync.SubscribeProjectFileChanges()

@@ -238,15 +238,12 @@ func TestCheckScheduledRemoteCountsEveryTableOfTheRepository(t *testing.T) {
 		return CheckScheduledRemote(t.Context(), db, destinations, ScheduledRemoteRequest{DestinationID: destination.ID, Root: root, Tables: tables})
 	}
 
-	// Without a retained snapshot the missing repository is a first backup.
 	require.NoError(t, check(VolumeRoot+"/instance", VolumeRepositoryTables))
-	// Project and volume backups share the repository, so a retained project snapshot means it was lost.
 	require.NoError(t, db.Exec(
 		"INSERT INTO project_backups (id, project_id, project_name, created_at, status, s3_destination_id, remote_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
 		"project-backup", "p1", "web", time.Now(), types.VolumeBackupStatusSucceeded, destination.ID, "remote",
 	).Error)
 	require.ErrorIs(t, check(VolumeRoot+"/instance", VolumeRepositoryTables), ErrRemoteRepositoryMissing)
-	// System recovery keeps its own repository and counts only its runs.
 	require.NoError(t, check("arcane-system-recovery", []string{"system_backup_runs"}))
 }
 

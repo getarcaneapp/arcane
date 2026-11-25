@@ -114,8 +114,7 @@ type (
 		Ctx                   context.Context
 		Scheduler             types.DynamicScheduler
 		Admission             *runs.Admission
-		// ProjectFolders lists the main projects directory first, then every other one and the followed project links.
-		ProjectFolders func(ctx context.Context) ([]string, error)
+		ProjectFolders        func(ctx context.Context) ([]string, error)
 	}
 
 	Service struct {
@@ -155,10 +154,9 @@ type (
 	}
 
 	preparedSystemBackup struct {
-		run         *types.SystemBackupRun
-		recoveryKey string
-		checkpoint  systemBackupRecovery
-		// includeProjects is set for safety backups taken before a restore that changes projects.
+		run             *types.SystemBackupRun
+		recoveryKey     string
+		checkpoint      systemBackupRecovery
 		includeProjects bool
 	}
 )
@@ -746,14 +744,12 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request typ
 	if err != nil {
 		return err
 	}
-	// Selective restores always change project files, so their safety backup includes projects for the rollback.
 	safetyBackup := func(ctx context.Context, safetyRequest types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
 		return s.safetyBackup(ctx, safetyRequest, true)
 	}
 	return s.snapshots.RestoreFiles(ctx, dockerClient, key, *run, request.BackupRestoreSelection, safetyBackup)
 }
 
-// safetyBackup takes a pre-restore system backup that includes projects only when the restore changes them.
 func (s *Service) safetyBackup(ctx context.Context, request types.CreateSystemBackupRequest, includeProjects bool) (*types.SystemBackupRun, error) {
 	prepared, err := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, request)
 	if err != nil {
@@ -2183,8 +2179,6 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 	instanceID := s.settingsService.GetSettingsConfig().InstanceID.Value
 	decorated := make([]types.SystemVolumeBackupHistoryEntry, 0, len(history))
 	for _, entry := range history {
-		// Volume backups discovered from another instance live under that instance's root; project backups share the
-		// volumes repository.
 		root := func() string {
 			owner := cmp.Or(entry.RemoteInstanceID, instanceID)
 			switch {
