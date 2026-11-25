@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -101,7 +102,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	}
 	arcane := arcaneContainer{
 		stop: func(ctx context.Context) error {
-			if _, stopErr := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)}); stopErr != nil {
+			if _, stopErr := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)}); stopErr != nil && !errdefs.IsNotFound(stopErr) {
 				return fmt.Errorf("stop Arcane container: %w", stopErr)
 			}
 			return nil
