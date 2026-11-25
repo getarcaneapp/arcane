@@ -1418,11 +1418,16 @@ func ResolveDestination(ctx context.Context, req DestinationRequest) (Destinatio
 	return selected, s3DestinationID, nil
 }
 
+func HandedBack(ctx context.Context) bool {
+	_, resumable := jobcontext.Run(ctx)
+	return resumable && errors.Is(context.Cause(ctx), context.Canceled)
+}
+
 func SettleFailure(ctx context.Context, err error, fail func(ctx context.Context, message string) error) error {
-	if err == nil || ctx.Err() != nil || errors.Is(err, actor.ErrJobRejected) || errors.Is(err, ErrBackupSettled) {
+	if err == nil || HandedBack(ctx) || (ctx.Err() == nil && errors.Is(err, actor.ErrJobRejected)) || errors.Is(err, ErrBackupSettled) {
 		return err
 	}
-	return errors.Join(err, fail(ctx, err.Error()))
+	return errors.Join(err, fail(context.WithoutCancel(ctx), err.Error()))
 }
 
 func FailStoppedRun(ctx context.Context, fail func(ctx context.Context, message string) error) error {

@@ -189,26 +189,29 @@ var (
 )
 
 func NewService(deps Dependencies) *Service {
-	s := &Service{deps: deps}
-	s.policies = policies.NewService(policies.Dependencies{
-		DB:             deps.DB,
-		Engine:         deps.Engine,
-		Policies:       deps.Policies,
-		S3Destinations: deps.S3Destinations,
-		Settings:       deps.Settings,
-		Config:         deps.Config,
-		ProjectName:    deps.ProjectName,
-		ListProjects:   deps.ListProjects,
-		CheckVolumes:   s.checkVolumes,
-		Authorize:      s.authorize,
-		LatestRun:      s.latestRun,
-		Resume:         s.resumeScheduled,
-		BackUp:         s.backUpScheduled,
-		Expire:         s.expire,
-		Ctx:            deps.Ctx,
-		Scheduler:      deps.Scheduler,
-		Admission:      deps.Admission,
-	})
+	s := new(Service)
+	*s = Service{
+		deps: deps,
+		policies: policies.NewService(policies.Dependencies{
+			DB:             deps.DB,
+			Engine:         deps.Engine,
+			Policies:       deps.Policies,
+			S3Destinations: deps.S3Destinations,
+			Settings:       deps.Settings,
+			Config:         deps.Config,
+			ProjectName:    deps.ProjectName,
+			ListProjects:   deps.ListProjects,
+			CheckVolumes:   s.checkVolumes,
+			Authorize:      s.authorize,
+			LatestRun:      s.latestRun,
+			Resume:         s.resumeScheduled,
+			BackUp:         s.backUpScheduled,
+			Expire:         s.expire,
+			Ctx:            deps.Ctx,
+			Scheduler:      deps.Scheduler,
+			Admission:      deps.Admission,
+		}),
+	}
 	return s
 }
 
@@ -810,13 +813,6 @@ func (s *Service) complete(ctx context.Context, entry *ProjectBackup, err error,
 	return err
 }
 
-func handedBack(ctx context.Context, err error) bool {
-	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
-		return true
-	}
-	return ctx.Err() == nil && errors.Is(err, actor.ErrJobRejected)
-}
-
 func (s *Service) fail(ctx context.Context, backupID, message string) error {
 	return s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).Where("id = ? AND status = ?", backupID, types.VolumeBackupStatusRunning).
 		Updates(map[string]any{"status": types.VolumeBackupStatusFailed, "error": message, "completed_at": time.Now()}).Error
@@ -974,9 +970,9 @@ func (s *Service) checkVolumes(ctx context.Context, projectID string, keys []str
 	return err
 }
 
-func (s *Service) latestRun(ctx context.Context, policyID string) (*types.ProjectBackup, error) {
+func (s *Service) latestRun(ctx context.Context, query, series string) (*types.ProjectBackup, error) {
 	var latest []ProjectBackup
-	if err := s.deps.DB.WithContext(ctx).Where("policy_id = ? OR policy_id LIKE ?", policyID, types.GlobalProjectPolicyPrefix+policyID+":%").
+	if err := s.deps.DB.WithContext(ctx).Where(query, series).
 		Order("created_at DESC").Limit(1).Find(&latest).Error; err != nil {
 		return nil, fmt.Errorf("failed to load the latest project backup: %w", err)
 	}
@@ -991,11 +987,9 @@ func (s *Service) resumeScheduled(ctx context.Context, previous types.SchedulerR
 	if err := json.Unmarshal(recoveryData, &recorded); err != nil {
 		return err
 	}
-	err := s.resume(ctx, previous, requester, recorded)
-	if err != nil && !errors.Is(err, backup.ErrBackupSettled) && !handedBack(ctx, err) {
-		err = errors.Join(err, s.fail(context.WithoutCancel(ctx), recorded.Plan.BackupID, err.Error()))
-	}
-	return err
+	return backup.SettleFailure(ctx, s.resume(ctx, previous, requester, recorded), func(ctx context.Context, message string) error {
+		return s.fail(ctx, recorded.Plan.BackupID, message)
+	})
 }
 
 func (s *Service) backUpScheduled(ctx context.Context, run policies.ScheduledBackup) error {
@@ -1078,9 +1072,9 @@ func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun, requ
 		return fmt.Errorf("failed to save project backup: %w", createErr)
 	}
 	defer func() {
-		if err != nil && !handedBack(ctx, err) {
-			err = errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
-		}
+		err = backup.SettleFailure(ctx, err, func(ctx context.Context, message string) error {
+			return s.fail(ctx, entry.ID, message)
+		})
 	}()
 	if recordErr := s.record(ctx, p.ProjectID, checkpoint{Plan: p}); recordErr != nil {
 		return recordErr
