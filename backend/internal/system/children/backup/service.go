@@ -163,10 +163,7 @@ type (
 	}
 )
 
-const (
-	defaultSystemBackupSchedule = "0 3 * * *"
-	systemRecoveryHelperPath    = "/app/arcane-recovery-helper"
-)
+const systemRecoveryHelperPath = "/app/arcane-recovery-helper"
 
 var ErrSystemBackupAlreadyRunning = common.Classify(common.ErrConflict, errors.New("an Arcane system backup is already running"))
 
@@ -1439,17 +1436,10 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBack
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.policies.List(ctx, backup.PolicySystem, "")
-	if err != nil {
-		return nil, err
-	}
-	reconcile := backup.PolicyReconciliation[backup.Policy, types.UpdateBackupPolicy]{
+	reconcile := backup.PolicyReconciliation[types.UpdateBackupPolicy]{
+		Kind:     backup.PolicySystem,
 		Domain:   "system",
-		DB:       s.db,
-		Existing: existing,
-		ID:       func(policy *backup.Policy) string { return policy.ID },
 		UpdateID: func(update types.UpdateBackupPolicy) string { return update.ID },
-		New:      func() backup.Policy { return backup.Policy{SubjectKind: backup.PolicySystem} },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateBackupPolicy) error {
 			normalized, normalizeErr := backup.ValidatePolicyUpdate(ctx, "system", update, s.s3Destinations)
 			if normalizeErr != nil {
@@ -1479,7 +1469,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBack
 		Unregister: s.jobs.Unregister,
 		Reschedule: s.rescheduleSystemBackupPolicy,
 	}
-	if runErr := reconcile.Run(ctx, updates); runErr != nil {
+	if runErr := s.policies.Reconcile(ctx, reconcile, updates); runErr != nil {
 		return nil, runErr
 	}
 	return s.GetPolicies(ctx)
@@ -1626,13 +1616,7 @@ func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *back
 				"s3DestinationId": policy.S3DestinationID,
 			},
 		},
-		ScheduleFn: func(ctx context.Context) string {
-			current, err := s.policies.Get(ctx, backup.PolicySystem, "", policyID)
-			if err != nil || current == nil {
-				return defaultSystemBackupSchedule
-			}
-			return current.Schedule
-		},
+		ScheduleFn: s.policies.Schedule(policyID),
 		// System backups are written through the manager's own Docker.
 		ShouldRunFn: func(context.Context) bool { return s.dockerService.LocalDockerEnabled() },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {

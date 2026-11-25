@@ -31,7 +31,6 @@ import (
 
 type (
 	Dependencies struct {
-		DB             *database.DB
 		Engine         *backup.Engine
 		Policies       *backup.Policies
 		S3Destinations *s3.S3DestinationService
@@ -181,17 +180,11 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 	if _, err := s.deps.ProjectName(ctx, projectID); err != nil {
 		return types.ProjectBackupPolicyCollection{}, err
 	}
-	existing, err := s.deps.Policies.List(ctx, backup.PolicyProject, projectID)
-	if err != nil {
-		return types.ProjectBackupPolicyCollection{}, err
-	}
-	reconcile := backup.PolicyReconciliation[backup.Policy, types.UpdateProjectBackupPolicy]{
-		Domain:   "project",
-		DB:       s.deps.DB,
-		Existing: existing,
-		ID:       func(policy *backup.Policy) string { return policy.ID },
-		UpdateID: func(update types.UpdateProjectBackupPolicy) string { return update.ID },
-		New:      func() backup.Policy { return backup.Policy{SubjectKind: backup.PolicyProject, SubjectID: projectID} },
+	reconcile := backup.PolicyReconciliation[types.UpdateProjectBackupPolicy]{
+		Kind:      backup.PolicyProject,
+		SubjectID: projectID,
+		Domain:    "project",
+		UpdateID:  func(update types.UpdateProjectBackupPolicy) string { return update.ID },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateProjectBackupPolicy) error {
 			normalized, validateErr := backup.ValidatePolicyUpdate(ctx, "project", update.UpdateBackupPolicy, s.deps.S3Destinations)
 			if validateErr != nil {
@@ -225,10 +218,10 @@ func (s *Service) UpdatePolicies(ctx context.Context, projectID string, updates 
 		Unregister: s.jobs.Unregister,
 		Reschedule: s.reschedule,
 	}
-	if runErr := reconcile.Run(ctx, updates); runErr != nil {
+	if runErr := s.deps.Policies.Reconcile(ctx, reconcile, updates); runErr != nil {
 		return types.ProjectBackupPolicyCollection{}, runErr
 	}
-	if _, err = s.deps.ProjectName(ctx, projectID); errors.Is(err, common.ErrNotFound) {
+	if _, err := s.deps.ProjectName(ctx, projectID); errors.Is(err, common.ErrNotFound) {
 		s.Remove(ctx, projectID)
 		return types.ProjectBackupPolicyCollection{}, err
 	}
@@ -509,17 +502,10 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 // UpdateGlobalPolicies replaces the global project backup policies, schedules the enabled ones and unschedules the
 // rest. Listed IDs of projects that do not exist are kept, and match nothing.
 func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
-	existing, err := s.deps.Policies.List(ctx, backup.PolicyProject, "")
-	if err != nil {
-		return types.GlobalProjectBackupPolicyCollection{}, err
-	}
-	reconcile := backup.PolicyReconciliation[backup.Policy, types.UpdateGlobalProjectBackupPolicy]{
+	reconcile := backup.PolicyReconciliation[types.UpdateGlobalProjectBackupPolicy]{
+		Kind:     backup.PolicyProject,
 		Domain:   "global project",
-		DB:       s.deps.DB,
-		Existing: existing,
-		ID:       func(policy *backup.Policy) string { return policy.ID },
 		UpdateID: func(update types.UpdateGlobalProjectBackupPolicy) string { return update.ID },
-		New:      func() backup.Policy { return backup.Policy{SubjectKind: backup.PolicyProject} },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateGlobalProjectBackupPolicy) error {
 			if !update.SelectionMode.Valid() {
 				return common.Classify(common.ErrValidation, errors.New("selectionMode must be all, allowlist, or blocklist"))
@@ -556,7 +542,7 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, updates []types.Upda
 		},
 		Reschedule: s.rescheduleGlobal,
 	}
-	if runErr := reconcile.Run(ctx, updates); runErr != nil {
+	if runErr := s.deps.Policies.Reconcile(ctx, reconcile, updates); runErr != nil {
 		return types.GlobalProjectBackupPolicyCollection{}, runErr
 	}
 	return s.GlobalPolicies(ctx)

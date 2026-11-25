@@ -258,10 +258,9 @@ type (
 
 	// UnmanagedBackupSweep's Within, when set, limits a recheck to the batch it already locked.
 	UnmanagedBackupSweep struct {
-		Now                   time.Time
-		SystemVolumePolicyIDs []string
-		Within                []string
-		Retention             time.Duration
+		Now       time.Time
+		Within    []string
+		Retention time.Duration
 	}
 )
 

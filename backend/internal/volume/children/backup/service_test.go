@@ -227,7 +227,7 @@ func TestOrphanedVolumeBackupIDs(t *testing.T) {
 		{ID: "discovered-removed-volume", VolumeName: "old-data", Trigger: types.VolumeBackupTriggerDiscovered},
 	}
 
-	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1"}, []string{"manual", "nightly"})
+	orphaned := orphanedVolumeBackupIDs(candidates, []string{"app-data"}, []string{"policy-1", "nightly"})
 
 	require.Equal(t, []string{"deleted-volume-policy", "deleted-system-policy", "removed-volume", "removed-volume-with-policy"}, orphaned)
 }
