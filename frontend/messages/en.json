@@ -4799,5 +4799,6 @@
   "list_cleared_mixed_modes_hint": "The list was cleared because the selected environments used different modes. Add the containers again for the new mode.",
   "local_docker_disabled_add_agent": "Local Docker is turned off on this manager. Add an agent to manage containers.",
   "manager_update_manually": "Local Docker is disabled on the manager, so update its container yourself.",
-  "local_docker_disabled_backups_unavailable": "System backups are stored in a local Docker volume, so they are unavailable while ARCANE_LOCAL_DOCKER_ENABLED=false. Existing backups stay listed."
+  "local_docker_disabled_backups_unavailable": "System backups are stored in a local Docker volume, so they are unavailable while ARCANE_LOCAL_DOCKER_ENABLED=false. Existing backups stay listed.",
+  "agent_profiling_upgrade_required": "Upgrade this agent to collect profiling dumps and pprof profiles."
 }

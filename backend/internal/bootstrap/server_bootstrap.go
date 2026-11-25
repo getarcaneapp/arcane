@@ -37,16 +37,18 @@ type (
 	}
 )
 
-var serverOptions = fx.Options(
-	fx.Provide(
-		func(cfg *config.Config) *agent.MTLS {
-			return buildAgentRuntimeConfig(cfg, "", agent.AgentHostInfo{}).MTLS
-		},
-		newRouter,
-		newTunnelServer,
-		NewHTTPServer,
-	),
-)
+func serverOptions(agentEnabled bool) fx.Option {
+	return fx.Options(
+		fx.Provide(
+			func(cfg *config.Config) *agent.MTLS {
+				return buildAgentRuntimeConfig(cfg, "", agent.AgentHostInfo{}).MTLS
+			},
+			routerProvider(agentEnabled),
+			newTunnelServer,
+			NewHTTPServer,
+		),
+	)
+}
 
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	if p.Config.AgentEnabled {

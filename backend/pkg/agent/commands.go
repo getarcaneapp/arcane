@@ -3,6 +3,7 @@ package agent
 import (
 	"cmp"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/samber/mo"
@@ -11,7 +12,7 @@ import (
 )
 
 var (
-	commandRoutes = []commandRoute{
+	commandRoutes = []CommandRoute{
 		{Method: http.MethodGet, PathPattern: "/api/health", CommandName: "system.health"},
 		{Method: http.MethodHead, PathPattern: "/api/health", CommandName: "system.health"},
 		{Method: http.MethodGet, PathPattern: "/api/app/version", CommandName: "system.version"},
@@ -212,6 +213,11 @@ var (
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/system/upgrade/progress", CommandName: "system.upgrade.progress"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/diagnostics/actors", CommandName: "diagnostics.actors"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/diagnostics/goroutines", CommandName: "diagnostics.goroutines"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/debug/pprof/profile", CommandName: "diagnostics.pprof.cpu"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/debug/pprof/trace", CommandName: "diagnostics.pprof.trace"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/debug/pprof/{name}", CommandName: "diagnostics.pprof.named"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/debug/pprof", CommandName: "diagnostics.pprof.index"},
+		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/debug/pprof/symbol", CommandName: "diagnostics.pprof.symbol"},
 
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/swarm/services", CommandName: "swarm.service.list"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/swarm/services", CommandName: "swarm.service.create"},
@@ -300,6 +306,10 @@ var (
 	commandRoutesIndex = buildCommandRouteIndex(commandRoutes)
 )
 
+func CommandRoutes() []CommandRoute {
+	return slices.Clone(commandRoutes)
+}
+
 func ResolveCommandName(method, requestPath string, stream bool) mo.Option[string] {
 	requestPath, _, _ = strings.Cut(strings.TrimSpace(requestPath), "?")
 	root := commandRoutesIndex[commandRouteKey{Method: kit.Ternary(stream, "", strings.ToUpper(strings.TrimSpace(method))), Stream: stream}]
@@ -310,7 +320,7 @@ func ResolveCommandName(method, requestPath string, stream bool) mo.Option[strin
 	return mo.Some(route.CommandName)
 }
 
-func (n *commandRouteNode) match(parts []string) *commandRoute {
+func (n *commandRouteNode) match(parts []string) *CommandRoute {
 	if n == nil {
 		return nil
 	}
@@ -326,7 +336,7 @@ func (n *commandRouteNode) match(parts []string) *commandRoute {
 	return n.param.match(parts[1:])
 }
 
-func buildCommandRouteIndex(routes []commandRoute) commandRouteIndex {
+func buildCommandRouteIndex(routes []CommandRoute) commandRouteIndex {
 	index := make(commandRouteIndex)
 	for i := range routes {
 		route := &routes[i]
