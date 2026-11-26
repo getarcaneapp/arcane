@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -63,6 +64,17 @@ func VolumePart(name string) mount.Mount {
 	return mount.Mount{Type: mount.TypeVolume, Source: name, Target: path.Join(SnapshotRoot, "volumes", name), ReadOnly: true}
 }
 
+func InspectVolume(ctx context.Context, dockerClient *client.Client, name string) (types.Volume, bool, error) {
+	inspect, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if errdefs.IsNotFound(err) {
+		return types.Volume{}, false, nil
+	}
+	if err != nil {
+		return types.Volume{}, false, err
+	}
+	return types.NewVolume(inspect.Volume), true, nil
+}
+
 func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Context, mounts []mount.Mount) error) (err error) {
 	before, err := volumeIdentities(ctx, plan.Inspect, plan.Volumes)
 	if err != nil {
@@ -73,7 +85,7 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 		if start != nil {
 			defer func() {
 				if startErr := start(context.WithoutCancel(ctx)); startErr != nil {
-					err = errors.Join(err, fmt.Errorf("restart project containers: %w", startErr))
+					err = errors.Join(err, fmt.Errorf("start the stopped containers again: %w", startErr))
 				}
 			}()
 		}
@@ -114,7 +126,7 @@ func volumeIdentities(ctx context.Context, inspect func(ctx context.Context, nam
 		case !exists:
 			return nil, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was removed after the backup was queued, so it was not backed up; start the backup again", name))
 		}
-		created[name] = found.CreatedAt
+		created[name] = fmt.Sprintf("%q %q %q %v %v", found.CreatedAt, found.Driver, found.Mountpoint, found.Labels, found.Options)
 	}
 	return created, nil
 }
@@ -152,7 +164,7 @@ func CheckNoWriters(ctx context.Context, dockerService *dockerInternal.DockerCli
 	for _, c := range running {
 		for _, m := range c.Mounts {
 			if m.Type == mount.TypeVolume && m.RW && slices.Contains(names, m.Name) {
-				return common.Classify(common.ErrConflict, fmt.Errorf("container %s writes to volume %s; stop it or export again", docker.ContainerNameFromNames(c.Names), m.Name))
+				return common.Classify(common.ErrConflict, fmt.Errorf("container %s writes to volume %s; stop it and try again", docker.ContainerNameFromNames(c.Names), m.Name))
 			}
 		}
 	}
@@ -207,7 +219,7 @@ func StartHelper(ctx context.Context, dockerService *dockerInternal.DockerClient
 	helper, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 			Config:     &container.Config{Image: image, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()},
-			HostConfig: volumes.HostConfig(image, nil, mounts),
+			HostConfig: volumes.HostConfig(volumes.HelperHost{Image: image, Mounts: mounts}),
 		})
 	})
 	if err != nil {

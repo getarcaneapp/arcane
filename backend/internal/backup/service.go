@@ -19,6 +19,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -63,9 +64,18 @@ type (
 	}
 
 	Snapshot struct {
-		ID   string `json:"id"`
-		Size int64  `json:"-"`
+		ID   string   `json:"id"`
+		Tags []string `json:"-"`
+		Size int64    `json:"-"`
 	}
+
+	VolumeOwner struct {
+		UID  uint32
+		GID  uint32
+		Mode int64
+	}
+
+	HelperExec func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 
 	rusticSnapshotOutput struct {
 		ID      string `json:"id"`
@@ -270,6 +280,7 @@ type (
 const (
 	VolumeAdmissionScope           = "volume-backup"
 	ProjectSnapshotTag             = "arcane-kind:project"
+	VolumeOwnerTagPrefix           = "arcane-owner:"
 	ProjectTargetType              = "project_backup"
 	ProjectRestoreAction           = "restore_project_backup"
 	ProjectDiscoveryPendingKey     = "projectBackupDiscoveryPending"
@@ -534,6 +545,58 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
+func ReadVolumeOwnerTag(ctx context.Context, exec HelperExec, containerID string) (string, error) {
+	stdout, _, err := exec(ctx, containerID, "", []string{"stat", "-c", "%u:%g:%a", "/volume"})
+	if err != nil {
+		return "", fmt.Errorf("read the owner of the volume root: %w", err)
+	}
+	tag := VolumeOwnerTagPrefix + strings.TrimSpace(stdout)
+	if _, ok := VolumeOwnerFromTags([]string{tag}); !ok {
+		return "", fmt.Errorf("unexpected owner of the volume root: %q", strings.TrimSpace(stdout))
+	}
+	return tag, nil
+}
+
+func VolumeOwnerFromTags(tags []string) (VolumeOwner, bool) {
+	for _, tag := range tags {
+		value, found := strings.CutPrefix(tag, VolumeOwnerTagPrefix)
+		if !found {
+			continue
+		}
+		fields := strings.Split(value, ":")
+		if len(fields) != 3 {
+			return VolumeOwner{}, false
+		}
+		uid, uidErr := strconv.ParseUint(fields[0], 10, 32)
+		gid, gidErr := strconv.ParseUint(fields[1], 10, 32)
+		mode, modeErr := strconv.ParseInt(fields[2], 8, 64)
+		if uidErr != nil || gidErr != nil || modeErr != nil || mode < 0 || mode > 0o7777 {
+			return VolumeOwner{}, false
+		}
+		return VolumeOwner{
+			UID:  uint32(uid),
+			GID:  uint32(gid),
+			Mode: mode,
+		}, true
+	}
+	return VolumeOwner{}, false
+}
+
+func (o VolumeOwner) Apply(ctx context.Context, exec HelperExec, containerID string) error {
+	if _, _, err := exec(ctx, containerID, "", []string{
+		"sh",
+		"-c",
+		`[ "$(stat -c %u:%g:%a /volume)" = "$1" ] || { chown "$2" /volume && chmod "$3" /volume; }`,
+		"sh",
+		fmt.Sprintf("%d:%d:%s", o.UID, o.GID, strconv.FormatInt(o.Mode&0o7777, 8)),
+		fmt.Sprintf("%d:%d", o.UID, o.GID),
+		strconv.FormatInt(o.Mode&0o7777, 8),
+	}); err != nil {
+		return fmt.Errorf("failed to restore volume root ownership and mode: %w", err)
+	}
+	return nil
+}
+
 func (s DiscoveredSnapshot) RunID() string {
 	for _, tag := range s.Tags {
 		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok && runID != "" {
@@ -593,7 +656,10 @@ func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Cl
 }
 
 func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, bool, error) {
-	snapshots, err := e.ListSnapshots(ctx, dockerClient, repository, password)
+	snapshots, err := e.ListSnapshots(ctx, dockerClient, repository, password, kit.Ternary(snapshotID == "", nil, []string{snapshotID})...)
+	if err != nil && snapshotID != "" {
+		return Snapshot{}, false, fmt.Errorf("recorded backup snapshot is unavailable: %w", err)
+	}
 	if err != nil {
 		return Snapshot{}, false, err
 	}
@@ -605,7 +671,11 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 		if found.ID != "" {
 			return Snapshot{}, false, errors.New("multiple snapshots match the backup run")
 		}
-		found = Snapshot{ID: snapshot.ID, Size: snapshot.Summary.TotalBytesProcessed}
+		found = Snapshot{
+			ID:   snapshot.ID,
+			Tags: snapshot.Tags,
+			Size: snapshot.Summary.TotalBytesProcessed,
+		}
 	}
 	if snapshotID != "" && found.ID == "" {
 		return Snapshot{}, false, errors.New("recorded backup snapshot is unavailable")
@@ -613,8 +683,8 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 	return found, found.ID != "", nil
 }
 
-func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string) ([]DiscoveredSnapshot, error) {
-	output, err := e.run(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
+func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string, ids ...string) ([]DiscoveredSnapshot, error) {
+	output, err := e.run(ctx, dockerClient, repository, password, append([]string{"snapshots", "--json", "--"}, ids...))
 	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
 		return nil, fmt.Errorf("%w: %w", ErrRepositoryMissing, err)
 	}
@@ -1671,7 +1741,11 @@ func (r *VolumeRepository) WriteRunSnapshots(ctx context.Context, dockerClient *
 	}
 	return r.writeRunSnapshot(ctx, dockerClient, run, SnapshotWrite{
 		Capture: func(ctx context.Context, repository Repository, password string) (Snapshot, error) {
-			snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, local, *run.Snapshots.LocalID, repository, password, run.Label, run.Tags...)
+			source, _, findErr := r.deps.Engine.FindRunSnapshot(ctx, dockerClient, local, password, "", *run.Snapshots.LocalID)
+			if findErr != nil {
+				return Snapshot{}, findErr
+			}
+			snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, local, *run.Snapshots.LocalID, repository, password, run.Label, source.Tags...)
 			if replicateErr != nil {
 				return Snapshot{}, fmt.Errorf("failed to create S3 Rustic snapshot: %w", replicateErr)
 			}
@@ -1737,6 +1811,7 @@ func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *
 			*snapshots.LocalID, *snapshots.Size = snapshot.ID, snapshot.Size
 		}
 	}
+	var remoteSnapshot Snapshot
 	if run.Remote && (*snapshots.RemoteID != "" || attempted("remote")) {
 		snapshot, found, findErr := r.deps.Engine.FindRunSnapshot(ctx, dockerClient, remote, password, run.RunID, *snapshots.RemoteID)
 		if findErr != nil {
@@ -1744,10 +1819,12 @@ func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *
 		}
 		if found {
 			*snapshots.RemoteID, *snapshots.Size = snapshot.ID, cmp.Or(*snapshots.Size, snapshot.Size)
+			remoteSnapshot = snapshot
 		}
 	}
 	if run.Local && *snapshots.LocalID == "" && *snapshots.RemoteID != "" {
-		snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, remote, *snapshots.RemoteID, local, password, run.Label, run.Tags...)
+		tags := kit.Ternary(remoteSnapshot.ID != "", remoteSnapshot.Tags, run.Tags)
+		snapshot, replicateErr := r.deps.Engine.Replicate(ctx, dockerClient, remote, *snapshots.RemoteID, local, password, run.Label, tags...)
 		if replicateErr != nil {
 			return replicateErr
 		}
