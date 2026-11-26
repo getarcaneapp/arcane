@@ -490,6 +490,12 @@ func BackupProjectDirectory(ctx context.Context, projectsDirectory, projectPath,
 
 	backupLogical, err := acfs.Root{Path: rootAbs}.MkdirTemp(ctx, "/", pattern)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil, nil, fmt.Errorf(
+				"failed to create project backup directory: projects directory %s is not writable by the runtime user (uid %d, gid %d); fix its ownership or set PUID/PGID to a user that can write to it: %w",
+				rootAbs, os.Geteuid(), os.Getegid(), err,
+			)
+		}
 		return nil, nil, fmt.Errorf("failed to create project backup directory: %w", err)
 	}
 	backupPath := filepath.Join(rootAbs, filepath.FromSlash(strings.TrimPrefix(backupLogical, "/")))
