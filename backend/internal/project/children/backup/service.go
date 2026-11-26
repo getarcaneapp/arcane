@@ -501,7 +501,8 @@ func (s *Service) resume(ctx context.Context, previous types.SchedulerRun, reque
 	}
 	switch entry.Status {
 	case types.VolumeBackupStatusFailed:
-		return fmt.Errorf("%w: %s", backup.ErrBackupSettled, entry.Error)
+		_, startErr := s.deps.Containers.StartContainers(ctx, recorded.Stopped, recorded.Plan.User)
+		return errors.Join(startErr, fmt.Errorf("%w: %s", backup.ErrBackupSettled, entry.Error))
 	case types.VolumeBackupStatusSucceeded:
 		return nil
 	}
