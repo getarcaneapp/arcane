@@ -127,6 +127,10 @@ func ParentEntries(selection types.BackupRestoreSelection, list func(folder stri
 	if selection.SelectAll || len(folders) > maxParentFolders {
 		return list("", true)
 	}
+	return ListParents(normalizedPaths, func(folder string) ([]types.BackupFileEntry, error) { return list(folder, false) })
+}
+
+func ListParents(paths []string, list func(folder string) ([]types.BackupFileEntry, error)) ([]types.BackupFileEntry, error) {
 	listed := make(map[string][]types.BackupFileEntry)
 	var eligible []types.BackupFileEntry
 	var listParent func(child string) ([]types.BackupFileEntry, error)
@@ -135,7 +139,7 @@ func ParentEntries(selection types.BackupRestoreSelection, list func(folder stri
 		if entries, ok := listed[folder]; ok {
 			return entries, nil
 		}
-		entries, err := list(folder, false)
+		entries, err := list(folder)
 		if err != nil {
 			if folder == "" {
 				return nil, err
@@ -154,7 +158,7 @@ func ParentEntries(selection types.BackupRestoreSelection, list func(folder stri
 		eligible = append(eligible, entries...)
 		return entries, nil
 	}
-	for _, normalized := range normalizedPaths {
+	for _, normalized := range paths {
 		if _, err := listParent(normalized); err != nil {
 			return nil, err
 		}

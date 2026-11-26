@@ -41,6 +41,10 @@ type (
 		BackupID      string `path:"backupId" doc:"Backup ID"`
 	}
 
+	DiscoverInput struct {
+		Body types.DiscoverBackupsRequest
+	}
+
 	RestoreInput struct {
 		Body          *types.RestoreProjectBackupRequest `json:"body,omitempty"`
 		EnvironmentID string                             `path:"id" doc:"Environment ID"`
@@ -111,4 +115,31 @@ func (h *Handler) Restore(ctx context.Context, input *RestoreInput) (*handleruti
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Project restore started", activityID), nil
+}
+
+func (h *Handler) Discover(ctx context.Context, input *DiscoverInput) (*handlerutil.Out[types.DiscoverVolumeBackupsResponse], error) {
+	if _, err := handlerutil.RequireUser(ctx); err != nil {
+		return nil, err
+	}
+	if err := input.Body.Validate(); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	local := input.Body.Destination == types.VolumeBackupDestinationLocal
+	var destinationIDs []string
+	if !local {
+		destinationIDs = []string{input.Body.S3DestinationID}
+	}
+	count, failures, err := h.service.DiscoverBackups(ctx, DiscoverOptions{S3DestinationIDs: destinationIDs, Local: local})
+	if err != nil && count == 0 {
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
+	}
+	if err != nil {
+		failures = append(failures, err.Error())
+	}
+	return &handlerutil.Out[types.DiscoverVolumeBackupsResponse]{
+		Body: types.ApiResponse[types.DiscoverVolumeBackupsResponse]{
+			Success: true,
+			Data:    types.DiscoverVolumeBackupsResponse{Count: count, Errors: failures},
+		},
+	}, nil
 }

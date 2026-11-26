@@ -952,7 +952,7 @@ func (s *Service) RestoreFile(ctx context.Context, opts types.VolumeBackupFileRe
 	return "", nil
 }
 
-func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverVolumeBackupsRequest) (int, []string, error) {
+func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverBackupsRequest) (int, []string, error) {
 	if request.Destination == types.VolumeBackupDestinationLocal {
 		created, err := s.discoverLocalBackups(ctx)
 		return created, nil, err
@@ -1085,7 +1085,7 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 	}
 	if destinationID == "" {
 		return &types.VolumeBackup{
-			ID:              snapshot.LocalRunID(),
+			ID:              cmp.Or(snapshot.RunID(), "local-"+snapshot.ID),
 			VolumeName:      volumeName,
 			Size:            snapshot.Summary.TotalBytesProcessed,
 			CreatedAt:       createdAt,

@@ -22,6 +22,7 @@ import type {
 } from '#lib/types/project.js';
 import type { BackupFileBrowseRequest } from '#lib/types/ui/backup.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
+import type { DiscoverVolumeBackupsResponse } from '#lib/types/volume.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
@@ -85,6 +86,13 @@ class SystemBackupService extends BaseAPIService {
 
 	async runProjectBackups(policyId: string): Promise<BackupRunAccepted> {
 		return this.handleResponse(this.api.post('/backups/projects/run', { policyId }));
+	}
+
+	async discoverProjectBackups(
+		s3DestinationId: string,
+		destination: 'local' | 's3' = 's3'
+	): Promise<DiscoverVolumeBackupsResponse> {
+		return this.handleResponse(this.api.post('/backups/projects/discover', { destination, s3DestinationId }));
 	}
 
 	async getPolicies(): Promise<SystemBackupPolicyCollection> {

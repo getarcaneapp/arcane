@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"strings"
 	"time"
 )
@@ -16,6 +17,11 @@ type (
 		Search    string   `json:"search,omitempty"`
 		Paths     []string `json:"paths,omitempty"`
 		SelectAll bool     `json:"selectAll,omitempty"`
+	}
+
+	DiscoverBackupsRequest struct {
+		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3" doc:"Repository to scan; s3 when omitted"`
+		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"S3 destination to scan for this instance's existing backups"`
 	}
 
 	BackupRepositoryObservation struct {
@@ -288,6 +294,13 @@ const (
 	VolumeBackupTriggerSafety     = "safety"
 	VolumeBackupTriggerDiscovered = "discovered"
 )
+
+func (r DiscoverBackupsRequest) Validate() error {
+	if r.Destination != VolumeBackupDestinationLocal && strings.TrimSpace(r.S3DestinationID) == "" {
+		return &FieldError{Field: "s3DestinationId", Err: errors.New("select an S3 destination to discover")}
+	}
+	return nil
+}
 
 func (m SystemVolumeSelectionMode) Valid() bool {
 	return m == SystemVolumeSelectionAll || m == SystemVolumeSelectionAllowlist || m == SystemVolumeSelectionBlocklist

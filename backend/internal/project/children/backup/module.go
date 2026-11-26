@@ -40,6 +40,15 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	}, authz.PermProjectsBackup, h.Create)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "discover-project-backups",
+		Method:      http.MethodPost,
+		Path:        "/backups/projects/discover",
+		Summary:     "Discover project backups in local storage or on an S3 destination",
+		Description: "Record the project backups this instance stored on the destination whose rows are missing, as after a system restore; nothing is deleted",
+		Tags:        []string{"Project Backup"},
+	}, authz.PermSystemBackupsUpdate, h.Discover)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-backup",
 		Method:      http.MethodGet,
 		Path:        "/agents/{id}/projects/{projectId}/backups/{backupId}",

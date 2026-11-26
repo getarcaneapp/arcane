@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -45,6 +46,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	s3util "getarcane.dev/arcane/v3/pkg/s3"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
@@ -73,6 +75,7 @@ type (
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
 		ProjectName        func(ctx context.Context, projectID string) (string, error)
 		ListProjects       func(ctx context.Context) ([]types.ProjectReference, error)
+		SyncProjects       func(ctx context.Context) error
 		ProjectRoot        func(ctx context.Context, projectPath string) (string, error)
 		Projects           func(ctx context.Context) ([]types.ProjectRecord, error)
 		DeleteVolume       func(ctx context.Context, name string, user types.Actor) error
@@ -84,12 +87,13 @@ type (
 	}
 
 	Service struct {
-		deps     Dependencies
-		policies *policies.Service
-		flow     *flow.Engine
-		workflow *flow.Workflow
-		restores *flow.Workflow
-		watch    backup.RunWatch
+		deps      Dependencies
+		policies  *policies.Service
+		flow      *flow.Engine
+		workflow  *flow.Workflow
+		restores  *flow.Workflow
+		watch     backup.RunWatch
+		discovery sync.Mutex
 	}
 
 	StartOptions struct {
@@ -168,16 +172,33 @@ type (
 		id         string
 		repository backup.Repository
 	}
+
+	DiscoverOptions struct {
+		S3DestinationIDs []string
+		Local            bool
+	}
+
+	foundSnapshot struct {
+		source          snapshotSource
+		s3DestinationID string
+		instanceID      string
+		snapshot        backup.DiscoveredSnapshot
+	}
 )
 
 const (
-	admissionScope = "project-backup"
-	snapshotRoot   = "/snapshot"
-	restoreRoot    = "/dest"
-	manifestName   = "arcane-project.json"
-	envName        = "project.env"
-	backupsTable   = "project_backups"
-	stagingPrefix  = "arcane-project-backup-"
+	admissionScope   = "project-backup"
+	snapshotRoot     = "/snapshot"
+	restoreRoot      = "/dest"
+	manifestName     = "arcane-project.json"
+	envName          = "project.env"
+	backupsTable     = "project_backups"
+	stagingPrefix    = "arcane-project-backup-"
+	projectTagPrefix = "arcane-project:"
+	triggerTagPrefix = "arcane-trigger:"
+	policyTagPrefix  = "arcane-policy:"
+	volumesOnlyTag   = "arcane-volumes-only"
+	interruptedError = "Backup interrupted by Arcane restart"
 )
 
 var (
@@ -295,6 +316,7 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 		Size:              0,
 		StoppedContainers: false,
 		Files:             p.Files,
+		RemoteInstanceID:  "",
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		release(ctx, leases)
@@ -620,7 +642,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 			return backup.Snapshot{}, stopErr
 		}
 	}
-	snapshot, err := s.deps.Engine.CreateSnapshot(held, dockerClient, repository, password, project.Name, snapshotInput(projectMounts, metaVolume, entry.ID, p))
+	snapshot, err := s.deps.Engine.CreateSnapshot(held, dockerClient, repository, password, project.Name, snapshotInput(projectMounts, metaVolume, entry, p))
 	releaseRepository()
 	if err != nil {
 		return backup.Snapshot{}, fmt.Errorf("failed to create the project snapshot: %w", err)
@@ -631,10 +653,20 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	if err == nil && !maps.Equal(captured, after) {
 		err = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 	}
-	if err != nil {
-		return snapshot, errors.Join(err, s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()))
+	if err == nil {
+		confirmed, confirmErr := s.deps.Engine.ConfirmRunSnapshot(ctx, dockerClient, repository, password, entry.ID, snapshot.ID)
+		if confirmErr == nil {
+			return confirmed, nil
+		}
+		err = confirmErr
 	}
-	return snapshot, nil
+	cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancelCleanup()
+	return backup.Snapshot{}, errors.Join(
+		err,
+		s.fail(context.WithoutCancel(ctx), entry.ID, err.Error()),
+		s.deps.Engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, password, []string{snapshot.ID}),
+	)
 }
 
 func (s *Service) projectFiles(ctx context.Context, dockerClient *client.Client, project types.Project, files bool) ([]byte, bool, []mount.Mount, error) {
@@ -839,7 +871,7 @@ func (s *Service) ReconcileInterruptedBackups(ctx context.Context, protectedIDs 
 	if len(protectedIDs) > 0 {
 		query = query.Where("id NOT IN ?", protectedIDs)
 	}
-	if err := query.Updates(map[string]any{"status": types.VolumeBackupStatusFailed, "error": "Backup interrupted by Arcane restart"}).Error; err != nil {
+	if err := query.Updates(map[string]any{"status": types.VolumeBackupStatusFailed, "error": interruptedError}).Error; err != nil {
 		return err
 	}
 	s.removeStagingVolumes(ctx)
@@ -877,7 +909,7 @@ func (s *Service) List(ctx context.Context, projectID string, params pagination.
 	describe := s.deps.Repository.DescribeRemote(ctx)
 	backups := make([]types.ProjectBackup, 0, len(entries))
 	for i := range entries {
-		name, available := describe(entries[i].S3DestinationID, "", entries[i].RemoteSnapshotID)
+		name, available := describe(entries[i].S3DestinationID, entries[i].RemoteInstanceID, entries[i].RemoteSnapshotID)
 		backups = append(backups, entries[i].DTO(DTOOptions{S3DestinationName: name, RemoteAvailable: available}))
 	}
 	return backups, page, nil
@@ -928,6 +960,9 @@ func (s *Service) removeAll(ctx context.Context, entries []*ProjectBackup) error
 	}
 	snapshots := make([]backup.RunSnapshots, len(entries))
 	for index, entry := range entries {
+		if entry.RemoteInstanceID != "" {
+			entry.RemoteSnapshotID, entry.S3DestinationID = "", ""
+		}
 		snapshots[index] = entry.snapshots()
 	}
 	removeErr := s.deps.Repository.ForgetRunSnapshots(ctx, dockerClient, snapshots, true)
@@ -1073,6 +1108,7 @@ func (s *Service) backUpAdmitted(ctx context.Context, admitted admittedRun, requ
 		Size:              0,
 		StoppedContainers: false,
 		Files:             p.Files,
+		RemoteInstanceID:  "",
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return fmt.Errorf("failed to save project backup: %w", createErr)
@@ -1167,7 +1203,7 @@ func (s *Service) PruneUnmanagedBackups(ctx context.Context) error {
 func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
 	var candidates []ProjectBackup
 	if err := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).Select("id", "policy_id").
-		Where("status <> ? AND trigger = ? AND policy_id <> ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled).
+		Where("status <> ? AND trigger = ? AND policy_id <> '' AND remote_instance_id = ''", types.VolumeBackupStatusRunning, types.VolumeBackupTriggerScheduled).
 		Find(&candidates).Error; err != nil {
 		return nil, fmt.Errorf("failed to load unmanaged project backups: %w", err)
 	}
@@ -1182,6 +1218,288 @@ func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBac
 		}
 	}
 	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, backupsTable, orphaned, sweep)
+}
+
+func (s *Service) DiscoverBackups(ctx context.Context, opts DiscoverOptions) (int, []string, error) {
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	var repositories []backup.Repository
+	var destinationIDs, instanceIDs, warnings []string
+	var listErr error
+	if opts.Local {
+		local, localErr := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
+		if localErr != nil {
+			listErr = fmt.Errorf("open the local repository: %w", localErr)
+		} else {
+			repositories, destinationIDs, instanceIDs = append(repositories, local), append(destinationIDs, ""), append(instanceIDs, "")
+		}
+	}
+	ownInstance := s.deps.Settings.GetSettingsConfig().InstanceID.Value
+	for _, destinationID := range opts.S3DestinationIDs {
+		configuration, configErr := s.deps.S3Destinations.Configuration(ctx, destinationID)
+		if configErr != nil {
+			warnings = append(warnings, fmt.Sprintf("open S3 destination %s: %v", destinationID, configErr))
+			continue
+		}
+		roots, rootsErr := s3util.ListRepositoryRoots(ctx, configuration, backup.VolumeRoot)
+		if rootsErr != nil {
+			warnings = append(warnings, fmt.Sprintf("list repositories in S3 destination %s: %v", destinationID, rootsErr))
+			continue
+		}
+		for _, root := range roots {
+			remote, remoteErr := s.deps.Repository.Remote(ctx, destinationID, root)
+			if remoteErr != nil {
+				warnings = append(warnings, fmt.Sprintf("open S3 destination %s instance %s: %v", destinationID, root, remoteErr))
+				continue
+			}
+			repositories, destinationIDs, instanceIDs = append(repositories, remote), append(destinationIDs, destinationID), append(instanceIDs, kit.Ternary(root == ownInstance, "", root))
+		}
+	}
+	var found []foundSnapshot
+	for index, repository := range repositories {
+		password, snapshotsErr := s.deps.Repository.RepositoryPassword(ctx, dockerClient, repository, backup.PasswordOptions{ReadOnly: instanceIDs[index] != ""})
+		var listed []backup.DiscoveredSnapshot
+		if snapshotsErr == nil {
+			listed, snapshotsErr = s.deps.Engine.ListSnapshots(ctx, dockerClient, repository, password)
+		}
+		switch {
+		case snapshotsErr == nil:
+		case errors.Is(snapshotsErr, backup.ErrRepositoryMissing):
+			continue
+		case instanceIDs[index] != "":
+			slog.WarnContext(ctx, "Skipped another Arcane instance's backup repository that this instance cannot open", "repository", repository.ID, "error", snapshotsErr)
+			continue
+		case destinationIDs[index] == "":
+			listErr = errors.Join(listErr, fmt.Errorf("list project snapshots in %s: %w", repository.ID, snapshotsErr))
+			continue
+		default:
+			warnings = append(warnings, fmt.Sprintf("list project snapshots in %s: %v", repository.ID, snapshotsErr))
+			continue
+		}
+		for _, snapshot := range listed {
+			if slices.Contains(snapshot.Tags, backup.ProjectSnapshotTag) {
+				found = append(found, foundSnapshot{
+					snapshot:        snapshot,
+					s3DestinationID: destinationIDs[index],
+					instanceID:      instanceIDs[index],
+					source:          snapshotSource{password: password, id: snapshot.ID, repository: repository},
+				})
+			}
+		}
+	}
+	recorded, importWarnings, err := s.importSnapshots(ctx, dockerClient, found)
+	warnings = append(warnings, importWarnings...)
+	if err = errors.Join(listErr, err); err != nil && recorded > 0 {
+		return recorded, warnings, fmt.Errorf("recorded %d project backups, but discovery was incomplete: %w", recorded, err)
+	}
+	return recorded, warnings, err
+}
+
+func (s *Service) DiscoverAfterRestore(ctx context.Context) error {
+	if !s.deps.Settings.GetBoolSetting(ctx, backup.ProjectDiscoveryPendingKey) {
+		return nil
+	}
+	if err := s.deps.SyncProjects(ctx); err != nil {
+		return fmt.Errorf("sync projects before discovering their backups: %w", err)
+	}
+	destinations, err := s.deps.S3Destinations.ListAllS3Destinations(ctx)
+	if err != nil {
+		return err
+	}
+	destinationIDs := make([]string, 0, len(destinations))
+	for _, destination := range destinations {
+		destinationIDs = append(destinationIDs, destination.ID)
+	}
+	count, warnings, err := s.DiscoverBackups(ctx, DiscoverOptions{S3DestinationIDs: destinationIDs, Local: true})
+	slog.InfoContext(ctx, "Discovered project backups after a system restore", "recorded", count)
+	for _, warning := range warnings {
+		slog.WarnContext(ctx, "Project backup discovery after a system restore skipped a source", "error", warning)
+	}
+	if err != nil {
+		return err
+	}
+	return s.deps.Settings.UpdateSetting(ctx, backup.ProjectDiscoveryPendingKey, "false")
+}
+
+func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Client, found []foundSnapshot) (int, []string, error) {
+	groups := make(map[string][]foundSnapshot)
+	for _, snapshot := range found {
+		if backupID := snapshot.snapshot.RunID(); backupID != "" {
+			groups[backupID] = append(groups[backupID], snapshot)
+		}
+	}
+	if len(groups) == 0 {
+		return 0, nil, nil
+	}
+	backupIDs := slices.Sorted(maps.Keys(groups))
+	s.discovery.Lock()
+	defer s.discovery.Unlock()
+	stored, err := s.backupsByID(ctx, backupIDs)
+	if err != nil {
+		return 0, nil, err
+	}
+	existing := make(map[string]*ProjectBackup, len(stored))
+	for _, entry := range stored {
+		existing[entry.ID] = entry
+	}
+	references, err := s.deps.ListProjects(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	managed, err := s.policies.Managed(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	recorded := 0
+	var warnings []string
+	var importErr error
+	for _, backupID := range backupIDs {
+		snapshots := groups[backupID]
+		slices.SortFunc(snapshots, func(a, b foundSnapshot) int {
+			return cmp.Or(strings.Compare(a.s3DestinationID, b.s3DestinationID), a.snapshot.Time.Compare(b.snapshot.Time))
+		})
+		local := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.s3DestinationID == "" })
+		remote := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.s3DestinationID != "" })
+		snapshotAt := func(index int) foundSnapshot {
+			if index < 0 {
+				return foundSnapshot{}
+			}
+			return snapshots[index]
+		}
+		localSnapshot, remoteSnapshot := snapshotAt(local), snapshotAt(remote)
+		largest := slices.MaxFunc(snapshots, func(a, b foundSnapshot) int {
+			return cmp.Compare(a.snapshot.Summary.TotalBytesProcessed, b.snapshot.Summary.TotalBytesProcessed)
+		})
+		if entry, recordedBefore := existing[backupID]; recordedBefore {
+			filled, fillWarnings, fillErr := s.addFoundCopies(ctx, dockerClient, *entry, localSnapshot, remoteSnapshot, largest.snapshot.Summary.TotalBytesProcessed)
+			warnings, importErr = append(warnings, fillWarnings...), errors.Join(importErr, fillErr)
+			recorded += int(filled)
+			continue
+		}
+		first := snapshots[kit.Ternary(local >= 0, local, remote)]
+		projectID := snapshotTag(first.snapshot.Tags, projectTagPrefix)
+		if slices.ContainsFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.instanceID == "" }) &&
+			!slices.ContainsFunc(references, func(project types.ProjectReference) bool { return project.ID == projectID }) {
+			named := slices.DeleteFunc(slices.Clone(references), func(project types.ProjectReference) bool { return project.Name != first.snapshot.Label })
+			if len(named) == 1 {
+				projectID = named[0].ID
+			}
+		}
+		if projectID == "" {
+			continue
+		}
+		trigger, policyID := snapshotTag(first.snapshot.Tags, triggerTagPrefix), snapshotTag(first.snapshot.Tags, policyTagPrefix)
+		if trigger != types.VolumeBackupTriggerSafety && (trigger != types.VolumeBackupTriggerScheduled || !managed[policyID]) {
+			trigger, policyID = types.VolumeBackupTriggerManual, ""
+		}
+		releaseBackups, holdErr := s.HoldBackups(ctx, projectID)
+		if holdErr != nil {
+			importErr = errors.Join(importErr, holdErr)
+			continue
+		}
+		var manifest types.ProjectManifest
+		for _, copied := range []*foundSnapshot{&localSnapshot, &remoteSnapshot} {
+			if copied.snapshot.ID == "" {
+				continue
+			}
+			read, manifestErr := s.readManifest(ctx, dockerClient, copied.source)
+			if manifestErr != nil {
+				warnings = append(warnings, fmt.Sprintf("read the manifest of project backup %s: %v", backupID, manifestErr))
+				*copied = foundSnapshot{}
+				continue
+			}
+			manifest = read
+		}
+		if localSnapshot.snapshot.ID == "" && remoteSnapshot.snapshot.ID == "" {
+			releaseBackups(ctx)
+			continue
+		}
+		createdAt := cmp.Or(manifest.CreatedAt, slices.MinFunc(snapshots, func(a, b foundSnapshot) int { return a.snapshot.Time.Compare(b.snapshot.Time) }).snapshot.Time)
+		entry := ProjectBackup{ //exhaustruct:enforce
+			BaseModel:         database.BaseModel{ID: backupID, CreatedAt: createdAt, UpdatedAt: nil},
+			CompletedAt:       new(createdAt),
+			ProjectID:         projectID,
+			ProjectName:       cmp.Or(first.snapshot.Label, manifest.Project.Name),
+			ComposeName:       manifest.Project.ComposeName,
+			Status:            types.VolumeBackupStatusSucceeded,
+			Trigger:           trigger,
+			Destination:       backup.Destination(backup.DestinationOptions{Local: localSnapshot.snapshot.ID != "", Remote: remoteSnapshot.snapshot.ID != ""}),
+			LocalSnapshotID:   localSnapshot.snapshot.ID,
+			RemoteSnapshotID:  remoteSnapshot.snapshot.ID,
+			S3DestinationID:   remoteSnapshot.s3DestinationID,
+			PolicyID:          policyID,
+			Error:             "",
+			Volumes:           backupVolumes(manifest.Volumes),
+			Size:              largest.snapshot.Summary.TotalBytesProcessed,
+			StoppedContainers: false,
+			Files:             !slices.Contains(first.snapshot.Tags, volumesOnlyTag),
+			RemoteInstanceID:  remoteSnapshot.instanceID,
+		}
+		createErr := s.deps.DB.WithContext(ctx).Create(&entry).Error
+		releaseBackups(ctx)
+		if createErr != nil {
+			importErr = errors.Join(importErr, createErr)
+			continue
+		}
+		recorded++
+	}
+	return recorded, warnings, importErr
+}
+
+func (s *Service) addFoundCopies(ctx context.Context, dockerClient *client.Client, entry ProjectBackup, localSnapshot, remoteSnapshot foundSnapshot, size int64) (int64, []string, error) {
+	interrupted := entry.Status == types.VolumeBackupStatusFailed && (entry.Error == interruptedError || (entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""))
+	if !interrupted && entry.Status != types.VolumeBackupStatusSucceeded {
+		return 0, nil, nil
+	}
+	var warnings []string
+	for index, copied := range []*foundSnapshot{&localSnapshot, &remoteSnapshot} {
+		saved := []string{entry.LocalSnapshotID, entry.RemoteSnapshotID}[index]
+		if copied.snapshot.ID == "" || (saved != "" && (!interrupted || saved != copied.snapshot.ID)) {
+			continue
+		}
+		releaseBackups, holdErr := s.HoldBackups(ctx, entry.ProjectID)
+		if holdErr != nil {
+			return 0, nil, holdErr
+		}
+		_, readErr := s.readManifest(ctx, dockerClient, copied.source)
+		releaseBackups(ctx)
+		if readErr != nil {
+			warnings = append(warnings, fmt.Sprintf("read the manifest of project backup %s: %v", entry.ID, readErr))
+			*copied = foundSnapshot{}
+		}
+	}
+	hasLocal, hasRemote := localSnapshot.snapshot.ID != "", remoteSnapshot.snapshot.ID != ""
+	addLocal, addRemote := hasLocal && entry.LocalSnapshotID == "", hasRemote && entry.RemoteSnapshotID == ""
+	verified := interrupted && ((hasLocal && localSnapshot.snapshot.ID == entry.LocalSnapshotID) || (hasRemote && remoteSnapshot.snapshot.ID == entry.RemoteSnapshotID))
+	if !addLocal && !addRemote && !verified {
+		return 0, warnings, nil
+	}
+	updates := map[string]any{"destination": backup.Destination(backup.DestinationOptions{Local: entry.LocalSnapshotID != "" || hasLocal, Remote: entry.RemoteSnapshotID != "" || hasRemote})}
+	if addLocal {
+		updates["local_snapshot_id"] = localSnapshot.snapshot.ID
+	}
+	if addRemote {
+		updates["remote_snapshot_id"], updates["s3_destination_id"], updates["remote_instance_id"] = remoteSnapshot.snapshot.ID, remoteSnapshot.s3DestinationID, remoteSnapshot.instanceID
+	}
+	if interrupted {
+		updates["status"], updates["error"], updates["size"] = types.VolumeBackupStatusSucceeded, "", size
+	}
+	filled := s.deps.DB.WithContext(ctx).Model(&ProjectBackup{}).
+		Where("id = ? AND status = ? AND COALESCE(local_snapshot_id, '') = ? AND COALESCE(remote_snapshot_id, '') = ?",
+			entry.ID, entry.Status, entry.LocalSnapshotID, entry.RemoteSnapshotID).
+		Updates(updates)
+	return filled.RowsAffected, warnings, filled.Error
+}
+
+func snapshotTag(tags []string, prefix string) string {
+	for _, tag := range tags {
+		if value, found := strings.CutPrefix(tag, prefix); found {
+			return value
+		}
+	}
+	return ""
 }
 
 func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (string, error) {
@@ -1255,7 +1573,7 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 	activityID, err := s.flow.Submit(ctx, s.restores, restoreRun{Requester: requester, User: opts.User, Plan: p}, activity.StartRequest{
 		EnvironmentID: opts.EnvironmentID, ResourceType: new("project"), ResourceID: new(project.ID), ResourceName: new(project.Name), StartedBy: &opts.User,
 		Step: "Restoring backup", LatestMessage: "Restoring project backup",
-		Metadata: database.JSON{"action": "restore_project_backup", "backupId": entry.ID},
+		Metadata: database.JSON{"action": backup.ProjectRestoreAction, "backupId": entry.ID},
 	})
 	if err != nil {
 		releaseHeld(ctx)
@@ -1357,6 +1675,13 @@ func (r restoring) recover(ctx context.Context) error {
 	})
 	if index < 0 {
 		return errors.New("the restore was interrupted by a restart before it changed the project; nothing was restored")
+	}
+	var settled int64
+	if err := r.s.deps.DB.WithContext(ctx).Table("activities").Where("id = ? AND status = ?", r.activityID, types.ActivityStatusFailed).Count(&settled).Error; err != nil {
+		return err
+	}
+	if settled > 0 {
+		return errors.New("the restore was interrupted by a system restore; the project was left as it is")
 	}
 	var recorded restorePlan
 	if err := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &recorded); err != nil {
@@ -1722,6 +2047,7 @@ func (s *Service) safetyBackup(ctx context.Context, p restorePlan) (string, erro
 		Size:              0,
 		StoppedContainers: false,
 		Files:             p.Files,
+		RemoteInstanceID:  "",
 	}
 	if createErr := s.deps.DB.WithContext(ctx).Create(entry).Error; createErr != nil {
 		return "", fmt.Errorf("failed to save the safety backup: %w", createErr)
@@ -1961,7 +2287,18 @@ func (s *Service) open(ctx context.Context, dockerClient *client.Client, entry *
 		if id == "" {
 			continue
 		}
-		source, manifest, err := s.readManifest(ctx, dockerClient, entry.S3DestinationID, remote, id)
+		repository, err := s.repository(ctx, dockerClient, entry, remote)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		password, err := s.deps.Repository.RepositoryPassword(ctx, dockerClient, repository, backup.PasswordOptions{ReadOnly: remote && entry.RemoteInstanceID != ""})
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		source := snapshotSource{repository: repository, password: password, id: id}
+		manifest, err := s.readManifest(ctx, dockerClient, source)
 		if err == nil {
 			return source, manifest, nil
 		}
@@ -1970,35 +2307,26 @@ func (s *Service) open(ctx context.Context, dockerClient *client.Client, entry *
 	return snapshotSource{}, types.ProjectManifest{}, errors.Join(errs...)
 }
 
-func (s *Service) repository(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool) (backup.Repository, error) {
+func (s *Service) repository(ctx context.Context, dockerClient *client.Client, entry *ProjectBackup, remote bool) (backup.Repository, error) {
 	if remote {
-		return s.deps.Repository.Remote(ctx, s3DestinationID, "")
+		return s.deps.Repository.Remote(ctx, entry.S3DestinationID, entry.RemoteInstanceID)
 	}
 	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 }
 
-func (s *Service) readManifest(ctx context.Context, dockerClient *client.Client, s3DestinationID string, remote bool, id string) (snapshotSource, types.ProjectManifest, error) {
-	repository, err := s.repository(ctx, dockerClient, s3DestinationID, remote)
-	if err != nil {
-		return snapshotSource{}, types.ProjectManifest{}, err
-	}
-	password, err := s.deps.Repository.Password(ctx, dockerClient, repository)
-	if err != nil {
-		return snapshotSource{}, types.ProjectManifest{}, err
-	}
-	source := snapshotSource{repository: repository, password: password, id: id}
+func (s *Service) readManifest(ctx context.Context, dockerClient *client.Client, source snapshotSource) (types.ProjectManifest, error) {
 	text, err := s.deps.Engine.ReadSnapshotTextFile(ctx, dockerClient, source.repository, source.password, source.id, path.Join("meta", manifestName))
 	if err != nil {
-		return snapshotSource{}, types.ProjectManifest{}, err
+		return types.ProjectManifest{}, err
 	}
 	var manifest types.ProjectManifest
 	if decodeErr := json.Unmarshal([]byte(text), &manifest); decodeErr != nil {
-		return snapshotSource{}, types.ProjectManifest{}, fmt.Errorf("decode the project backup manifest: %w", decodeErr)
+		return types.ProjectManifest{}, fmt.Errorf("decode the project backup manifest: %w", decodeErr)
 	}
 	if manifest.Kind != types.ProjectManifestKindBackup || manifest.FormatVersion > types.ProjectManifestFormatVersion {
-		return snapshotSource{}, types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf(
+		return types.ProjectManifest{}, common.Classify(common.ErrValidation, fmt.Errorf(
 			"the backup's manifest is a %q manifest in format %d, which this version of Arcane cannot restore", manifest.Kind, manifest.FormatVersion,
 		))
 	}
-	return source, manifest, nil
+	return manifest, nil
 }

@@ -103,6 +103,7 @@ func New(p ModuleParams) *Module {
 			return proj.Name, nil
 		},
 		ListProjects: p.Service.ListProjectReferences,
+		SyncProjects: p.Service.SyncProjectsFromFileSystem,
 		ProjectRoot:  p.Service.ProjectRootDirectory,
 		Projects: func(ctx context.Context) ([]types.ProjectRecord, error) {
 			all, err := p.Service.ListAllProjects(ctx)
@@ -190,6 +191,10 @@ func (m *Module) ReconcileInterruptedBackups(ctx context.Context, protectedIDs .
 
 func (m *Module) RegisterBackupJobsOnStartup(ctx context.Context) {
 	m.backups.RegisterJobsOnStartup(ctx)
+}
+
+func (m *Module) DiscoverBackupsAfterRestore(ctx context.Context) error {
+	return m.backups.DiscoverAfterRestore(ctx)
 }
 
 func (m *Module) PruneUnmanagedBackups(ctx context.Context) error {

@@ -81,9 +81,10 @@ type (
 		// container; the target mount's path is used when empty.
 		DestinationPath string
 		// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
-		ExtraMounts []mount.Mount
-		Globs       []string
-		DeleteExtra bool
+		ExtraMounts   []mount.Mount
+		Globs         []string
+		DeleteExtra   bool
+		TrustExisting bool
 	}
 
 	SourceMountOptions struct {
@@ -95,6 +96,10 @@ type (
 	}
 
 	LocalRepositoryOptions struct {
+		ReadOnly bool
+	}
+
+	PasswordOptions struct {
 		ReadOnly bool
 	}
 
@@ -266,6 +271,8 @@ const (
 	VolumeAdmissionScope           = "volume-backup"
 	ProjectSnapshotTag             = "arcane-kind:project"
 	ProjectTargetType              = "project_backup"
+	ProjectRestoreAction           = "restore_project_backup"
+	ProjectDiscoveryPendingKey     = "projectBackupDiscoveryPending"
 	SystemAdmissionScope           = "system-backup"
 	SystemAdmissionID              = "system"
 	RecoveryKeyConfigID            = "system-recovery"
@@ -425,18 +432,24 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 }
 
 func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
-	command := []string{"restore", "--verify-existing"}
+	command := RestoreCommand(snapshotID, cmp.Or(options.DestinationPath, target.Target), options)
+	mounts := append([]mount.Mount{target}, options.ExtraMounts...)
+	_, err := e.run(ctx, dockerClient, repository, password, command, mounts...)
+	return err
+}
+
+func RestoreCommand(snapshotID, destination string, options RestoreOptions) []string {
+	command := []string{"restore"}
+	if !options.TrustExisting {
+		command = append(command, "--verify-existing")
+	}
 	if options.DeleteExtra {
 		command = append(command, "--delete")
 	}
 	for _, glob := range options.Globs {
 		command = append(command, "--glob", glob)
 	}
-	source := snapshotID + ":/" + strings.TrimPrefix(options.SourcePath, "/")
-	command = append(command, "--", source, cmp.Or(options.DestinationPath, target.Target))
-	mounts := append([]mount.Mount{target}, options.ExtraMounts...)
-	_, err := e.run(ctx, dockerClient, repository, password, command, mounts...)
-	return err
+	return append(command, "--", snapshotID+":/"+strings.TrimPrefix(options.SourcePath, "/"), destination)
 }
 
 func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
@@ -521,13 +534,13 @@ func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.
 
 func RunSnapshotTag(runID string) string { return "arcane-run:" + runID }
 
-func (s DiscoveredSnapshot) LocalRunID() string {
+func (s DiscoveredSnapshot) RunID() string {
 	for _, tag := range s.Tags {
 		if runID, ok := strings.CutPrefix(tag, RunSnapshotTag("")); ok && runID != "" {
 			return runID
 		}
 	}
-	return "local-" + s.ID
+	return ""
 }
 
 func RecordDiscovered[T any](ctx context.Context, records DiscoveredRecords[T]) (int, error) {
@@ -1290,7 +1303,7 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 		for _, table := range req.Tables {
 			var count int64
 			query := db.WithContext(ctx).Table(table).Where("s3_destination_id = ? AND COALESCE(remote_snapshot_id, '') <> ''", req.DestinationID)
-			if table == "volume_backups" {
+			if slices.Contains(VolumeRepositoryTables, table) {
 				query = query.Where("COALESCE(remote_instance_id, '') = ''")
 			}
 			if countRetainedSnapshotsErr := query.Count(&count).Error; countRetainedSnapshotsErr != nil {
@@ -1578,6 +1591,24 @@ func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Cl
 		r.rekeyed.Store(repository.ID, key)
 	}
 	return key, nil
+}
+
+func (r *VolumeRepository) RepositoryPassword(ctx context.Context, dockerClient *client.Client, repository Repository, opts PasswordOptions) (string, error) {
+	if !opts.ReadOnly {
+		return r.Password(ctx, dockerClient, repository)
+	}
+	key, err := r.Password(ctx, dockerClient)
+	if err != nil || key == r.legacyPassword {
+		return key, err
+	}
+	_, listErr := r.deps.Engine.ListSnapshots(ctx, dockerClient, repository, key)
+	if listErr == nil || errors.Is(listErr, ErrRepositoryMissing) {
+		return key, nil
+	}
+	if _, legacyErr := r.deps.Engine.ListSnapshots(ctx, dockerClient, repository, r.legacyPassword); legacyErr != nil {
+		return "", listErr
+	}
+	return r.legacyPassword, nil
 }
 
 func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string) error {

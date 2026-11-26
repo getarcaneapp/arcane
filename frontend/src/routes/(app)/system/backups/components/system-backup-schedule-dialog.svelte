@@ -73,7 +73,7 @@
 	let ignoreAnonymous = $state(initialScope.ignoreAnonymous ?? true);
 	const projectOptionsQuery = createQuery(() => ({ ...projectBackupOptionsQuery(), enabled: backupType === 'project' }));
 	const typeOptions = $derived([
-		{ label: m.system(), value: 'system', description: m.system_backups_type_system_description() },
+		{ label: m.system(), value: 'system', description: m.arcane_only_backup_description() },
 		{ label: m.project(), value: 'project', description: m.back_up_selected_projects() },
 		{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }
 	]);

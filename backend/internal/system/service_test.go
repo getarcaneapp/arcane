@@ -24,6 +24,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -147,9 +148,9 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	}).Error)
 	require.NoError(t, gormDB.Exec(`CREATE TABLE project_backups (id TEXT PRIMARY KEY, project_id TEXT, project_name TEXT, status TEXT,
 		trigger TEXT, destination TEXT, local_snapshot_id TEXT, remote_snapshot_id TEXT, s3_destination_id TEXT, policy_id TEXT,
-		error TEXT, size INTEGER, created_at TIMESTAMP)`).Error)
-	require.NoError(t, gormDB.Exec(`INSERT INTO project_backups VALUES ('pb1', 'p1', 'web', 'succeeded', 'scheduled', 'local', 'snap', '', '', 'pp1', '', 10, ?),
-		('pb2', 'p2', 'old', 'succeeded', 'manual', 'local', 'snap2', '', '', '', '', 20, ?)`,
+		error TEXT, size INTEGER, created_at TIMESTAMP, remote_instance_id TEXT NOT NULL DEFAULT '')`).Error)
+	require.NoError(t, gormDB.Exec(`INSERT INTO project_backups VALUES ('pb1', 'p1', 'web', 'succeeded', 'scheduled', 'local', 'snap', '', '', 'pp1', '', 10, ?, ''),
+		('pb2', 'p2', 'old', 'succeeded', 'manual', 'local', 'snap2', '', '', '', '', 20, ?, '')`,
 		now.Add(-3*time.Minute), now.Add(-4*time.Minute)).Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE projects (id TEXT PRIMARY KEY)").Error)
 	require.NoError(t, gormDB.Exec("INSERT INTO projects VALUES ('p1')").Error)
@@ -289,7 +290,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		Ctx:    t.Context(),
 		DB:     db,
 		Config: &config.Config{},
-		Env:    settings.Env{},
+		Env:    settings.Env{"projectsDirectory": t.TempDir()},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
@@ -312,6 +313,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 			Repository:    backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, BackupVolumeName: "arcane-backups"}),
 		}),
 		SettingsService:  settingsService,
+		ProjectService:   project.NewProjectService(project.ProjectServiceParams{SettingsService: settingsService}),
 		BackupEngine:     engine,
 		BackupRepository: backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{Docker: dockerService, Engine: engine, BackupVolumeName: "arcane-backups"}),
 		S3Destinations:   s3Destinations,

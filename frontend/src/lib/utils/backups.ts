@@ -5,6 +5,7 @@ import { APIError } from '#lib/services/api-service.js';
 import { systemBackupService } from '#lib/services/system-backup-service.js';
 import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import userStore from '#lib/stores/user-store.svelte.js';
 import type {
 	SystemBackupDestination,
 	BackupManagementType,
@@ -14,8 +15,9 @@ import type {
 	S3Destination
 } from '#lib/types/backup.js';
 import type { ProjectBackupVolume, ProjectVolume } from '#lib/types/project.js';
+import { GLOBAL_SCOPE } from '#lib/types/role.js';
 import type { BackupPolicy, BackupRun } from '#lib/types/ui/backup.js';
-import type { VolumeBackupDestination } from '#lib/types/volume.js';
+import type { DiscoverVolumeBackupsResponse, VolumeBackupDestination } from '#lib/types/volume.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -138,6 +140,19 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	if (systemResult.error === null && systemResult.data > 0) {
 		toast.success(m.system_backups_discovered({ count: systemResult.data }));
 	}
+	if (userStore.hasPermission('system-backups:update', GLOBAL_SCOPE)) {
+		const projectResult = await tryCatch(systemBackupService.discoverProjectBackups(destinationId));
+		if (projectResult.error !== null) {
+			toast.error(m.failed_to_discover_project_backups(), { description: extractApiErrorMessage(projectResult.error) });
+		} else {
+			if (projectResult.data.count > 0) {
+				toast.success(m.found_project_backups({ count: projectResult.data.count }));
+			}
+			for (const failure of projectResult.data.errors ?? []) {
+				toast.warning(m.failed_to_discover_project_backups(), { description: failure });
+			}
+		}
+	}
 	const volumeResult = await tryCatch(volumeBackupService.discoverBackups(destinationId, LOCAL_DOCKER_ENVIRONMENT_ID));
 	if (volumeResult.error === null) {
 		if (volumeResult.data.count > 0) {
@@ -151,6 +166,9 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	}
 }
 
+// Finds backups whose rows are missing on each S3 destination, and in local storage when `local` is set, such as after
+// a recovery key is imported following the loss of Arcane's data volume. Local project discovery runs first, so the S3
+// scans add their copies to the rows it records instead of racing it.
 export async function runAutomaticBackupDiscovery(
 	destinations: { id: string }[],
 	{ local }: { local: boolean }
@@ -174,12 +192,30 @@ export async function runAutomaticBackupDiscovery(
 		}
 		return found;
 	};
+	const reportProjectDiscovery = ({ count, errors }: DiscoverVolumeBackupsResponse) => {
+		for (const failure of errors ?? []) {
+			toast.warning(m.failed_to_discover_project_backups(), { description: failure });
+		}
+		return count;
+	};
+	const localProjects = local
+		? await discover(
+				systemBackupService.discoverProjectBackups('', 'local').then(reportProjectDiscovery),
+				m.failed_to_discover_project_backups
+			)
+		: 0;
 	const counts = await Promise.all([
 		discoverSystem(),
 		...(local ? [discoverVolumes('', 'local')] : []),
-		...destinations.map((item) => discoverVolumes(item.id, 's3'))
+		...destinations.flatMap((item) => [
+			discover(
+				systemBackupService.discoverProjectBackups(item.id).then(reportProjectDiscovery),
+				m.failed_to_discover_project_backups
+			),
+			discoverVolumes(item.id, 's3')
+		])
 	]);
-	return counts.some((count) => count > 0);
+	return localProjects > 0 || counts.some((count) => count > 0);
 }
 
 // restorableVolumes lists the volumes whose data a project backup holds, as the volume checklist shows them.
