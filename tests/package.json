@@ -9,8 +9,8 @@
 		"test": "vp test run"
 	},
 	"devDependencies": {
-		"@axe-core/playwright": "^4.14.0",
-		"@types/node": "^26.6.6",
+		"@axe-core/playwright": "^4.14.1",
+		"@types/node": "^26.6.7",
 		"playwright": "^1.65.1",
 		"typescript": "^7.0.2",
 		"vite": "catalog:",

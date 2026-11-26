@@ -345,10 +345,10 @@ html.reduce-effects *::after {
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
-	--radius-xl: calc(var(--radius) + 4px);
-	--radius-2xl: calc(var(--radius) + 6px);
-	--radius-3xl: calc(var(--radius) + 10px);
-	--radius-4xl: calc(var(--radius) + 14px);
+	--radius-xl: calc(var(--radius) + 2px);
+	--radius-2xl: calc(var(--radius) + 4px);
+	--radius-3xl: calc(var(--radius) + 8px);
+	--radius-4xl: calc(var(--radius) + 12px);
 
 	--color-background: var(--background);
 	--color-row-hover: color-mix(in oklab, var(--primary) 8%, transparent);
