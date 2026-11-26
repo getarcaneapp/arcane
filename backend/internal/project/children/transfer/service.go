@@ -451,12 +451,15 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 			Message:  fmt.Sprintf("Project %s is managed by a GitOps sync, but its copy %s on the target environment is not.", project.Name, request.Name),
 		})
 	}
-	resolved, _, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
-		Inspect: source.Volume,
-		Project: project,
-	})
-	if err != nil {
-		return fmt.Errorf("inspect source volumes: %w", err)
+	resolved, inspected := projects.ClassifyProjectVolumes(project), map[string]types.Volume{}
+	if request.IncludeVolumes {
+		resolved, inspected, err = projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
+			Inspect: source.Volume,
+			Project: project,
+		})
+		if err != nil {
+			return fmt.Errorf("inspect source volumes: %w", err)
+		}
 	}
 	var externalVolumes, hostVolumes, sourceVolumes, missingVolumes, targetVolumes, built []string
 	for _, volume := range resolved {
@@ -493,6 +496,21 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 					"Volume %s of project %s is used under several Compose keys that resolve to different volume names on the target environment; "+
 						"give those keys the same explicit name before transferring the project.",
 					volume.SourceName, project.Name,
+				),
+			})
+			break
+		}
+	}
+	for _, volume := range plan.Volumes {
+		if index := slices.IndexFunc(plan.Volumes, func(other types.ProjectTransferVolume) bool {
+			return other.SourceName != volume.SourceName && other.TargetName == volume.TargetName
+		}); request.IncludeVolumes && index >= 0 {
+			plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+				Code:     types.ProjectTransferVolumeShared,
+				Severity: types.ProjectTransferSeverityError,
+				Message: fmt.Sprintf(
+					"Volumes %s and %s of project %s would both be named %s on the target environment; give them distinct explicit names before transferring the project.",
+					volume.SourceName, plan.Volumes[index].SourceName, project.Name, volume.TargetName,
 				),
 			})
 			break
@@ -547,11 +565,7 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	var bundleSize int64
 	if request.IncludeVolumes {
 		for _, name := range slices.Compact(slices.Sorted(slices.Values(sourceVolumes))) {
-			volume, _, volumeErr := source.Volume(ctx, name)
-			if volumeErr != nil {
-				return fmt.Errorf("inspect source volume %s: %w", name, volumeErr)
-			}
-			bundleSize += max(volume.Size, 0)
+			bundleSize += max(inspected[name].Size, 0)
 		}
 	}
 	return targetChecks(ctx, plan, project, target, request, targetVolumes, externalVolumes, bundleSize)
@@ -844,6 +858,9 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 		if err != nil {
 			return fmt.Errorf("export the %s: %w", artifact, err)
 		}
+	}
+	if restartErr := s.restartSource(ctx, r); restartErr != nil {
+		return restartErr
 	}
 	uploadID, err := s.relay(ctx, r, types.UploadKindProjectArchive, artifact, source)
 	if err != nil {
@@ -1150,8 +1167,14 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 			leftover = append(leftover, fmt.Sprintf("project %s (%v)", name, err))
 		}
 	}
+	removable := slices.Clone(r.state.CreatedVolumes)
+	if r.state.Importing {
+		for _, volume := range r.state.Volumes {
+			removable = append(removable, volume.TargetName)
+		}
+	}
 	removedVolume := false
-	for _, volume := range kit.Ternary(keep, nil, r.state.CreatedVolumes) {
+	for _, volume := range kit.Ternary(keep, nil, slices.Compact(slices.Sorted(slices.Values(removable)))) {
 		existing, exists, err := r.target.Volume(ctx, volume)
 		if err == nil && exists && r.state.TargetCompose != "" && docker.ComposeProjectLabel(existing.Labels) == r.state.TargetCompose {
 			removedVolume = true

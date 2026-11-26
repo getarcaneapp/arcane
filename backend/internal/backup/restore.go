@@ -150,7 +150,12 @@ func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, cause er
 		return fmt.Errorf("%w; the new project and its volumes were removed", cause)
 	}
 	if state.SafetyID == "" {
-		leftovers := r.removeAll(ctx, state.Created)
+		var leftovers []string
+		for _, name := range state.Created {
+			if err := r.DeleteVolume(ctx, name, r.User); err != nil {
+				leftovers = append(leftovers, fmt.Sprintf("volume %s (%v)", name, err))
+			}
+		}
 		if state.Running {
 			if err := r.Deploy(ctx); err != nil {
 				leftovers = append(leftovers, fmt.Sprintf("%s could not be started again (%v)", subject, err))

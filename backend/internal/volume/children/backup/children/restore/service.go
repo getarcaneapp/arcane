@@ -48,6 +48,7 @@ type (
 		ArchiveFilename func(backupID string) (string, error)
 		HelperImage     func(ctx context.Context) (string, error)
 		StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
+		StopHelper      func(ctx context.Context, volumeName string) error
 		HoldLocal       func(ctx context.Context) (context.Context, func(), error)
 		TempContainer   func(ctx context.Context, target mount.Mount) (string, func(), error)
 		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
@@ -118,6 +119,11 @@ set -- "$tmp"
 ` + replaceVolumeScript
 )
 
+var (
+	errBackupRunning   = common.Classify(common.ErrConflict, errors.New("only finished backups can be restored"))
+	errVolumeUnchanged = errors.New("the volume was not changed")
+)
+
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
 }
@@ -127,8 +133,11 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	if err != nil {
 		return err
 	}
-	if entry.VolumeName != volumeName || entry.Status != types.VolumeBackupStatusSucceeded {
+	if entry.VolumeName != volumeName {
 		return common.ErrVolumeBackupWrongVolume
+	}
+	if entry.Status == types.VolumeBackupStatusRunning {
+		return errBackupRunning
 	}
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()
@@ -188,9 +197,9 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 	defer lease.Release(ctx)
 	var stopped []container.Summary
 	var safetyID string
+	var writeErr error
 	steps := backup.RestoreSteps{
 		Subject: "the volume",
-		Report:  nil,
 		Hold: func(ctx context.Context) (context.Context, func(), error) {
 			if len(opts.Create) > 0 {
 				return ctx, func() {}, nil
@@ -221,7 +230,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			if len(stopped) == 0 {
 				return nil
 			}
-			left, err := s.deps.Containers.StartContainers(ctx, stopped, opts.User)
+			left, err := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, opts.User)
 			stopped = left
 			return err
 		},
@@ -242,7 +251,11 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 		Docker: s.deps.Docker,
 		Write: func(ctx context.Context, safety string) error {
 			if safety == "" {
-				return opts.Write(ctx)
+				writeErr = opts.Write(ctx)
+				return writeErr
+			}
+			if errors.Is(writeErr, errVolumeUnchanged) {
+				return nil
 			}
 			entry, err := s.deps.Run(ctx, safety)
 			if err != nil {
@@ -250,15 +263,16 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			}
 			return s.RestoreSnapshot(ctx, dockerClient, entry, opts.VolumeName)
 		},
-		Verify: nil,
 		DeleteVolume: func(ctx context.Context, name string, _ types.Actor) error {
+			if err := s.deps.StopHelper(ctx, name); err != nil {
+				return err
+			}
 			_, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
 				return dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
 			})
 			return err
 		},
-		Discard: nil,
-		User:    opts.User,
+		User: opts.User,
 	}
 	if applyErr := steps.Apply(ctx, backup.RestoreState{
 		Redeploy: new(false),
@@ -283,7 +297,11 @@ func (s *Service) snapshotSource(ctx context.Context, dockerClient *client.Clien
 	if err != nil {
 		return snapshotSource{}, err
 	}
-	return snapshotSource{repository: repository, snapshotID: snapshotID, password: password}, nil
+	return snapshotSource{
+		repository: repository,
+		snapshotID: snapshotID,
+		password:   password,
+	}, nil
 }
 
 func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, volumeName string) error {
@@ -299,19 +317,30 @@ func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Clie
 	if err != nil {
 		return backup.UnchangedError{Err: err}
 	}
-	target := mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume"}
+	target := mount.Mount{
+		Type:   mount.TypeVolume,
+		Source: volumeName,
+		Target: "/volume",
+	}
+	owner, recorded := backup.VolumeOwnerFromTags(snapshot.Tags)
+	var containerID string
+	if recorded {
+		helperID, remove, helperErr := s.deps.TempContainer(ctx, target)
+		if helperErr != nil {
+			return fmt.Errorf("%w (%w)", helperErr, errVolumeUnchanged)
+		}
+		defer remove()
+		if _, _, err = s.deps.Exec(ctx, helperID, "", []string{"sh", "-c", "command -v chown && command -v chmod"}); err != nil {
+			return fmt.Errorf("the helper image cannot restore the volume owner, so pull the latest tools image and try again: %w (%w)", err, errVolumeUnchanged)
+		}
+		containerID = helperID
+	}
 	if err = s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.snapshotID, target, backup.RestoreOptions{DeleteExtra: true}); err != nil {
 		return fmt.Errorf("failed to restore Rustic snapshot: %w", err)
 	}
-	owner, recorded := backup.VolumeOwnerFromTags(snapshot.Tags)
 	if !recorded {
 		return nil
 	}
-	containerID, remove, err := s.deps.TempContainer(ctx, target)
-	if err != nil {
-		return err
-	}
-	defer remove()
 	return owner.Apply(ctx, s.deps.Exec, containerID)
 }
 
@@ -423,8 +452,11 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 	if err != nil {
 		return err
 	}
-	if entry.VolumeName != volumeName || entry.Status != types.VolumeBackupStatusSucceeded {
+	if entry.VolumeName != volumeName {
 		return common.ErrVolumeBackupWrongVolume
+	}
+	if entry.Status == types.VolumeBackupStatusRunning {
+		return errBackupRunning
 	}
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()
@@ -447,7 +479,6 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 	preBackupID, err := s.run(ctx, dockerClient, runOptions{
 		VolumeName: volumeName,
 		User:       user,
-		Create:     nil,
 		Write: func(ctx context.Context) error {
 			return s.restoreSelection(ctx, dockerClient, volumeName, backupID, entry, repository, snapshotID, resolvedSelection)
 		},
@@ -658,6 +689,9 @@ func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, 
 		if !replaceStarted {
 			_, _, cleanupErr := s.deps.Exec(context.WithoutCancel(ctx), containerID, "", []string{"rm", "-rf", "--", tmpDir})
 			err = errors.Join(err, cleanupErr)
+			if err != nil && cleanupErr == nil && !upload.newVolume {
+				err = fmt.Errorf("%w (%w)", err, errVolumeUnchanged)
+			}
 		}
 	}()
 	if strings.TrimSpace(stderr) != "" {
@@ -681,7 +715,11 @@ func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, 
 		}
 	}
 	if upload.newVolume && upload.archiveRoot {
-		owner := backup.VolumeOwner{UID: uint32(upload.root.Uid), GID: uint32(upload.root.Gid), Mode: upload.root.Mode}
+		owner := backup.VolumeOwner{
+			UID:  uint32(upload.root.Uid),
+			GID:  uint32(upload.root.Gid),
+			Mode: upload.root.Mode,
+		}
 		if applyErr := owner.Apply(ctx, s.deps.Exec, containerID); applyErr != nil {
 			return applyErr
 		}
