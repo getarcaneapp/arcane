@@ -334,6 +334,12 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'settings.category.roles'
 				},
 				{
+					title: m.groups(),
+					url: resolve('/(app)/system/groups'),
+					icon: UsersIcon,
+					accessSurfaceId: 'settings.category.groups'
+				},
+				{
 					title: m.branding(),
 					url: resolve('/(app)/system/branding'),
 					icon: PaletteIcon,

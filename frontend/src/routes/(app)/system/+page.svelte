@@ -19,6 +19,7 @@
 			title: m.access(),
 			urls: [
 				resolve('/(app)/system/users'),
+				resolve('/(app)/system/groups'),
 				resolve('/(app)/system/roles'),
 				resolve('/(app)/system/api-keys'),
 				resolve('/(app)/system/authentication')
@@ -42,6 +43,7 @@
 		[resolve('/(app)/system/branding')]: m.branding_description,
 		[resolve('/(app)/system/connectivity')]: m.connectivity_description,
 		[resolve('/(app)/system/roles')]: m.roles_subtitle,
+		[resolve('/(app)/system/groups')]: m.groups_subtitle,
 		[resolve('/(app)/system/diagnostics')]: m.diagnostics_description
 	}}
 	user={data.user}

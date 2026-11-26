@@ -18,6 +18,8 @@ const (
 	PermUsersDelete              = "users:delete"
 	PermRolesList                = "roles:list"
 	PermRolesRead                = "roles:read"
+	PermGroupsList               = "groups:list"
+	PermGroupsRead               = "groups:read"
 	PermApiKeysList              = "apikeys:list"
 	PermApiKeysRead              = "apikeys:read"
 	PermApiKeysCreate            = "apikeys:create"
@@ -349,6 +351,7 @@ func BuiltInEditorPermissions() []string {
 	return []string{
 		PermUsersList, PermUsersRead,
 		PermRolesList, PermRolesRead,
+		PermGroupsList, PermGroupsRead,
 		PermApiKeysList, PermApiKeysRead,
 		PermFederatedList, PermFederatedRead,
 		PermSettingsRead,
@@ -450,6 +453,7 @@ func BuiltInViewerPermissions() []string {
 	return []string{
 		PermUsersList, PermUsersRead,
 		PermRolesList, PermRolesRead,
+		PermGroupsList, PermGroupsRead,
 		PermApiKeysList, PermApiKeysRead,
 		PermFederatedList, PermFederatedRead,
 		PermSettingsRead,

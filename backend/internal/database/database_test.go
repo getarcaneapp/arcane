@@ -443,7 +443,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 120))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 123))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -467,7 +467,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	renamedCatalogPermissions := []string{
 		"settings:read", "settings:update", "variables:read", "system-backups:read", "swarm:read",
 		"podman:read", "image-updates:read", "image-updates:check", "vulnerabilities:read", "activities:read",
-		"gitops:backup", "projects:deploy", "projects:create",
+		"gitops:backup", "projects:deploy", "projects:create", "roles:list", "roles:read",
 	}
 	for id, permissions := range rolePermissionsWhere(`id LIKE 'c%'`) {
 		permission := catalogRoles[id]
@@ -1667,4 +1667,48 @@ func TestConfigureSQLiteConnectionPool_AgentMode(t *testing.T) {
 	sqlDBNormal, err := dbNormal.DB.DB()
 	require.NoError(t, err)
 	assert.Equal(t, sqliteWriteConns, sqlDBNormal.Stats().MaxOpenConnections)
+}
+
+func TestMigration00123_UserGroupsUpDown(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-groups-migration.db")
+	rawDB.SetMaxOpenConns(1)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 122))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 123))
+	_, err := rawDB.ExecContext(ctx, `PRAGMA foreign_keys=ON;`)
+	require.NoError(t, err)
+
+	for _, table := range []string{"groups", "group_members", "group_role_assignments"} {
+		var name string
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name))
+		assert.Equal(t, table, name)
+	}
+
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO groups (id, name, description) VALUES ('grp-1', 'Platform', 'Platform team')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO users (id, username, password_hash) VALUES ('usr-1', 'alice', 'hash')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions, built_in) VALUES ('role-1', 'Custom', '[]', 0)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO group_members (id, group_id, user_id, source) VALUES ('gm-1', 'grp-1', 'usr-1', 'manual')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO group_role_assignments (id, group_id, role_id, source) VALUES ('gra-1', 'grp-1', 'role-1', 'manual')`)
+	require.NoError(t, err)
+
+	// Deleting a group cascades to its members and role assignments.
+	_, err = rawDB.ExecContext(ctx, `DELETE FROM groups WHERE id = 'grp-1'`)
+	require.NoError(t, err)
+	for _, table := range []string{"group_members", "group_role_assignments"} {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&count))
+		assert.Zero(t, count, table)
+	}
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 122))
+	for _, table := range []string{"groups", "group_members", "group_role_assignments"} {
+		var count int
+		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count))
+		assert.Zero(t, count, table)
+	}
 }

@@ -90,6 +90,27 @@ var permissionCatalog = []PermissionCatalogResource{
 		},
 	},
 	{
+		Key:         "groups",
+		Label:       "Groups",
+		Description: "User groups and their role assignments; creating and editing groups is reserved for global admins",
+		Scope:       PermissionScopeGlobal,
+		Actions: []PermissionCatalogAction{
+			{
+				Key:         "list",
+				Permission:  PermGroupsList,
+				Label:       "List",
+				Description: "List user groups",
+			},
+			{
+				Key:         "read",
+				Permission:  PermGroupsRead,
+				Label:       "Read",
+				Description: "View a user group, its members, and its role assignments",
+				Requires:    []string{PermGroupsList},
+			},
+		},
+	},
+	{
 		Key:         "apikeys",
 		Label:       "API Keys",
 		Description: "API keys used for programmatic access",

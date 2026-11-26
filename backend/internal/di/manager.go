@@ -12,6 +12,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/enrollment"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/federated"
+	"getarcane.dev/arcane/v3/internal/group"
 	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/notification"
 	"getarcane.dev/arcane/v3/internal/oidc"
@@ -29,6 +30,7 @@ var (
 	managerServiceOptions = fx.Options(
 		fx.Provide(
 			federated.NewFederatedCredentialService,
+			group.NewGroupService,
 			appimages.NewApplicationImagesService,
 			passkey.NewPasskeyService,
 			enrollment.NewEnrollmentService,
@@ -37,6 +39,7 @@ var (
 		),
 		fx.Provide(
 			role.New,
+			group.New,
 			ldap.New,
 			apikey.New,
 			template.New,

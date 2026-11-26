@@ -69,6 +69,7 @@
 		return m.users_password_description_create();
 	});
 	let oidcAssignments = $derived(userToEdit?.roleAssignments?.filter((a) => a.source !== 'manual') ?? []);
+	let userGroups = $derived(userToEdit?.groups ?? []);
 	const userFieldMaxLength = 255;
 	const passwordMinLength = 8;
 
@@ -101,7 +102,10 @@
 					environmentId: z.string().optional()
 				})
 			)
-			.refine((assignments) => isExternallyManaged || assignments.length >= 1, m.users_role_assignments_required())
+			.refine(
+				(assignments) => isExternallyManaged || userGroups.length > 0 || assignments.length >= 1,
+				m.users_role_assignments_required()
+			)
 	});
 
 	const form = createForm<typeof formSchema>(
@@ -227,6 +231,20 @@
 			<div>
 				<label for="roleAssignments" class="text-sm font-medium">{m.users_role_assignments_label()}</label>
 				<p class="mb-2 text-xs text-muted-foreground">{m.users_role_assignments_description()}</p>
+				{#if userGroups.length > 0}
+					<div class="mb-3">
+						<p class="text-xs text-muted-foreground">
+							{m.user_inherited_groups()}
+						</p>
+						<div class="mt-2 flex flex-wrap gap-2">
+							{#each userGroups as group (`${group.id}-${group.source}`)}
+								<a href={resolve('/(app)/system/groups/[id]', { id: group.id })}>
+									<Badge variant="outline">{group.name}</Badge>
+								</a>
+							{/each}
+						</div>
+					</div>
+				{/if}
 				{#if oidcAssignments.length > 0}
 					<div class="mb-3">
 						<p class="text-xs text-muted-foreground">

@@ -106,6 +106,13 @@ export const queryKeys = {
 		detail: (roleId: string) => ['roles', 'detail', roleId] as const,
 		permissionsManifest: () => ['roles', 'permissions-manifest'] as const
 	},
+	groups: {
+		root: ['groups'] as const,
+		list: (options: SearchPaginationSortRequest) => ['groups', 'list', stableSerialize(options)] as const,
+		detail: (groupId: string) => ['groups', 'detail', groupId] as const,
+		members: (groupId: string) => ['groups', 'detail', groupId, 'members'] as const,
+		roles: (groupId: string) => ['groups', 'detail', groupId, 'roles'] as const
+	},
 	users: {
 		all: ['users'] as const,
 		list: (options: SearchPaginationSortRequest) => ['users', stableSerialize(options)] as const
