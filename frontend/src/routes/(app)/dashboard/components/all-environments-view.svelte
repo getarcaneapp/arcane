@@ -157,9 +157,19 @@
 	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
 	const loadableEnvironmentIds = $derived(new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
 
+	const isMobile = new IsMobile();
+	const boardViewPref = new PersistedState<'auto' | 'cards' | 'table'>('dashboard-environments-view', 'table');
+	const boardView = $derived.by((): 'cards' | 'table' => {
+		if (isMobile.current) return 'cards';
+		if (boardViewPref.current !== 'auto') return boardViewPref.current;
+		return environmentCards.length > 6 ? 'table' : 'cards';
+	});
+
 	let editingLayout = $state(false);
 	let draftLayout = $state.raw<DashboardWidget[]>([]);
-	const savedLayout = $derived(resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout, environmentCards.length));
+	const savedLayout = $derived(
+		resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout, environmentCards.length, boardView)
+	);
 	const layout = $derived(editingLayout ? draftLayout : savedLayout);
 	const hiddenWidgets = $derived(layout.filter((widget) => widget.hidden && !DASHBOARD_WIDGET_TYPES[widget.type].multi));
 	const widgetLimitReached = $derived(draftLayout.length >= MAX_DASHBOARD_WIDGETS);
@@ -404,14 +414,6 @@
 
 		return buttons;
 	}
-
-	const isMobile = new IsMobile();
-	const boardViewPref = new PersistedState<'auto' | 'cards' | 'table'>('dashboard-environments-view', 'table');
-	const boardView = $derived.by((): 'cards' | 'table' => {
-		if (isMobile.current) return 'cards';
-		if (boardViewPref.current !== 'auto') return boardViewPref.current;
-		return environmentCards.length > 6 ? 'table' : 'cards';
-	});
 
 	const environmentJobs = $derived(
 		(jobsQuery.data?.byEnvironment ?? []).flatMap(({ environment, data }): EnvironmentJob[] =>
@@ -717,7 +719,7 @@
 					action="base"
 					icon={ResetIcon}
 					customLabel={m.reset_to_default()}
-					onclick={() => (draftLayout = defaultDashboardLayout(environmentCards.length))}
+					onclick={() => (draftLayout = defaultDashboardLayout(environmentCards.length, boardView))}
 				/>
 				{#if layoutHasChanges}
 					<span class="mx-1 text-xs text-warning-foreground">{m.common_unsaved_changes()}</span>

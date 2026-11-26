@@ -53,15 +53,30 @@ export const DASHBOARD_WIDGET_TYPES: Record<DashboardWidgetType, DashboardWidget
 
 const WIDGET_TYPES = Object.keys(DASHBOARD_WIDGET_TYPES) as DashboardWidgetType[];
 
-export function defaultDashboardLayout(environmentCount: number): DashboardWidget[] {
-	const tableHeight = Math.min(Math.max(environmentCount + 2, 4), 10);
-	const below = 2 + tableHeight;
+export type EnvironmentsBoardView = 'cards' | 'table';
+
+const ENVIRONMENTS_CARDS_MIN_H = 6;
+
+function defaultEnvironmentsHeight(environmentCount: number, view: EnvironmentsBoardView): number {
+	if (view === 'cards') {
+		if (environmentCount === 0) return 4;
+		return Math.min(Math.max(Math.ceil(environmentCount / 2) * 4 + 2, ENVIRONMENTS_CARDS_MIN_H), 10);
+	}
+	return Math.min(Math.max(environmentCount + 2, 4), 10);
+}
+
+export function defaultDashboardLayout(
+	environmentCount: number,
+	environmentsView: EnvironmentsBoardView = 'table'
+): DashboardWidget[] {
+	const environmentsHeight = defaultEnvironmentsHeight(environmentCount, environmentsView);
+	const below = 2 + environmentsHeight;
 	return [
 		{ id: 'healthy', type: 'healthy', x: 0, y: 0, w: 3, h: 2 },
 		{ id: 'attentionCount', type: 'attentionCount', x: 3, y: 0, w: 3, h: 2 },
 		{ id: 'updates', type: 'updates', x: 6, y: 0, w: 3, h: 2 },
 		{ id: 'risk', type: 'risk', x: 9, y: 0, w: 3, h: 2 },
-		{ id: 'environments', type: 'environments', x: 0, y: 2, w: 12, h: tableHeight },
+		{ id: 'environments', type: 'environments', x: 0, y: 2, w: 12, h: environmentsHeight },
 		{ id: 'attention', type: 'attention', x: 0, y: below, w: 8, h: 5 },
 		{ id: 'activity', type: 'activity', x: 0, y: below + 5, w: 8, h: 4 },
 		{ id: 'reclaimable', type: 'reclaimable', x: 8, y: below, w: 4, h: 6 },
@@ -79,15 +94,17 @@ function overlaps(a: DashboardWidgetLayout, b: DashboardWidgetLayout) {
 	return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
-function clampWidget<T extends DashboardWidgetInput>(widget: T): T {
+function clampWidget<T extends DashboardWidgetInput>(widget: T, environmentsView: EnvironmentsBoardView = 'table'): T {
 	const { minW, minH, maxH } = DASHBOARD_WIDGET_TYPES[widget.type];
+	const effectiveMinH =
+		widget.type === 'environments' && environmentsView === 'cards' ? Math.max(minH, ENVIRONMENTS_CARDS_MIN_H) : minH;
 	const w = clamp(widget.w || minW, minW, GRID_COLUMNS);
 	return {
 		...widget,
 		x: clamp(widget.x || 0, 0, GRID_COLUMNS - w),
 		y: Math.max(widget.y || 0, 0),
 		w,
-		h: clamp(widget.h || minH, minH, maxH)
+		h: clamp(widget.h || effectiveMinH, effectiveMinH, maxH)
 	};
 }
 
@@ -156,13 +173,17 @@ export function createDashboardWidget(
 	return { type, title, x: 0, y: 0, w: defaultW, h: defaultH, config };
 }
 
-export function resolveDashboardLayout(saved: DashboardWidgetLayout[] | undefined, environmentCount: number): DashboardWidget[] {
-	const defaults = defaultDashboardLayout(environmentCount);
+export function resolveDashboardLayout(
+	saved: DashboardWidgetLayout[] | undefined,
+	environmentCount: number,
+	environmentsView: EnvironmentsBoardView = 'table'
+): DashboardWidget[] {
+	const defaults = defaultDashboardLayout(environmentCount, environmentsView);
 	const known = (saved ?? [])
 		.flatMap((widget) => {
 			const { id } = widget;
 			const type = WIDGET_TYPES.find((key) => key === (widget.type ?? id));
-			return type && id ? [clampWidget({ ...widget, id, type })] : [];
+			return type && id ? [clampWidget({ ...widget, id, type }, environmentsView)] : [];
 		})
 		.filter(
 			(widget, index, all) =>
