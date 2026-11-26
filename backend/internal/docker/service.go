@@ -72,10 +72,12 @@ type (
 	dockerInventory struct {
 		containers atomic.Pointer[[]container.Summary]
 		images     atomic.Pointer[[]image.Summary]
-		diskUsage  atomic.Pointer[struct {
-			fetchedAt time.Time
-			usage     client.DiskUsageResult
-		}]
+		diskUsage  atomic.Pointer[diskUsageSnapshot]
+	}
+
+	diskUsageSnapshot struct {
+		fetchedAt time.Time
+		usage     client.DiskUsageResult
 	}
 )
 
@@ -420,13 +422,22 @@ func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, 
 }
 
 func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsageResult, error) {
-	inventory := cmp.Or(s.inventory.Load(), &dockerInventory{})
-	if cached := inventory.diskUsage.Load(); cached != nil && time.Since(cached.fetchedAt) < dockerDiskUsageMaxAge {
-		return cached.usage, nil
+	inventory := s.inventory.Load()
+	if inventory != nil {
+		if cached := inventory.diskUsage.Load(); cached != nil && time.Since(cached.fetchedAt) < dockerDiskUsageMaxAge {
+			return cached.usage, nil
+		}
 	}
 	return s.ListCoalesced(ctx, &s.diskUsageFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
 		s.diskUsageMu.Lock()
 		defer s.diskUsageMu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return client.DiskUsageResult{}, err
+		}
+		current := cmp.Or(s.inventory.Load(), &dockerInventory{})
+		if cached := current.diskUsage.Load(); cached != nil && time.Since(cached.fetchedAt) < dockerDiskUsageMaxAge {
+			return cached.usage, nil
+		}
 		usageCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerDiskUsage)
 		defer cancel()
 		fetchedAt := time.Now()
@@ -440,10 +451,7 @@ func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsag
 		if err != nil {
 			return client.DiskUsageResult{}, err
 		}
-		inventory.diskUsage.Store(&struct {
-			fetchedAt time.Time
-			usage     client.DiskUsageResult
-		}{
+		current.diskUsage.Store(&diskUsageSnapshot{
 			fetchedAt: fetchedAt,
 			usage:     usage,
 		})
