@@ -14,26 +14,42 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controller types.JobController, environmentID string, jobs []types.JobStatus) ([]types.JobStatus, error) {
+func LoadRecord(ctx context.Context, coordinator *runs.Coordinator, environmentID string, records map[string]types.SchedulerQueueRecord, jobID string) (types.SchedulerQueueRecord, error) {
+	if record, loaded := records[jobID]; loaded {
+		return record, nil
+	}
+	record, err := coordinator.Record(ctx, environmentID, jobID)
+	if err != nil {
+		return types.SchedulerQueueRecord{}, fmt.Errorf("load durable job status: %w", err)
+	}
+	records[jobID] = record
+	return record, nil
+}
+
+func ApplyStatuses(
+	ctx context.Context,
+	coordinator *runs.Coordinator,
+	controller types.JobController,
+	environmentID string,
+	jobs []types.JobStatus,
+	records map[string]types.SchedulerQueueRecord,
+) ([]types.JobStatus, error) {
 	jobScheduler, hasScheduler := controller.(types.JobScheduler)
-	jobs, dynamicChildren := appendDynamicJobStatuses(ctx, controller, environmentID, jobs)
-	runsByJob := make(map[string][]types.SchedulerRun)
+	jobs, dynamicChildren, err := appendDynamicJobStatuses(ctx, coordinator, controller, environmentID, jobs, records)
+	if err != nil {
+		return nil, err
+	}
 	for _, job := range slices.Concat(jobs, slices.Concat(slices.Collect(maps.Values(dynamicChildren))...)) {
 		for _, listed := range slices.Concat([]types.JobStatus{job}, job.Children) {
-			if _, loaded := runsByJob[listed.ID]; loaded {
-				continue
+			if _, loadErr := LoadRecord(ctx, coordinator, environmentID, records, listed.ID); loadErr != nil {
+				return nil, loadErr
 			}
-			record, err := coordinator.Record(ctx, environmentID, listed.ID)
-			if err != nil {
-				return nil, fmt.Errorf("load durable job status: %w", err)
-			}
-			runsByJob[listed.ID] = record.Runs
 		}
 	}
 
 	statuses := make([]types.JobStatus, 0, len(jobs))
 	for _, job := range jobs {
-		status := ApplyRunStatus(job, runsByJob[job.ID])
+		status := ApplyRunStatus(job, records[job.ID].Runs)
 		workerHealth, nextRun := func() (*types.SchedulerWorkerHealth, *time.Time) {
 			if environmentID != "0" || !hasScheduler {
 				return status.WorkerHealth, status.NextRun
@@ -48,7 +64,7 @@ func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controlle
 			if conditional, ok := registered.(types.ConditionalJob); ok && !conditional.ShouldSchedule(ctx) {
 				return status.WorkerHealth, status.NextRun
 			}
-			if state, stateFound := jobScheduler.GetJobRuntimeState(status.ID); !stateFound || !state.Scheduled {
+			if nextRun, nextRunErr := coordinator.NextRun(ctx, records[status.ID]); nextRunErr != nil || nextRun == nil {
 				return &types.SchedulerWorkerHealth{
 					Status:    "needs_attention",
 					LastError: "Job has no installed schedule",
@@ -59,7 +75,7 @@ func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controlle
 		}()
 		var children []types.JobStatus
 		for _, child := range slices.Concat(status.Children, dynamicChildren[status.ID]) {
-			children = append(children, ApplyRunStatus(child, runsByJob[child.ID]))
+			children = append(children, ApplyRunStatus(child, records[child.ID].Runs))
 		}
 		statuses = append(statuses, types.JobStatus{ //exhaustruct:enforce
 			CurrentRun:     status.CurrentRun,
@@ -143,17 +159,17 @@ func ProjectRunOutcome(run types.SchedulerRun) types.SchedulerRun {
 }
 
 func ApplyRunStatus(status types.JobStatus, jobRuns []types.SchedulerRun) types.JobStatus {
-	latest := make(map[string]types.SchedulerRun, len(jobRuns)+2)
+	latest := make(map[string]*types.SchedulerRun, len(jobRuns)+2)
 	for _, run := range []*types.SchedulerRun{status.CurrentRun, status.LastRun} {
 		if run != nil {
 			if previous, found := latest[run.ID]; !found || !run.UpdatedAt.Before(previous.UpdatedAt) {
-				latest[run.ID] = *run
+				latest[run.ID] = run
 			}
 		}
 	}
-	for _, run := range jobRuns {
-		if previous, found := latest[run.ID]; !found || !run.UpdatedAt.Before(previous.UpdatedAt) {
-			latest[run.ID] = run
+	for i := range jobRuns {
+		if previous, found := latest[jobRuns[i].ID]; !found || !jobRuns[i].UpdatedAt.Before(previous.UpdatedAt) {
+			latest[jobRuns[i].ID] = &jobRuns[i]
 		}
 	}
 	priority := func(runStatus types.RunStatus) int {
@@ -183,7 +199,7 @@ func ApplyRunStatus(status types.JobStatus, jobRuns []types.SchedulerRun) types.
 	var currentRun, lastRun *types.SchedulerRun
 	lastSuccess := status.LastSuccess
 	for _, latestRun := range latest {
-		run := ProjectRunOutcome(latestRun)
+		run := ProjectRunOutcome(*latestRun)
 		switch {
 		case !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention:
 			if currentRun == nil || preferCurrent(run, *currentRun) {
@@ -229,13 +245,15 @@ func ApplyRunStatus(status types.JobStatus, jobRuns []types.SchedulerRun) types.
 
 func appendDynamicJobStatuses(
 	ctx context.Context,
+	coordinator *runs.Coordinator,
 	controller types.JobController,
 	environmentID string,
 	jobs []types.JobStatus,
-) ([]types.JobStatus, map[string][]types.JobStatus) {
+	records map[string]types.SchedulerQueueRecord,
+) ([]types.JobStatus, map[string][]types.JobStatus, error) {
 	jobScheduler, hasScheduler := controller.(types.JobScheduler)
 	if environmentID != "0" || !hasScheduler {
-		return jobs, nil
+		return jobs, nil, nil
 	}
 	registered := jobScheduler.ListRegisteredJobs()
 	slices.SortFunc(registered, func(left, right types.SchedulerJob) int {
@@ -247,7 +265,11 @@ func appendDynamicJobStatuses(
 		parentIndex := slices.IndexFunc(jobs, func(job types.JobStatus) bool { return job.ID == parentID })
 		if !dynamic || parentID == "environment-health" {
 			if registeredJob.Name() == "environment-health:0" && parentIndex >= 0 {
-				jobs[parentIndex] = dynamicJobStatus(ctx, jobScheduler, registeredJob, jobs[parentIndex].Name, "monitoring", true)
+				record, err := LoadRecord(ctx, coordinator, environmentID, records, registeredJob.Name())
+				if err != nil {
+					return nil, nil, err
+				}
+				jobs[parentIndex] = dynamicJobStatus(ctx, coordinator, record, registeredJob, jobs[parentIndex].Name, "monitoring", true)
 			}
 			continue
 		}
@@ -281,20 +303,24 @@ func appendDynamicJobStatuses(
 			return child.ID == registeredJob.Name()
 		})
 		if !duplicate {
-			dynamicChildren[parentID] = append(dynamicChildren[parentID], dynamicJobStatus(ctx, jobScheduler, registeredJob, registeredJob.Name(), category, managerOnly))
+			record, err := LoadRecord(ctx, coordinator, environmentID, records, registeredJob.Name())
+			if err != nil {
+				return nil, nil, err
+			}
+			dynamicChildren[parentID] = append(dynamicChildren[parentID], dynamicJobStatus(ctx, coordinator, record, registeredJob, registeredJob.Name(), category, managerOnly))
 		}
 	}
-	return jobs, dynamicChildren
+	return jobs, dynamicChildren, nil
 }
 
-func dynamicJobStatus(ctx context.Context, jobScheduler types.JobScheduler, job types.SchedulerJob, name, category string, managerOnly bool) types.JobStatus {
-	state, scheduled := jobScheduler.GetJobRuntimeState(job.Name())
+func dynamicJobStatus(ctx context.Context, coordinator *runs.Coordinator, record types.SchedulerQueueRecord, job types.SchedulerJob, name, category string, managerOnly bool) types.JobStatus {
+	nextRun, err := coordinator.NextRun(ctx, record)
 	return types.JobStatus{
 		ID:       job.Name(),
 		Name:     name,
 		Category: category,
-		Schedule: kit.Ternary(scheduled, state.Schedule, job.Schedule(ctx)),
-		NextRun:  state.NextRun,
+		Schedule: kit.Ternary(err == nil, record.Schedule, ""),
+		NextRun:  nextRun,
 		Enabled: func() bool {
 			conditional, ok := job.(types.ConditionalJob)
 			return !ok || conditional.ShouldSchedule(ctx)

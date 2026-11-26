@@ -2,8 +2,11 @@ package runs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
+
+	"github.com/italypaleale/francis/actor"
 
 	"kit.getarcane.app"
 
@@ -37,14 +40,14 @@ func (q *Coordinator) syncActivity(ctx context.Context, run types.SchedulerRun) 
 	if err := q.service.GetState(ctx, coordinatorType, id, &state); err != nil {
 		return true
 	}
+	if _, err := q.compactActivity(ctx, id, state.PendingActivitySync); err != nil {
+		return true
+	}
 	version, pending := state.PendingActivitySync[run.ID]
 	if !pending {
 		return false
 	}
-	current, err := q.Get(ctx, run.EnvironmentID, run.JobID, run.ID)
-	if err == nil {
-		err = q.observer.SyncRunActivity(ctx, current)
-	}
+	err := q.observer.SyncRunActivity(ctx, run)
 	if err == nil {
 		_, err = q.service.Invoke(ctx, coordinatorType, id, "activity-synced", types.SchedulerActivitySyncCommand{RunID: run.ID, UpdatedAt: version})
 	}
@@ -66,4 +69,33 @@ func (q *Coordinator) retryActivitySync(ctx context.Context, states []coordinato
 		}
 	}
 	return pending
+}
+
+func (q *Coordinator) compactActivity(ctx context.Context, id string, pending map[string]time.Time) (map[string]time.Time, error) {
+	acknowledged := map[string]time.Time{}
+	if err := q.service.GetState(ctx, activityAckType, id, &acknowledged); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+		return nil, err
+	}
+	dropAcknowledged(pending, acknowledged)
+	return acknowledged, nil
+}
+
+func (q *Coordinator) acknowledgements(ctx context.Context) (map[string]map[string]time.Time, error) {
+	entries, err := listStates[map[string]time.Time](ctx, q.service, activityAckType)
+	if err != nil {
+		return nil, err
+	}
+	acknowledged := make(map[string]map[string]time.Time, len(entries))
+	for _, entry := range entries {
+		acknowledged[entry.ActorID] = entry.State
+	}
+	return acknowledged, nil
+}
+
+func dropAcknowledged(pending, acknowledged map[string]time.Time) {
+	for runID, version := range acknowledged {
+		if pendingVersion, found := pending[runID]; found && pendingVersion.Equal(version) {
+			delete(pending, runID)
+		}
+	}
 }

@@ -34,6 +34,7 @@ type (
 
 const (
 	coordinatorType     = "job-coordinator"
+	activityAckType     = "job-activity-ack"
 	executorType        = "job-executor"
 	outcomePersistGrace = 30 * time.Second
 	coordinatorIdleWake = 2 * time.Minute
@@ -56,27 +57,30 @@ func (q *Coordinator) Register(runtime *francis.Runtime) error {
 }
 
 func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor.Envelope) (any, error) {
-	if method == "replace" {
+	switch method {
+	case "replace":
 		return a.replace(ctx, data)
+	case "activity-synced":
+		var command types.SchedulerActivitySyncCommand
+		if err := data.Decode(&command); err != nil {
+			return nil, err
+		}
+		acknowledged, err := a.q.compactActivity(ctx, a.id, nil)
+		if err != nil {
+			return nil, err
+		}
+		acknowledged[command.RunID] = command.UpdatedAt
+		return nil, a.q.service.SetState(ctx, activityAckType, a.id, acknowledged, nil)
 	}
 	var state types.SchedulerCoordinatorState
 	if err := a.q.service.GetState(ctx, coordinatorType, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return nil, err
 	}
 	normalizeRecordTimes(&state.Record)
+	if _, err := a.q.compactActivity(ctx, a.id, state.PendingActivitySync); err != nil {
+		return nil, err
+	}
 	switch method {
-	case "activity-synced":
-		var command types.SchedulerActivitySyncCommand
-		if err := data.Decode(&command); err != nil {
-			return nil, err
-		}
-		version, pending := state.PendingActivitySync[command.RunID]
-		if !pending || !version.Equal(command.UpdatedAt) {
-			return nil, nil
-		}
-		delete(state.PendingActivitySync, command.RunID)
-		state.Revision++
-		return nil, a.q.service.SetState(ctx, coordinatorType, a.id, state, nil)
 	case "repair":
 		return nil, a.flush(ctx, &state)
 	case "install":
@@ -88,6 +92,9 @@ func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor
 	case "remove":
 		if state.Record.Schedule != "" || len(state.PendingActivitySync) > 0 || len(state.Record.Runs) > 0 || len(state.Record.Receipts) > 0 {
 			return false, nil
+		}
+		if err := a.q.service.DeleteState(ctx, activityAckType, a.id); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+			return nil, err
 		}
 		if err := a.q.service.DeleteState(ctx, coordinatorType, a.id); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 			return nil, err
@@ -132,13 +139,28 @@ func (a *coordinatorActor) replace(ctx context.Context, data actor.Envelope) (an
 	if next.Revision != current.Revision {
 		return false, nil
 	}
-	next.Revision++
-	if err := a.q.service.SetState(ctx, coordinatorType, a.id, next, nil); err != nil {
+	acknowledged, err := a.q.compactActivity(ctx, a.id, next.PendingActivitySync)
+	if err != nil {
 		return nil, err
 	}
+	next.Revision++
+	if setErr := a.q.service.SetState(ctx, coordinatorType, a.id, next, nil); setErr != nil {
+		return nil, setErr
+	}
+	retained := make(map[string]time.Time, len(acknowledged))
+	for runID, version := range acknowledged {
+		if _, pending := next.PendingActivitySync[runID]; pending {
+			retained[runID] = version
+		}
+	}
+	if len(retained) < len(acknowledged) {
+		if ackErr := a.q.service.SetState(ctx, activityAckType, a.id, retained, nil); ackErr != nil {
+			slog.WarnContext(ctx, "Job activity acknowledgements were not compacted", "jobId", next.Record.JobID, "environmentId", next.Record.EnvironmentID, "error", ackErr)
+		}
+	}
 	// Acceptance is persisted; dispatch failures are retried.
-	if err := a.flush(ctx, &next); err != nil {
-		slog.WarnContext(ctx, "Job dispatch requires reconciliation", "jobId", next.Record.JobID, "environmentId", next.Record.EnvironmentID, "error", err)
+	if flushErr := a.flush(ctx, &next); flushErr != nil {
+		slog.WarnContext(ctx, "Job dispatch requires reconciliation", "jobId", next.Record.JobID, "environmentId", next.Record.EnvironmentID, "error", flushErr)
 		a.q.signal()
 	}
 	return true, nil
@@ -357,6 +379,9 @@ func (a *coordinatorActor) install(ctx context.Context, state types.SchedulerCoo
 		}
 	}
 	if command.Schedule == "" && len(state.PendingActivitySync) == 0 && len(state.Record.Runs) == 0 && len(state.Record.Receipts) == 0 {
+		if err := a.q.service.DeleteState(ctx, activityAckType, a.id); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+			return err
+		}
 		if err := a.q.service.DeleteState(ctx, coordinatorType, a.id); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 			return err
 		}
