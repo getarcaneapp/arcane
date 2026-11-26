@@ -58,9 +58,11 @@ SELECT p ->> 'id', 'volume', '',
         'ignoreAnonymous', COALESCE((p ->> 'ignoreAnonymous')::boolean, false)
     )::text,
     CURRENT_TIMESTAMP + ord * interval '1 second'
-FROM settings, json_array_elements(settings.value::json -> 'policies') WITH ORDINALITY AS t(p, ord)
-WHERE settings.key = 'systemVolumeBackupConfig' AND json_typeof(settings.value::json -> 'policies') = 'array'
-    AND COALESCE(p ->> 'id', '') <> '';
+FROM settings, json_array_elements(CASE
+    WHEN json_typeof(NULLIF(btrim(settings.value), '')::json -> 'policies') = 'array' THEN settings.value::json -> 'policies'
+    ELSE '[]'::json
+END) WITH ORDINALITY AS t(p, ord)
+WHERE settings.key = 'systemVolumeBackupConfig' AND COALESCE(p ->> 'id', '') <> '';
 DELETE FROM settings WHERE key = 'systemVolumeBackupConfig';
 `
 	v123SQLiteDown = `

@@ -520,8 +520,6 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 	remoteDisabled, err := s.policies.CheckRemote(ctx, policy, backup.RemoteCheck{
 		S3Destinations: s.s3Destinations,
 		Settings:       s.settings,
-		Root:           "",
-		Tables:         nil,
 		Reschedule:     s.rescheduleSystemVolumeBackup,
 	})
 	if errors.Is(err, backup.ErrRemoteOnlyDisabled) {

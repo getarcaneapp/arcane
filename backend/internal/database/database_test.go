@@ -1216,7 +1216,15 @@ func TestMigration123_MovesSystemAndGlobalVolumeSchedulesIntoBackupPolicies(t *t
 	assert.Zero(t, count(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'system_backup_policies'`))
 	assert.Zero(t, count(`SELECT COUNT(*) FROM settings WHERE key = 'systemVolumeBackupConfig'`))
 	sp1 := policy("sp1")
-	assert.Equal(t, row{Kind: "system", Schedule: "0 3 * * *", Destination: "s3-1", Enabled: true, S3: true, Retention: 5, Options: "{}"}, sp1)
+	assert.Equal(t, row{
+		Kind:        "system",
+		Schedule:    "0 3 * * *",
+		Destination: "s3-1",
+		Enabled:     true,
+		S3:          true,
+		Retention:   5,
+		Options:     "{}",
+	}, sp1)
 	assert.Empty(t, policy("sp2").Destination)
 	g1 := policy("g1")
 	assert.JSONEq(t, `{"selectionMode":"allowlist","volumeNames":["data","logs"],"ignoreAnonymous":true}`, g1.Options)
