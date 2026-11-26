@@ -212,6 +212,11 @@ func NamespaceDependents(model *composeTypes.Project, services []string) []strin
 				return true
 			}
 		}
+		for name, dep := range svc.DependsOn {
+			if _, member := members[name]; member && dep.Restart {
+				return true
+			}
+		}
 		return false
 	}
 	for changed := true; changed; {

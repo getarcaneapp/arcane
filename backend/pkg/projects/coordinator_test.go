@@ -66,6 +66,17 @@ func TestNamespaceDependents(t *testing.T) {
 			want:     []string{"c"},
 		},
 		{
+			name:    "depends_on restart pulled in and plain depends_on skipped",
+			enabled: composeTypes.Services{"a": {Name: "a"}},
+			disabled: composeTypes.Services{
+				"b": {Name: "b", DependsOn: composeTypes.DependsOnConfig{"a": {Condition: composeTypes.ServiceConditionStarted, Restart: true}}},
+				"c": {Name: "c", DependsOn: composeTypes.DependsOnConfig{"b": {Condition: composeTypes.ServiceConditionHealthy, Restart: true}}},
+				"d": {Name: "d", DependsOn: composeTypes.DependsOnConfig{"a": {Condition: composeTypes.ServiceConditionStarted}}},
+			},
+			services: []string{"a"},
+			want:     []string{"b", "c"},
+		},
+		{
 			name:     "nil when nothing matches",
 			enabled:  composeTypes.Services{"a": {Name: "a"}},
 			disabled: composeTypes.Services{"b": {Name: "b", NetworkMode: "host"}},
