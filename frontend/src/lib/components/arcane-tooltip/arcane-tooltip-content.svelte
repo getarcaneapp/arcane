@@ -13,7 +13,7 @@
 		ref = $bindable(null),
 		children,
 		class: className,
-		sideOffset = 0,
+		sideOffset = 6,
 		side = 'top',
 		arrowClasses,
 		portalProps,

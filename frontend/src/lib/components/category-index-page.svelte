@@ -61,7 +61,7 @@
 	<header class="space-y-4 pt-3 sm:space-y-6 md:pt-5">
 		<div class="flex items-start justify-between gap-4">
 			<div class="min-w-0">
-				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
+				<h1 class="text-2xl font-semibold tracking-tight">{title}</h1>
 				<p class="mt-1 text-sm text-muted-foreground">{subtitle}</p>
 			</div>
 			<SettingLock />
@@ -176,7 +176,7 @@
 
 							{#if result.matchingItems && result.matchingItems.length > 0}
 								<div class="space-y-2 p-4 sm:p-5">
-									<h4 class="text-2xs font-medium tracking-widest text-muted-foreground uppercase">
+									<h4 class="text-xs font-medium text-muted-foreground">
 										{matchingItemsLabel}
 									</h4>
 									{#each result.matchingItems as item (item.key)}
@@ -190,7 +190,7 @@
 													{#if item.keywords && item.keywords.length > 0}
 														<div class="mt-2 flex flex-wrap gap-1">
 															{#each item.keywords.slice(0, 6) as keyword (keyword)}
-																<span class="rounded-xl bg-foreground/5 px-2 py-0.5 text-xs text-muted-foreground">
+																<span class="rounded-sm bg-foreground/5 px-2 py-0.5 text-xs text-muted-foreground">
 																	{keyword}
 																</span>
 															{/each}
@@ -203,7 +203,7 @@
 													{/if}
 												</div>
 												<span
-													class="shrink-0 rounded-xl bg-foreground/5 px-2 py-1 font-mono text-2xs text-muted-foreground ring-1 ring-border/70 ring-inset"
+													class="shrink-0 rounded-sm bg-foreground/5 px-2 py-1 font-mono text-2xs text-muted-foreground ring-1 ring-border/70 ring-inset"
 												>
 													{item.type}
 												</span>

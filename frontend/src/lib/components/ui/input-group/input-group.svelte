@@ -10,7 +10,7 @@
 	data-slot="input-group"
 	{role}
 	class={cn(
-		'group/input-group relative flex w-full items-center overflow-hidden rounded-xl border bg-input/80 shadow-xs transition-all outline-none',
+		'group/input-group relative flex w-full items-center overflow-hidden rounded-md border bg-input/80 shadow-xs transition-all outline-none',
 		'h-9 has-[>textarea]:h-auto pointer-coarse:min-h-touch-target',
 
 		'has-[>[data-align=inline-start]]:[&>input]:pl-2',

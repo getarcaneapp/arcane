@@ -177,7 +177,7 @@
 			<p class="py-2 text-sm text-muted-foreground">{m.common_no_results_found()}</p>
 			{@render failedNote()}
 		{:else}
-			<ul class="divide-y divide-border/40">
+			<ul>
 				{#each resourcesQuery.data?.rows ?? [] as row (row.key)}
 					<li>
 						<a href={row.href} class="-mx-2 grid grid-cols-content-action items-center gap-3 rounded-md hover-glow px-2 py-2.5">
