@@ -1302,11 +1302,19 @@ func (p *Policies) DisableRemote(ctx context.Context, policy *Policy, field stri
 func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check RemoteCheck) (bool, error) {
 	var remoteErr error
 	if policy.S3Enabled {
-		remoteErr = CheckScheduledRemote(ctx, p.db, check.S3Destinations, ScheduledRemoteRequest{
+		remote := ScheduledRemoteRequest{
 			DestinationID: policy.S3DestinationID,
-			Root:          cmp.Or(check.Root, path.Join(VolumeRoot, check.Settings.GetSettingsConfig().InstanceID.Value)),
-			Tables:        kit.Ternary(check.Root == "", VolumeRepositoryTables, check.Tables),
-		})
+			Root:          check.Root,
+			Tables:        check.Tables,
+		}
+		if check.Root == "" {
+			remote = ScheduledRemoteRequest{
+				DestinationID: policy.S3DestinationID,
+				Root:          path.Join(VolumeRoot, check.Settings.GetSettingsConfig().InstanceID.Value),
+				Tables:        VolumeRepositoryTables,
+			}
+		}
+		remoteErr = CheckScheduledRemote(ctx, p.db, check.S3Destinations, remote)
 	}
 	disabled, err := DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
 		return p.DisableRemote(ctx, policy, field)

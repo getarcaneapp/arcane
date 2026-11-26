@@ -217,7 +217,11 @@ func TestSystemBackupStoreExpiresRunsOfDeletedPolicies(t *testing.T) {
 	db, err := database.Initialize(t.Context(), "file:system-backup-unmanaged?mode=memory&cache=shared", database.MigrationOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	require.NoError(t, db.Create(&backup.Policy{BaseModel: database.BaseModel{ID: "nightly"}, SubjectKind: backup.PolicySystem, Schedule: "0 2 * * *"}).Error)
+	require.NoError(t, db.Create(&backup.Policy{
+		BaseModel:   database.BaseModel{ID: "nightly"},
+		SubjectKind: backup.PolicySystem,
+		Schedule:    "0 2 * * *",
+	}).Error)
 	now := time.Now()
 	old := now.Add(-30 * 24 * time.Hour)
 	for _, run := range []SystemBackupRun{
@@ -365,7 +369,14 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	for _, local := range []bool{false, true} {
-		policy := &backup.Policy{SubjectKind: backup.PolicySystem, Enabled: true, LocalEnabled: local, S3Enabled: true, S3DestinationID: destination.ID, Schedule: "0 2 * * *"}
+		policy := &backup.Policy{
+			SubjectKind:     backup.PolicySystem,
+			Enabled:         true,
+			LocalEnabled:    local,
+			S3Enabled:       true,
+			S3DestinationID: destination.ID,
+			Schedule:        "0 2 * * *",
+		}
 		require.NoError(t, gormDB.Create(policy).Error)
 		require.NoError(t, gormDB.Model(policy).Update("local_enabled", local).Error)
 		service.RegisterBackupJobOnStartup(t.Context())
