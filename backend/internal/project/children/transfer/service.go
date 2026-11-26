@@ -1188,7 +1188,7 @@ func (s *Service) cleanup(ctx context.Context, r *run) []string {
 		}
 	}
 	removable := slices.Clone(r.state.CreatedVolumes)
-	if r.state.Importing {
+	if r.state.Importing && r.input.Request.IncludeVolumes {
 		for _, volume := range r.state.Volumes {
 			removable = append(removable, volume.TargetName)
 		}
