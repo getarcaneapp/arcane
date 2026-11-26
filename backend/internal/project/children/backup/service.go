@@ -1348,13 +1348,13 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 		})
 		local := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.s3DestinationID == "" })
 		remote := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.s3DestinationID != "" })
-		var localSnapshot, remoteSnapshot foundSnapshot
-		if local >= 0 {
-			localSnapshot = snapshots[local]
+		snapshotAt := func(index int) foundSnapshot {
+			if index < 0 {
+				return foundSnapshot{}
+			}
+			return snapshots[index]
 		}
-		if remote >= 0 {
-			remoteSnapshot = snapshots[remote]
-		}
+		localSnapshot, remoteSnapshot := snapshotAt(local), snapshotAt(remote)
 		largest := slices.MaxFunc(snapshots, func(a, b foundSnapshot) int {
 			return cmp.Compare(a.snapshot.Summary.TotalBytesProcessed, b.snapshot.Summary.TotalBytesProcessed)
 		})
@@ -1437,7 +1437,8 @@ func (s *Service) addFoundCopies(ctx context.Context, entry ProjectBackup, local
 	hasLocal, hasRemote := localSnapshot.snapshot.ID != "", remoteSnapshot.snapshot.ID != ""
 	interrupted := entry.Status == types.VolumeBackupStatusFailed && (entry.Error == interruptedError || (entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""))
 	addLocal, addRemote := hasLocal && entry.LocalSnapshotID == "", hasRemote && entry.RemoteSnapshotID == ""
-	if (!interrupted && entry.Status != types.VolumeBackupStatusSucceeded) || (!addLocal && !addRemote) {
+	verified := interrupted && ((hasLocal && localSnapshot.snapshot.ID == entry.LocalSnapshotID) || (hasRemote && remoteSnapshot.snapshot.ID == entry.RemoteSnapshotID))
+	if (!interrupted && entry.Status != types.VolumeBackupStatusSucceeded) || (!addLocal && !addRemote && !verified) {
 		return 0, nil
 	}
 	updates := map[string]any{"destination": backup.Destination(backup.DestinationOptions{Local: entry.LocalSnapshotID != "" || hasLocal, Remote: entry.RemoteSnapshotID != "" || hasRemote})}
