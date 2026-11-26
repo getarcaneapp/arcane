@@ -878,6 +878,14 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 		if err != nil {
 			return fmt.Errorf("export the %s: %w", artifact, err)
 		}
+		r.state.Relay = relay{
+			Kind:           types.UploadKindProjectArchive,
+			Artifact:       artifact,
+			SourceUploadID: source.ID,
+		}
+		if saveErr := s.save(ctx, r); saveErr != nil {
+			return saveErr
+		}
 	}
 	if restartErr := s.restartSource(ctx, r); restartErr != nil {
 		return restartErr
