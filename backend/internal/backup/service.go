@@ -569,7 +569,11 @@ func VolumeOwnerFromTags(tags []string) (VolumeOwner, bool) {
 		if uidErr != nil || gidErr != nil || modeErr != nil || mode < 0 || mode > 0o7777 {
 			return VolumeOwner{}, false
 		}
-		return VolumeOwner{UID: uint32(uid), GID: uint32(gid), Mode: mode}, true
+		return VolumeOwner{
+			UID:  uint32(uid),
+			GID:  uint32(gid),
+			Mode: mode,
+		}, true
 	}
 	return VolumeOwner{}, false
 }
@@ -663,7 +667,11 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 		if found.ID != "" {
 			return Snapshot{}, false, errors.New("multiple snapshots match the backup run")
 		}
-		found = Snapshot{ID: snapshot.ID, Size: snapshot.Summary.TotalBytesProcessed, Tags: snapshot.Tags}
+		found = Snapshot{
+			ID:   snapshot.ID,
+			Tags: snapshot.Tags,
+			Size: snapshot.Summary.TotalBytesProcessed,
+		}
 	}
 	if snapshotID != "" && found.ID == "" {
 		return Snapshot{}, false, errors.New("recorded backup snapshot is unavailable")
