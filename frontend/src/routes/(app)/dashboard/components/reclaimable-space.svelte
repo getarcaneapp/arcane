@@ -119,7 +119,7 @@
 				{/each}
 			</ul>
 			{#if usage.length > 1}
-				<ul class="divide-y divide-border/40">
+				<ul>
 					{#each topEnvironments as entry (entry.environment.id)}
 						<li class="flex items-center justify-between gap-3 py-2.5 text-sm">
 							<span class="flex min-w-0 items-center gap-2">

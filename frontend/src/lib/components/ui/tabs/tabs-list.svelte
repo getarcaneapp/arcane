@@ -20,7 +20,7 @@
 	bind:ref
 	class={cn(
 		'inline-flex max-w-full flex-wrap items-center justify-start text-muted-foreground',
-		variant === 'default' && 'gap-0.5 rounded-xl bg-muted p-1',
+		variant === 'default' && 'gap-0.5 rounded-md bg-muted p-1',
 		variant === 'underline' && 'w-full gap-5 border-b border-border',
 		scrollable && 'scrollbar-hide overflow-x-auto',
 		className

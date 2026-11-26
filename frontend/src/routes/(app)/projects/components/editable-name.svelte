@@ -76,10 +76,10 @@
 			disabled={!canEdit}
 		/>
 	{:else if variant === 'block'}
-		<h1 class="m-0 w-full">
+		<h1 class="m-0 flex w-full items-center">
 			<button
 				type="button"
-				class="min-h-8 w-full rounded-xl bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
+				class="min-h-8 w-full rounded-md bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
 					? 'border border-destructive'
 					: ''}"
 				title={canEdit ? `${shownValue || placeholder} (tap to edit)` : shownValue || placeholder}
@@ -108,13 +108,13 @@
 		{/if}
 	{:else}
 		<div class="flex h-8 min-w-0 items-center gap-1.5">
-			<h1 class="m-0 max-w-90 min-w-0">
+			<h1 class="m-0 flex max-w-90 min-w-0 items-center">
 				<button
 					type="button"
 					class={cn(
-						'w-full truncate bg-transparent px-0 py-0 text-left text-sm font-semibold',
+						'block w-full truncate bg-transparent px-0 py-0 text-left text-sm font-semibold',
 						!shownValue && placeholder && 'text-muted-foreground',
-						error && 'rounded-xl border border-destructive px-1'
+						error && 'rounded-md border border-destructive px-1'
 					)}
 					title={shownValue || placeholder}
 					onclick={beginEdit}
