@@ -401,11 +401,7 @@
 	{/if}
 {/snippet}
 
-<ResourcePageLayout
-	title={m.security()}
-	subtitle={m.security_subtitle()}
-	actionButtons={vulnerabilityManagementEnabled ? actionButtons : []}
->
+<ResourcePageLayout title={m.security()} actionButtons={vulnerabilityManagementEnabled ? actionButtons : []}>
 	{#snippet mainContent()}
 		{#if !vulnerabilityManagementEnabled}
 			<FeatureDisabled environmentId={destinationEnvironmentId('', 'vulnerabilities:list')} />

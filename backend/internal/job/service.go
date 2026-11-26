@@ -311,6 +311,7 @@ func requiresLocalDocker(jobID string) bool {
 func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, error) {
 	allMetadata := types.GetAllJobMetadata()
 	jobs := make([]types.JobStatus, 0, len(allMetadata))
+	records := make(map[string]types.SchedulerQueueRecord, len(allMetadata))
 
 	for _, jobMeta := range allMetadata {
 		// Local Docker jobs do not run when local Docker is off, whatever the saved settings say.
@@ -330,16 +331,21 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 			}
 			return s.settings.GetStringSetting(ctx, jobMeta.SettingsKey)
 		}()
-		runtimeState, hasRuntimeState := s.scheduler.GetJobRuntimeState(jobMeta.ID)
-		useRuntimeState := !localDockerOff && hasRuntimeState && (jobMeta.SettingsKey != "" || jobMeta.ID == "upgrade-log-cleanup") && jobMeta.ID != "environment-health"
+		record, err := runtime.LoadRecord(ctx, s.runs, "0", records, jobMeta.ID)
+		if err != nil {
+			return nil, err
+		}
+		_, registered := s.scheduler.GetJob(jobMeta.ID)
+		useRuntimeState := !localDockerOff && registered && (jobMeta.SettingsKey != "" || jobMeta.ID == "upgrade-log-cleanup") && jobMeta.ID != "environment-health"
+		nextRun, nextRunErr := s.runs.NextRun(ctx, kit.Ternary(useRuntimeState, record, types.SchedulerQueueRecord{}))
 		jobs = append(jobs, jobMeta.ToJobStatus(
-			cmp.Or(kit.Ternary(useRuntimeState, runtimeState.Schedule, ""), schedule),
-			kit.Ternary(useRuntimeState, runtimeState.NextRun, func() *time.Time {
+			cmp.Or(kit.Ternary(useRuntimeState && nextRunErr == nil, record.Schedule, ""), schedule),
+			kit.Ternary(useRuntimeState, nextRun, func() *time.Time {
 				if schedule == "" || schedule == "continuous" {
 					return nil
 				}
-				sched, err := cron.ParseStandard("CRON_TZ=" + s.location.String() + " " + schedule)
-				if err != nil {
+				sched, parseErr := cron.ParseStandard("CRON_TZ=" + s.location.String() + " " + schedule)
+				if parseErr != nil {
 					return nil
 				}
 				return new(sched.Next(time.Now().In(s.location)))
@@ -349,7 +355,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 		))
 	}
 
-	statuses, err := runtime.ApplyStatuses(ctx, s.runs, s.scheduler, "0", jobs)
+	statuses, err := runtime.ApplyStatuses(ctx, s.runs, s.scheduler, "0", jobs, records)
 	if err != nil {
 		return nil, err
 	}
@@ -760,7 +766,7 @@ func (s *JobService) ListRemoteJobs(ctx context.Context, environmentID string) (
 	if err != nil {
 		return nil, err
 	}
-	jobs, err := runtime.ApplyStatuses(ctx, s.runs, s.scheduler, environmentID, catalog.Jobs)
+	jobs, err := runtime.ApplyStatuses(ctx, s.runs, s.scheduler, environmentID, catalog.Jobs, map[string]types.SchedulerQueueRecord{})
 	if err != nil {
 		return nil, err
 	}

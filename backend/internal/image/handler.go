@@ -305,11 +305,11 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 	if removeImageErr := h.imageService.RemoveImage(ctx, input.ImageID, input.Force, *user); removeImageErr != nil {
 		switch {
 		case errdefs.IsConflict(removeImageErr):
-			return nil, huma.Error409Conflict("Failed to remove image: " + removeImageErr.Error())
+			return nil, huma.Error409Conflict(removeImageErr.Error())
 		case errdefs.IsNotFound(removeImageErr):
-			return nil, huma.Error404NotFound("Failed to remove image: " + removeImageErr.Error())
+			return nil, huma.Error404NotFound(removeImageErr.Error())
 		default:
-			return nil, huma.Error500InternalServerError("Failed to remove image: " + removeImageErr.Error())
+			return nil, huma.Error500InternalServerError(removeImageErr.Error())
 		}
 	}
 

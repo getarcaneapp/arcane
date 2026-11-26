@@ -1,11 +1,16 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { EditIcon } from '#lib/icons/index.js';
+	import { EditIcon, PlayIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { BackupStatus } from '#lib/types/backup.js';
+	import type { BackupManagementType, BackupStatus } from '#lib/types/backup.js';
 	import type { BackupPolicy } from '#lib/types/ui/backup.js';
-	import { backupDestinationFromFlags, backupDestinationLabel, backupStatusLabel } from '#lib/utils/backups.js';
+	import {
+		backupDestinationFromFlags,
+		backupDestinationLabel,
+		backupManagementLabel,
+		backupStatusLabel
+	} from '#lib/utils/backups.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	type CardPolicy = BackupPolicy & {
@@ -19,13 +24,19 @@
 		resourceType,
 		showStopContainers = false,
 		onEdit,
-		editDisabled = false
+		editDisabled = false,
+		onRun,
+		runDisabled = false,
+		running = false
 	}: {
 		policy: CardPolicy;
-		resourceType?: 'system' | 'volume';
+		resourceType?: BackupManagementType;
 		showStopContainers?: boolean;
 		onEdit?: () => void;
 		editDisabled?: boolean;
+		onRun?: () => void;
+		runDisabled?: boolean;
+		running?: boolean;
 	} = $props();
 
 	const s3Name = $derived(policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId || '');
@@ -39,11 +50,22 @@
 	<code class="truncate">{policy.schedule}</code>
 	<div class="flex items-center gap-1.5 justify-self-end">
 		{#if resourceType}
-			<Badge variant="purple">
-				{resourceType === 'system' ? m.system() : m.resource_volume_cap()}
-			</Badge>
+			<Badge variant="purple">{backupManagementLabel(resourceType)}</Badge>
 		{/if}
 		<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
+		{#if onRun}
+			<ArcaneButton
+				action="start"
+				size="icon"
+				icon={PlayIcon}
+				showLabel={false}
+				customLabel={m.system_volume_backups_run_now()}
+				onclick={onRun}
+				loading={running}
+				class="size-7"
+				disabled={runDisabled || running}
+			/>
+		{/if}
 		{#if onEdit}
 			<ArcaneButton
 				action="edit"
@@ -57,19 +79,23 @@
 			/>
 		{/if}
 	</div>
-	<div class="col-span-2 flex min-w-0 items-center gap-1.5">
-		<span>
+	<div class="col-span-full flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+		<span class="whitespace-nowrap">
 			{policy.retentionCount === 0
 				? m.volume_backup_retention_all()
 				: m.volume_backup_retention_summary({ count: policy.retentionCount })}
 		</span>
 		{#if showStopContainers}
 			<span>·</span>
-			<span>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span>
+			<span class="whitespace-nowrap"
+				>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span
+			>
 		{/if}
 		{#if policy.lastRun}
 			<span>·</span>
-			<span class="truncate">{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span>
+			<span class="whitespace-nowrap"
+				>{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span
+			>
 		{/if}
 	</div>
 	{#if policy.s3Enabled && s3Name}

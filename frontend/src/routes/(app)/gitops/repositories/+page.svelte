@@ -132,7 +132,7 @@
 	});
 </script>
 
-<ResourcePageLayout title={m.git_repositories_title()} subtitle={m.git_repositories_subtitle()} {actionButtons}>
+<ResourcePageLayout title={m.git_repositories_title()} {actionButtons}>
 	{#snippet mainContent()}
 		<RepositoryTable
 			{repositories}

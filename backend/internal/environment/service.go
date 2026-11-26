@@ -575,6 +575,10 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 			Pluck("identity_user_id", &federatedUserIDs).Error; loadFederatedUsersErr != nil {
 			return fmt.Errorf("failed to list environment federated credentials: %w", loadFederatedUsersErr)
 		}
+		envScopedUserIDs, loadScopedErr := listEnvScopedRoleUsers(tx, id)
+		if loadScopedErr != nil {
+			return loadScopedErr
+		}
 		if len(federatedUserIDs) > 0 {
 			if deleteCredentialsErr := tx.Exec("DELETE FROM federated_credentials WHERE environment_id = ?", id).Error; deleteCredentialsErr != nil {
 				return fmt.Errorf("failed to delete environment federated credentials: %w", deleteCredentialsErr)
@@ -583,6 +587,7 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 				return fmt.Errorf("failed to delete environment federated service users: %w", deleteUsersErr)
 			}
 		}
+		federatedUserIDs = kit.Unique(slices.Concat(federatedUserIDs, envScopedUserIDs))
 		if deleteVariablesErr := tx.Exec(`DELETE FROM global_variables
 			WHERE all_environments = ?
 			AND id IN (SELECT global_variable_id FROM global_variable_environments WHERE environment_id = ?)
@@ -631,6 +636,28 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 		"Environment Deleted", fmt.Sprintf("Environment '%s' was deleted", env.Name), event.EventSeverityWarning, userID, username)
 
 	return nil
+}
+
+func listEnvScopedRoleUsers(tx *gorm.DB, envID string) ([]string, error) {
+	var userIDs []string
+	if err := tx.Table("user_role_assignments").
+		Where("environment_id = ?", envID).
+		Distinct("user_id").
+		Pluck("user_id", &userIDs).Error; err != nil {
+		return nil, fmt.Errorf("failed to list environment-scoped role assignees: %w", err)
+	}
+	if m := tx.Migrator(); m.HasTable("group_members") && m.HasTable("group_role_assignments") {
+		var groupUserIDs []string
+		if err := tx.Table("group_members AS gm").
+			Joins("INNER JOIN group_role_assignments gra ON gra.group_id = gm.group_id").
+			Where("gra.environment_id = ?", envID).
+			Distinct("gm.user_id").
+			Pluck("gm.user_id", &groupUserIDs).Error; err != nil {
+			return nil, fmt.Errorf("failed to list environment-scoped group members: %w", err)
+		}
+		userIDs = append(userIDs, groupUserIDs...)
+	}
+	return userIDs, nil
 }
 
 func (s *EnvironmentService) createEnvironmentEvent(

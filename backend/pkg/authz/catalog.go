@@ -90,6 +90,27 @@ var permissionCatalog = []PermissionCatalogResource{
 		},
 	},
 	{
+		Key:         "groups",
+		Label:       "Groups",
+		Description: "User groups and their role assignments; creating and editing groups is reserved for global admins",
+		Scope:       PermissionScopeGlobal,
+		Actions: []PermissionCatalogAction{
+			{
+				Key:         "list",
+				Permission:  PermGroupsList,
+				Label:       "List",
+				Description: "List user groups",
+			},
+			{
+				Key:         "read",
+				Permission:  PermGroupsRead,
+				Label:       "Read",
+				Description: "View a user group, its members, and its role assignments",
+				Requires:    []string{PermGroupsList},
+			},
+		},
+	},
+	{
 		Key:         "apikeys",
 		Label:       "API Keys",
 		Description: "API keys used for programmatic access",
@@ -526,7 +547,7 @@ var permissionCatalog = []PermissionCatalogResource{
 	{
 		Key:         "system-backups",
 		Label:       "System Backups",
-		Description: "Backups of the Arcane system and system-managed volumes",
+		Description: "Backups of Arcane, and the global project and volume backup policies",
 		Scope:       PermissionScopeGlobal,
 		Actions: []PermissionCatalogAction{
 			{
@@ -820,6 +841,20 @@ var permissionCatalog = []PermissionCatalogResource{
 				Permission:  PermProjectsExport,
 				Label:       "Export",
 				Description: "Export projects and download the archive",
+				Requires:    []string{PermProjectsRead, PermActivitiesRead},
+			},
+			{
+				Key:         "backup",
+				Permission:  PermProjectsBackup,
+				Label:       "Backup",
+				Description: "Create and delete project backups",
+				Requires:    []string{PermProjectsRead, PermActivitiesRead},
+			},
+			{
+				Key:         "restore",
+				Permission:  PermProjectsRestore,
+				Label:       "Restore",
+				Description: "Restore project backups over a project's files and volumes",
 				Requires:    []string{PermProjectsRead, PermActivitiesRead},
 			},
 		},

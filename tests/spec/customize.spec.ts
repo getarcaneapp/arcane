@@ -471,16 +471,9 @@ test.describe('Registries', () => {
 			await page.waitForLoadState('load');
 		});
 
-		test('should display title and subtitle, and refresh', async ({ page }) => {
+		test('should display title and refresh', async ({ page }) => {
 			await expect(
 				page.getByRole('heading', { name: 'Registries', exact: true, level: 1 })
-			).toBeVisible();
-			await expect(
-				page
-					.getByText(
-						'Configure access credentials for private Docker registries and container repositories'
-					)
-					.first()
 			).toBeVisible();
 
 			await page.getByRole('button', { name: 'Refresh' }).click();

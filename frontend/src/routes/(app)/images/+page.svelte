@@ -330,7 +330,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.images()} subtitle={m.images_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.images()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			{#key pageState.scope}

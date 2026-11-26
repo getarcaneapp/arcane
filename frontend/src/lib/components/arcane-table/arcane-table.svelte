@@ -8,7 +8,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { AlertIcon } from '#lib/icons/index.js';
@@ -755,16 +755,95 @@
 		table.setGlobalFilter('');
 	}
 
-	const shellClass = $derived(unstyled ? 'flex h-full min-h-0 flex-col' : 'flex h-full min-h-0 flex-col gap-2');
+	const shellClass = $derived(unstyled ? 'flex h-full min-h-0 flex-col' : 'flex h-full min-h-0 flex-col gap-3');
 	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'w-full shrink-0');
+
+	const failedEnvironments = $derived(items.failedEnvironments ?? []);
+	const excludedEnvironments = $derived(items.excludedEnvironments ?? []);
+	const hasTableIssues = $derived(failedEnvironments.length > 0 || excludedEnvironments.length > 0 || Boolean(refreshError));
+	const issuesPillLabel = $derived.by(() => {
+		if (failedEnvironments.length > 0) return m.count_unavailable({ count: failedEnvironments.length });
+		if (excludedEnvironments.length > 0) return m.count_not_shown({ count: excludedEnvironments.length });
+		return m.refresh_failed();
+	});
 </script>
 
 {#snippet RetryButton(retry: () => Promise<unknown>)}
 	<ArcaneButton
 		action="refresh"
+		size="sm"
 		customLabel={m.common_retry()}
+		class="h-7 px-2.5 text-xs"
 		onClickPromise={async () => handleApiResultWithCallbacks({ result: await tryCatch(retry()), message: m.common_failed() })}
 	/>
+{/snippet}
+
+{#snippet IssuesIndicatorSnippet()}
+	<Popover.Root>
+		<Popover.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton
+					{...props}
+					action="base"
+					tone="outline-warning"
+					size="sm"
+					icon={AlertIcon}
+					customLabel={issuesPillLabel}
+					class="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
+				/>
+			{/snippet}
+		</Popover.Trigger>
+		<Popover.Content align="end" size="sm" class="w-80">
+			<div class="space-y-3">
+				{#if failedEnvironments.length > 0}
+					<div class="space-y-2">
+						<div class="flex items-center justify-between gap-2">
+							<div class="flex items-center gap-1.5 text-xs font-medium text-foreground">
+								<AlertIcon class="size-3.5 shrink-0 text-warning" />
+								<span>{m.unavailable_agents()}</span>
+							</div>
+							{#if onRetry}
+								{@render RetryButton(onRetry)}
+							{/if}
+						</div>
+						<ul class="space-y-1.5 text-xs">
+							{#each failedEnvironments as failure (failure.environment.id)}
+								<li class="rounded-md bg-muted/50 px-2.5 py-1.5">
+									<div class="font-medium text-foreground">{failure.environment.name}</div>
+									<div class="text-muted-foreground">{failure.message}</div>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+
+				{#if refreshError}
+					<div class={cn('space-y-2', failedEnvironments.length > 0 && 'border-t border-border/60 pt-2.5')}>
+						<div class="flex items-start justify-between gap-2 text-xs text-muted-foreground">
+							<span>{m.containers_resource_refresh_failed({ message: extractApiErrorMessage(refreshError) })}</span>
+							{#if onRetry && failedEnvironments.length === 0}
+								{@render RetryButton(onRetry)}
+							{/if}
+						</div>
+					</div>
+				{/if}
+
+				{#if excludedEnvironments.length > 0}
+					<p
+						class={cn(
+							'text-xs text-muted-foreground',
+							(failedEnvironments.length > 0 || Boolean(refreshError)) && 'border-t border-border/60 pt-2.5'
+						)}
+					>
+						{m.all_environments_excluded({
+							count: excludedEnvironments.length,
+							limit: settingsStore.current?.allEnvironmentsLimit ?? 0
+						})}
+					</p>
+				{/if}
+			</div>
+		</Popover.Content>
+	</Popover.Root>
 {/snippet}
 
 {#snippet PaginationSnippet()}
@@ -817,7 +896,7 @@
 		{#if !withoutSearch}
 			<div class={toolbarWrapClass}>
 				<DataTableToolbar
-					class={unstyled ? undefined : 'px-0'}
+					class={unstyled ? undefined : 'p-0'}
 					{table}
 					{selectedIds}
 					{selectionDisabled}
@@ -827,6 +906,7 @@
 					{onToggleMobileField}
 					{customViewOptions}
 					{customToolbarActions}
+					statusIndicator={hasTableIssues ? IssuesIndicatorSnippet : undefined}
 					{imageNameFilterOptions}
 					{wrapText}
 					onToggleWrapText={toggleWrapText}
@@ -839,52 +919,9 @@
 					onPageSizeChange={withoutPagination ? undefined : setPageSize}
 				/>
 			</div>
-		{/if}
-
-		{#if items.failedEnvironments?.length}
-			{@const failedEnvironmentNames = items.failedEnvironments.map(({ environment }) => environment.name).join(', ')}
-			{@const failedEnvironmentDetails = items.failedEnvironments
-				.map(({ environment, message }) => `${environment.name}: ${message}`)
-				.join('\n')}
-			<div class="shrink-0 px-3 pt-3">
-				<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
-					<div class="flex flex-wrap items-center justify-between gap-2">
-						<Alert.Description title={failedEnvironmentDetails}>
-							{m.all_environments_unavailable({ environments: failedEnvironmentNames })}
-						</Alert.Description>
-						{#if onRetry}
-							{@render RetryButton(onRetry)}
-						{/if}
-					</div>
-				</Alert.Root>
-			</div>
-		{/if}
-
-		{#if refreshError}
-			<div class="shrink-0 px-3 pt-3">
-				<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
-					<div class="flex flex-wrap items-center justify-between gap-2">
-						<Alert.Description>
-							{m.containers_resource_refresh_failed({ message: extractApiErrorMessage(refreshError) })}
-						</Alert.Description>
-						{#if onRetry}
-							{@render RetryButton(onRetry)}
-						{/if}
-					</div>
-				</Alert.Root>
-			</div>
-		{/if}
-
-		{#if items.excludedEnvironments?.length}
-			<div class="shrink-0 px-3 pt-3">
-				<Alert.Root variant="warning-subtle" size="sm" icon={AlertIcon}>
-					<Alert.Description>
-						{m.all_environments_excluded({
-							count: items.excludedEnvironments.length,
-							limit: settingsStore.current?.allEnvironmentsLimit ?? 0
-						})}
-					</Alert.Description>
-				</Alert.Root>
+		{:else if hasTableIssues}
+			<div class={cn('flex shrink-0 justify-end', unstyled && 'px-4 pt-2')}>
+				{@render IssuesIndicatorSnippet()}
 			</div>
 		{/if}
 

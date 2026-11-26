@@ -53,7 +53,7 @@
 	const showPods = $derived(rows.some((row) => row.podCount !== null));
 	const headCell =
 		'h-9 px-3 text-left align-middle text-xs-plus leading-5 font-medium whitespace-nowrap text-muted-foreground first:pl-2 last:pr-2';
-	const bodyCell = 'px-3 py-2.5 align-middle first:pl-2 last:pr-2';
+	const bodyCell = 'px-3 py-2.5 align-middle first:rounded-l-lg first:pl-2 last:rounded-r-lg last:pr-2';
 </script>
 
 {#snippet actionCount(count: number, icon: IconType)}
@@ -115,10 +115,10 @@
 	{/if}
 {/snippet}
 
-<div class="overflow-x-auto">
-	<table class="w-full text-sm">
+<div class="overflow-x-auto overflow-y-hidden">
+	<table class="w-full border-separate border-spacing-0 text-sm">
 		<thead>
-			<tr class="border-b border-border/40">
+			<tr>
 				<th class={headCell}>{m.common_name()}</th>
 				<th class={headCell}>{m.common_version()}</th>
 				<th class={headCell}>{m.common_status()}</th>
@@ -138,7 +138,7 @@
 			{#each rows as row (row.environment.id)}
 				{@const stats = getLiveStatsState(row.environment.id)?.stats ?? null}
 				{@const statsStatus = getLiveStatsStatus(row.environment)}
-				<tr class="border-b border-border/40 transition-colors last:border-0 hover:bg-muted/30">
+				<tr class="*:transition-colors *:duration-150 hover:*:bg-row-hover">
 					<td class={bodyCell}>
 						<div class="flex min-w-0 items-center gap-2">
 							<a class="truncate font-medium hover:underline" href={resolve('/(app)/agents/[id]', { id: row.environment.id })}>
@@ -154,7 +154,7 @@
 					</td>
 					<td class={bodyCell}>
 						{#if row.versionText}
-							<Badge variant="gray" size="sm" mono>
+							<Badge variant="gray" size="sm">
 								{row.versionText}
 								{#if row.updateAvailable}
 									<span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-warning"></span>

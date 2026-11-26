@@ -20,7 +20,6 @@ export function backupRunColumns<T extends BackupRun>(cells: {
 
 export function backupRunMobileFields() {
 	return [
-		{ id: 'type', label: m.common_type(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
 		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },

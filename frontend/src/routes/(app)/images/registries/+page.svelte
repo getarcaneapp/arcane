@@ -148,7 +148,7 @@
 	/>
 {/snippet}
 
-<ResourcePageLayout title={m.registries_title()} subtitle={m.registries_subtitle()} {actionButtons}>
+<ResourcePageLayout title={m.registries_title()} {actionButtons}>
 	{#snippet mainContent()}
 		<RegistryTable
 			emptyState={registriesEmptyState}

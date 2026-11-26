@@ -57,7 +57,7 @@ func PersistEffectiveEnvContent(ctx context.Context, projectPath, projectsDirect
 	}
 
 	if state.HasGitSource && state.HasEffective && envContent == state.EffectiveContent {
-		storedEffectiveContent, buildErr := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+		storedEffectiveContent, buildErr := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent, nil)
 		if buildErr == nil && envContent == storedEffectiveContent {
 			return nil
 		}
@@ -77,7 +77,7 @@ func PersistEffectiveEnvContent(ctx context.Context, projectPath, projectsDirect
 		return fmt.Errorf("build override env content: %w", err)
 	}
 
-	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, overrideContent)
+	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, overrideContent, nil)
 	if err != nil {
 		return fmt.Errorf("build effective env content: %w", err)
 	}
@@ -101,7 +101,7 @@ func ResolveStoredEffectiveEnvContent(state projects.ProjectEnvState) (string, e
 		return state.EffectiveContent, nil
 	}
 	if state.HasGitSource || state.HasOverride {
-		effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+		effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent, nil)
 		if err != nil {
 			return "", fmt.Errorf("build effective env content: %w", err)
 		}
@@ -143,7 +143,7 @@ func ensureEffectiveEnvFile(ctx context.Context, projectPath, projectsDirectory 
 		return nil
 	}
 
-	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+	effectiveContent, err := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent, nil)
 	if err != nil {
 		return fmt.Errorf("build effective env content: %w", err)
 	}
@@ -251,7 +251,7 @@ func PrepareGitSyncEnvUpdate(ctx context.Context, projectPath string, gitEnvCont
 		return GitSyncEnvUpdate{}, err
 	}
 
-	effectiveContent, err := projects.BuildEffectiveEnvContent(*gitEnvContent, overrideContent)
+	effectiveContent, err := projects.BuildEffectiveEnvContent(*gitEnvContent, overrideContent, nil)
 	if err != nil {
 		return GitSyncEnvUpdate{}, fmt.Errorf("build effective env content: %w", err)
 	}

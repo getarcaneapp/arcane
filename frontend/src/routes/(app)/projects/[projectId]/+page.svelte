@@ -52,6 +52,7 @@
 		SearchIcon,
 		ResetIcon,
 		GitBranchIcon,
+		BackupIcon,
 		FolderMoveIcon,
 		DownloadIcon
 	} from '#lib/icons/index.js';
@@ -112,6 +113,7 @@
 	} from '#lib/utils/workspace-files.js';
 
 	import EditableName from '../components/editable-name.svelte';
+	import ProjectBackupsPanel from '../components/project-backups-panel.svelte';
 	import ProjectJobsPanel from '../components/project-jobs-panel.svelte';
 	import ProjectsLogsPanel from '../components/project-logs-panel.svelte';
 	import ProjectServicesPanel from '../components/project-services-panel.svelte';
@@ -420,19 +422,19 @@
 		...overrideWorkspaceRows,
 		...envWorkspaceRows
 	]);
-	let archiveRequiresStopped = $derived(
+	let projectRunning = $derived(
 		!!project &&
-			!project.isArchived &&
 			(Number(project.runningCount) > 0 ||
 				project.status === 'running' ||
 				project.status === 'partially running' ||
 				project.status === 'deploying' ||
 				project.status === 'restarting')
 	);
+	let archiveRequiresStopped = $derived(!!project && !project.isArchived && projectRunning);
 
 	let autoScrollStackLogs = $state(true);
 
-	type ProjectTab = 'services' | 'compose' | 'backup' | 'logs';
+	type ProjectTab = 'services' | 'compose' | 'backup' | 'backups' | 'logs';
 	let selectedTab = $state<ProjectTab>('compose');
 	let userSelectedTabProjectId: string | null = null;
 	let composeOpen = $state(true);
@@ -581,13 +583,14 @@
 				icon: GitBranchIcon
 			});
 		}
+		items.push({ value: 'backups', label: m.backups(), icon: BackupIcon });
 		return items;
 	});
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
 	type ComposeUIPrefs = {
-		tab: 'services' | 'compose' | 'backup' | 'logs';
+		tab: ProjectTab;
 		composeOpen: boolean;
 		overrideOpen: boolean;
 		envOpen: boolean;
@@ -2595,6 +2598,24 @@
 			{@render projectComposeTab(project)}
 
 			{@render projectBackupTab(project)}
+
+			<Tabs.Content value="backups" class="h-full min-h-0 overflow-y-auto">
+				<ProjectBackupsPanel
+					projectId={project.id}
+					environmentId={envId}
+					running={projectRunning}
+					onRestored={async ({ files, succeeded }) => {
+						if (!files || !succeeded) {
+							await refreshProjectDetails();
+							return;
+						}
+						await refreshProjectDetails({ forceRebaseDraft: true, preserveEditableDrafts: true, clearLoadedFileCache: true });
+						await queryClient.invalidateQueries({
+							queryKey: queryKeys.projects.workspace(envId, projectId)
+						});
+					}}
+				/>
+			</Tabs.Content>
 		{/snippet}
 	</TabbedPageLayout>
 {:else}

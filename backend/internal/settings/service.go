@@ -813,16 +813,6 @@ func (s *SettingsService) GetIntSetting(ctx context.Context, key string) int {
 	return s.settingValue(ctx, key, strconv.Atoi)
 }
 
-func (s *SettingsService) SystemVolumeBackupPolicies() (*types.SystemVolumeBackupPolicyCollection, error) {
-	var collection types.SystemVolumeBackupPolicyCollection
-	if raw := strings.TrimSpace(s.GetSettingsConfig().SystemVolumeBackupConfig.Value); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &collection); err != nil {
-			return nil, fmt.Errorf("decode system-managed volume backup policies: %w", err)
-		}
-	}
-	return &collection, nil
-}
-
 func (s *SettingsService) ProjectsDirectories() ([]types.ProjectsDirectoryEntry, error) {
 	var entries []types.ProjectsDirectoryEntry
 	if raw := strings.TrimSpace(s.GetSettingsConfig().ProjectsDirectories.Value); raw != "" {

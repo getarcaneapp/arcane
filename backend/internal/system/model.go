@@ -28,18 +28,6 @@ type (
 
 		Size int64 `json:"size" gorm:"column:size" sortable:"true"`
 	}
-
-	SystemBackupPolicy struct {
-		database.BaseModel
-
-		Schedule        string `gorm:"column:schedule;type:text;not null"`
-		S3DestinationID string `gorm:"column:s3_destination_id;type:text;index"`
-		RetentionCount  int    `gorm:"column:retention_count;not null;default:7"`
-
-		Enabled      bool `gorm:"column:enabled;not null;default:false"`
-		LocalEnabled bool `gorm:"column:local_enabled;not null;default:true"`
-		S3Enabled    bool `gorm:"column:s3_enabled;not null;default:false"`
-	}
 )
 
 const (
@@ -59,14 +47,5 @@ func (b SystemBackupRun) ToDTO() types.SystemBackupRun {
 		ID: b.ID, Size: b.Size, CreatedAt: b.CreatedAt, Status: string(b.Status), Trigger: string(b.Trigger),
 		Destination: b.Destination, LocalSnapshotID: b.LocalSnapshotID, RemoteSnapshotID: b.RemoteSnapshotID,
 		S3DestinationID: b.S3DestinationID, S3DestinationName: b.S3DestinationName, PolicyID: b.PolicyID, Error: b.Error,
-	}
-}
-
-func (SystemBackupPolicy) TableName() string { return "system_backup_policies" }
-
-func (p SystemBackupPolicy) ToDTO() types.SystemBackupPolicy {
-	return types.SystemBackupPolicy{
-		ID: p.ID, Enabled: p.Enabled, Schedule: p.Schedule, RetentionCount: p.RetentionCount,
-		LocalEnabled: p.LocalEnabled, S3Enabled: p.S3Enabled, S3DestinationID: p.S3DestinationID,
 	}
 }

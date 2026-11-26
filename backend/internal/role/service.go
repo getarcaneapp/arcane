@@ -253,6 +253,11 @@ func (s *RoleService) CreateRole(ctx context.Context, name string, description *
 	return role, nil
 }
 
+func hasGroupTables(tx *gorm.DB) bool {
+	m := tx.Migrator()
+	return m.HasTable("group_members") && m.HasTable("group_role_assignments")
+}
+
 func lockAssignedUserRows(tx *gorm.DB, roleID string) ([]string, error) {
 	var ids []string
 	if err := tx.Model(&UserRoleAssignment{}).
@@ -260,6 +265,21 @@ func lockAssignedUserRows(tx *gorm.DB, roleID string) ([]string, error) {
 		Distinct("user_id").
 		Pluck("user_id", &ids).Error; err != nil {
 		return nil, fmt.Errorf("failed to list users assigned to role: %w", err)
+	}
+	if hasGroupTables(tx) {
+		var groupUserIDs []string
+		if err := tx.Table("group_members AS gm").
+			Joins("INNER JOIN group_role_assignments gra ON gra.group_id = gm.group_id").
+			Where("gra.role_id = ?", roleID).
+			Distinct("gm.user_id").
+			Pluck("gm.user_id", &groupUserIDs).Error; err != nil {
+			return nil, fmt.Errorf("failed to list group users assigned to role: %w", err)
+		}
+		for _, id := range groupUserIDs {
+			if !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
 	}
 	if len(ids) == 0 {
 		return ids, nil
@@ -387,15 +407,33 @@ func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 }
 
 func (s *RoleService) CountUsersAssignedToRole(ctx context.Context, roleID string) (int, error) {
-	var count int64
-	if err := s.db.WithContext(ctx).
-		Model(&UserRoleAssignment{}).
+	db := s.db.WithContext(ctx)
+	var directIDs []string
+	if err := db.Model(&UserRoleAssignment{}).
 		Distinct("user_id").
 		Where("role_id = ?", roleID).
-		Count(&count).Error; err != nil {
+		Pluck("user_id", &directIDs).Error; err != nil {
 		return 0, fmt.Errorf("failed to count users assigned to role: %w", err)
 	}
-	return int(count), nil
+	if !hasGroupTables(db) {
+		return len(directIDs), nil
+	}
+	var groupUserIDs []string
+	if err := db.Table("group_members AS gm").
+		Joins("INNER JOIN group_role_assignments gra ON gra.group_id = gm.group_id").
+		Where("gra.role_id = ?", roleID).
+		Distinct("gm.user_id").
+		Pluck("gm.user_id", &groupUserIDs).Error; err != nil {
+		return 0, fmt.Errorf("failed to count group users assigned to role: %w", err)
+	}
+	seen := make(map[string]struct{}, len(directIDs)+len(groupUserIDs))
+	for _, id := range directIDs {
+		seen[id] = struct{}{}
+	}
+	for _, id := range groupUserIDs {
+		seen[id] = struct{}{}
+	}
+	return len(seen), nil
 }
 
 func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([]UserRoleAssignment, error) {
@@ -493,13 +531,17 @@ func validateAssignmentsExist(tx *gorm.DB, desired []UserRoleAssignment) error {
 		}
 	}
 
-	if err := verifyIDsExist(tx.Model(&Role{}), roleIDSet, "role"); err != nil {
-		return err
-	}
-	return verifyIDsExist(tx.Table("environments"), envIDSet, "environment")
+	return ValidateRoleAndEnvIDsExist(tx, roleIDSet, envIDSet)
 }
 
-func verifyIDsExist(query *gorm.DB, idSet map[string]struct{}, kind string) error {
+func ValidateRoleAndEnvIDsExist(tx *gorm.DB, roleIDSet, envIDSet map[string]struct{}) error {
+	if err := VerifyIDsExist(tx.Model(&Role{}), roleIDSet, "role"); err != nil {
+		return err
+	}
+	return VerifyIDsExist(tx.Table("environments"), envIDSet, "environment")
+}
+
+func VerifyIDsExist(query *gorm.DB, idSet map[string]struct{}, kind string) error {
 	if len(idSet) == 0 {
 		return nil
 	}
@@ -537,6 +579,23 @@ func (s *RoleService) CountGlobalAdmins(ctx context.Context, tx *gorm.DB, exclud
 	}
 	if err := query.Scan(&rows).Error; err != nil {
 		return 0, fmt.Errorf("failed to list global role permissions for admin count: %w", err)
+	}
+	if hasGroupTables(tx) {
+		var groupRows []globalPermissionRow
+		groupQuery := tx.WithContext(ctx).
+			Table("users AS u").
+			Select("u.id AS user_id, r.permissions AS permissions").
+			Joins("INNER JOIN group_members gm ON gm.user_id = u.id").
+			Joins("INNER JOIN group_role_assignments gra ON gra.group_id = gm.group_id AND gra.environment_id IS NULL").
+			Joins("INNER JOIN roles r ON r.id = gra.role_id").
+			Where("u.is_service_account = ? AND u.disabled = ?", false, false)
+		if strings.TrimSpace(excludedUserID) != "" {
+			groupQuery = groupQuery.Where("u.id <> ?", excludedUserID)
+		}
+		if err := groupQuery.Scan(&groupRows).Error; err != nil {
+			return 0, fmt.Errorf("failed to list group global role permissions for admin count: %w", err)
+		}
+		rows = append(rows, groupRows...)
 	}
 
 	permissionsByUser := make(map[string]*authz.PermissionSet, len(rows))
@@ -598,6 +657,18 @@ func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB,
 		Where("ura.user_id = ?", userID).
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to resolve user permissions: %w", err)
+	}
+	if hasGroupTables(tx) {
+		var groupRows []row
+		if err := tx.Table("group_members AS gm").
+			Select("r.permissions AS permissions, gra.environment_id AS environment_id").
+			Joins("INNER JOIN group_role_assignments gra ON gra.group_id = gm.group_id").
+			Joins("INNER JOIN roles r ON r.id = gra.role_id").
+			Where("gm.user_id = ?", userID).
+			Scan(&groupRows).Error; err != nil {
+			return nil, fmt.Errorf("failed to resolve group permissions: %w", err)
+		}
+		rows = append(rows, groupRows...)
 	}
 	ps := authz.NewPermissionSet()
 	for _, r := range rows {

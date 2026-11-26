@@ -1326,7 +1326,7 @@ test.describe('System and volume restore', () => {
 		status: string;
 		trigger: string;
 		destination: string;
-		format: string;
+		format?: string;
 		policyId?: string;
 		type: ManagementType;
 		resourceType: 'system' | 'volume';
@@ -1366,10 +1366,9 @@ test.describe('System and volume restore', () => {
 			status: 'succeeded',
 			trigger: type === 'system' ? 'scheduled' : 'manual',
 			destination: 'local',
-			format: 'rustic',
-			policyId: type === 'system' ? 'system-volume:test' : undefined,
+			format: type === 'system' ? undefined : 'rustic',
 			type,
-			resourceType: 'volume',
+			resourceType: type,
 			resourceName
 		};
 	}
@@ -1492,17 +1491,18 @@ test.describe('System and volume restore', () => {
 					skipped: 1,
 					failures: []
 				};
+				// The global volume policies' backups are volume backups.
 				history.push({
-					...historyEntry('completed-batch-volume', 'system'),
+					...historyEntry('completed-batch-volume', 'volume'),
 					id: activity.id,
-					trigger: 'manual'
+					policyId: 'system-volume:volume-nightly:0123456789abcdef'
 				});
 				resolveCompleted(activity);
 			}
 		};
 	}
 
-	test.describe('System-managed volume backups', () => {
+	test.describe('Global volume backups', () => {
 		test('creates multiple volume schedules and runs a saved schedule', async ({ page }) => {
 			const liveName = `e2e-live-volume-${Date.now()}`;
 			const anonymousName = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -1526,7 +1526,7 @@ test.describe('System and volume restore', () => {
 				]
 			);
 
-			await page.goto('/system/backups');
+			await page.goto('/system/backups?tab=schedules');
 			const systemCard = page.getByTestId('backup-policy-system-system-nightly');
 			const volumeCard = page.getByTestId('backup-policy-volume-volume-nightly');
 			await expect(systemCard.getByText('System')).toHaveClass(/(^|\s)text-purple(\s|$)/);
@@ -1578,6 +1578,7 @@ test.describe('System and volume restore', () => {
 			await expect(runningBackup).toBeHidden({
 				timeout: 15000
 			});
+			await page.getByRole('tab', { name: 'Backups' }).click();
 			await expect(
 				page.getByRole('table').getByText('completed-batch-volume', { exact: true })
 			).toBeVisible();
@@ -1618,20 +1619,20 @@ test.describe('System and volume restore', () => {
 					page,
 					{ policies: [] },
 					[],
-					[historyEntry('central-volume', 'system'), historyEntry(volumeName, 'volume')]
+					[historyEntry('Arcane', 'system'), historyEntry(volumeName, 'volume')]
 				);
 				await page.goto('/system/backups');
 
 				await page.getByTestId('facet-type-trigger').click();
 				await page.getByTestId('facet-type-option-system').click();
 				const historyTable = page.getByRole('table');
-				await expect(historyTable.getByText('central-volume', { exact: true })).toBeVisible();
+				await expect(historyTable.getByText('Arcane', { exact: true })).toBeVisible();
 				await expect(historyTable.getByText(volumeName, { exact: true })).toHaveCount(0);
 
 				await page.getByTestId('facet-type-option-system').click();
 				await page.getByTestId('facet-type-option-volume').click();
 				await expect(historyTable.getByText(volumeName, { exact: true })).toBeVisible();
-				await expect(historyTable.getByText('central-volume', { exact: true })).toHaveCount(0);
+				await expect(historyTable.getByText('Arcane', { exact: true })).toHaveCount(0);
 
 				await page.keyboard.press('Escape');
 				const row = page.getByRole('row').filter({ hasText: volumeName });

@@ -5,6 +5,7 @@
 	import { PersistedState } from 'runed';
 	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { MediaQuery } from 'svelte/reactivity';
 
 	import { type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -51,11 +52,15 @@
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import {
 		addDashboardWidget,
+		DASHBOARD_ENVIRONMENTS_VIEW_KEY,
 		DASHBOARD_WIDGET_TYPES,
 		type DashboardWidget,
 		defaultDashboardLayout,
+		type EnvironmentsBoardViewPref,
+		type EnvironmentsLayoutOptions,
 		MAX_DASHBOARD_WIDGETS,
 		resolveDashboardLayout,
+		resolveEnvironmentsBoardView,
 		showWidget
 	} from '#lib/utils/dashboard-layout.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
@@ -157,9 +162,20 @@
 	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
 	const loadableEnvironmentIds = $derived(new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
 
+	const isMobile = new IsMobile();
+	const hasTwoCardColumns = new MediaQuery('(width >= 80rem)');
+	const boardViewPref = new PersistedState<EnvironmentsBoardViewPref>(DASHBOARD_ENVIRONMENTS_VIEW_KEY, 'table');
+	const boardView = $derived(resolveEnvironmentsBoardView(boardViewPref.current, environmentCards.length, isMobile.current));
+	const environmentsLayout = $derived<EnvironmentsLayoutOptions>({
+		view: boardView,
+		cardColumns: hasTwoCardColumns.current ? 2 : 1
+	});
+
 	let editingLayout = $state(false);
 	let draftLayout = $state.raw<DashboardWidget[]>([]);
-	const savedLayout = $derived(resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout, environmentCards.length));
+	const savedLayout = $derived(
+		resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout, environmentCards.length, environmentsLayout)
+	);
 	const layout = $derived(editingLayout ? draftLayout : savedLayout);
 	const hiddenWidgets = $derived(layout.filter((widget) => widget.hidden && !DASHBOARD_WIDGET_TYPES[widget.type].multi));
 	const widgetLimitReached = $derived(draftLayout.length >= MAX_DASHBOARD_WIDGETS);
@@ -404,14 +420,6 @@
 
 		return buttons;
 	}
-
-	const isMobile = new IsMobile();
-	const boardViewPref = new PersistedState<'auto' | 'cards' | 'table'>('dashboard-environments-view', 'table');
-	const boardView = $derived.by((): 'cards' | 'table' => {
-		if (isMobile.current) return 'cards';
-		if (boardViewPref.current !== 'auto') return boardViewPref.current;
-		return environmentCards.length > 6 ? 'table' : 'cards';
-	});
 
 	const environmentJobs = $derived(
 		(jobsQuery.data?.byEnvironment ?? []).flatMap(({ environment, data }): EnvironmentJob[] =>
@@ -682,7 +690,7 @@
 
 <div class="flex flex-col gap-4 pb-6">
 	<header class="flex flex-wrap items-start justify-between gap-4">
-		<h1 class="min-w-0 text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
+		<h1 class="min-w-0 text-2xl font-semibold tracking-tight">{heroGreeting}</h1>
 
 		<div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
 			{#if editingLayout}
@@ -717,7 +725,7 @@
 					action="base"
 					icon={ResetIcon}
 					customLabel={m.reset_to_default()}
-					onclick={() => (draftLayout = defaultDashboardLayout(environmentCards.length))}
+					onclick={() => (draftLayout = defaultDashboardLayout(environmentCards.length, environmentsLayout))}
 				/>
 				{#if layoutHasChanges}
 					<span class="mx-1 text-xs text-warning-foreground">{m.common_unsaved_changes()}</span>
@@ -819,6 +827,7 @@
 	<WidgetGrid
 		{layout}
 		editing={editingLayout}
+		environmentsView={boardView}
 		onChange={(next) => (draftLayout = next)}
 		onConfigure={(widget) => widgetSheet?.show(widget)}
 	>

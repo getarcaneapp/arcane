@@ -5,7 +5,13 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { DashboardWidgetType } from '#lib/types/ui/user.js';
 	import { cn } from '#lib/utils.js';
-	import { DASHBOARD_WIDGET_TYPES, type DashboardWidget, GRID_COLUMNS, moveWidget } from '#lib/utils/dashboard-layout.js';
+	import {
+		DASHBOARD_WIDGET_TYPES,
+		type DashboardWidget,
+		type EnvironmentsBoardView,
+		GRID_COLUMNS,
+		moveWidget
+	} from '#lib/utils/dashboard-layout.js';
 
 	const ROW_PITCH_REM = 4;
 	const KEY_STEPS: Record<string, { x: number; y: number }> = {
@@ -24,12 +30,14 @@
 	let {
 		layout,
 		editing,
+		environmentsView = 'table',
 		onChange,
 		onConfigure,
 		widget
 	}: {
 		layout: DashboardWidget[];
 		editing: boolean;
+		environmentsView?: EnvironmentsBoardView;
 		onChange: (layout: DashboardWidget[]) => void;
 		onConfigure: (widget: DashboardWidget) => void;
 		widget: Snippet<[DashboardWidget]>;
@@ -55,7 +63,8 @@
 		return moveWidget(
 			layout,
 			origin.id,
-			mode === 'move' ? { x: origin.x + columns, y: origin.y + rows } : { w: origin.w + columns, h: origin.h + rows }
+			mode === 'move' ? { x: origin.x + columns, y: origin.y + rows } : { w: origin.w + columns, h: origin.h + rows },
+			environmentsView
 		);
 	});
 	const positions = $derived(new Map(preview.map((item) => [item.id, item])));
@@ -94,7 +103,8 @@
 			moveWidget(
 				layout,
 				item.id,
-				mode === 'move' ? { x: item.x + delta.x, y: item.y + delta.y } : { w: item.w + delta.x, h: item.h + delta.y }
+				mode === 'move' ? { x: item.x + delta.x, y: item.y + delta.y } : { w: item.w + delta.x, h: item.h + delta.y },
+				environmentsView
 			)
 		);
 		await tick();

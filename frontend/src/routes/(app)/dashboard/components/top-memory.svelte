@@ -41,7 +41,7 @@
 	{:else if topContainers.length === 0}
 		<p class="py-2 text-sm text-muted-foreground">{failed ? m.common_unavailable() : m.no_running_containers()}</p>
 	{:else}
-		<ul class="divide-y divide-border/40">
+		<ul>
 			{#each topContainers as container (`${container.environmentId}:${container.id}`)}
 				<li>
 					<a

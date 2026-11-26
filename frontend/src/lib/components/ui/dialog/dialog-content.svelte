@@ -36,7 +36,7 @@
 		data-slot="dialog-content"
 		class={cn(
 			variant === 'default' &&
-				'fixed top-[50%] left-[50%] z-(--arcane-z-surface) grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] grid-cols-[minmax(0,1fr)] gap-4 rounded-2xl border border-border/30 bg-white p-6 text-foreground shadow-lg backdrop-blur-md animation-duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:fill-mode-forwards data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:rounded-2xl dark:border-border/80 dark:bg-surface/10',
+				'fixed inset-0 z-(--arcane-z-surface) m-auto grid h-fit w-full max-w-lg grid-cols-[minmax(0,1fr)] gap-4 rounded-2xl border border-border/30 bg-white p-6 text-foreground shadow-lg backdrop-blur-md animation-duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:fill-mode-forwards data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:rounded-2xl dark:border-border/80 dark:bg-surface/10',
 			variant === 'side-panel' &&
 				'fixed inset-y-2 right-2 z-(--arcane-z-surface) flex flex-col overflow-hidden rounded-2xl border border-border/30 bg-white/90 text-foreground shadow-float backdrop-blur-xl backdrop-saturate-150 animation-duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:fill-mode-forwards data-[state=closed]:slide-out-to-right-6 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-right-6 dark:border-border/80 dark:bg-surface/10',
 			sectioned && 'gap-0 p-0',

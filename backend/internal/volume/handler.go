@@ -190,6 +190,11 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 			"driver": input.Body.Driver,
 		},
 	}, func(runtimeCtx context.Context) error {
+		unlock, lockErr := h.volumeService.LockVolumes(runtimeCtx, []string{options.Name})
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
 		var createErr error
 		response, createErr = h.volumeService.CreateVolume(runtimeCtx, options, *user)
 		return createErr
@@ -289,6 +294,11 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 			"force":  input.Force,
 		},
 	}, func(runtimeCtx context.Context) error {
+		unlock, lockErr := h.volumeService.LockVolumes(runtimeCtx, []string{input.VolumeName})
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
 		return h.volumeService.DeleteVolume(runtimeCtx, input.VolumeName, input.Force, *user)
 	})
 	if err != nil {

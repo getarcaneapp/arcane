@@ -105,6 +105,12 @@ type (
 		Source        string  `json:"source" doc:"How the assignment was created" enum:"manual,oidc,ldap"`
 	}
 
+	UserGroupSummary struct {
+		ID     string `json:"id" doc:"ID of the group"`
+		Name   string `json:"name" doc:"Display name of the group"`
+		Source string `json:"source" doc:"How the membership was created" enum:"manual,oidc,ldap"`
+	}
+
 	User struct {
 		FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
 		DisplayName            *string                 `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
@@ -124,6 +130,7 @@ type (
 		CreatedAt              string                  `json:"createdAt,omitempty" readOnly:"true" doc:"Date and time when the user was created"`
 		UpdatedAt              string                  `json:"updatedAt,omitempty" readOnly:"true" doc:"Date and time when the user was last updated"`
 		RoleAssignments        []RoleAssignmentSummary `json:"roleAssignments" readOnly:"true" doc:"Role assignments held by the user"`
+		Groups                 []UserGroupSummary      `json:"groups,omitempty" readOnly:"true" doc:"Groups this user belongs to"`
 		IsGlobalAdmin          bool                    `json:"isGlobalAdmin" readOnly:"true" doc:"Whether the user effectively holds global administrator access"`
 		CanDelete              bool                    `json:"canDelete" readOnly:"true" doc:"Whether the user can currently be deleted"`
 		RequiresPasswordChange bool                    `json:"requiresPasswordChange" readOnly:"true" doc:"Whether the user must change their password"`

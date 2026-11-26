@@ -4,9 +4,8 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import ProjectVolumeChecklist from '#lib/components/project-volume-checklist.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertIcon, DownloadIcon } from '#lib/icons/index.js';
@@ -48,14 +47,6 @@
 	);
 	const showStop = $derived(!!options?.running && selectedVolumes.length > 0);
 	const stopProject = $derived(showStop && canStop && (stopOverride ?? true));
-
-	function volumeNote(volume: ProjectVolume): string | null {
-		if (volume.missing) return m.volume_not_created_yet();
-		if (volume.kind === 'driverOpts') return m.volume_kind_driver_opts();
-		if (volume.kind === 'external' && !volume.included) return m.volume_kind_external();
-		if (volume.inUse) return m.volume_in_use_elsewhere();
-		return null;
-	}
 
 	function handleOpenChange(next: boolean) {
 		if (!next) handleClose();
@@ -120,27 +111,19 @@
 				{#if !canBackupVolumes}
 					<p class="text-xs text-muted-foreground">{m.export_volumes_permission_required()}</p>
 				{/if}
-				<ul class="space-y-2">
-					{#each options.volumes as volume (volume.key)}
-						{@const note = volumeNote(volume)}
-						<li class="flex min-w-0 items-start gap-3 rounded-xl border bg-card/10 p-3">
-							<Checkbox
-								id={`export-volume-${volume.key}`}
-								class="mt-0.5"
-								checked={selectable(volume) && (checkedOverrides[volume.key] ?? volume.included)}
-								disabled={!selectable(volume) || exporting}
-								onCheckedChange={(checked) => (checkedOverrides = { ...checkedOverrides, [volume.key]: checked === true })}
-							/>
-							<div class="grid min-w-0 gap-1">
-								<Label for={`export-volume-${volume.key}`} class="mb-0 break-all">{volume.key}</Label>
-								<span class="font-mono text-xs break-all text-muted-foreground">{volume.name}</span>
-								{#if note}
-									<span class={['text-xs', volume.inUse ? 'text-warning' : 'text-muted-foreground']}>{note}</span>
-								{/if}
-							</div>
-						</li>
-					{/each}
-				</ul>
+				<ProjectVolumeChecklist
+					volumes={options.volumes}
+					bind:overrides={checkedOverrides}
+					{selectable}
+					notes={{
+						backupStore: m.backup_store_not_exported(),
+						missing: m.volume_not_created_yet(),
+						driverOpts: m.volume_kind_driver_opts(),
+						external: m.volume_kind_external()
+					}}
+					idPrefix="export-volume"
+					disabled={exporting}
+				/>
 			</div>
 			{#if showStop}
 				<LabeledSwitch

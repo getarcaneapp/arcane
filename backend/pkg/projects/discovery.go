@@ -39,7 +39,8 @@ type (
 )
 
 const (
-	ArcaneTrashPrefix = ".arcane-trash-"
+	ArcaneTrashPrefix    = ".arcane-trash-"
+	RestoreScratchPrefix = ".project-restore-"
 )
 
 var (
@@ -257,7 +258,7 @@ func IsInternalScratchDirName(name string) bool {
 	if name == "" {
 		return false
 	}
-	if strings.HasPrefix(name, ".project-update-preview-") || strings.HasPrefix(name, ".project-update-backup-") {
+	if strings.HasPrefix(name, ".project-update-preview-") || strings.HasPrefix(name, ".project-update-backup-") || strings.HasPrefix(name, RestoreScratchPrefix) {
 		return true
 	}
 	if strings.HasPrefix(name, ArcaneTrashPrefix) {

@@ -17,6 +17,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/enrollment"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/federated"
+	"getarcane.dev/arcane/v3/internal/group"
 	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/notification"
@@ -49,6 +50,7 @@ type ManagerHandlerDeps struct {
 	Federated    *federated.FederatedCredentialService
 	Webhook      *webhook.Module
 	Role         *role.Module
+	Group        *group.Module
 	Ldap         *ldap.Module
 }
 
@@ -80,6 +82,7 @@ func registerManagerRoutes(api huma.API, p SetupParams) {
 	p.ManagerDeps.ApiKey.RegisterRoutes(api)
 	federated.RegisterFederatedCredentials(api, p.ManagerDeps.Federated)
 	p.ManagerDeps.Role.RegisterRoutes(api)
+	p.ManagerDeps.Group.RegisterRoutes(api)
 	appimages.RegisterAppImages(api, p.ManagerDeps.AppImages)
 	p.ManagerDeps.User.RegisterRoutes(api)
 	oidc.RegisterOidc(api, p.Deps.AuthService, p.ManagerDeps.Passkey, p.ManagerDeps.Oidc, p.Deps.RoleService, p.ManagerDeps.User.Service(), p.Config)
