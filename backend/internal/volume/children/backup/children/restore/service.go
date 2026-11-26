@@ -362,7 +362,7 @@ func (s *Service) ownerHelper(ctx context.Context, target mount.Mount) (string, 
 	if err != nil {
 		return "", nil, fmt.Errorf("%w (%w)", err, backup.ErrRestoreUnchanged)
 	}
-	if _, _, err = s.deps.Exec(ctx, helperID, "", []string{"sh", "-c", "command -v chown && command -v chmod"}); err != nil {
+	if _, _, err = s.deps.Exec(ctx, helperID, "", []string{"sh", "-c", "type chown && type chmod"}); err != nil {
 		remove()
 		return "", nil, fmt.Errorf("the helper image cannot restore the volume owner, so pull the latest tools image and try again: %w (%w)", err, backup.ErrRestoreUnchanged)
 	}
