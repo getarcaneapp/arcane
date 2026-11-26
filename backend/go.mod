@@ -95,12 +95,12 @@ require (
 	gorm.io/plugin/opentelemetry v0.1.16
 	kit.getarcane.app v0.8.0
 	kit.getarcane.app/acfs v0.10.4
-	kit.getarcane.app/builds v0.6.0
+	kit.getarcane.app/builds v0.6.1
 	kit.getarcane.app/docker v0.3.5
 	kit.getarcane.app/docker/convert v0.4.5
 	kit.getarcane.app/sys/cgroup v0.3.5
 	kit.getarcane.app/tripwire v0.2.2
-	kit.getarcane.app/updater v0.14.0
+	kit.getarcane.app/updater v0.14.1
 	modernc.org/sqlite v1.63.0
 )
 

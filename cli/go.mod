@@ -30,7 +30,7 @@ require (
 	google.golang.org/protobuf v1.36.12
 	kit.getarcane.app v0.8.0
 	kit.getarcane.app/acfs v0.10.4
-	kit.getarcane.app/builds v0.6.0
+	kit.getarcane.app/builds v0.6.1
 	kit.getarcane.app/docker v0.3.5
 )
 
