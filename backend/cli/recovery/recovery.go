@@ -151,6 +151,8 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		"projectsDirectories":   request.ProjectsDirectoriesSetting,
 		"templatesDirectory":    request.TemplatesSetting,
 		"followProjectSymlinks": request.FollowSymlinksSetting,
+		"projectScanMaxDepth":   request.ProjectScanMaxDepthSetting,
+		"projectScanSkipDirs":   request.ProjectScanSkipDirsSetting,
 	} {
 		if name := settings.EnvName(key, ""); manifest.Environment[name] != "" {
 			manifest.Environment[name] = cmp.Or(value, manifest.Environment[name])
@@ -230,6 +232,8 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 		"projectsDirectories":             request.ProjectsDirectoriesSetting,
 		"templatesDirectory":              request.TemplatesSetting,
 		"followProjectSymlinks":           request.FollowSymlinksSetting,
+		"projectScanMaxDepth":             request.ProjectScanMaxDepthSetting,
+		"projectScanSkipDirs":             request.ProjectScanSkipDirsSetting,
 		backup.ProjectDiscoveryPendingKey: "true",
 	} {
 		if strings.TrimSpace(value) == "" {

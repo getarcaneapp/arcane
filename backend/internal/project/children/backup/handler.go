@@ -129,11 +129,10 @@ func (h *Handler) Discover(ctx context.Context, input *DiscoverInput) (*handleru
 	if !local {
 		destinationIDs = []string{input.Body.S3DestinationID}
 	}
-	count, err := h.service.DiscoverBackups(ctx, DiscoverOptions{S3DestinationIDs: destinationIDs, Local: local})
+	count, failures, err := h.service.DiscoverBackups(ctx, DiscoverOptions{S3DestinationIDs: destinationIDs, Local: local})
 	if err != nil && count == 0 {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
-	var failures []string
 	if err != nil {
 		failures = append(failures, err.Error())
 	}

@@ -59,6 +59,8 @@ type (
 		ProjectsDirectoriesSetting string                 `json:"projectsDirectoriesSetting,omitempty"`
 		TemplatesSetting           string                 `json:"templatesSetting,omitempty"`
 		FollowSymlinksSetting      string                 `json:"followSymlinksSetting,omitempty"`
+		ProjectScanMaxDepthSetting string                 `json:"projectScanMaxDepthSetting,omitempty"`
+		ProjectScanSkipDirsSetting string                 `json:"projectScanSkipDirsSetting,omitempty"`
 		NetworkMode                string                 `json:"networkMode,omitempty"`
 		Stages                     []RecoveryRestoreStage `json:"stages"`
 		RollbackStages             []RecoveryRestoreStage `json:"rollbackStages,omitempty"`
