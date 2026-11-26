@@ -777,7 +777,9 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 		return "", nil, fmt.Errorf("create project backup manifest holder: %w", err)
 	}
 	copyErr := docker.CopyToContainer(ctx, dockerClient, holder.ID, "/meta", files)
-	_, removeHolderErr := dockerClient.ContainerRemove(context.WithoutCancel(ctx), holder.ID, volumes.RemoveOptions())
+	removeHolderCtx, cancelRemoveHolder := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
+	defer cancelRemoveHolder()
+	_, removeHolderErr := dockerClient.ContainerRemove(removeHolderCtx, holder.ID, volumes.RemoveOptions())
 	if err = errors.Join(copyErr, removeHolderErr); err != nil {
 		remove()
 		return "", nil, fmt.Errorf("write project backup manifest: %w", err)
