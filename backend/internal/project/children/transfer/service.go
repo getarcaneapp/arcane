@@ -25,8 +25,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
+	volumeDomain "getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/projects"
@@ -62,6 +64,7 @@ type (
 		Environment      func(environmentID string) Environment
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
+		VolumeSizes      func(ctx context.Context) (map[string]volumeDomain.VolumeSizeData, error)
 		Activities       activity.MessageAppender
 		Backups          *backup.Engine
 	}
@@ -562,18 +565,35 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	if !targetReady {
 		return nil
 	}
-	var bundleSize int64
-	if request.IncludeVolumes {
-		for _, name := range slices.Compact(slices.Sorted(slices.Values(sourceVolumes))) {
-			bundleSize += max(inspected[name].Size, 0)
+	required, err := s.requiredSpace(ctx, opts.SourceEnvironmentID, kit.Ternary(request.IncludeVolumes, sourceVolumes, nil), inspected)
+	if err != nil {
+		return err
+	}
+	return targetChecks(ctx, plan, project, target, request, targetVolumes, externalVolumes, required)
+}
+
+func (s *Service) requiredSpace(ctx context.Context, sourceEnvironmentID string, names []string, inspected map[string]types.Volume) (int64, error) {
+	var sizes map[string]volumeDomain.VolumeSizeData
+	if sourceEnvironmentID == environment.LocalEnvironmentID && slices.ContainsFunc(names, func(name string) bool {
+		return inspected[name].Size <= 0
+	}) {
+		var err error
+		if sizes, err = s.deps.VolumeSizes(ctx); err != nil {
+			return 0, fmt.Errorf("measure source volumes: %w", err)
 		}
 	}
-	return targetChecks(ctx, plan, project, target, request, targetVolumes, externalVolumes, bundleSize)
+	var bundleSize, largest int64
+	for _, name := range slices.Compact(slices.Sorted(slices.Values(names))) {
+		size := max(inspected[name].Size, sizes[name].Size, 0)
+		bundleSize += size
+		largest = max(largest, size)
+	}
+	return bundleSize + largest, nil
 }
 
 func targetChecks(
 	ctx context.Context, plan *types.ProjectTransferPreflight, project types.Project, target Environment,
-	request types.ProjectTransferRequest, targetVolumes, externalVolumes []string, bundleSize int64,
+	request types.ProjectTransferRequest, targetVolumes, externalVolumes []string, required int64,
 ) error {
 	existing, err := target.Projects(ctx, "")
 	if err != nil {
@@ -624,10 +644,10 @@ func targetChecks(
 			})
 		}
 	}
-	if bundleSize > 0 {
+	if required > 0 {
 		probe, probeErr := target.CreateUpload(ctx, types.UploadKindProjectArchive, types.CreateUploadSessionRequest{
 			Filename:  projects.SanitizeProjectName(request.Name) + types.ProjectBundleExtension,
-			Size:      bundleSize,
+			Size:      required,
 			ChunkSize: types.UploadDefaultChunkSize,
 		})
 		if probeErr != nil {
@@ -635,8 +655,8 @@ func targetChecks(
 				Code:     types.ProjectTransferTargetSpace,
 				Severity: types.ProjectTransferSeverityError,
 				Message: fmt.Sprintf(
-					"The target environment cannot store the %s of volume data of project %s: %v",
-					units.BytesSize(float64(bundleSize)), project.Name, probeErr,
+					"The target environment cannot provide the %s of free space that importing the volume data of project %s needs: %v",
+					units.BytesSize(float64(required)), project.Name, probeErr,
 				),
 			})
 		} else if deleteErr := target.DeleteUpload(ctx, types.UploadKindProjectArchive, probe.ID); deleteErr != nil {
