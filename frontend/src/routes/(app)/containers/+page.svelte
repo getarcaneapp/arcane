@@ -22,6 +22,7 @@
 	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState(untrack(() => data.containerRequestOptions));
+	let containerTable: { retryHostnames(): Promise<void> } | undefined = $state();
 	let groupByProject = $state(false);
 	let hasSeenEnvironmentSync = $state(false);
 	let isApplyingUpdates = $state(false);
@@ -52,6 +53,10 @@
 	const containers = $derived(containersQuery.data?.value ?? data.containers);
 	const resourcesReady = $derived(containersQuery.data?.envId === pageState.scope);
 	const isRefreshing = $derived(containersQuery.isFetching && !containersQuery.isPending);
+
+	async function refreshContainers() {
+		await Promise.all([containersQuery.refetch(), containerTable?.retryHostnames()]);
+	}
 
 	function handleEnvironmentChange() {
 		if (!hasSeenEnvironmentSync) {
@@ -106,7 +111,7 @@
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: () => containersQuery.refetch(),
+			onclick: refreshContainers,
 			loading: isRefreshing,
 			disabled: isRefreshing
 		});
@@ -139,17 +144,18 @@
 	<ContainerEnvironmentSync onActivate={handleEnvironmentChange} />
 {/key}
 
-<ResourcePageLayout title={m.containers()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.containers()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ContainerTable
+				bind:this={containerTable}
 				scope={pageState.scope}
 				{containers}
 				bind:selectedIds={pageState.selectedIds}
 				bind:requestOptions={pageState.requestOptions}
 				bind:groupByProject
 				loading={containersQuery.isPlaceholderData}
-				onRetry={() => containersQuery.refetch()}
+				onRetry={refreshContainers}
 				refreshError={containersQuery.error}
 			/>
 		{/if}

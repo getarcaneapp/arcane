@@ -4,7 +4,7 @@
 	import { tv, cn, type WithElementRef } from '#lib/utils.js';
 
 	export const badgeVariants = tv({
-		base: 'focus-visible:border-ring focus-visible:ring-ring aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-xl border text-xs-plus leading-5 font-medium transition-colors focus-visible:ring-3 [&>svg]:pointer-events-none [&>svg]:size-3',
+		base: 'focus-visible:border-ring focus-visible:ring-ring aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-sm border text-xs-plus leading-5 font-medium transition-colors focus-visible:ring-3 [&>svg]:pointer-events-none [&>svg]:size-3',
 		variants: {
 			variant: {
 				default: 'text-primary-text bg-primary/10 border-primary/25',
@@ -36,10 +36,6 @@
 				default: 'px-2.5 py-1',
 				lg: 'px-3 py-1.5 text-xs-plus'
 			},
-			mono: {
-				true: 'font-mono',
-				false: ''
-			},
 			minWidth: {
 				none: '',
 				'16': 'min-w-16',
@@ -61,8 +57,7 @@
 			size: 'default',
 			minWidth: 'none',
 			maxWidth: 'none',
-			hoverEffect: 'lift',
-			mono: false
+			hoverEffect: 'none'
 		}
 	});
 
@@ -84,8 +79,7 @@
 		size = 'default',
 		minWidth = 'none',
 		maxWidth = 'none',
-		hoverEffect = 'lift',
-		mono = false,
+		hoverEffect = 'none',
 		beam = false,
 		children,
 		...restProps
@@ -95,7 +89,6 @@
 		minWidth?: BadgeMinWidth;
 		maxWidth?: BadgeMaxWidth;
 		hoverEffect?: BadgeHoverEffect;
-		mono?: boolean;
 		beam?: boolean;
 	} = $props();
 	void cn;
@@ -106,11 +99,7 @@
 	bind:this={ref}
 	data-slot="badge"
 	{href}
-	class={cn(
-		badgeVariants({ variant, size, minWidth, maxWidth, hoverEffect, mono }),
-		beam && 'relative overflow-visible',
-		className
-	)}
+	class={cn(badgeVariants({ variant, size, minWidth, maxWidth, hoverEffect }), beam && 'relative overflow-visible', className)}
 	{...restProps}
 >
 	{#if beam}

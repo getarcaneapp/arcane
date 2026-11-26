@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"strings"
 	"time"
 )
@@ -16,6 +17,11 @@ type (
 		Search    string   `json:"search,omitempty"`
 		Paths     []string `json:"paths,omitempty"`
 		SelectAll bool     `json:"selectAll,omitempty"`
+	}
+
+	DiscoverBackupsRequest struct {
+		Destination     VolumeBackupDestination `json:"destination,omitempty" enum:"local,s3" doc:"Repository to scan; s3 when omitted"`
+		S3DestinationID string                  `json:"s3DestinationId,omitempty" doc:"S3 destination to scan for this instance's existing backups"`
 	}
 
 	BackupRepositoryObservation struct {
@@ -232,6 +238,8 @@ type (
 		Type              BackupManagementType    `json:"type" sortable:"true"`
 		ResourceType      string                  `json:"resourceType"`
 		ResourceName      string                  `json:"resourceName" sortable:"true"`
+		ResourceID        string                  `json:"resourceId,omitempty" doc:"ID of the backed up project"`
+		ResourceMissing   bool                    `json:"resourceMissing,omitempty" doc:"True when the backed up project no longer exists"`
 		Size              int64                   `json:"size" sortable:"true"`
 	}
 
@@ -248,10 +256,9 @@ type (
 
 	// UnmanagedBackupSweep's Within, when set, limits a recheck to the batch it already locked.
 	UnmanagedBackupSweep struct {
-		Now                   time.Time
-		SystemVolumePolicyIDs []string
-		Within                []string
-		Retention             time.Duration
+		Now       time.Time
+		Within    []string
+		Retention time.Duration
 	}
 )
 
@@ -270,7 +277,9 @@ const (
 
 	BackupManagementTypeSystem     BackupManagementType      = "system"
 	BackupManagementTypeVolume     BackupManagementType      = "volume"
+	BackupManagementTypeProject    BackupManagementType      = "project"
 	SystemVolumePolicyPrefix                                 = "system-volume:"
+	GlobalProjectPolicyPrefix                                = "global-project:"
 	SystemVolumeManualSeriesOwner                            = "manual"
 	SystemVolumeSelectionAll       SystemVolumeSelectionMode = "all"
 	SystemVolumeSelectionAllowlist SystemVolumeSelectionMode = "allowlist"
@@ -285,9 +294,24 @@ const (
 	VolumeBackupTriggerDiscovered = "discovered"
 )
 
+func (r DiscoverBackupsRequest) Validate() error {
+	if r.Destination != VolumeBackupDestinationLocal && strings.TrimSpace(r.S3DestinationID) == "" {
+		return &FieldError{Field: "s3DestinationId", Err: errors.New("select an S3 destination to discover")}
+	}
+	return nil
+}
+
+func (m SystemVolumeSelectionMode) Valid() bool {
+	return m == SystemVolumeSelectionAll || m == SystemVolumeSelectionAllowlist || m == SystemVolumeSelectionBlocklist
+}
+
+func (m SystemVolumeSelectionMode) Selects(listed bool) bool {
+	return m == SystemVolumeSelectionAll || (m == SystemVolumeSelectionAllowlist && listed) || (m == SystemVolumeSelectionBlocklist && !listed)
+}
+
 func BackupManagementTypeForPolicy(policyID string) BackupManagementType {
-	if strings.HasPrefix(policyID, SystemVolumePolicyPrefix) {
-		return BackupManagementTypeSystem
+	if strings.HasPrefix(policyID, GlobalProjectPolicyPrefix) {
+		return BackupManagementTypeProject
 	}
 	return BackupManagementTypeVolume
 }

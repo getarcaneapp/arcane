@@ -11,7 +11,7 @@
 {:else}
 	<div class="flex flex-wrap items-center gap-1.5">
 		{#each entries.slice(0, limit) as [key, value] (key)}
-			<Badge variant="gray" mono class="max-w-50" title={`${key}=${value}`}>
+			<Badge variant="gray" class="max-w-50" title={`${key}=${value}`}>
 				<span class="block min-w-0 truncate">{value ? `${key}=${value}` : key}</span>
 			</Badge>
 		{/each}

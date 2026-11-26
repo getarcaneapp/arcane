@@ -71,11 +71,12 @@ type (
 	commandRouteIndex map[commandRouteKey]*commandRouteNode
 
 	AgentTunnel struct {
-		ConnectedAt   time.Time
-		LastHeartbeat time.Time
-		Conn          TunnelConnection
-		HTTPClient    *http.Client
-		done          chan struct{}
+		ConnectedAt    time.Time
+		LastHeartbeat  time.Time
+		Conn           TunnelConnection
+		HTTPClient     *http.Client
+		deadlineClient *http.Client
+		done           chan struct{}
 
 		mux           *muxSession
 		Host          *AgentHostInfo

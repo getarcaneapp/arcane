@@ -183,7 +183,7 @@
 	});
 </script>
 
-<ResourcePageLayout title={m.environments_title()} subtitle={m.environments_subtitle()} {actionButtons}>
+<ResourcePageLayout title={m.environments_title()} {actionButtons}>
 	{#snippet mainContent()}
 		<Tabs.Root value={urlTab.value}>
 			<div class="pb-6">

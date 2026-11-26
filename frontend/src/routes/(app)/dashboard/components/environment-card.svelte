@@ -85,14 +85,9 @@
 							<div class="flex items-center">
 								{#if versionInfo.updateAvailable || debugUpgrade}
 									<ArcaneTooltip.Root>
-										<ArcaneTooltip.Trigger
-											class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'font-mono hover:text-foreground')}
-										>
-											{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion}
-											<span class="relative ml-1.5 flex h-2 w-2">
-												<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning opacity-75"></span>
-												<span class="relative inline-flex h-2 w-2 rounded-full bg-warning"></span>
-											</span>
+										<ArcaneTooltip.Trigger class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'hover:text-foreground')}>
+											{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion || m.common_unknown()}
+											<span class="ml-1.5 inline-flex size-1.5 rounded-full bg-warning"></span>
 										</ArcaneTooltip.Trigger>
 										<ArcaneTooltip.Content>
 											<div class="flex flex-col items-start gap-2">
@@ -113,20 +108,18 @@
 										</ArcaneTooltip.Content>
 									</ArcaneTooltip.Root>
 								{:else}
-									<Badge variant="gray" size="sm" mono>
-										{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion}
+									<Badge variant="gray" size="sm">
+										{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion || m.common_unknown()}
 									</Badge>
 								{/if}
 							</div>
 						{/if}
 					</div>
 
-					<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+					<div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
 						{#if environment.id !== '0' && !environment.dockerHost?.trim()}
 							<span>{getAgentTransportLabel(environment)}</span>
-							<span>•</span>
 							<span>{getAgentConnectionStateLabel(environment)}</span>
-							<span>•</span>
 						{/if}
 						<span title={activity.title}>{activity.label}: {activity.value}</span>
 					</div>
@@ -141,26 +134,23 @@
 				{#if countsLoading}
 					<Skeleton class="h-4 w-64" />
 				{:else}
-					<div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
+					<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
 						<span>
 							<span class="font-semibold text-foreground tabular-nums"
 								>{overview.containers.runningContainers}/{overview.containers.totalContainers}</span
 							>
 							{String(m.common_running()).toLowerCase()}
 						</span>
-						<span class="text-border">·</span>
 						<span>
 							<span class="font-semibold text-foreground tabular-nums">{overview.imageUsageCounts.totalImages}</span>
 							{String(m.images()).toLowerCase()}
 						</span>
 						{#if overview.podCount !== undefined}
-							<span class="text-border">·</span>
 							<span>
 								<span class="font-semibold text-foreground tabular-nums">{overview.podCount}</span>
 								{String(m.podman_pods_title()).toLowerCase()}
 							</span>
 						{/if}
-						<span class="text-border">·</span>
 						<span>
 							<span class="font-semibold text-foreground tabular-nums">{attentionCount}</span>
 							{String(m.needs_attention()).toLowerCase()}

@@ -71,5 +71,5 @@ golang.org/x/sys v0.50.0 h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs=
 golang.org/x/sys v0.50.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
 gotest.tools/v3 v3.5.2 h1:7koQfIKdy+I8UTetycgUqXWSDwpgv193Ka+qRsmBY8Q=
 gotest.tools/v3 v3.5.2/go.mod h1:LtdLGcnqToBH83WByAAi/wiwSFCArdFIUV/xxN4pcjA=
-kit.getarcane.app/builds v0.6.0 h1:77I9t8PqQdlkbaao04kK21KyHYG+SFbtYctzpWsFlfE=
-kit.getarcane.app/builds v0.6.0/go.mod h1:Ecj9ulOd7uW4Gv93vVA7ltWB4ETz6/jDfjX6OsR7AYQ=
+kit.getarcane.app/builds v0.6.1 h1:m8xa1A5yLG+rI2+/ii4VH0zOlsi4nAbgIgd5MZqVM4I=
+kit.getarcane.app/builds v0.6.1/go.mod h1:7GKAgNWQMDqePrRkV/ybboypfKLxRA9rDco02l1If7o=

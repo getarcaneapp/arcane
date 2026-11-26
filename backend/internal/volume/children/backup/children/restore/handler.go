@@ -138,14 +138,16 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 		}
 	}
 
-	file, session, cleanup, err := h.uploadService.Consume(ctx, types.UploadKindVolumeBackup, input.Body.UploadID)
+	session, err := h.uploadService.GetSession(ctx, types.UploadKindVolumeBackup, input.Body.UploadID)
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
 			return nil, httpErr
 		}
 		return nil, huma.Error500InternalServerError("Failed to open upload: " + err.Error())
 	}
-	defer cleanup()
+	if !session.Complete {
+		return nil, upload.SessionHTTPError(common.ErrUploadSessionIncomplete)
+	}
 
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -163,7 +165,7 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 			"filename": session.Filename,
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.service.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, input.Body.ComposeVolume, *user)
+		return h.service.UploadAndRestore(runtimeCtx, input.VolumeName, input.Body.UploadID, input.Body.ComposeVolume, *user)
 	})
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())

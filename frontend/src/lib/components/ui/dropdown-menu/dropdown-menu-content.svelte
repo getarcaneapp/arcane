@@ -21,7 +21,7 @@
 		preventScroll={false}
 		{sideOffset}
 		class={cn(
-			'z-(--arcane-z-surface) min-w-32 origin-(--bits-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border bg-background/95 p-1 text-popover-foreground shadow-md backdrop-blur-2xl backdrop-saturate-150 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 dark:bg-popover/20',
+			'z-(--arcane-z-surface) min-w-32 origin-(--bits-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border border-border/50 bg-popover/75 p-1 text-popover-foreground shadow-lg backdrop-blur-xl backdrop-saturate-150 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 dark:bg-popover/40',
 			'max-h-(--bits-dropdown-menu-content-available-height) max-w-[calc(100vw-2rem)]',
 			'max-[768px]:max-w-[calc(100vw-1rem)]',
 			className

@@ -1,10 +1,12 @@
 package di
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 	"uuid"
 
@@ -19,6 +21,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/auth"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/config"
+	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
@@ -29,6 +32,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/role"
+	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -52,6 +56,17 @@ type (
 		ImageService *image.ImageService
 		Roles        *role.RoleService
 		Config       *config.Config
+	}
+
+	volumeRepositoryParams struct {
+		fx.In
+
+		Config         *config.Config
+		Docker         *docker.DockerClientService
+		Engine         *backup.Engine
+		Settings       *settings.SettingsService
+		S3Destinations *s3.S3DestinationService
+		RecoveryKeys   *backup.RecoveryKeyStore
 	}
 
 	actorRuntimeParams struct {
@@ -99,6 +114,9 @@ type (
 	projectModuleParams struct {
 		fx.In
 
+		Ctx       context.Context
+		Scheduler types.DynamicScheduler
+		Admission *runs.Admission
 		Service   *project.ProjectService
 		Activity  *activity.ActivityService
 		Engine    *flow.Engine
@@ -108,6 +126,11 @@ type (
 		Webhooks  *webhook.WebhookService
 		Volumes   *volume.VolumeService
 		Networks  *network.NetworkService
+
+		Repository     *backup.VolumeRepository
+		Policies       *backup.Policies
+		Containers     *backup.Containers
+		S3Destinations *s3.S3DestinationService
 	}
 
 	filesystemWatcherJobParams struct {
@@ -146,6 +169,22 @@ func provideBackupEngine(p backupEngineParams) *backup.Engine {
 	return engine
 }
 
+func provideVolumeRepository(p volumeRepositoryParams) *backup.VolumeRepository {
+	return backup.NewVolumeRepository(backup.VolumeRepositoryDependencies{
+		Docker:           p.Docker,
+		Engine:           p.Engine,
+		Settings:         p.Settings,
+		S3Destinations:   p.S3Destinations,
+		RecoveryKeys:     p.RecoveryKeys,
+		BackupVolumeName: cmp.Or(strings.TrimSpace(p.Config.BackupVolumeName), "arcane-backups"),
+		EncryptionKey:    p.Config.EncryptionKey,
+	})
+}
+
+func provideBackupContainers(dockerService *docker.DockerClientService, containers *container.ContainerService) *backup.Containers {
+	return &backup.Containers{Docker: dockerService, Stop: containers.StopContainer, Start: containers.StartContainer}
+}
+
 func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 	module := project.New(project.ModuleParams{
 		Service:  p.Service,
@@ -156,11 +195,23 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Backups:          p.Backups,
 			RetargetWebhooks: p.Webhooks.RetargetProjectWebhooks,
 			CountWebhooks:    p.Webhooks.CountProjectWebhooks,
-			ExportVolume:     p.Volumes.ExportVolumeArchive,
+			VolumeSizes:      p.Volumes.GetVolumeSizes,
+			ArchiveVolumes:   p.Volumes.ArchiveVolumes,
 			RestoreVolume:    p.Volumes.RestoreVolumeUpload,
 			DeleteVolume:     p.Volumes.DeleteVolume,
 			CreateVolume:     p.Volumes.CreateVolume,
 			CreateNetwork:    p.Networks.CreateNetwork,
+		},
+		Backups: project.BackupDependencies{
+			Ctx:            p.Ctx,
+			Scheduler:      p.Scheduler,
+			Admission:      p.Admission,
+			Engine:         p.Backups,
+			Repository:     p.Repository,
+			Policies:       p.Policies,
+			Containers:     p.Containers,
+			S3Destinations: p.S3Destinations,
+			LockVolumes:    p.Volumes.LockVolumes,
 		},
 	})
 	if err := module.RegisterWorkflows(p.Engine); err != nil {

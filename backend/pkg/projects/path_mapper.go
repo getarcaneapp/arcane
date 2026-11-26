@@ -324,6 +324,40 @@ func RemapEscapedRelativeSources(
 	}
 }
 
+func remapTargetValues(project *composeTypes.Project, includeFileResources bool) map[string]string {
+	targets := remapTargets(project, includeFileResources)
+	if len(targets) == 0 {
+		return nil
+	}
+	values := make(map[string]string, len(targets))
+	for _, target := range targets {
+		values[target.key] = target.current
+	}
+	return values
+}
+
+func hasUnmappedRemapTarget(
+	pathMapper types.VolumeSourcePathMapper,
+	project *composeTypes.Project,
+	containerWorkingDir string,
+	includeFileResources bool,
+	before map[string]string,
+) bool {
+	if len(before) == 0 || containerWorkingDir == "" {
+		return false
+	}
+	hostWorkingDir, mapped, err := pathMapper.ContainerToHost(containerWorkingDir)
+	if err != nil || !mapped || hostWorkingDir == containerWorkingDir {
+		return false
+	}
+	for _, target := range remapTargets(project, includeFileResources) {
+		if target.current != "" && target.current == before[target.key] {
+			return true
+		}
+	}
+	return false
+}
+
 func remapTargets(project *composeTypes.Project, includeFileResources bool) []remapTarget {
 	var targets []remapTarget
 

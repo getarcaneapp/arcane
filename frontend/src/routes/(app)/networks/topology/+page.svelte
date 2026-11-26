@@ -43,7 +43,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.networks_topology_title()} subtitle={m.networks_topology_subtitle()} {actionButtons}>
+<ResourcePageLayout title={m.networks_topology_title()} {actionButtons}>
 	{#snippet mainContent()}
 		{#if topology}
 			<div class="space-y-4">

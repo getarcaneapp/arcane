@@ -58,7 +58,7 @@
 
 <ResourcePageLayout
 	title={m.tasks()}
-	subtitle={nodeId ? m.swarm_tasks_subtitle_node_scoped() : m.swarm_tasks_subtitle()}
+	subtitle={nodeId ? m.swarm_tasks_subtitle_node_scoped() : undefined}
 	{actionButtons}
 	{statCards}
 >

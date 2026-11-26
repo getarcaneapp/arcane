@@ -84,18 +84,7 @@ type (
 		CountLocalRuns            func(ctx context.Context) (int64, error)
 		CountVolumeRepositoryRuns func(ctx context.Context) (int64, error)
 		CountRunningVolumeBackups func(ctx context.Context) (int64, error)
-		Policies                  func(ctx context.Context) ([]types.SystemBackupPolicy, error)
-		Policy                    func(ctx context.Context, id string) (*types.SystemBackupPolicy, error)
-		ReconcilePolicies         func(
-			ctx context.Context,
-			updates []types.UpdateBackupPolicy,
-			build func(context.Context, *types.SystemBackupPolicy, types.UpdateBackupPolicy) error,
-			unregister func(context.Context, string),
-			reschedule func(context.Context, *types.SystemBackupPolicy),
-		) error
-		DisablePolicyRemote  func(ctx context.Context, policy *types.SystemBackupPolicy, field string) (bool, error)
-		CheckScheduledRemote func(ctx context.Context, destinationID string) error
-		ListHistory          func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
+		ListHistory               func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
 	}
 
 	RuntimeOptionsResolver func(
@@ -110,11 +99,13 @@ type (
 	Dependencies struct {
 		Store                 Store
 		DB                    *database.DB
+		Policies              *backup.Policies
 		SQLDB                 func() (*sql.DB, error)
 		ActorStore            func() (*gorm.DB, error)
 		Docker                *dockerInternal.DockerClientService
 		Volumes               *volume.VolumeService
 		Engine                *backup.Engine
+		Repository            *backup.VolumeRepository
 		S3Destinations        *s3.S3DestinationService
 		Activity              *activity.ActivityService
 		Settings              *settings.SettingsService
@@ -125,13 +116,15 @@ type (
 		Ctx                   context.Context
 		Scheduler             types.DynamicScheduler
 		Admission             *runs.Admission
+		ProjectFolders        func(ctx context.Context) ([]string, error)
 	}
 
 	Service struct {
 		store                 Store
+		policies              *backup.Policies
 		dockerService         *dockerInternal.DockerClientService
-		volumeService         *volume.VolumeService
 		engine                *backup.Engine
+		repository            *backup.VolumeRepository
 		s3Destinations        *s3.S3DestinationService
 		activityService       *activity.ActivityService
 		settingsService       *settings.SettingsService
@@ -162,16 +155,14 @@ type (
 	}
 
 	preparedSystemBackup struct {
-		run         *types.SystemBackupRun
-		recoveryKey string
-		checkpoint  systemBackupRecovery
+		run             *types.SystemBackupRun
+		recoveryKey     string
+		checkpoint      systemBackupRecovery
+		includeProjects bool
 	}
 )
 
-const (
-	defaultSystemBackupSchedule = "0 3 * * *"
-	systemRecoveryHelperPath    = "/app/arcane-recovery-helper"
-)
+const systemRecoveryHelperPath = "/app/arcane-recovery-helper"
 
 var ErrSystemBackupAlreadyRunning = common.Classify(common.ErrConflict, errors.New("an Arcane system backup is already running"))
 
@@ -191,9 +182,10 @@ func NewService(deps Dependencies) *Service {
 	var service *Service
 	service = &Service{
 		store:                 deps.Store,
+		policies:              deps.Policies,
 		dockerService:         deps.Docker,
-		volumeService:         deps.Volumes,
 		engine:                deps.Engine,
+		repository:            deps.Repository,
 		s3Destinations:        deps.S3Destinations,
 		activityService:       deps.Activity,
 		settingsService:       deps.Settings,
@@ -213,10 +205,8 @@ func NewService(deps Dependencies) *Service {
 			RemoteRepository: func(ctx context.Context, destinationID string) (backup.Repository, error) {
 				return service.remoteRepository(ctx, destinationID)
 			},
-			DatabaseFile: func() (string, error) { return service.databaseFile() },
-			ProjectsDirectory: func(ctx context.Context) string {
-				return projects.ResolveConfiguredContainerDirectory(ctx, service.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
-			},
+			DatabaseFile:        func() (string, error) { return service.databaseFile() },
+			ProjectRoots:        deps.ProjectFolders,
 			RecoveryEnvironment: func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
 			GitWorkDirectory:    kit.FromPtr(deps.Config).GitWorkDir,
 		}),
@@ -227,6 +217,7 @@ func NewService(deps Dependencies) *Service {
 			S3Destinations: deps.S3Destinations,
 			Activity:       deps.Activity,
 			Settings:       deps.Settings,
+			Policies:       deps.Policies,
 			Jobs:           jobs,
 			Config:         deps.Config,
 			AlreadyRunning: ErrSystemBackupAlreadyRunning,
@@ -372,7 +363,7 @@ func (s *Service) databaseFile() (string, error) {
 }
 
 func (s *Service) localRepository(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
-	storage, err := s.volumeService.BackupStorageMount(ctx, dockerClient, "/repository", readOnly)
+	storage, err := s.repository.StorageMount(ctx, dockerClient, "/repository", readOnly)
 	if err != nil {
 		return backup.Repository{}, err
 	}
@@ -421,60 +412,35 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	if err != nil {
 		return nil, err
 	}
-	selected, err := func() (*types.SystemBackupPolicy, error) {
-		if request.PolicyID != "" {
-			policy, policyErr := s.store.Policy(ctx, request.PolicyID)
-			if policyErr == nil && policy == nil {
-				return nil, common.Classify(common.ErrNotFound, errors.New("system backup policy not found"))
-			}
-			return policy, policyErr
+	defaults, s3DestinationID, destination := backup.DestinationOptions{Local: true, Remote: false}, request.S3DestinationID, request.Destination
+	if request.PolicyID != "" {
+		policy, policyErr := s.policies.Get(ctx, backup.PolicySystem, "", request.PolicyID)
+		if policyErr != nil {
+			return nil, policyErr
 		}
-		switch request.Destination {
-		case types.SystemBackupDestinationLocal, "":
-			return &types.SystemBackupPolicy{
-				LocalEnabled:    true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		case types.SystemBackupDestinationS3:
-			return &types.SystemBackupPolicy{
-				S3Enabled:       true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		case types.SystemBackupDestinationLocalS3:
-			return &types.SystemBackupPolicy{
-				LocalEnabled:    true,
-				S3Enabled:       true,
-				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
-			}, nil
-		default:
-			return nil, common.Classify(common.ErrValidation, errors.New("unknown system backup destination"))
+		if policy == nil {
+			return nil, common.Classify(common.ErrNotFound, errors.New("system backup policy not found"))
 		}
-	}()
+		defaults, s3DestinationID, destination = backup.DestinationOptions{Local: policy.LocalEnabled, Remote: policy.S3Enabled}, policy.S3DestinationID, ""
+	}
+	selected, s3DestinationID, err := backup.ResolveDestination(ctx, backup.DestinationRequest{
+		Class:           common.ErrValidation,
+		S3Destinations:  s.s3Destinations,
+		Domain:          "system",
+		Destination:     string(destination),
+		S3DestinationID: s3DestinationID,
+		Default:         defaults,
+	})
 	if err != nil {
 		return nil, err
 	}
-	if !selected.LocalEnabled && !selected.S3Enabled {
-		return nil, common.Classify(common.ErrValidation, errors.New("select at least one system backup destination"))
-	}
-	if selected.S3Enabled && selected.S3DestinationID == "" {
-		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the system backup"))
-	}
 	run := &types.SystemBackupRun{
-		ID:        cmp.Or(kit.Ternary(s.config.AgentEnabled, request.ID, ""), "system-"+uuid.New().String()),
-		CreatedAt: time.Now().UTC(),
-		Status:    types.SystemBackupStatusRunning,
-		Trigger:   trigger,
-		Destination: func() types.SystemBackupDestination {
-			switch {
-			case selected.LocalEnabled && selected.S3Enabled:
-				return types.SystemBackupDestinationLocalS3
-			case selected.LocalEnabled:
-				return types.SystemBackupDestinationLocal
-			default:
-				return types.SystemBackupDestinationS3
-			}
-		}(),
-		S3DestinationID: selected.S3DestinationID,
+		ID:              cmp.Or(kit.Ternary(s.config.AgentEnabled, request.ID, ""), "system-"+uuid.New().String()),
+		CreatedAt:       time.Now().UTC(),
+		Status:          types.SystemBackupStatusRunning,
+		Trigger:         trigger,
+		Destination:     types.SystemBackupDestination(backup.Destination(selected)),
+		S3DestinationID: s3DestinationID,
 		PolicyID:        request.PolicyID,
 	}
 	if createErr := s.store.CreateRun(ctx, run); createErr != nil {
@@ -482,8 +448,8 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request typ
 	}
 	checkpoint := systemBackupRecovery{
 		BackupID:     run.ID,
-		LocalEnabled: selected.LocalEnabled,
-		S3Enabled:    selected.S3Enabled,
+		LocalEnabled: selected.Local,
+		S3Enabled:    selected.Remote,
 	}
 	recoveryData, err := json.Marshal(checkpoint)
 	if err == nil {
@@ -566,7 +532,11 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if err != nil {
 		return run, fmt.Errorf("failed to create %s system recovery snapshot: %w", kit.Ternary(checkpoint.LocalEnabled, "local", "S3"), err)
 	}
-	staged, err := s.snapshots.Create(ctx, dockerClient, repository, key, run.ID)
+	staged, err := s.snapshots.Create(ctx, dockerClient, repository, snapshots.CreateOptions{
+		RecoveryKey:     key,
+		BackupID:        run.ID,
+		IncludeProjects: prepared.includeProjects,
+	})
 	if err != nil {
 		return run, fmt.Errorf("failed to create %s system recovery snapshot: %w", kit.Ternary(checkpoint.LocalEnabled, "local", "S3"), err)
 	}
@@ -775,13 +745,22 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request typ
 		return err
 	}
 	safetyBackup := func(ctx context.Context, safetyRequest types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
-		prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, safetyRequest)
-		if prepareErr != nil {
-			return nil, prepareErr
-		}
-		return s.executeBackup(ctx, prepared)
+		return s.safetyBackup(ctx, safetyRequest, true)
 	}
 	return s.snapshots.RestoreFiles(ctx, dockerClient, key, *run, request.BackupRestoreSelection, safetyBackup)
+}
+
+func (s *Service) safetyBackup(ctx context.Context, request types.CreateSystemBackupRequest, includeProjects bool) (*types.SystemBackupRun, error) {
+	prepared, err := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, request)
+	if err != nil {
+		return nil, err
+	}
+	return s.executeBackup(ctx, &preparedSystemBackup{
+		run:             prepared.run,
+		recoveryKey:     prepared.recoveryKey,
+		checkpoint:      prepared.checkpoint,
+		includeProjects: includeProjects,
+	})
 }
 
 func (s *Service) DeleteBackup(ctx context.Context, id, recoveryKey string) (opErr error) {
@@ -1030,7 +1009,7 @@ func (s *Service) DiscoverBackups(ctx context.Context, request types.DiscoverSys
 func discoveredRun(destinationID string, snapshot backup.DiscoveredSnapshot) *types.SystemBackupRun {
 	if destinationID == "" {
 		return &types.SystemBackupRun{
-			ID:              snapshot.LocalRunID(),
+			ID:              cmp.Or(snapshot.RunID(), "local-"+snapshot.ID),
 			Size:            snapshot.Summary.TotalBytesProcessed,
 			CreatedAt:       kit.Ternary(snapshot.Time.IsZero(), time.Now().UTC(), snapshot.Time),
 			Status:          types.SystemBackupStatusSucceeded,
@@ -1151,25 +1130,20 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 	if err != nil {
 		return err
 	}
-	dataDirectory := filepath.Dir(databaseFile)
-	projectsDirectory := projects.ResolveConfiguredContainerDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory"), "/app/data/projects")
-	plan, err := s.snapshots.PlanRestore(ctx, dockerClient, key, *run, current.Mounts, dataDirectory, projectsDirectory)
+	target := snapshots.RestoreTarget{Mounts: current.Mounts, DataDirectory: filepath.Dir(databaseFile)}
+	plan, err := s.snapshots.PlanRestore(ctx, dockerClient, key, *run, target)
 	if err != nil {
 		return err
 	}
 	// A local safety snapshot is created before the detached helper is allowed to stop Arcane and replace its data.
-	prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, types.CreateSystemBackupRequest{
+	safetyBackup, err := s.safetyBackup(ctx, types.CreateSystemBackupRequest{
 		Destination: types.SystemBackupDestinationLocal,
 		RecoveryKey: key,
-	})
-	if prepareErr != nil {
-		return fmt.Errorf("failed to create pre-restore system backup: %w", prepareErr)
-	}
-	safetyBackup, err := s.executeBackup(ctx, prepared)
+	}, plan.ProjectsIncluded)
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore system backup: %w", err)
 	}
-	rollbackStages, err := s.snapshots.PlanRollback(ctx, dockerClient, key, safetyBackup.LocalSnapshotID, current.Mounts, dataDirectory, projectsDirectory)
+	rollbackStages, err := s.snapshots.PlanRollback(ctx, dockerClient, key, safetyBackup.LocalSnapshotID, target)
 	if err != nil {
 		return err
 	}
@@ -1197,10 +1171,15 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			Size:            safetyBackup.Size,
 			CreatedAt:       safetyBackup.CreatedAt,
 		},
-		ProjectsSetting:  s.settingsService.GetStringSetting(ctx, "projectsDirectory"),
-		ProjectsIncluded: plan.ProjectsIncluded,
-		Stages:           plan.Stages,
-		RollbackStages:   rollbackStages,
+		ProjectsSetting:            s.settingsService.GetStringSetting(ctx, "projectsDirectory"),
+		ProjectsDirectoriesSetting: s.settingsService.GetStringSetting(ctx, "projectsDirectories"),
+		TemplatesSetting:           s.settingsService.GetStringSetting(ctx, "templatesDirectory"),
+		FollowSymlinksSetting:      s.settingsService.GetStringSetting(ctx, "followProjectSymlinks"),
+		ProjectScanMaxDepthSetting: s.settingsService.GetStringSetting(ctx, "projectScanMaxDepth"),
+		ProjectScanSkipDirsSetting: s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
+		ProjectsIncluded:           plan.ProjectsIncluded,
+		Stages:                     plan.Stages,
+		RollbackStages:             rollbackStages,
 	})
 	if err != nil {
 		return fmt.Errorf("encode recovery request: %w", err)
@@ -1326,14 +1305,19 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, runningVolumeBackupsErr
 	}
-	if rekeyErr := s.rekeyRepositories(ctx, previous, recoveryKey); rekeyErr != nil {
+	held, releaseRepository, err := s.repository.HoldLocal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseRepository()
+	if rekeyErr := s.rekeyRepositories(held, previous, recoveryKey); rekeyErr != nil {
 		return nil, rekeyErr
 	}
 	rollback := func(cause error) error {
 		if previous == "" {
 			return cause
 		}
-		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(ctx), recoveryKey, previous))
+		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(held), recoveryKey, previous))
 	}
 	runningVolumeBackups, countErr = s.store.CountRunningVolumeBackups(ctx)
 	if countErr != nil {
@@ -1342,7 +1326,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*type
 	if runningVolumeBackups > 0 {
 		return nil, rollback(runningVolumeBackupsErr)
 	}
-	if setErr := s.recoveryKeys.Set(ctx, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
+	if setErr := s.recoveryKeys.Set(held, backup.RecoveryKeyConfigID, recoveryKey); setErr != nil {
 		return nil, rollback(setErr)
 	}
 	return &types.SystemBackupRecoveryKeyStatus{Configured: true}, nil
@@ -1390,7 +1374,7 @@ func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) 
 	if volumeRuns == 0 {
 		return nil
 	}
-	migrateErr := s.volumeService.MigrateRepositoryPasswords(ctx, previous, next)
+	migrateErr := s.repository.Rekey(ctx, previous, next)
 	if migrateErr == nil || len(systemRepositories) == 0 || previous == "" {
 		return migrateErr
 	}
@@ -1398,7 +1382,7 @@ func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) 
 }
 
 func (s *Service) GetPolicies(ctx context.Context) (*types.SystemBackupPolicyCollection, error) {
-	policies, err := s.store.Policies(ctx)
+	policies, err := s.policies.List(ctx, backup.PolicySystem, "")
 	if err != nil {
 		return nil, err
 	}
@@ -1457,31 +1441,47 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBack
 	if err != nil {
 		return nil, err
 	}
-	build := func(ctx context.Context, policy *types.SystemBackupPolicy, update types.UpdateBackupPolicy) error {
-		normalized, normalizeErr := backup.ValidatePolicyUpdate(ctx, "system", update, s.s3Destinations)
-		if normalizeErr != nil {
-			return normalizeErr
-		}
-		if normalized.Enabled && !configured {
-			return errors.New("configure a recovery key before enabling scheduled system backups")
-		}
-		if normalized.Enabled && !strings.HasPrefix(s.config.DatabaseURL, "file:") {
-			return errors.New("scheduled system backups require the SQLite database provider")
-		}
-		*policy = types.SystemBackupPolicy{ //exhaustruct:enforce
-			ID:                policy.ID,
-			Enabled:           normalized.Enabled,
-			Schedule:          normalized.Schedule,
-			RetentionCount:    normalized.RetentionCount,
-			LocalEnabled:      normalized.LocalEnabled,
-			S3Enabled:         normalized.S3Enabled,
-			S3DestinationID:   normalized.S3DestinationID,
-			S3DestinationName: policy.S3DestinationName,
-			LastRun:           policy.LastRun,
-		}
-		return nil
+	reconcile := backup.PolicyReconciliation[types.UpdateBackupPolicy]{
+		Kind:     backup.PolicySystem,
+		Domain:   "system",
+		UpdateID: func(update types.UpdateBackupPolicy) string { return update.ID },
+		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateBackupPolicy) error {
+			normalized, normalizeErr := backup.ValidatePolicyUpdate(ctx, "system", update, s.s3Destinations)
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			if normalized.Enabled && !configured {
+				return errors.New("configure a recovery key before enabling scheduled system backups")
+			}
+			if normalized.Enabled && !strings.HasPrefix(s.config.DatabaseURL, "file:") {
+				return errors.New("scheduled system backups require the SQLite database provider")
+			}
+			*policy = backup.Policy{ //exhaustruct:enforce
+				BaseModel:       policy.BaseModel,
+				SubjectKind:     backup.PolicySystem,
+				SubjectID:       "",
+				EnvironmentID:   policy.EnvironmentID,
+				Schedule:        normalized.Schedule,
+				S3DestinationID: normalized.S3DestinationID,
+				Options: backup.PolicyOptions{ //exhaustruct:enforce
+					Volumes:         nil,
+					SelectionMode:   "",
+					ProjectIDs:      nil,
+					VolumeNames:     nil,
+					IgnoreAnonymous: false,
+				},
+				RetentionCount: normalized.RetentionCount,
+				Enabled:        normalized.Enabled,
+				StopContainers: false,
+				LocalEnabled:   normalized.LocalEnabled,
+				S3Enabled:      normalized.S3Enabled,
+			}
+			return nil
+		},
+		Unregister: s.jobs.Unregister,
+		Reschedule: s.rescheduleSystemBackupPolicy,
 	}
-	if runErr := s.store.ReconcilePolicies(ctx, updates, build, s.jobs.Unregister, s.rescheduleSystemBackupPolicy); runErr != nil {
+	if runErr := s.policies.Reconcile(ctx, reconcile, updates); runErr != nil {
 		return nil, runErr
 	}
 	return s.GetPolicies(ctx)
@@ -1494,30 +1494,25 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 		return types.SchedulerOutcome{}, err
 	}
 	defer lease.Release(ctx)
-	policy, loadErr := s.store.Policy(ctx, policyID)
+	policy, loadErr := s.policies.Get(ctx, backup.PolicySystem, "", policyID)
 	if loadErr != nil {
 		return types.SchedulerOutcome{}, loadErr
 	}
 	if policy == nil || !policy.Enabled {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
-	remoteErr := func() error {
-		if !policy.S3Enabled {
-			return nil
-		}
-		return s.store.CheckScheduledRemote(ctx, policy.S3DestinationID)
-	}()
-	remoteDisabled, disableErr := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		return s.store.DisablePolicyRemote(ctx, policy, field)
+	remoteDisabled, disableErr := s.policies.CheckRemote(ctx, policy, backup.RemoteCheck{
+		S3Destinations: s.s3Destinations,
+		Settings:       s.settingsService,
+		Root:           "arcane-system-recovery",
+		Tables:         []string{"system_backup_runs"},
+		Reschedule:     s.rescheduleSystemBackupPolicy,
 	})
+	if errors.Is(disableErr, backup.ErrRemoteOnlyDisabled) {
+		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+	}
 	if disableErr != nil {
 		return types.SchedulerOutcome{}, disableErr
-	}
-	if remoteDisabled {
-		s.rescheduleSystemBackupPolicy(ctx, policy)
-	}
-	if remoteDisabled && !policy.LocalEnabled {
-		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	run, runErr := func() (*types.SystemBackupRun, error) {
 		prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerScheduled, types.CreateSystemBackupRequest{PolicyID: policy.ID})
@@ -1558,7 +1553,7 @@ func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.Sche
 	if err == nil && outcome.Status != types.RunStatusSucceeded {
 		return outcome, nil
 	}
-	current, policyErr := s.store.Policy(ctx, policyID)
+	current, policyErr := s.policies.Get(ctx, backup.PolicySystem, "", policyID)
 	if policyErr != nil {
 		return outcome, errors.Join(err, policyErr)
 	}
@@ -1607,7 +1602,7 @@ func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.Sche
 	return outcome, nil
 }
 
-func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *types.SystemBackupPolicy) {
+func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *backup.Policy) {
 	if s.config.AgentEnabled {
 		return
 	}
@@ -1633,13 +1628,7 @@ func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *type
 				"s3DestinationId": policy.S3DestinationID,
 			},
 		},
-		ScheduleFn: func(ctx context.Context) string {
-			current, err := s.store.Policy(ctx, policyID)
-			if err != nil || current == nil {
-				return defaultSystemBackupSchedule
-			}
-			return current.Schedule
-		},
+		ScheduleFn: s.policies.Schedule(policyID, policy.Schedule),
 		// System backups are written through the manager's own Docker.
 		ShouldRunFn: func(context.Context) bool { return s.dockerService.LocalDockerEnabled() },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
@@ -1649,7 +1638,7 @@ func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *type
 }
 
 func (s *Service) RegisterBackupJobOnStartup(ctx context.Context) {
-	policies, err := s.store.Policies(ctx)
+	policies, err := s.policies.List(ctx, backup.PolicySystem, "")
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to load Arcane system backup policies", "error", err)
 		return
@@ -2209,13 +2198,12 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 	instanceID := s.settingsService.GetSettingsConfig().InstanceID.Value
 	decorated := make([]types.SystemVolumeBackupHistoryEntry, 0, len(history))
 	for _, entry := range history {
-		// Volume backups discovered from another instance live under that instance's root.
 		root := func() string {
 			owner := cmp.Or(entry.RemoteInstanceID, instanceID)
 			switch {
-			case entry.ResourceType != "volume" && s.config.AgentEnabled:
+			case entry.ResourceType == "system" && s.config.AgentEnabled:
 				return path.Join(backup.EnvironmentSystemRoot, instanceID)
-			case entry.ResourceType != "volume":
+			case entry.ResourceType == "system":
 				return "arcane-system-recovery"
 			case owner == "":
 				return ""
@@ -2243,6 +2231,8 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 			Type:              entry.Type,
 			ResourceType:      entry.ResourceType,
 			ResourceName:      entry.ResourceName,
+			ResourceID:        entry.ResourceID,
+			ResourceMissing:   entry.ResourceMissing,
 		})
 	}
 	return decorated, pagination.Response{

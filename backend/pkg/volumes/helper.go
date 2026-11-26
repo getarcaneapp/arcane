@@ -24,6 +24,14 @@ import (
 )
 
 type (
+	HelperHost struct {
+		Image       string
+		NetworkMode container.NetworkMode
+		Binds       []string
+		Mounts      []mount.Mount
+		Keep        bool
+	}
+
 	RuntimeImage struct {
 		Image      string
 		Source     string
@@ -65,14 +73,18 @@ func IsHelperContainer(c container.Summary) bool {
 	})
 }
 
-func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *container.HostConfig {
-	return helperHostConfig(helperImage, binds, mounts, true)
+func ListRunningContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+	running, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	return slices.DeleteFunc(running.Items, IsHelperContainer), nil
 }
 
-func helperHostConfig(helperImage string, binds []string, mounts []mount.Mount, autoRemove bool) *container.HostConfig {
+func HostConfig(host HelperHost) *container.HostConfig {
 	var tmpfs map[string]string
 	if runtime.GOOS == "linux" {
-		if named, err := ref.ParseNormalizedNamed(strings.TrimSpace(helperImage)); err != nil || ref.Path(named) != toolsRepoPath {
+		if named, err := ref.ParseNormalizedNamed(strings.TrimSpace(host.Image)); err != nil || ref.Path(named) != toolsRepoPath {
 			tmpfs = map[string]string{
 				"/app/data": "rw,noexec,nosuid,nodev",
 			}
@@ -80,10 +92,11 @@ func helperHostConfig(helperImage string, binds []string, mounts []mount.Mount, 
 	}
 
 	return &container.HostConfig{
-		Binds:      binds,
-		Mounts:     mounts,
-		AutoRemove: autoRemove,
-		Tmpfs:      tmpfs,
+		Binds:       host.Binds,
+		Mounts:      host.Mounts,
+		AutoRemove:  !host.Keep,
+		NetworkMode: host.NetworkMode,
+		Tmpfs:       tmpfs,
 	}
 }
 

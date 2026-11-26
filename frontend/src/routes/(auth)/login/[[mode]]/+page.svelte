@@ -194,17 +194,14 @@
 			></div>
 			<div class="grid md:grid-cols-2">
 				<div class="p-6 md:p-8">
-					<div class="mb-7 flex flex-col items-center text-center">
+					<div class="mb-7 flex flex-col items-start text-left">
 						<img
-							class={cn(
-								'mb-4 object-contain drop-shadow-md drop-shadow-primary/15 md:hidden',
-								branding.development ? 'size-14' : 'size-10'
-							)}
+							class={cn('mb-4 object-contain md:hidden', branding.development ? 'size-14' : 'size-10')}
 							src={markUrl}
 							alt={m.layout_title()}
 						/>
 						<h1 class="text-2xl font-semibold tracking-tight">
-							{m.welcome_back()}
+							{m.auth_signin_button()}
 						</h1>
 						<p class="mt-1.5 text-sm text-balance text-muted-foreground">
 							{m.auth_login_subtitle()}
@@ -388,12 +385,10 @@
 					</div>
 				</div>
 
-				<div class="relative hidden flex-col items-center justify-center gap-4 bg-muted/20 md:flex">
-					<img class="size-36 object-contain drop-shadow-md drop-shadow-primary/15" src={markUrl} alt={m.layout_title()} />
+				<div class="relative hidden flex-col items-center justify-center gap-3 border-l border-border/60 bg-muted/20 md:flex">
+					<img class="size-32 object-contain" src={markUrl} alt={m.layout_title()} />
 					{#if data.versionInformation?.displayVersion}
-						<span class="font-mono text-xs tracking-ultrawide text-muted-foreground uppercase"
-							>{data.versionInformation.displayVersion}</span
-						>
+						<span class="font-mono text-xs text-muted-foreground">{data.versionInformation.displayVersion}</span>
 					{/if}
 				</div>
 			</div>

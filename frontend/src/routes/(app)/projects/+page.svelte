@@ -301,7 +301,7 @@
 
 <ProjectImportDialog bind:open={importOpen} onImported={refreshImportedProjects} />
 
-<ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.projects_title()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if projects}
 			<ProjectsTable

@@ -159,7 +159,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.events_title()} subtitle={m.events_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.events_title()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<EventTable {events} bind:selectedIds bind:requestOptions />
 	{/snippet}

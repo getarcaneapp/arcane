@@ -207,7 +207,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.templates_title()} subtitle={m.templates_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.templates_title()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<Tabs.Root value={activeView}>

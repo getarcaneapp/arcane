@@ -64,7 +64,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.swarm_stacks_title()} subtitle={m.swarm_stacks_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.swarm_stacks_title()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<SwarmStacksTable
 			{stacks}

@@ -19,6 +19,13 @@ func TestResolveCommandName(t *testing.T) {
 		shouldHit bool
 	}{
 		{name: "container list", method: "GET", path: "/api/agents/0/containers", command: "container.list", shouldHit: true},
+		{
+			name:      "Swarm task hostname lookup",
+			method:    http.MethodPost,
+			path:      "/api/agents/0/containers/swarm-tasks/hostnames",
+			command:   "container.swarm_task_hostnames",
+			shouldHit: true,
+		},
 		{name: "container edit config", method: "GET", path: "/api/agents/0/containers/abc/config", command: "container.edit_config", shouldHit: true},
 		{name: "container edit", method: "PUT", path: "/api/agents/0/containers/abc/config", command: "container.edit", shouldHit: true},
 		{name: "container edit config wrong method", method: "POST", path: "/api/agents/0/containers/abc/config", command: "container.edit_config", shouldHit: false},

@@ -1,0 +1,165 @@
+<script lang="ts">
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as Checkbox from '#lib/components/ui/checkbox/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
+	import * as m from '#lib/paraglide/messages.js';
+	import type { SystemVolumeBackupOption, SystemVolumeSelectionMode } from '#lib/types/backup.js';
+	import type { GlobalProjectBackupOption } from '#lib/types/project.js';
+
+	let {
+		idPrefix,
+		kind,
+		selectionMode,
+		selected,
+		ignoreAnonymous = false,
+		options,
+		loading = false,
+		onChange
+	}: {
+		idPrefix: string;
+		kind: 'project' | 'volume';
+		selectionMode: SystemVolumeSelectionMode;
+		selected: string[];
+		ignoreAnonymous?: boolean;
+		options: SystemVolumeBackupOption[] | GlobalProjectBackupOption[];
+		loading?: boolean;
+		onChange: (values: { selectionMode?: SystemVolumeSelectionMode; selected?: string[]; ignoreAnonymous?: boolean }) => void;
+	} = $props();
+
+	let search = $state('');
+	const text = $derived(
+		kind === 'project'
+			? {
+					mode: m.project_selection(),
+					modeDescription: m.rules_checked_against_projects(),
+					all: m.all_projects(),
+					allDescription: m.all_projects_description(),
+					allowlistDescription: m.include_only_selected_projects(),
+					blocklistDescription: m.include_all_except_selected_projects(),
+					included: m.included_projects(),
+					excluded: m.excluded_projects(),
+					allowlistHelp: m.checked_projects_included(),
+					blocklistHelp: m.checked_projects_excluded(),
+					search: m.search_projects(),
+					empty: m.no_matching_projects()
+				}
+			: {
+					mode: m.system_volume_backups_selection_mode(),
+					modeDescription: m.system_volume_backups_selection_description(),
+					all: m.system_volume_backups_selection_all(),
+					allDescription: m.system_volume_backups_selection_all_description(),
+					allowlistDescription: m.system_volume_backups_selection_allowlist_description(),
+					blocklistDescription: m.system_volume_backups_selection_blocklist_description(),
+					included: m.system_volume_backups_included_volumes(),
+					excluded: m.system_volume_backups_excluded_volumes(),
+					allowlistHelp: m.system_volume_backups_allowlist_help(),
+					blocklistHelp: m.system_volume_backups_blocklist_help(),
+					search: m.system_volume_backups_search_volumes(),
+					empty: m.system_volume_backups_no_matching_volumes()
+				}
+	);
+	const selectionOptions = $derived([
+		{ label: text.all, value: 'all', description: text.allDescription },
+		{ label: m.system_volume_backups_selection_allowlist(), value: 'allowlist', description: text.allowlistDescription },
+		{ label: m.system_volume_backups_selection_blocklist(), value: 'blocklist', description: text.blocklistDescription }
+	]);
+	// Projects are selected by ID and volumes by name.
+	const items = $derived(
+		options.map((option) =>
+			'id' in option
+				? { value: option.id, label: option.name, anonymous: false, available: option.available }
+				: { value: option.name, label: option.name, anonymous: option.anonymous, available: option.available }
+		)
+	);
+	const filteredOptions = $derived.by(() => {
+		const term = search.trim().toLowerCase();
+		return term ? items.filter((option) => option.label.toLowerCase().includes(term)) : items;
+	});
+
+	function toggle(value: string, checked: boolean) {
+		if (checked) {
+			onChange({ selected: Array.from(new Set([...selected, value])).sort() });
+			return;
+		}
+		onChange({ selected: selected.filter((candidate) => candidate !== value) });
+	}
+</script>
+
+<SettingsSection class="pt-2">
+	<SettingsRow for={`${idPrefix}-selection-mode`} label={text.mode} description={text.modeDescription}>
+		{#snippet children({ describedBy })}
+			<SelectWithLabel
+				id={`${idPrefix}-selection-mode`}
+				hideLabel
+				value={selectionMode}
+				onValueChange={(value) => onChange({ selectionMode: value as SystemVolumeSelectionMode })}
+				label={text.mode}
+				options={selectionOptions}
+				aria-describedby={describedBy}
+			/>
+		{/snippet}
+	</SettingsRow>
+
+	{#if selectionMode !== 'all'}
+		<SettingsRow
+			label={selectionMode === 'allowlist' ? text.included : text.excluded}
+			description={selectionMode === 'allowlist' ? text.allowlistHelp : text.blocklistHelp}
+			layout="wide"
+		>
+			{#snippet children({ describedBy })}
+				<div class="space-y-2">
+					<Input bind:value={search} placeholder={text.search} aria-describedby={describedBy} />
+					<div class="h-56 overflow-hidden rounded-md border">
+						<ScrollArea class="h-full">
+							{#if loading}
+								<div class="flex h-24 items-center justify-center"><LoadingSpinnerIcon class="size-5 animate-spin" /></div>
+							{:else}
+								<div class="divide-y divide-border/50">
+									{#each filteredOptions as option (option.value)}
+										<label class="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
+											<Checkbox.Root
+												checked={selected.includes(option.value)}
+												onCheckedChange={(value) => toggle(option.value, value === true)}
+												aria-describedby={describedBy}
+											/>
+											<span class="min-w-0 flex-1 truncate text-sm">{option.label}</span>
+											{#if option.anonymous}<Badge variant="amber" size="sm">{m.system_volume_backups_anonymous()}</Badge>{/if}
+											{#if !option.available}<Badge variant="gray" size="sm">{m.system_volume_backups_unavailable()}</Badge>{/if}
+										</label>
+									{/each}
+									{#if filteredOptions.length === 0}
+										<p class="px-3 py-8 text-center text-sm text-muted-foreground">{text.empty}</p>
+									{/if}
+								</div>
+							{/if}
+						</ScrollArea>
+					</div>
+				</div>
+			{/snippet}
+		</SettingsRow>
+	{/if}
+
+	{#if kind === 'volume'}
+		<SettingsRow
+			for={`${idPrefix}-ignore-anonymous`}
+			label={m.system_volume_backups_ignore_anonymous()}
+			description={m.system_volume_backups_ignore_anonymous_description()}
+			layout="switch"
+		>
+			{#snippet children({ describedBy })}
+				<Switch
+					id={`${idPrefix}-ignore-anonymous`}
+					checked={ignoreAnonymous}
+					onCheckedChange={(value) => onChange({ ignoreAnonymous: value })}
+					aria-describedby={describedBy}
+				/>
+			{/snippet}
+		</SettingsRow>
+	{/if}
+</SettingsSection>

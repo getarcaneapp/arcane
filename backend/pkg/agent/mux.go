@@ -24,7 +24,8 @@ const (
 
 	TunnelCapabilityForwardedPermissions = "forwarded-permissions-v1"
 	TunnelCapabilityForwardedGlobalAdmin = "forwarded-global-admin-v1"
-	TunnelCapabilityProjectTransfer      = "project-transfer-v1"
+	TunnelCapabilityProjectTransfer      = "project-transfer-v2"
+	tunnelCapabilityProjectTransferV1    = "project-transfer-v1"
 	TunnelCapabilityDiagnosticsProfiling = "diagnostics-profiling-v1"
 	tunnelCapabilityMuxWindowPrefix      = "mux-window-mib:"
 	tunnelCapabilityReadinessLease       = "readiness-lease-v1"
@@ -79,7 +80,7 @@ func muxStreamWindowMiB(capabilities []string, fallback int) int {
 	return fallback
 }
 
-func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Client {
+func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error), responseHeaderTimeout time.Duration) *http.Client {
 	return httpx.NewHTTPClient(httpx.ClientConfig{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			dialCtx, cancel := context.WithTimeout(ctx, muxDialTimeout)
@@ -88,7 +89,7 @@ func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Cl
 		},
 		// Stays below the agent server's IdleTimeout so a pooled stream is never reused as the server closes it.
 		IdleConnTimeout:       90 * time.Second,
-		ResponseHeaderTimeout: ProxyResponseHeaderTimeout,
+		ResponseHeaderTimeout: responseHeaderTimeout,
 		MaxIdleConnsPerHost:   8,
 		ReadBufferSize:        64 << 10,
 		WriteBufferSize:       64 << 10,

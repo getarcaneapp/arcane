@@ -119,6 +119,7 @@ var (
 			provideWithWorkflows(gitops.NewGitOpsSyncService),
 			fx.Annotate(variable.NewVariableService, fx.As(fx.Self()), fx.As(new(environment.VariableSyncer))),
 			backup.NewRecoveryKeyStore,
+			backup.NewPolicies,
 			upload.NewUploadService,
 			health.NewService,
 			fx.Annotate(auth.NewTokenCache, fx.OnStop((*auth.TokenCache).Stop)),
@@ -161,6 +162,8 @@ var (
 				})
 			},
 			provideBackupEngine,
+			provideVolumeRepository,
+			provideBackupContainers,
 			func(
 				httpClient *http.Client,
 				cfg *config.Config,
@@ -297,6 +300,7 @@ var (
 			scheduler.NewUploadSessionsCleanupJob,
 			scheduler.NewGitCloneCleanupJob,
 			scheduler.NewBackupRepositoryPruneJob,
+			scheduler.NewProjectBackupDiscoveryJob,
 			fx.Annotate(scheduler.NewUpgradeLogCleanupJob, fx.ResultTags(`name:"upgrade-log-cleanup"`)),
 		),
 		managerJobOptions,

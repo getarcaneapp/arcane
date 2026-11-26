@@ -73,7 +73,9 @@ A ready-to-edit version of that file, including the agent side, is in
 - **Docker host dashboard stats.** The dashboard reports a docker-host environment's own
   CPU and container stats, and never falls back to the manager's daemon figures for it.
 - **Per-environment backup history.** Volume backup history and policies are scoped to the
-  environment that owns the volume, so two daemons can each have an `app-data` volume.
+  environment that owns the volume, so two daemons can each have an `app-data` volume. Volume
+  policies live in the shared `backup_policies` table, which carries the `environment_id` column;
+  project backups are keyed by project UUID and need no environment column.
 - **Backup kill switch.** `ARCANE_BACKUPS_DISABLED=true` turns the Rustic engine off: no
   helper image pull, no helper container, no repository volume.
   See the generated config schema (`just docs config`) for the documented value.
@@ -81,11 +83,14 @@ A ready-to-edit version of that file, including the agent side, is in
 
 ## Upstream merges and migrations
 
-The fork owns migrations 00117 (`docker_host`) and 00118 (`volume_backups.environment_id`).
-Upstream's 3.1.1 migration that grants `projects:jobs:run` was renumbered to 00119 during the
-merge, because 00117 was already deployed by the fork. When upstream adds another migration
-numbered 00118 or later, renumber it past the fork's versions instead of moving an applied
-migration.
+The fork owns migrations 00117 (`docker_host`), 00118 (`volume_backups.environment_id`),
+00119 (grants `projects:jobs:run`), 00121 (grants `projects:export`), and 00122
+(`image_updates.environment_id`). When upstream adds a migration numbered 00118 or later,
+renumber it past the fork's versions instead of moving an applied migration: upstream's 3.1.1
+`projects:jobs:run` grant became 00119, and the 3.1.2 backup rewrite (upstream 00120
+`project_backups`, 00122 `backup_policies`, 00123 schedule move, 00124 `user_groups`) became
+00123–00126. Upstream 00122 lists `volume_backup_policies.environment_id` in its copy, so the
+fork folded that column into 00124 instead of adding a 00127.
 
 ## Upgrading 2.x → 3.x
 

@@ -207,15 +207,43 @@ test.describe('All environments', () => {
 		remote.failure = 'remote unavailable';
 
 		await page.goto('/containers');
-		const alert = page.getByRole('alert').filter({ hasText: remoteEnvironment.name });
-		await expect(alert).toBeVisible();
+		const indicator = page.getByRole('button', { name: '1 unavailable', exact: true });
+		await indicator.click();
+		const issues = page
+			.locator('[data-slot="popover-content"]')
+			.filter({ hasText: remoteEnvironment.name });
+		await expect(issues).toContainText('remote unavailable');
 		await expect(page.getByRole('row').filter({ hasText: 'remote-preview-web' })).toHaveCount(0);
 
 		remote.failure = undefined;
-		await alert.getByRole('button', { name: 'Retry', exact: true }).click();
+		await issues.getByRole('button', { name: 'Retry', exact: true }).click();
 
 		await expect(page.getByRole('row').filter({ hasText: 'remote-preview-web' })).toBeVisible();
-		await expect(alert).toHaveCount(0);
+		await expect(indicator).toHaveCount(0);
+	});
+
+	test('the build history popup warns when an agent fails and no builds are returned', async ({
+		page
+	}) => {
+		await mockRemoteEnvironment(page);
+		await page.route(
+			new RegExp(`/api/agents/0(?:,|%2C)${remoteEnvironment.id}/images/builds(?:\\?.*)?$`),
+			(route) =>
+				route.fulfill({
+					json: {
+						...paginated([]),
+						failedEnvironments: [{ environment: remoteEnvironment, message: 'remote unavailable' }]
+					}
+				})
+		);
+
+		await page.goto('/images/builds');
+		await page.getByRole('button', { name: 'Build History', exact: true }).click();
+		const menu = page.getByRole('menu');
+		await expect(menu.getByRole('alert')).toContainText(
+			`${remoteEnvironment.name} (remote unavailable)`
+		);
+		await expect(menu.getByText('No builds yet', { exact: true })).toHaveCount(0);
 	});
 
 	test('page-wide confirmations count environments without listing them', async ({ page }) => {

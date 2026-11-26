@@ -10,22 +10,37 @@
 	import BackupFilePicker from '#lib/components/backup-file-picker.svelte';
 	import BackupPolicyCard from '#lib/components/backup-policy-card.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import ProjectRestoreAsNewDialog from '#lib/components/dialogs/project-restore-as-new-dialog.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
-	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon, UploadIcon } from '#lib/icons/index.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
+	import {
+		AddIcon,
+		AlertIcon,
+		BackupIcon,
+		CalendarIcon,
+		CloudStorageIcon,
+		InfoIcon,
+		LockIcon,
+		ResetIcon,
+		UploadIcon
+	} from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { systemBackupHistoryQuery } from '#lib/query/backups.js';
+	import { projectBackupConfigQuery, systemBackupHistoryQuery } from '#lib/query/backups.js';
 	import { systemVolumeBackupOptionsQuery } from '#lib/query/backups.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { projectService } from '#lib/services/project-service.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -39,10 +54,11 @@
 		SystemVolumeBackupOption,
 		SystemVolumeSelectionMode
 	} from '#lib/types/backup.js';
+	import type { ProjectBackup } from '#lib/types/project.js';
 	import { GLOBAL_SCOPE } from '#lib/types/role.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/ui/backup.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import {
 		backupDestinationOptions,
@@ -54,12 +70,24 @@
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	import BackupScopeFields from './components/backup-scope-fields.svelte';
 	import SystemBackupScheduleDialog from './components/system-backup-schedule-dialog.svelte';
 	import SystemBackupTable from './components/system-backup-table.svelte';
-	import SystemVolumeScopeFields from './components/system-volume-scope-fields.svelte';
+
+	type ScheduleType = 'system' | 'project' | 'volume';
+	type BackupsTab = 'backups' | 'schedules';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
+	const backupsTabItems = $derived([
+		{ value: 'backups', label: m.backups(), icon: BackupIcon },
+		{ value: 'schedules', label: m.schedules(), icon: CalendarIcon }
+	] satisfies TabItem[]);
+	const urlTab = useUrlTab<BackupsTab>({
+		validTabs: () => backupsTabItems.map((tab) => tab.value as BackupsTab),
+		defaultTab: () => 'backups'
+	});
+	const activeTab = $derived(urlTab.value);
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const backupsQuery = createQuery(() => ({
 		...systemBackupHistoryQuery(pageState.scope, pageState.requestOptions),
@@ -67,6 +95,13 @@
 	}));
 	const backups = $derived(backupsQuery.data ?? data.backups);
 	let policyCollection = $derived(data.policyCollection);
+	// Observed rather than taken from the load: a global run can disable a schedule's S3 destination, and saving sends
+	// the whole list, so a stale copy would turn it back on.
+	const projectPolicyQuery = createQuery(() => ({
+		...projectBackupConfigQuery(),
+		enabled: hasPermission('system-backups:read', GLOBAL_SCOPE)
+	}));
+	const projectPolicyCollection = $derived(projectPolicyQuery.data ?? data.projectPolicyCollection);
 	let systemVolumePolicyCollection = $derived(data.systemVolumePolicyCollection);
 	const systemVolumeOptionsQuery = createQuery(() => ({
 		...systemVolumeBackupOptionsQuery(),
@@ -77,7 +112,8 @@
 	let systemVolumeOptionsLoaded = false;
 	let scheduleOpen = $state(false);
 	let scheduleSession = $state(0);
-	let scheduleType = $state<'system' | 'volume'>('system');
+	let scheduleType = $state<ScheduleType>('system');
+	let runningPolicyId = $state<string | null>(null);
 	let editingScheduleId = $state<string | undefined>();
 	let keyOpen = $state(false);
 	let importKeyOpen = $state(false);
@@ -107,6 +143,9 @@
 	let restoreFilesSearch = $state('');
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
+	let restoreAsNewOpen = $state(false);
+	let restoreAsNewBackup = $state<ProjectBackup | null>(null);
+	let restoreAsNewEnvironmentId = $state<string>(LOCAL_DOCKER_ENVIRONMENT_ID);
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const unmanagedBackupRetentionDays = $derived(settingsStore.current?.unmanagedBackupRetentionDays);
 	// System backups live in a local Docker volume, so they need the manager's own Docker.
@@ -115,14 +154,19 @@
 		policyCollection.localDockerEnabled === false || isLocalDockerDisabled(environmentStore.getLocalEnvironment())
 	);
 	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && !localDockerDisabled);
-	const canUpdateBackupPolicies = $derived(hasPermission('system-backups:update', GLOBAL_SCOPE) && !localDockerDisabled);
+	// Saving sends a whole list of schedules, which only loads with system-backups:read.
+	const canUpdateBackupPolicies = $derived(
+		hasPermission('system-backups:update', GLOBAL_SCOPE) &&
+			hasPermission('system-backups:read', GLOBAL_SCOPE) &&
+			!localDockerDisabled
+	);
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
 	// Discovery restores snapshots through the manager's Docker, even for S3 destinations.
 	const canDiscoverBackups = $derived(isGlobalAdmin() && !localDockerDisabled);
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const backupTypeOptions = $derived([
-		{ label: m.system(), value: 'system', description: m.system_backups_type_system_description() },
+		{ label: m.system(), value: 'system', description: m.arcane_only_backup_description() },
 		{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }
 	]);
 	const configurationOptions = $derived([
@@ -142,6 +186,7 @@
 	// ever uses this instance's stored key.
 	const actionNeedsTypedKey = $derived(action === 'restore' || action === 'discover');
 	const selectedRemote = $derived(selected !== null && selected.environmentId !== LOCAL_DOCKER_ENVIRONMENT_ID);
+	const selectedProject = $derived(selected?.resourceType === 'project');
 	const restoreFilesRemote = $derived(
 		restoreFilesTarget !== null && restoreFilesTarget.environmentId !== LOCAL_DOCKER_ENVIRONMENT_ID
 	);
@@ -167,7 +212,7 @@
 	});
 	const invalid = $derived(Boolean(actionKeyInvalid || destinationError));
 
-	function openSchedule(type: 'system' | 'volume' = 'system', id?: string) {
+	function openSchedule(type: ScheduleType = 'system', id?: string) {
 		scheduleSession += 1;
 		if (type === 'volume') void loadSystemVolumeOptions();
 		scheduleType = type;
@@ -341,18 +386,21 @@
 	function dialogTitle() {
 		if (action === 'restore') return m.system_backups_restore_title();
 		if (action === 'upload') return m.system_backups_upload_title();
+		if (action === 'delete' && selectedProject) return m.common_delete_title({ resource: m.project_backup() });
 		if (action === 'delete') return m.system_backups_delete_title();
 		if (action === 'discover') return m.system_backups_discover_title();
 		return m.volumes_backup_create();
 	}
 	function dialogDescription() {
 		if (action === 'restore') return m.system_backups_restore_description();
+		if (action === 'delete' && selectedProject) return m.remove_this_backup();
 		if (action === 'delete') return m.system_backups_delete_description();
 		if (action === 'discover') return m.system_backups_discover_description();
 		return backupType === 'volume' ? m.system_volume_backups_description() : m.system_backups_dialog_description();
 	}
 	function actionFailedMessage() {
 		if (action === 'restore') return m.system_backups_restore_failed();
+		if (action === 'delete' && selectedProject) return m.common_delete_failed({ resource: m.project_backup() });
 		if (action === 'delete') return m.system_backups_delete_failed();
 		if (action === 'upload') return m.backups_upload_s3_failed();
 		if (action === 'discover') return m.system_backups_discover_failed();
@@ -395,8 +443,31 @@
 		);
 	}
 
+	async function openProjectBackups(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
+		await goto(
+			resolve(`/(app)/projects/[projectId]?tab=backups&env=${encodeURIComponent(backup.environmentId)}`, {
+				projectId: encodeURIComponent(backup.resourceId ?? '')
+			})
+		);
+	}
+
+	// The history row lacks the backup's volumes, which the dialog offers to restore.
+	async function openRestoreAsNew(backup: EnvironmentRow<SystemVolumeBackupHistoryEntry>) {
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(projectService.getBackup(backup.resourceId ?? '', backup.id, backup.environmentId)),
+			message: m.failed_to_restore_backup(),
+			onSuccess: (loaded) => {
+				if (restoreAsNewOpen) return;
+				restoreAsNewBackup = loaded;
+				restoreAsNewEnvironmentId = backup.environmentId;
+				restoreAsNewOpen = true;
+			}
+		});
+	}
+
 	let autoDiscovered = false;
 	let mounted = false;
+	// Page loads scan S3 destinations; a new or imported recovery key also scans local storage, which a reinstall leaves unrecorded.
 	async function discoverStoredBackups({ local = false } = {}) {
 		if (!mounted || !policyCollection.recoveryKeyStored || !canDiscoverBackups) return;
 		if (!local && (autoDiscovered || !data.destinations.length)) return;
@@ -448,6 +519,49 @@
 			activity.metadata?.['action'] === 'run_system_volume_backups',
 		() => queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true })
 	);
+	// Project runs take each project's own turn, so they never hold up a system or volume backup.
+	const projectActivity = useBackupActivity(
+		() => '0',
+		(activity) =>
+			activity.metadata?.['action'] === 'run_project_backups' || activity.metadata?.['action'] === 'scheduled_project_backups',
+		// A run may disable a schedule's missing S3 destination, so the schedules reload with the history.
+		() =>
+			Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.projectConfig() }, { throwOnError: true })
+			]),
+		() => 'projects'
+	);
+	useBackupActivity(
+		() => '0',
+		(activity) => activity.metadata?.['action'] === 'scheduled_project_backup',
+		() => queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() }, { throwOnError: true }),
+		() => 'scheduled-project-backup'
+	);
+
+	async function startPolicyRun(type: ScheduleType, policyId: string): Promise<string | undefined> {
+		if (type === 'system') return extractActivityId(await systemBackupService.create({ policyId, recoveryKey: '' }));
+		if (type === 'project') return (await systemBackupService.runProjectBackups(policyId)).activityId;
+		return (await systemBackupService.runSystemVolumeBackups({ policyId })).activityId;
+	}
+
+	async function runPolicy(type: ScheduleType, policyId: string) {
+		runningPolicyId = policyId;
+		try {
+			const started = await tryCatch(startPolicyRun(type, policyId));
+			if (started.error !== null) {
+				let failed = m.system_volume_backups_run_failed();
+				if (type === 'system') failed = m.system_backups_create_failed();
+				if (type === 'project') failed = m.failed_to_run_project_backups();
+				toast.error(failed, { description: extractApiErrorMessage(started.error) });
+				return;
+			}
+			(type === 'project' ? projectActivity : backupActivity).accepted(started.data);
+			toast.success(m.backups_started(), activityToastOptions(started.data, false));
+		} finally {
+			runningPolicyId = null;
+		}
+	}
 
 	async function createBackup() {
 		const customS3DestinationId = destination === 'local' ? '' : s3DestinationId;
@@ -498,6 +612,10 @@
 		} else if (action === 'upload' && selected) {
 			await systemBackupService.upload(selected.environmentId, selected.id, s3DestinationId, recoveryKey);
 			toast.success(m.backups_upload_s3_success());
+			await refresh();
+		} else if (action === 'delete' && selected?.resourceType === 'project') {
+			await projectService.deleteBackup(selected.resourceId ?? '', selected.id, selected.environmentId);
+			toast.success(m.common_delete_success({ resource: m.project_backup() }));
 			await refresh();
 		} else if (action === 'delete' && selected) {
 			await systemBackupService.delete(selected.environmentId, selected.id, recoveryKey);
@@ -597,6 +715,19 @@
 	});
 </script>
 
+{#snippet addScheduleAction(type: ScheduleType)}
+	{#if canUpdateBackupPolicies}
+		<ArcaneButton
+			action="create"
+			customLabel={m.volume_backup_add_schedule()}
+			icon={AddIcon}
+			onclick={() => openSchedule(type)}
+			disabled={isReadOnly}
+			data-testid={`backup-add-schedule-${type}`}
+		/>
+	{/if}
+{/snippet}
+
 {#snippet backupsEmptyState()}
 	<EmptyState
 		icon={BackupIcon}
@@ -694,6 +825,12 @@
 		contentClass={action === 'create' ? 'sm:max-w-190' : 'sm:max-w-140'}
 	>
 		<div class="space-y-5 py-2">
+			{#if action === 'restore'}
+				<Alert.Root size="sm">
+					<InfoIcon class="size-4" />
+					<Alert.Description>{m.restore_leaves_projects_description()}</Alert.Description>
+				</Alert.Root>
+			{/if}
 			{#if action === 'create'}
 				<SelectWithLabel
 					id="manual-backup-type"
@@ -740,16 +877,17 @@
 				/>
 			{/if}
 			{#if action === 'create' && backupType === 'volume' && backupConfiguration === 'custom'}
-				<SystemVolumeScopeFields
+				<BackupScopeFields
 					idPrefix="manual-volume-backup"
+					kind="volume"
 					{selectionMode}
-					{volumeNames}
+					selected={volumeNames}
 					{ignoreAnonymous}
 					options={systemVolumeOptions}
 					loading={systemVolumeOptionsLoading}
 					onChange={(values) => {
 						selectionMode = values.selectionMode ?? selectionMode;
-						volumeNames = values.volumeNames ?? volumeNames;
+						volumeNames = values.selected ?? volumeNames;
 						ignoreAnonymous = values.ignoreAnonymous ?? ignoreAnonymous;
 					}}
 				/>
@@ -885,41 +1023,7 @@
 			{/if}
 			{@render recoveryKeySummary()}
 
-			<SettingsSection title={m.system_backups_schedules()} variant="plain">
-				{#if policyCollection.policies.length || systemVolumePolicyCollection.policies.length}
-					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
-						{#each policyCollection.policies as policy (policy.id)}
-							<BackupPolicyCard
-								{policy}
-								resourceType="system"
-								onEdit={() => openSchedule('system', policy.id)}
-								editDisabled={isReadOnly || !canUpdateBackupPolicies}
-							/>
-						{/each}
-						{#each systemVolumePolicyCollection.policies as policy (policy.id)}
-							<BackupPolicyCard
-								{policy}
-								resourceType="volume"
-								showStopContainers
-								onEdit={() => openSchedule('volume', policy.id)}
-								editDisabled={isReadOnly || !canUpdateBackupPolicies}
-							/>
-						{/each}
-					</div>
-				{:else}
-					<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
-				{/if}
-				{#if unmanagedBackupRetentionDays !== undefined}
-					<p class="text-sm text-muted-foreground">
-						{Number(unmanagedBackupRetentionDays) > 0
-							? m.unmanaged_backup_retention_summary({ days: Number(unmanagedBackupRetentionDays) })
-							: m.unmanaged_backup_retention_disabled_summary()}
-						<a href={resolve('/(app)/settings/storage')} class="ml-1 text-primary-text hover:underline">{m.common_edit()}</a>
-					</p>
-				{/if}
-			</SettingsSection>
-
-			{#each backupActivity.activeIds as activityId (activityId)}
+			{#each [...backupActivity.activeIds, ...projectActivity.activeIds] as activityId (activityId)}
 				<Alert.Root
 					><Alert.Description>
 						{m.backups_running()}
@@ -932,19 +1036,120 @@
 				>
 			{/each}
 
-			<SystemBackupTable
-				emptyState={backupsEmptyState}
-				{backups}
-				{localDockerDisabled}
-				bind:requestOptions={pageState.requestOptions}
-				onRetry={() => backupsQuery.refetch()}
-				onRestore={(item) => openAction('restore', item)}
-				onRestoreFiles={openRestoreFiles}
-				onRestoreVolume={openVolumeRestore}
-				onUpload={(item) => openAction('upload', item)}
-				onDelete={(item) => openAction('delete', item)}
-				onOpenVolume={openVolumeBackups}
-			/>
+			<Tabs.Root value={activeTab} class="w-full">
+				<TabBar items={backupsTabItems} onValueChange={urlTab.select} />
+
+				<Tabs.Content value="backups" class="mt-6">
+					<SystemBackupTable
+						emptyState={backupsEmptyState}
+						{backups}
+						{localDockerDisabled}
+						bind:requestOptions={pageState.requestOptions}
+						onRetry={() => backupsQuery.refetch()}
+						onRestore={(item) => openAction('restore', item)}
+						onRestoreFiles={openRestoreFiles}
+						onRestoreVolume={openVolumeRestore}
+						onOpenProject={openProjectBackups}
+						onRestoreProjectAsNew={openRestoreAsNew}
+						onUpload={(item) => openAction('upload', item)}
+						onDelete={(item) => openAction('delete', item)}
+						onOpenVolume={openVolumeBackups}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="schedules" class="mt-6">
+					<div class="space-y-8">
+						<SettingsSection title={m.system()} description={m.arcane_only_backup_description()} variant="plain">
+							{#snippet actions()}{@render addScheduleAction('system')}{/snippet}
+							{#if policyCollection.policies.length}
+								<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
+									{#each policyCollection.policies as policy (policy.id)}
+										<BackupPolicyCard
+											{policy}
+											resourceType="system"
+											onEdit={() => openSchedule('system', policy.id)}
+											editDisabled={isReadOnly || !canUpdateBackupPolicies}
+											onRun={() => runPolicy('system', policy.id)}
+											runDisabled={isReadOnly ||
+												!canCreateBackups ||
+												!policyCollection.recoveryKeyStored ||
+												backupActivity.activeIds.length > 0 ||
+												runningPolicyId !== null}
+											running={runningPolicyId === policy.id}
+										/>
+									{/each}
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
+							{/if}
+						</SettingsSection>
+
+						<SettingsSection title={m.projects_title()} description={m.back_up_selected_projects()} variant="plain">
+							{#snippet actions()}{@render addScheduleAction('project')}{/snippet}
+							{#if projectPolicyCollection.policies.length}
+								<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
+									{#each projectPolicyCollection.policies as policy (policy.id)}
+										<BackupPolicyCard
+											{policy}
+											resourceType="project"
+											showStopContainers
+											onEdit={() => openSchedule('project', policy.id)}
+											editDisabled={isReadOnly || !canUpdateBackupPolicies}
+											onRun={() => runPolicy('project', policy.id)}
+											runDisabled={isReadOnly ||
+												!canCreateBackups ||
+												!policy.enabled ||
+												projectActivity.activeIds.length > 0 ||
+												runningPolicyId !== null}
+											running={runningPolicyId === policy.id}
+										/>
+									{/each}
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
+							{/if}
+						</SettingsSection>
+
+						<SettingsSection
+							title={m.resource_volumes_cap()}
+							description={m.system_backups_type_volume_description()}
+							variant="plain"
+						>
+							{#snippet actions()}{@render addScheduleAction('volume')}{/snippet}
+							{#if systemVolumePolicyCollection.policies.length}
+								<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
+									{#each systemVolumePolicyCollection.policies as policy (policy.id)}
+										<BackupPolicyCard
+											{policy}
+											resourceType="volume"
+											showStopContainers
+											onEdit={() => openSchedule('volume', policy.id)}
+											editDisabled={isReadOnly || !canUpdateBackupPolicies}
+											onRun={() => runPolicy('volume', policy.id)}
+											runDisabled={isReadOnly ||
+												!canCreateBackups ||
+												backupActivity.activeIds.length > 0 ||
+												runningPolicyId !== null}
+											running={runningPolicyId === policy.id}
+										/>
+									{/each}
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
+							{/if}
+						</SettingsSection>
+
+						{#if unmanagedBackupRetentionDays !== undefined}
+							<p class="text-sm text-muted-foreground">
+								{Number(unmanagedBackupRetentionDays) > 0
+									? m.unmanaged_backup_retention_summary({ days: Number(unmanagedBackupRetentionDays) })
+									: m.unmanaged_backup_retention_disabled_summary()}
+								<a href={resolve('/(app)/settings/storage')} class="ml-1 text-primary-text hover:underline">{m.common_edit()}</a>
+							</p>
+						{/if}
+					</div>
+				</Tabs.Content>
+			</Tabs.Root>
 		</div>
 	{/snippet}
 	{#snippet additionalContent()}
@@ -955,6 +1160,7 @@
 					initialType={scheduleType}
 					policyId={editingScheduleId}
 					systemPolicies={policyCollection.policies}
+					projectPolicies={projectPolicyCollection.policies}
 					volumePolicies={systemVolumePolicyCollection.policies}
 					recoveryKeyStored={policyCollection.recoveryKeyStored}
 					destinations={data.destinations}
@@ -965,6 +1171,7 @@
 						policyCollection = { ...policyCollection, policies };
 						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
 					}}
+					onProjectSaved={(policies) => queryClient.setQueryData(projectBackupConfigQuery().queryKey, { policies })}
 					onVolumeSaved={(policies) => {
 						systemVolumePolicyCollection = { policies };
 						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.systemVolumeConfig() });
@@ -977,5 +1184,10 @@
 		{@render importKeyDialog()}
 		{@render actionDialog()}
 		{@render restoreFilesDialog()}
+		<ProjectRestoreAsNewDialog
+			bind:open={restoreAsNewOpen}
+			backup={restoreAsNewBackup}
+			environmentId={restoreAsNewEnvironmentId}
+		/>
 	{/snippet}
 </SettingsPageLayout>

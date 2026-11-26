@@ -419,7 +419,7 @@
 	{#if item.repoTags && item.repoTags.length > 0 && item.repoTags[0] !== '<none>:<none>'}
 		<div class="flex flex-wrap gap-1.5">
 			{#each item.repoTags as repoTag, tagIndex (`${repoTag}-${tagIndex}`)}
-				<Badge variant="outline" mono>{repoTag.split(':').pop() || repoTag}</Badge>
+				<Badge variant="outline">{repoTag.split(':').pop() || repoTag}</Badge>
 			{/each}
 		</div>
 	{:else if item.pinnedReferences && item.pinnedReferences.length > 0 && item.pinnedReferences[0]}
@@ -430,14 +430,14 @@
 				{@const tagAt = pinName.lastIndexOf(':')}
 				<div class="flex items-center gap-1.5">
 					{#if tagAt > pinName.lastIndexOf('/')}
-						<Badge variant="outline" mono>{pinName.slice(tagAt + 1)}</Badge>
+						<Badge variant="outline">{pinName.slice(tagAt + 1)}</Badge>
 					{/if}
 					<DigestCell value={digestAt === -1 ? pin : pin.slice(digestAt + 1)} />
 				</div>
 			{/each}
 		</div>
 	{:else if item.tag && item.tag !== '<none>'}
-		<Badge variant="outline" mono>{item.tag}</Badge>
+		<Badge variant="outline">{item.tag}</Badge>
 	{:else}
 		<span class="text-muted-foreground italic">{m.images_untagged()}</span>
 	{/if}

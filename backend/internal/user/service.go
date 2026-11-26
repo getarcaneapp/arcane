@@ -809,6 +809,20 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 			}
 		}
 	}
+	if m := s.db.WithContext(ctx).Migrator(); m.HasTable("groups") && m.HasTable("group_members") {
+		var groups []types.UserGroupSummary
+		if err := s.db.WithContext(ctx).
+			Table("group_members AS gm").
+			Select("g.id AS id, g.name AS name, gm.source AS source").
+			Joins("INNER JOIN groups g ON g.id = gm.group_id").
+			Where("gm.user_id = ?", u.ID).
+			Order("g.name ASC, gm.source ASC").
+			Scan(&groups).Error; err != nil {
+			slog.ErrorContext(ctx, "failed to load user group memberships", "userId", u.ID, "error", err)
+		} else {
+			dto.Groups = groups
+		}
+	}
 	if ps, err := s.roleService.ResolvePermissions(ctx, u.ID); err == nil && ps != nil {
 		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
 		dto.PermissionsByEnv = permissionSetToMap(ps)

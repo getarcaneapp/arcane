@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import type {
 		CodeLanguage,
@@ -6,6 +8,8 @@
 		DiagnosticSummary,
 		EditorContext
 	} from '#lib/components/code-editor/analysis/types.js';
+	import MarkdownContent from '#lib/components/markdown-content.svelte';
+	import SegmentToggle from '#lib/components/segment-toggle.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
@@ -71,6 +75,39 @@
 	const effectiveAutoHeight = $derived(autoHeight || isMobile.current);
 	const editUrl = $derived(readOnly && !(enableDiff && diffOpen) && gitEditUrl ? gitEditUrl : null);
 
+	let markdownChoice = $state<{ file: string; view: string } | null>(null);
+	const isMarkdown = $derived(language === 'markdown');
+	const openedEmpty = $derived.by(() => {
+		void title;
+		return untrack(() => !value);
+	});
+	const markdownView = $derived.by(() => {
+		if (markdownChoice?.file === title) return markdownChoice.view;
+		return openedEmpty ? 'raw' : 'preview';
+	});
+	const showMarkdownPreview = $derived(
+		isMarkdown && markdownView === 'preview' && !outlineOpen && !diffOpen && !commandPaletteOpen
+	);
+	const markdownViewOptions = $derived([
+		{ value: 'preview', label: m.preview() },
+		{ value: 'raw', label: m.common_raw() }
+	]);
+
+	function selectMarkdownView(view: string) {
+		markdownChoice = { file: title, view };
+		if (view !== 'preview') return;
+		outlineOpen = false;
+		diffOpen = false;
+		commandPaletteOpen = false;
+	}
+
+	function setCommandPaletteOpen(next: boolean) {
+		if (isMarkdown && (next || commandPaletteOpen)) {
+			markdownChoice = { file: title, view: 'raw' };
+		}
+		commandPaletteOpen = next;
+	}
+
 	// CodeMirror's gutters, search panel and tooltips share this wrapper.
 	function isEditorText(target: EventTarget | null): boolean {
 		return target instanceof Element && !!target.closest('.cm-content');
@@ -90,10 +127,51 @@
 	}
 </script>
 
+{#snippet markdownViewToggle()}
+	<SegmentToggle
+		label={m.markdown_view()}
+		options={markdownViewOptions}
+		current={showMarkdownPreview ? 'preview' : 'raw'}
+		onSelect={selectMarkdownView}
+	/>
+{/snippet}
+
+{#snippet markdownPreview()}
+	<div class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0">
+		<div class="{effectiveAutoHeight ? '' : 'absolute inset-0 overflow-y-auto'} px-4 py-3">
+			{#if editUrl}
+				<a
+					href={editUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="mb-3 inline-block text-sm text-primary hover:underline"
+				>
+					{m.git_edit_file_in_repository()}
+				</a>
+			{/if}
+			<MarkdownContent markdown={value} class="max-w-4xl" />
+		</div>
+	</div>
+{/snippet}
+
+{#snippet panelBody()}
+	{#if showMarkdownPreview}
+		{@render markdownPreview()}
+	{/if}
+	{#if !showMarkdownPreview || !readOnly}
+		{@render editorBody()}
+	{/if}
+{/snippet}
+
 {#snippet editorBody()}
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 	<div
-		class="{effectiveAutoHeight ? '' : 'relative flex-1'} min-h-0 w-full min-w-0 {editUrl ? 'cursor-pointer' : ''}"
+		class={[
+			'min-h-0 w-full min-w-0',
+			!effectiveAutoHeight && 'relative flex-1',
+			editUrl && 'cursor-pointer',
+			showMarkdownPreview && 'hidden'
+		]}
 		role={editUrl ? 'link' : undefined}
 		tabindex={editUrl ? 0 : undefined}
 		title={editUrl ? m.git_edit_file_in_repository() : undefined}
@@ -121,7 +199,7 @@
 						{editorContext}
 						bind:outlineOpen
 						bind:diffOpen
-						bind:commandPaletteOpen
+						bind:commandPaletteOpen={() => commandPaletteOpen, setCommandPaletteOpen}
 					/>
 				{:catch}
 					<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
@@ -139,14 +217,19 @@
 			</svelte:boundary>
 		</div>
 	</div>
-	{#if error}
+	{#if error && !showMarkdownPreview}
 		<p class="px-4 py-2 text-xs text-destructive">{error}</p>
 	{/if}
 {/snippet}
 
 {#if variant === 'plain'}
 	<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
-		{@render editorBody()}
+		{#if isMarkdown}
+			<div class="flex shrink-0 justify-end px-2 pb-1.5">
+				{@render markdownViewToggle()}
+			</div>
+		{/if}
+		{@render panelBody()}
 	</div>
 {:else}
 	<Card.Root class="flex {effectiveAutoHeight ? '' : 'flex-1'} min-h-0 flex-col overflow-hidden" data-open={open}>
@@ -156,6 +239,9 @@
 			</Card.Title>
 			<Card.Action>
 				<div class="flex items-center gap-1 pt-1">
+					{#if isMarkdown}
+						{@render markdownViewToggle()}
+					{/if}
 					<ArcaneButton
 						action="base"
 						tone={outlineOpen ? 'outline-primary' : 'ghost'}
@@ -183,13 +269,13 @@
 						showLabel={false}
 						icon={SearchIcon}
 						customLabel={m.compose_editor_command_palette()}
-						onclick={() => (commandPaletteOpen = true)}
+						onclick={() => setCommandPaletteOpen(true)}
 					/>
 				</div>
 			</Card.Action>
 		</Card.Header>
 		<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible">
-			{@render editorBody()}
+			{@render panelBody()}
 		</div>
 	</Card.Root>
 {/if}

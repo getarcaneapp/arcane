@@ -218,7 +218,7 @@
 	</div>
 {/snippet}
 
-<ResourcePageLayout title={m.updates()} subtitle={m.updates_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.updates()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<Tabs.Root value={effectiveTab}>

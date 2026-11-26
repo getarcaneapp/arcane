@@ -39,6 +39,20 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/agents/${environmentId}/containers/${containerId}`));
 	}
 
+	async getSwarmTaskHostnames(
+		environmentId: string,
+		containerIds: string[],
+		signal: AbortSignal
+	): Promise<Record<string, string>> {
+		return this.handleResponse(
+			this.api.post(
+				`/agents/${environmentId}/containers/swarm-tasks/hostnames`,
+				{ containerIds },
+				{ signal, suppressAccessDeniedToast: true }
+			)
+		);
+	}
+
 	async getContainerProcesses(
 		containerId: string,
 		signal: AbortSignal | undefined,

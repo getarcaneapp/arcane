@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -15,7 +17,8 @@
 		loading,
 		contextMode = $bindable(),
 		remoteContext = $bindable(),
-		onEditFiles
+		onEditFiles,
+		history
 	}: {
 		workspace: BuildWorkspaceDraft;
 		contextDir: string;
@@ -24,6 +27,7 @@
 		contextMode: 'workspace' | 'remote';
 		remoteContext: string;
 		onEditFiles: () => void;
+		history: Snippet;
 	} = $props();
 
 	const modeOptions = $derived([
@@ -34,13 +38,22 @@
 
 <section class="space-y-3">
 	<h2 class="text-sm font-semibold">{m.source()}</h2>
-	<Tabs.Root value={contextMode} onValueChange={(value) => (contextMode = value === 'remote' ? 'remote' : 'workspace')}>
-		<Tabs.List class="min-h-8 w-full sm:w-fit" aria-label={m.build_context()}>
-			{#each modeOptions as option (option.value)}
-				<Tabs.Trigger value={option.value} size="sm" class="h-7 flex-1 sm:flex-none">{option.label}</Tabs.Trigger>
-			{/each}
-		</Tabs.List>
-	</Tabs.Root>
+	<div class="flex items-center justify-between gap-2">
+		<Tabs.Root
+			class="min-w-0 flex-1 sm:flex-none"
+			value={contextMode}
+			onValueChange={(value) => (contextMode = value === 'remote' ? 'remote' : 'workspace')}
+		>
+			<Tabs.List class="min-h-8 w-full" aria-label={m.build_context()}>
+				{#each modeOptions as option (option.value)}
+					<Tabs.Trigger value={option.value} size="sm" class="min-h-7 flex-1 whitespace-normal sm:flex-none">
+						{option.label}
+					</Tabs.Trigger>
+				{/each}
+			</Tabs.List>
+		</Tabs.Root>
+		{@render history()}
+	</div>
 
 	{#if contextMode === 'remote'}
 		<BuildRemoteContext bind:value={remoteContext} />

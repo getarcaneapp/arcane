@@ -197,7 +197,7 @@ func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName str
 		Labels:          volumes.Labels(),
 	}
 
-	hostConfig := volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, nil)
+	hostConfig := volumes.HostConfig(volumes.HelperHost{Image: helperImage, Binds: []string{volumeName + ":/volume"}})
 
 	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{

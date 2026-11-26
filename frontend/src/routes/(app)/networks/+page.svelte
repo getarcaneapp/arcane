@@ -112,7 +112,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.resource_networks_cap()} subtitle={m.networks_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.resource_networks_cap()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			{#key pageState.scope}

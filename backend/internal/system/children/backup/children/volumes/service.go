@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
 	"slices"
 	"strings"
 	"time"
@@ -45,6 +44,7 @@ type (
 		S3Destinations *s3.S3DestinationService
 		Activity       *activity.ActivityService
 		Settings       *settings.SettingsService
+		Policies       *backup.Policies
 		Jobs           *entityjobs.Registry
 		Config         *config.Config
 		AlreadyRunning error
@@ -58,6 +58,7 @@ type (
 		s3Destinations *s3.S3DestinationService
 		activity       *activity.ActivityService
 		settings       *settings.SettingsService
+		policies       *backup.Policies
 		jobs           *entityjobs.Registry
 		config         *config.Config
 		alreadyRunning error
@@ -79,7 +80,6 @@ type (
 )
 
 const (
-	systemVolumeBackupConfigKey = "systemVolumeBackupConfig"
 	systemVolumeBackupJobPrefix = "volumes:"
 	// systemVolumePlanTarget records a scheduled run's frozen selection.
 	systemVolumePlanTarget      = "system-volume-plan"
@@ -94,6 +94,7 @@ func NewService(deps Dependencies) *Service {
 		s3Destinations: deps.S3Destinations,
 		activity:       deps.Activity,
 		settings:       deps.Settings,
+		policies:       deps.Policies,
 		jobs:           deps.Jobs,
 		config:         deps.Config,
 		alreadyRunning: deps.AlreadyRunning,
@@ -165,75 +166,66 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 	return err
 }
 
-func (s *Service) systemVolumeBackupPolicy(policyID string) (*types.SystemVolumeBackupPolicy, error) {
-	collection, err := s.settings.SystemVolumeBackupPolicies()
-	if err != nil {
-		return nil, err
+func policyDTO(policy *backup.Policy, s3DestinationName string, lastRun *types.SystemBackupRun) types.SystemVolumeBackupPolicy {
+	return types.SystemVolumeBackupPolicy{ //exhaustruct:enforce
+		LastRun:           lastRun,
+		ID:                policy.ID,
+		Schedule:          policy.Schedule,
+		S3DestinationID:   policy.S3DestinationID,
+		S3DestinationName: s3DestinationName,
+		SelectionMode:     policy.Options.SelectionMode,
+		VolumeNames:       policy.Options.VolumeNames,
+		RetentionCount:    policy.RetentionCount,
+		Enabled:           policy.Enabled,
+		StopContainers:    policy.StopContainers,
+		LocalEnabled:      policy.LocalEnabled,
+		S3Enabled:         policy.S3Enabled,
+		IgnoreAnonymous:   policy.Options.IgnoreAnonymous,
 	}
-	index := slices.IndexFunc(collection.Policies, func(policy types.SystemVolumeBackupPolicy) bool { return policy.ID == policyID })
-	if index < 0 {
-		return nil, nil
-	}
-	return &collection.Policies[index], nil
 }
 
 func (s *Service) GetConfig(ctx context.Context) (*types.SystemVolumeBackupPolicyCollection, error) {
-	collection, err := s.settings.SystemVolumeBackupPolicies()
+	stored, err := s.policies.List(ctx, backup.PolicyVolume, "")
 	if err != nil {
 		return nil, err
 	}
 	destinations := s.s3Destinations.DestinationsByID(ctx)
-	policies := make([]types.SystemVolumeBackupPolicy, 0, len(collection.Policies))
-	for _, policy := range collection.Policies {
+	policies := make([]types.SystemVolumeBackupPolicy, 0, len(stored))
+	for i := range stored {
 		var lastRun volume.VolumeBackup
 		runErr := s.db.WithContext(ctx).
-			Where("policy_id LIKE ?", types.SystemVolumePolicyPrefix+policy.ID+":%").
+			Where("policy_id LIKE ?", types.SystemVolumePolicyPrefix+stored[i].ID+":%").
 			Order("created_at DESC").First(&lastRun).Error
 		if runErr != nil && !errors.Is(runErr, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("load latest system-managed volume backup: %w", runErr)
 		}
-		policies = append(policies, types.SystemVolumeBackupPolicy{ //exhaustruct:enforce
-			ID:                policy.ID,
-			Enabled:           policy.Enabled,
-			Schedule:          policy.Schedule,
-			RetentionCount:    policy.RetentionCount,
-			StopContainers:    policy.StopContainers,
-			LocalEnabled:      policy.LocalEnabled,
-			S3Enabled:         policy.S3Enabled,
-			S3DestinationID:   policy.S3DestinationID,
-			S3DestinationName: destinations[policy.S3DestinationID].Name,
-			SelectionMode:     policy.SelectionMode,
-			VolumeNames:       policy.VolumeNames,
-			IgnoreAnonymous:   policy.IgnoreAnonymous,
-			LastRun: func() *types.SystemBackupRun {
-				if runErr != nil {
-					return policy.LastRun
-				}
-				return &types.SystemBackupRun{
-					ID:                lastRun.ID,
-					Size:              lastRun.Size,
-					CreatedAt:         lastRun.CreatedAt,
-					Status:            string(lastRun.Status),
-					Trigger:           string(lastRun.Trigger),
-					Destination:       types.SystemBackupDestination(lastRun.Destination),
-					LocalSnapshotID:   lastRun.LocalSnapshotID,
-					RemoteSnapshotID:  lastRun.RemoteSnapshotID,
-					S3DestinationID:   lastRun.S3DestinationID,
-					S3DestinationName: destinations[lastRun.S3DestinationID].Name,
-					PolicyID:          lastRun.PolicyID,
-					Error:             lastRun.Error,
-				}
-			}(),
-		})
+		policies = append(policies, policyDTO(&stored[i], destinations[stored[i].S3DestinationID].Name, func() *types.SystemBackupRun {
+			if runErr != nil {
+				return nil
+			}
+			return &types.SystemBackupRun{ //exhaustruct:enforce
+				RemoteAvailable:   nil,
+				ActivityID:        "",
+				ID:                lastRun.ID,
+				Size:              lastRun.Size,
+				CreatedAt:         lastRun.CreatedAt,
+				Status:            string(lastRun.Status),
+				Trigger:           string(lastRun.Trigger),
+				Destination:       types.SystemBackupDestination(lastRun.Destination),
+				LocalSnapshotID:   lastRun.LocalSnapshotID,
+				RemoteSnapshotID:  lastRun.RemoteSnapshotID,
+				S3DestinationID:   lastRun.S3DestinationID,
+				S3DestinationName: destinations[lastRun.S3DestinationID].Name,
+				PolicyID:          lastRun.PolicyID,
+				Error:             lastRun.Error,
+			}
+		}()))
 	}
 	return &types.SystemVolumeBackupPolicyCollection{Policies: policies}, nil
 }
 
 func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input types.UpdateSystemVolumeBackupPolicy) (types.SystemVolumeBackupPolicy, error) {
-	if !slices.Contains(
-		[]types.SystemVolumeSelectionMode{types.SystemVolumeSelectionAll, types.SystemVolumeSelectionAllowlist, types.SystemVolumeSelectionBlocklist},
-		input.SelectionMode,
-	) {
+	if !input.SelectionMode.Valid() {
 		return types.SystemVolumeBackupPolicy{}, errors.New("selectionMode must be all, allowlist, or blocklist")
 	}
 	update, err := backup.ValidatePolicyUpdate(ctx, "system-managed volume", input.UpdateBackupPolicy, s.s3Destinations)
@@ -258,52 +250,42 @@ func (s *Service) normalizeSystemVolumePolicyUpdate(ctx context.Context, input t
 }
 
 func (s *Service) UpdateConfig(ctx context.Context, updates []types.UpdateSystemVolumeBackupPolicy) (*types.SystemVolumeBackupPolicyCollection, error) {
-	existing, err := s.settings.SystemVolumeBackupPolicies()
-	if err != nil {
-		return nil, err
-	}
-	if runErr := (backup.PolicyReconciliation[types.SystemVolumeBackupPolicy, types.UpdateSystemVolumeBackupPolicy]{
+	if runErr := s.policies.Reconcile(ctx, backup.PolicyReconciliation[types.UpdateSystemVolumeBackupPolicy]{
+		Kind:     backup.PolicyVolume,
 		Domain:   "system-managed volume",
-		Existing: existing.Policies,
-		ID:       func(policy *types.SystemVolumeBackupPolicy) string { return policy.ID },
 		UpdateID: func(update types.UpdateSystemVolumeBackupPolicy) string { return update.ID },
-		New: func() types.SystemVolumeBackupPolicy {
-			return types.SystemVolumeBackupPolicy{ID: uuid.New().String()}
-		},
-		Build: func(ctx context.Context, policy *types.SystemVolumeBackupPolicy, update types.UpdateSystemVolumeBackupPolicy) error {
+		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateSystemVolumeBackupPolicy) error {
 			normalized, normalizeErr := s.normalizeSystemVolumePolicyUpdate(ctx, update)
 			if normalizeErr != nil {
 				return normalizeErr
 			}
-			*policy = types.SystemVolumeBackupPolicy{ //exhaustruct:enforce
-				ID:                policy.ID,
-				Enabled:           normalized.Enabled,
-				Schedule:          normalized.Schedule,
-				RetentionCount:    normalized.RetentionCount,
-				StopContainers:    normalized.StopContainers,
-				LocalEnabled:      normalized.LocalEnabled,
-				S3Enabled:         normalized.S3Enabled,
-				S3DestinationID:   normalized.S3DestinationID,
-				S3DestinationName: normalized.S3DestinationName,
-				SelectionMode:     normalized.SelectionMode,
-				VolumeNames:       normalized.VolumeNames,
-				IgnoreAnonymous:   normalized.IgnoreAnonymous,
-				LastRun:           normalized.LastRun,
+			*policy = backup.Policy{ //exhaustruct:enforce
+				BaseModel:       policy.BaseModel,
+				SubjectKind:     backup.PolicyVolume,
+				SubjectID:       "",
+				EnvironmentID:   policy.EnvironmentID,
+				Schedule:        normalized.Schedule,
+				S3DestinationID: normalized.S3DestinationID,
+				Options: backup.PolicyOptions{ //exhaustruct:enforce
+					Volumes:         nil,
+					SelectionMode:   normalized.SelectionMode,
+					ProjectIDs:      nil,
+					VolumeNames:     normalized.VolumeNames,
+					IgnoreAnonymous: normalized.IgnoreAnonymous,
+				},
+				RetentionCount: normalized.RetentionCount,
+				Enabled:        normalized.Enabled,
+				StopContainers: normalized.StopContainers,
+				LocalEnabled:   normalized.LocalEnabled,
+				S3Enabled:      normalized.S3Enabled,
 			}
 			return nil
-		},
-		Persist: func(ctx context.Context, policies []types.SystemVolumeBackupPolicy) error {
-			encoded, encodeErr := json.Marshal(types.SystemVolumeBackupPolicyCollection{Policies: policies})
-			if encodeErr != nil {
-				return fmt.Errorf("encode policies: %w", encodeErr)
-			}
-			return s.settings.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded))
 		},
 		Unregister: func(ctx context.Context, policyID string) {
 			s.jobs.Unregister(ctx, systemVolumeBackupJobPrefix+policyID)
 		},
 		Reschedule: s.rescheduleSystemVolumeBackup,
-	}).Run(ctx, updates); runErr != nil {
+	}, updates); runErr != nil {
 		return nil, runErr
 	}
 	return s.GetConfig(ctx)
@@ -315,7 +297,7 @@ func (s *Service) ListOptions(ctx context.Context) ([]types.SystemVolumeBackupOp
 	if err != nil {
 		return nil, err
 	}
-	collection, err := s.settings.SystemVolumeBackupPolicies()
+	policies, err := s.policies.List(ctx, backup.PolicyVolume, "")
 	if err != nil {
 		return nil, err
 	}
@@ -323,8 +305,8 @@ func (s *Service) ListOptions(ctx context.Context) ([]types.SystemVolumeBackupOp
 	for _, option := range options {
 		known[option.Name] = struct{}{}
 	}
-	for _, policy := range collection.Policies {
-		for _, name := range policy.VolumeNames {
+	for _, policy := range policies {
+		for _, name := range policy.Options.VolumeNames {
 			if _, ok := known[name]; !ok {
 				options = append(options, types.SystemVolumeBackupOption{Name: name})
 				known[name] = struct{}{}
@@ -352,11 +334,14 @@ func (s *Service) prepareSystemVolumeBackups(
 	}
 	policy, err := func() (*types.SystemVolumeBackupPolicy, error) {
 		if request.PolicyID != "" {
-			stored, loadErr := s.systemVolumeBackupPolicy(request.PolicyID)
-			if loadErr == nil && stored == nil {
+			stored, loadErr := s.policies.Get(ctx, backup.PolicyVolume, "", request.PolicyID)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			if stored == nil {
 				return nil, common.Classify(common.ErrNotFound, errors.New("system-managed volume backup policy not found"))
 			}
-			return stored, loadErr
+			return new(policyDTO(stored, "", nil)), nil
 		}
 		if request.Custom == nil {
 			normalized, normalizeErr := s.normalizeSystemVolumePolicyUpdate(ctx, types.UpdateSystemVolumeBackupPolicy{
@@ -526,62 +511,23 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 		return types.SchedulerOutcome{}, err
 	}
 	defer lease.Release(ctx)
-	policy, err := s.systemVolumeBackupPolicy(policyID)
+	policy, err := s.policies.Get(ctx, backup.PolicyVolume, "", policyID)
 	if err != nil {
 		return types.SchedulerOutcome{}, err
 	}
 	if policy == nil || !policy.Enabled {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
-	remoteErr := func() error {
-		if !policy.S3Enabled {
-			return nil
-		}
-		root := path.Join(backup.VolumeRoot, s.settings.GetSettingsConfig().InstanceID.Value)
-		return backup.CheckScheduledRemote(ctx, s.db, s.s3Destinations, "volume_backups", policy.S3DestinationID, root)
-	}()
-	remoteDisabled, err := backup.DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
-		collection, loadErr := s.settings.SystemVolumeBackupPolicies()
-		if loadErr != nil {
-			return false, loadErr
-		}
-		index := slices.IndexFunc(collection.Policies, func(current types.SystemVolumeBackupPolicy) bool {
-			return current.ID == policy.ID && current.S3DestinationID == policy.S3DestinationID && current.S3Enabled == policy.S3Enabled &&
-				current.Enabled == policy.Enabled && current.LocalEnabled == policy.LocalEnabled
-		})
-		if index < 0 {
-			return false, nil
-		}
-		current := collection.Policies[index]
-		collection.Policies[index] = types.SystemVolumeBackupPolicy{ //exhaustruct:enforce
-			ID:                current.ID,
-			Enabled:           current.Enabled && field != "enabled",
-			Schedule:          current.Schedule,
-			RetentionCount:    current.RetentionCount,
-			StopContainers:    current.StopContainers,
-			LocalEnabled:      current.LocalEnabled,
-			S3Enabled:         current.S3Enabled && field != "s3_enabled",
-			S3DestinationID:   current.S3DestinationID,
-			S3DestinationName: current.S3DestinationName,
-			SelectionMode:     current.SelectionMode,
-			VolumeNames:       current.VolumeNames,
-			IgnoreAnonymous:   current.IgnoreAnonymous,
-			LastRun:           current.LastRun,
-		}
-		encoded, encodeErr := json.Marshal(collection)
-		if encodeErr != nil {
-			return false, fmt.Errorf("encode policies: %w", encodeErr)
-		}
-		return true, s.settings.UpdateSetting(ctx, systemVolumeBackupConfigKey, string(encoded))
+	remoteDisabled, err := s.policies.CheckRemote(ctx, policy, backup.RemoteCheck{
+		S3Destinations: s.s3Destinations,
+		Settings:       s.settings,
+		Reschedule:     s.rescheduleSystemVolumeBackup,
 	})
+	if errors.Is(err, backup.ErrRemoteOnlyDisabled) {
+		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+	}
 	if err != nil {
 		return types.SchedulerOutcome{}, err
-	}
-	if remoteDisabled {
-		s.rescheduleSystemVolumeBackup(ctx, policy)
-	}
-	if remoteDisabled && !policy.LocalEnabled {
-		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	result, err := func() (*types.SystemVolumeBackupRunResult, error) {
 		input, _, prepareErr := s.prepareSystemVolumeBackups(ctx, types.RunSystemVolumeBackupsRequest{PolicyID: policyID},
@@ -710,7 +656,7 @@ func selectionOutcome(result *types.SystemVolumeBackupRunResult, remoteDisabled 
 	}
 }
 
-func (s *Service) rescheduleSystemVolumeBackup(ctx context.Context, policy *types.SystemVolumeBackupPolicy) {
+func (s *Service) rescheduleSystemVolumeBackup(ctx context.Context, policy *backup.Policy) {
 	if s.config.AgentEnabled {
 		return
 	}
@@ -731,13 +677,7 @@ func (s *Service) rescheduleSystemVolumeBackup(ctx context.Context, policy *type
 				"schedule": policy.Schedule,
 			},
 		},
-		ScheduleFn: func(context.Context) string {
-			current, err := s.systemVolumeBackupPolicy(policyID)
-			if err != nil || current == nil {
-				return defaultSystemVolumeSchedule
-			}
-			return current.Schedule
-		},
+		ScheduleFn:  s.policies.Schedule(policyID, policy.Schedule),
 		ShouldRunFn: func(context.Context) bool { return s.config.LocalDockerEnabled },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.resumeSelection(ctx, previous, "")
@@ -794,15 +734,15 @@ func (s *Service) Start(ctx context.Context, user types.Actor, request types.Run
 
 // RegisterJobsOnStartup schedules every saved policy and returns how many were loaded.
 func (s *Service) RegisterJobsOnStartup(ctx context.Context) int {
-	policies, err := s.settings.SystemVolumeBackupPolicies()
+	policies, err := s.policies.List(ctx, backup.PolicyVolume, "")
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to load system-managed volume backup policies", "error", err)
 		return 0
 	}
-	for i := range policies.Policies {
-		s.rescheduleSystemVolumeBackup(ctx, &policies.Policies[i])
+	for i := range policies {
+		s.rescheduleSystemVolumeBackup(ctx, &policies[i])
 	}
-	return len(policies.Policies)
+	return len(policies)
 }
 
 func selectSystemVolumeBackupCandidates(policy types.SystemVolumeBackupPolicy, options []types.SystemVolumeBackupOption) []types.SystemVolumeBackupOption {
@@ -811,10 +751,7 @@ func selectSystemVolumeBackupCandidates(policy types.SystemVolumeBackupPolicy, o
 		if !option.Available {
 			continue
 		}
-		selected := slices.Contains(policy.VolumeNames, option.Name)
-		matches := policy.SelectionMode == types.SystemVolumeSelectionAll ||
-			(policy.SelectionMode == types.SystemVolumeSelectionAllowlist && selected) ||
-			(policy.SelectionMode == types.SystemVolumeSelectionBlocklist && !selected)
+		matches := policy.SelectionMode.Selects(slices.Contains(policy.VolumeNames, option.Name))
 		if matches && (!policy.IgnoreAnonymous || !option.Anonymous) {
 			result = append(result, option)
 		}

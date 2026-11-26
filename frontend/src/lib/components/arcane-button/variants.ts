@@ -35,9 +35,14 @@ import {
 import { m } from '#lib/paraglide/messages.js';
 import { tv } from '#lib/utils.js';
 
+const neutralOutlineTone =
+	'border-border/80 bg-background/90 text-foreground shadow-button backdrop-blur-sm ' +
+	'hover:border-border hover:bg-accent/60 hover:text-accent-foreground hover:shadow-button-hover ' +
+	'dark:bg-card/70 dark:hover:bg-accent/40';
+
 export const arcaneButtonVariants = tv({
 	base:
-		'inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium whitespace-nowrap select-none ' +
+		'inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap select-none ' +
 		'border transition duration-200 ease-out ' +
 		'active:scale-98 ' +
 		'disabled:pointer-events-none disabled:opacity-55 disabled:saturate-[0.82] disabled:shadow-none ' +
@@ -47,15 +52,15 @@ export const arcaneButtonVariants = tv({
 	variants: {
 		tone: {
 			'outline-primary':
-				'border-primary-tint/20 bg-primary-tint/6 text-foreground! shadow-button ' +
-				'hover:border-primary-tint/40 hover:bg-primary-tint/10 hover:shadow-button-hover ' +
-				'dark:border-primary-tint/30 dark:bg-primary-tint/12 dark:text-primary-foreground ' +
-				'dark:hover:border-primary-tint/50 dark:hover:bg-primary-tint/18',
+				'border-primary-tint/35 bg-primary-tint/12 text-foreground shadow-button backdrop-blur-sm ' +
+				'hover:border-primary-tint/55 hover:bg-primary-tint/18 hover:shadow-button-hover ' +
+				'dark:border-primary-tint/45 dark:bg-primary-tint/20 dark:text-foreground ' +
+				'dark:hover:border-primary-tint/65 dark:hover:bg-primary-tint/28',
 			'outline-primary-login':
-				'w-full border-primary-tint/20 bg-primary-tint/6 text-foreground! shadow-button ' +
-				'hover:border-primary-tint/40 hover:bg-primary-tint/10 hover:shadow-button-hover ' +
-				'dark:border-primary-tint/30 dark:bg-primary-tint/12 dark:text-primary-foreground ' +
-				'dark:hover:border-primary-tint/50 dark:hover:bg-primary-tint/18',
+				'w-full border-primary-tint/35 bg-primary-tint/12 text-foreground shadow-button backdrop-blur-sm ' +
+				'hover:border-primary-tint/55 hover:bg-primary-tint/18 hover:shadow-button-hover ' +
+				'dark:border-primary-tint/45 dark:bg-primary-tint/20 dark:text-foreground ' +
+				'dark:hover:border-primary-tint/65 dark:hover:bg-primary-tint/28',
 			'outline-destructive':
 				'border-destructive/20 bg-destructive/[0.06] text-foreground! shadow-button ' +
 				'hover:border-destructive/40 hover:bg-destructive/[0.1] hover:shadow-button-hover ' +
@@ -76,41 +81,14 @@ export const arcaneButtonVariants = tv({
 				'hover:border-warning/40 hover:bg-warning/[0.1] hover:shadow-button-hover ' +
 				'dark:border-warning/30 dark:bg-warning/[0.12] dark:text-warning ' +
 				'dark:hover:border-warning/50 dark:hover:bg-warning/[0.18]',
-			'outline-tag':
-				'border-teal/20 bg-teal/[0.06] text-foreground! shadow-button ' +
-				'hover:border-teal/40 hover:bg-teal/[0.1] hover:shadow-button-hover ' +
-				'dark:border-teal/30 dark:bg-teal/[0.12] dark:text-teal ' +
-				'dark:hover:border-teal/50 dark:hover:bg-teal/[0.18]',
-			'outline-scan':
-				'border-indigo/20 bg-indigo/[0.06] text-foreground! shadow-button ' +
-				'hover:border-indigo/40 hover:bg-indigo/[0.1] hover:shadow-button-hover ' +
-				'dark:border-indigo/30 dark:bg-indigo/[0.12] dark:text-indigo ' +
-				'dark:hover:border-indigo/50 dark:hover:bg-indigo/[0.18]',
-			'outline-commit':
-				'border-cyan/20 bg-cyan/[0.06] text-foreground! shadow-button ' +
-				'hover:border-cyan/40 hover:bg-cyan/[0.1] hover:shadow-button-hover ' +
-				'dark:border-cyan/30 dark:bg-cyan/[0.12] dark:text-cyan ' +
-				'dark:hover:border-cyan/50 dark:hover:bg-cyan/[0.18]',
-			'outline-build':
-				'border-violet/20 bg-violet/[0.06] text-foreground! shadow-button ' +
-				'hover:border-violet/40 hover:bg-violet/[0.1] hover:shadow-button-hover ' +
-				'dark:border-violet/30 dark:bg-violet/[0.12] dark:text-violet ' +
-				'dark:hover:border-violet/50 dark:hover:bg-violet/[0.18]',
-			'outline-sync':
-				'border-purple/20 bg-purple/[0.06] text-foreground! shadow-button ' +
-				'hover:border-purple/40 hover:bg-purple/[0.1] hover:shadow-button-hover ' +
-				'dark:border-purple/30 dark:bg-purple/[0.12] dark:text-purple ' +
-				'dark:hover:border-purple/50 dark:hover:bg-purple/[0.18]',
-			'outline-archive':
-				'border-muted-foreground/20 bg-muted-foreground/[0.06] text-foreground! shadow-button ' +
-				'hover:border-muted-foreground/40 hover:bg-muted-foreground/[0.1] hover:shadow-button-hover ' +
-				'dark:border-muted-foreground/30 dark:bg-muted-foreground/[0.12] dark:text-muted-foreground ' +
-				'dark:hover:border-muted-foreground/50 dark:hover:bg-muted-foreground/[0.18]',
+			'outline-tag': neutralOutlineTone,
+			'outline-scan': neutralOutlineTone,
+			'outline-commit': neutralOutlineTone,
+			'outline-build': neutralOutlineTone,
+			'outline-sync': neutralOutlineTone,
+			'outline-archive': neutralOutlineTone,
 
-			outline:
-				'border-border/80 bg-background/90 text-foreground shadow-button backdrop-blur-sm ' +
-				'hover:border-border hover:bg-accent/60 hover:text-accent-foreground hover:shadow-button-hover ' +
-				'dark:bg-card/70 dark:hover:bg-accent/40',
+			outline: neutralOutlineTone,
 
 			ghost:
 				'border-transparent bg-transparent text-foreground! shadow-none ' +
@@ -119,10 +97,10 @@ export const arcaneButtonVariants = tv({
 		},
 		size: {
 			default: 'h-9 px-4 py-2 has-[svg]:px-3',
-			sm: 'h-8 gap-1.5 rounded-xl px-3 has-[svg]:px-2.5',
-			lg: 'h-10 rounded-xl px-5 has-[svg]:px-4',
+			sm: 'h-8 gap-1.5 rounded-md px-3 has-[svg]:px-2.5',
+			lg: 'h-10 rounded-lg px-5 has-[svg]:px-4',
 			icon: 'size-9 p-0',
-			card: 'min-h-14 w-full justify-start gap-3 rounded-2xl p-3 text-left'
+			card: 'min-h-14 w-full justify-start gap-3 rounded-xl p-3 text-left'
 		},
 		hoverEffect: {
 			none: '',
@@ -220,13 +198,13 @@ export const actionConfigs = {
 	restart: {
 		defaultLabel: m.common_restart(),
 		IconComponent: RestartIcon,
-		tone: 'outline-primary',
+		tone: 'outline',
 		loadingLabel: m.common_action_restarting()
 	},
 	pull: {
 		defaultLabel: m.pull(),
 		IconComponent: DownloadIcon,
-		tone: 'outline-primary',
+		tone: 'outline',
 		loadingLabel: m.common_action_pulling()
 	},
 	tag: {
@@ -274,7 +252,7 @@ export const actionConfigs = {
 	refresh: {
 		defaultLabel: m.common_refresh(),
 		IconComponent: RefreshIcon,
-		tone: 'outline-primary',
+		tone: 'outline',
 		loadingLabel: m.common_refresh()
 	},
 	sync: {
@@ -286,10 +264,10 @@ export const actionConfigs = {
 	inspect: {
 		defaultLabel: m.common_inspect(),
 		IconComponent: InspectIcon,
-		tone: 'outline-primary',
+		tone: 'outline',
 		loadingLabel: m.common_action_inspecting()
 	},
-	edit: { defaultLabel: m.common_edit(), IconComponent: EditIcon, tone: 'outline-primary', loadingLabel: m.common_saving() },
+	edit: { defaultLabel: m.common_edit(), IconComponent: EditIcon, tone: 'outline', loadingLabel: m.common_saving() },
 	confirm: {
 		defaultLabel: m.common_confirm(),
 		IconComponent: CheckIcon,

@@ -45,7 +45,7 @@
 	interface Props {
 		rootUrl: ResolvedPathname;
 		title: string;
-		subtitle: string;
+		subtitle?: string;
 		searchPlaceholder: string;
 		groups: IndexGroup[];
 		extraCategories?: NormalizedCategory[];

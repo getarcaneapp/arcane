@@ -54,7 +54,7 @@
 			{/if}
 			<div class="flex flex-wrap gap-1.5 {entry.label ? 'justify-end' : ''}">
 				{#each withOccurrenceKeys(entry.items) as { value: item, key } (key)}
-					<Badge variant="outline" mono={entry.mono}>{item}</Badge>
+					<Badge variant="outline">{item}</Badge>
 				{:else}
 					<span class="text-sm text-muted-foreground">-</span>
 				{/each}
