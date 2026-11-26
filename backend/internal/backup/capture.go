@@ -230,7 +230,7 @@ func StartHelper(ctx context.Context, dockerService *dockerInternal.DockerClient
 	helper, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 			Config:     &container.Config{Image: image, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()},
-			HostConfig: volumes.HostConfig(image, nil, mounts),
+			HostConfig: volumes.HostConfig(volumes.HelperHost{Image: image, Mounts: mounts}),
 		})
 	})
 	if err != nil {

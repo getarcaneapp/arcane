@@ -50,10 +50,6 @@ type (
 		User         types.Actor
 	}
 
-	UnchangedError struct {
-		Err error
-	}
-
 	RestorePart struct {
 		Key      string
 		Snapshot string
@@ -62,6 +58,8 @@ type (
 )
 
 const RestoreRoot = "/dest"
+
+var ErrRestoreUnchanged = errors.New("no files were replaced")
 
 func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	held, release, err := r.hold(ctx)
@@ -113,7 +111,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	if err == nil && r.Verify != nil {
 		err = r.Verify(held)
 	}
-	if _, ok := errors.AsType[UnchangedError](err); ok {
+	if errors.Is(err, ErrRestoreUnchanged) {
 		state.SafetyID = ""
 	}
 	if err != nil {
@@ -235,10 +233,6 @@ func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string 
 	}
 	return leftovers
 }
-
-func (e UnchangedError) Error() string { return e.Err.Error() }
-
-func (e UnchangedError) Unwrap() error { return e.Err }
 
 func (r RestoreSteps) record(ctx context.Context, state RestoreState) error {
 	if r.Record == nil {

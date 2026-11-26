@@ -198,6 +198,7 @@ func NewService(deps Dependencies) *Service {
 		TempContainer:   s.createBackupTempContainerWithMount,
 		AcquireHelper:   deps.AcquireHelper,
 		AcquireRun:      s.acquireVolumeRun,
+		Uploads:         deps.Uploads,
 		Exec:            deps.Exec,
 	})
 	return s
@@ -493,18 +494,10 @@ func (s *Service) captureSnapshot(
 		Inspect: func(ctx context.Context, name string) (types.Volume, bool, error) {
 			return backup.InspectVolume(ctx, dockerClient, name)
 		},
-		Stop:     nil,
-		Rejected: reject,
-		Mounts: []mount.Mount{{
-			Type:     mount.TypeVolume,
-			Source:   entry.VolumeName,
-			Target:   "/volume",
-			ReadOnly: true,
-		}},
-		Volumes: []string{entry.VolumeName},
-	}
-	if plan.Policy != nil && plan.Policy.StopContainers {
-		capture.Stop = func(ctx context.Context) (func(context.Context) error, error) {
+		Stop: func(ctx context.Context) (func(context.Context) error, error) {
+			if !kit.FromPtr(plan.Policy).StopContainers {
+				return nil, nil
+			}
 			stopped, stopErr := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{entry.VolumeName}}, user)
 			start := func(ctx context.Context) error {
 				remaining, startErr := s.deps.Containers.StartContainers(ctx, stopped, user)
@@ -518,7 +511,15 @@ func (s *Service) captureSnapshot(
 				return nil
 			}
 			return start, stopErr
-		}
+		},
+		Rejected: reject,
+		Mounts: []mount.Mount{{
+			Type:     mount.TypeVolume,
+			Source:   entry.VolumeName,
+			Target:   "/volume",
+			ReadOnly: true,
+		}},
+		Volumes: []string{entry.VolumeName},
 	}
 	err = backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
 		containerID, remove, helperErr := backup.StartHelper(ctx, s.deps.Docker, helperImage, mounts[:1])
@@ -954,17 +955,7 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 }
 
 func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
-	lease, err := s.acquireVolumeRun(ctx, volumeName)
-	if err != nil {
-		return err
-	}
-	lease.Release(ctx)
-	file, session, cleanup, err := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, request.UploadID)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	return s.restore.UploadAndRestore(ctx, volumeName, file, session.Filename, request.ComposeVolume, user)
+	return s.restore.UploadAndRestore(ctx, volumeName, request.UploadID, request.ComposeVolume, user)
 }
 
 // RestoreFile restores one backed-up file into the volume; legacy archives extract inside a helper that mounts backup storage at /backups.
@@ -1132,6 +1123,11 @@ func (s *Service) discoverRemoteBackups(ctx context.Context, destinationID strin
 func discoveredVolumeBackup(destinationID, root string, snapshot backup.DiscoveredSnapshot) *types.VolumeBackup {
 	volumeName := strings.TrimSpace(snapshot.Label)
 	if volumeName == "" || volumeName == systemRecoverySnapshotLabel || slices.Contains(snapshot.Tags, backup.ProjectSnapshotTag) {
+		return nil
+	}
+	if snapshot.RunID() == "" && slices.ContainsFunc(snapshot.Tags, func(tag string) bool {
+		return strings.HasPrefix(tag, backup.VolumeOwnerTagPrefix)
+	}) {
 		return nil
 	}
 	createdAt := snapshot.Time
