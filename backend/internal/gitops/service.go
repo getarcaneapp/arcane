@@ -1046,7 +1046,7 @@ func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, s
 		})
 		switch {
 		case errors.Is(pullErr, common.ErrRedeployAfterSyncFailed):
-		case errors.Is(pullErr, common.ErrConflict):
+		case errors.Is(pullErr, common.ErrConflict) && !errors.Is(pullErr, common.ErrProjectLocked):
 			continue
 		case pullErr != nil:
 			return pulled, pullErr

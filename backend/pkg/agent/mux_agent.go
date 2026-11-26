@@ -71,7 +71,7 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw *muxConn, streamW
 
 	eventsClient := newMuxHTTPClient(func(dialCtx context.Context) (net.Conn, error) {
 		return openMuxStream(dialCtx, session)
-	})
+	}, ProxyResponseHeaderTimeout)
 	activeAgentEvents.Store(eventsClient)
 	// A newer session may already have replaced this one.
 	defer activeAgentEvents.CompareAndSwap(eventsClient, nil)

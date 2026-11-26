@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	volumeDomain "getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
@@ -42,7 +44,6 @@ type (
 		uploads       map[string]*fakeUpload
 		volumes       map[string][]byte
 		volumeOwners  map[string]string
-		restored      map[string]types.ComposeVolumeTarget
 		external      map[string]types.Volume
 		networks      map[string]types.NetworkInspect
 		failDeploy    error
@@ -52,7 +53,7 @@ type (
 		archive       []byte
 		importedID    string
 		calls         []string
-		volumeWrites  []int
+		bundleWrites  []int
 		uploadCounter int
 		dropChunk     bool
 		mu            sync.Mutex
@@ -87,7 +88,6 @@ func newFakeEnvironment(tc transferCase, seeded ...types.Project) *fakeEnvironme
 		uploads:      map[string]*fakeUpload{},
 		volumes:      map[string][]byte{},
 		volumeOwners: map[string]string{},
-		restored:     map[string]types.ComposeVolumeTarget{},
 		external:     map[string]types.Volume{},
 		networks:     map[string]types.NetworkInspect{},
 		failDeploy:   tc.failDeploy,
@@ -226,26 +226,36 @@ func (f *fakeEnvironment) consume(uploadID string) ([]byte, error) {
 	return data, nil
 }
 
-func (f *fakeEnvironment) ExportProject(context.Context, string) (types.UploadSession, error) {
+func (f *fakeEnvironment) ExportProject(_ context.Context, projectID string, request types.ExportProjectArchive, _ types.Actor) (types.UploadSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.calls = append(f.calls, "export-project")
-	return f.store(types.UploadKindProjectArchive, f.archive), nil
+	if len(request.Volumes) == 0 {
+		f.calls = append(f.calls, "export-project")
+		return f.store(types.UploadKindProjectArchive, f.archive), nil
+	}
+	f.calls = append(f.calls, "export-project:"+strings.Join(request.Volumes, ","))
+	data := slices.Clone(f.archive)
+	for _, key := range request.Volumes {
+		data = append(data, []byte(";"+key+"="+string(f.volumes[f.projects[projectID].Volumes[key].Name]))...)
+	}
+	return f.store(types.UploadKindProjectArchive, data), nil
 }
 
-func (f *fakeEnvironment) ImportProject(_ context.Context, request types.ImportProjectArchive, _ types.Actor) (string, error) {
+func (f *fakeEnvironment) ImportProject(ctx context.Context, request types.ImportProjectArchive, _ types.Actor) (string, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	data, err := f.consume(request.UploadID)
 	if err != nil {
+		f.mu.Unlock()
 		return "", err
 	}
-	f.calls = append(f.calls, "import:"+string(data))
+	parts := strings.Split(string(data), ";")
+	f.calls = append(f.calls, "import:"+parts[0])
+	f.importedID = request.ProjectID
 	if f.raceImport != nil {
 		f.projects[f.raceImport.ID] = *f.raceImport
+		f.mu.Unlock()
 		return "", common.Classify(common.ErrConflict, errors.New("project already exists"))
 	}
-	f.importedID = request.ProjectID
 	f.projects[request.ProjectID] = types.Project{
 		ID:          request.ProjectID,
 		Name:        request.Name,
@@ -255,6 +265,24 @@ func (f *fakeEnvironment) ImportProject(_ context.Context, request types.ImportP
 			Driver: "local",
 			Labels: composeTypes.Labels{"tier": "db"},
 		}},
+	}
+	f.mu.Unlock()
+	for _, part := range parts[1:] {
+		if f.onRestore != nil {
+			f.onRestore()
+			<-ctx.Done()
+		}
+		key, content, _ := strings.Cut(part, "=")
+		name := request.Name + "_" + key
+		f.mu.Lock()
+		if _, exists := f.volumes[name]; exists {
+			f.mu.Unlock()
+			return "", common.Classify(common.ErrConflict, errors.New("volume already exists"))
+		}
+		f.calls = append(f.calls, "restore:"+name)
+		f.volumes[name] = []byte(content)
+		f.volumeOwners[name] = request.Name
+		f.mu.Unlock()
 	}
 	return request.ProjectID, f.failImport
 }
@@ -301,14 +329,11 @@ func (f *fakeEnvironment) ReadChunk(_ context.Context, _, uploadID string, index
 	return slices.Clone(f.uploads[uploadID].chunks[index]), nil
 }
 
-func (f *fakeEnvironment) WriteChunk(_ context.Context, kind, uploadID string, index int, data []byte) error {
+func (f *fakeEnvironment) WriteChunk(_ context.Context, _, uploadID string, index int, data []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.uploads[uploadID].chunks[index] = data
-	if kind != types.UploadKindVolumeBackup {
-		return nil
-	}
-	f.volumeWrites = append(f.volumeWrites, index)
+	f.bundleWrites = append(f.bundleWrites, index)
 	if index == 2 && f.dropChunk {
 		f.dropChunk = false
 		return errors.New("tunnel dropped the response")
@@ -320,34 +345,6 @@ func (f *fakeEnvironment) DeleteUpload(_ context.Context, _, uploadID string) er
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.uploads, uploadID)
-	return nil
-}
-
-func (f *fakeEnvironment) ExportVolume(_ context.Context, name string) (types.UploadSession, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, "export-volume:"+name)
-	return f.store(types.UploadKindVolumeBackup, f.volumes[name]), nil
-}
-
-func (f *fakeEnvironment) RestoreVolume(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, _ types.Actor) error {
-	if f.onRestore != nil {
-		f.onRestore()
-		<-ctx.Done()
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if _, exists := f.volumes[name]; exists {
-		return common.Classify(common.ErrConflict, errors.New("volume already exists"))
-	}
-	data, err := f.consume(request.UploadID)
-	if err != nil {
-		return err
-	}
-	f.calls = append(f.calls, "restore:"+name)
-	f.volumes[name] = data
-	f.volumeOwners[name] = request.ComposeVolume.Project
-	f.restored[name] = *request.ComposeVolume
 	return nil
 }
 
@@ -384,6 +381,9 @@ func (f *fakeEnvironment) DestroyProject(_ context.Context, projectID string, _ 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, "destroy:"+f.label(projectID))
+	if _, ok := f.projects[projectID]; !ok {
+		return common.Classify(common.ErrNotFound, errors.New("project not found"))
+	}
 	delete(f.projects, projectID)
 	return nil
 }
@@ -431,6 +431,12 @@ func TestProjectTransfer(t *testing.T) {
 			defer mu.Unlock()
 			return webhookCount, nil
 		},
+		VolumeSizes: func(context.Context) (map[string]volumeDomain.VolumeSizeData, error) {
+			return nil, nil
+		},
+		BackupStore: func(context.Context) string {
+			return "arcane-backups"
+		},
 		Activities: activities,
 		Backups: backup.NewEngine(admission, nil, func(_ context.Context, requester types.BackupRequester) error {
 			mu.Lock()
@@ -473,15 +479,15 @@ func TestProjectTransfer(t *testing.T) {
 			source:    volumeProject,
 			dropChunk: true,
 			verify: func(t *testing.T, source, target *fakeEnvironment, _ []types.ProjectWebhookRetarget) {
-				require.Equal(t, []string{"export-project", "down:volume", "export-volume:app_data", "deploy:volume"}, source.callList())
-				require.Equal(t, []int{0, 1, 2, 2, 3, 4}, target.volumeWrites)
+				require.Equal(t, []string{"down:volume", "export-project:data", "deploy:volume"}, source.callList())
+				require.Equal(t, []string{"import:compose-archive", "restore:copy_data"}, target.callList())
+				chunks := (len("compose-archive;data=volume-data-bytes") + testChunkSize - 1) / testChunkSize
+				written := make([]int, 0, chunks+1)
+				for index := range chunks {
+					written = append(written, index)
+				}
+				require.Equal(t, slices.Insert(written, 2, 2), target.bundleWrites)
 				require.Equal(t, []byte("volume-data-bytes"), target.volumes["copy_data"])
-				require.Equal(t, types.ComposeVolumeTarget{
-					Labels:  map[string]string{"tier": "db"},
-					Project: "copy",
-					Key:     "data",
-					Driver:  "local",
-				}, target.restored["copy_data"])
 				require.Empty(t, source.uploads)
 				require.Empty(t, target.uploads)
 			},
@@ -546,7 +552,7 @@ func TestProjectTransfer(t *testing.T) {
 			wantMessage: "Everything this transfer created on the target environment was removed.",
 		},
 		{
-			name:    "resumed volume restore replaces the partly restored volume",
+			name:    "a run an earlier Arcane left copying volumes fails and removes what it created",
 			request: types.ProjectTransferRequest{Mode: types.ProjectTransferModeCopy, Name: "copy", IncludeVolumes: true},
 			source:  volumeProject,
 			targetProjects: []types.Project{{
@@ -563,17 +569,19 @@ func TestProjectTransfer(t *testing.T) {
 				}},
 				CreatedVolumes:  []string{"copy_data"},
 				TargetProjectID: "imported",
+				TargetCompose:   "copy",
 				Prepared:        true,
 				Importing:       true,
 				SourceRunning:   true,
 				SourceStopped:   true,
 			},
 			verify: func(t *testing.T, source, target *fakeEnvironment, _ []types.ProjectWebhookRetarget) {
-				require.Equal(t, []string{"down:volume", "export-volume:app_data", "deploy:volume"}, source.callList())
-				require.Equal(t, []string{"delete-volume:copy_data", "restore:copy_data"}, target.callList())
-				require.Equal(t, []byte("volume-data-bytes"), target.volumes["copy_data"])
+				require.Equal(t, []string{"deploy:volume"}, source.callList())
+				require.Equal(t, []string{"destroy:imported", "delete-volume:copy_data"}, target.callList())
+				require.Empty(t, target.volumes)
 			},
-			wantStatus: types.RunStatusSucceeded,
+			wantStatus:  types.RunStatusFailed,
+			wantMessage: "interrupted while it copied the volumes",
 		},
 		{
 			name:       "failed start removes the volumes it created",
@@ -609,7 +617,7 @@ func TestProjectTransfer(t *testing.T) {
 			source:     volumeProject,
 			failDeploy: errors.New("image pull failed"),
 			verify: func(t *testing.T, source, target *fakeEnvironment, _ []types.ProjectWebhookRetarget) {
-				require.Equal(t, []string{"export-project", "down:volume", "export-volume:app_data", "deploy:volume"}, source.callList())
+				require.Equal(t, []string{"down:volume", "export-project:data", "deploy:volume"}, source.callList())
 				require.Equal(t, []string{"import:compose-archive", "restore:copy_data", "deploy:imported", "destroy:imported", "delete-volume:copy_data"}, target.callList())
 				require.Empty(t, target.projects)
 				require.Empty(t, target.volumes)
@@ -629,7 +637,7 @@ func TestProjectTransfer(t *testing.T) {
 				require.Eventually(t, func() bool {
 					return slices.Equal([]string{"import:compose-archive", "restore:copy_data", "destroy:imported", "delete-volume:copy_data"}, target.callList())
 				}, time.Second, 10*time.Millisecond)
-				require.Equal(t, []string{"export-project", "down:volume", "export-volume:app_data", "deploy:volume"}, source.callList())
+				require.Equal(t, []string{"down:volume", "export-project:data", "deploy:volume"}, source.callList())
 				require.Empty(t, target.projects)
 				require.Empty(t, target.volumes)
 				require.Equal(t, 1, source.projects["volume"].RunningCount)
@@ -642,14 +650,14 @@ func TestProjectTransfer(t *testing.T) {
 			source:     plainProject,
 			raceImport: &types.Project{ID: "first", Name: "copy", ComposeName: "copy"},
 			verify: func(t *testing.T, _, target *fakeEnvironment, _ []types.ProjectWebhookRetarget) {
-				require.Equal(t, []string{"import:compose-archive"}, target.callList())
+				require.Equal(t, []string{"import:compose-archive", "destroy:imported"}, target.callList())
 				require.Contains(t, target.projects, "first")
 			},
 			wantStatus:  types.RunStatusFailed,
 			wantMessage: "if its interrupted import still finishes there, remove it",
 		},
 		{
-			name:    "resumed volume restore keeps a volume this run did not create",
+			name:    "a run an earlier Arcane left copying volumes keeps a volume it did not create",
 			request: types.ProjectTransferRequest{Mode: types.ProjectTransferModeCopy, Name: "copy", IncludeVolumes: true},
 			source:  volumeProject,
 			targetProjects: []types.Project{
@@ -660,6 +668,7 @@ func TestProjectTransfer(t *testing.T) {
 				Volumes:         []types.ProjectTransferVolume{{Key: "data", SourceName: "app_data", TargetName: "copy_data"}},
 				CreatedVolumes:  []string{"copy_data"},
 				TargetProjectID: "imported",
+				TargetCompose:   "copy",
 				Prepared:        true,
 				Importing:       true,
 				SourceRunning:   true,
@@ -670,7 +679,7 @@ func TestProjectTransfer(t *testing.T) {
 				require.Equal(t, []byte("volume-data-bytes"), target.volumes["copy_data"])
 			},
 			wantStatus:  types.RunStatusFailed,
-			wantMessage: "created on the target environment by something other than this transfer",
+			wantMessage: "interrupted while it copied the volumes",
 		},
 		{
 			name:    "failure after re-pointing webhooks points them back before removing the target",

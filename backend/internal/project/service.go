@@ -735,7 +735,11 @@ func (s *ProjectService) LockProject(ctx context.Context, op, projectID string) 
 	defer cancel()
 	unlock, err := s.opLock.LockContext(waitCtx, "0:project:"+projectID)
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: waiting for in-progress operation: %w", op, projectID, err)
+		err = fmt.Errorf("%s %s: waiting for in-progress operation: %w", op, projectID, err)
+		if ctx.Err() == nil {
+			err = fmt.Errorf("%w: %w", common.ErrProjectLocked, err)
+		}
+		return nil, err
 	}
 	return unlock, nil
 }

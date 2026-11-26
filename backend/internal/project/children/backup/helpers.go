@@ -107,10 +107,10 @@ func snapshotRun(entry *ProjectBackup, p plan) backup.SnapshotRun {
 func snapshotInput(projectMounts []mount.Mount, metaVolume string, entry *ProjectBackup, p plan) backup.CreateSnapshotInput {
 	mounts := slices.Clone(projectMounts)
 	for _, name := range p.volumeNames() {
-		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: name, Target: path.Join(snapshotRoot, "volumes", name), ReadOnly: true})
+		mounts = append(mounts, backup.VolumePart(name))
 	}
-	mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: metaVolume, Target: path.Join(snapshotRoot, "meta"), ReadOnly: true})
-	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{snapshotRoot}, AsPath: "/", Tags: snapshotTags(entry)}
+	mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: metaVolume, Target: path.Join(backup.SnapshotRoot, "meta"), ReadOnly: true})
+	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{backup.SnapshotRoot}, AsPath: "/", Tags: snapshotTags(entry)}
 }
 
 func nestedTargets(mounts []mount.Mount) []string {

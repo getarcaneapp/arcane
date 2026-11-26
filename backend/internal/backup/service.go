@@ -1883,7 +1883,7 @@ func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []co
 	remaining := append([]container.Summary(nil), stoppedContainers...)
 	lastErrors := make(map[string]error, len(stoppedContainers))
 	for len(remaining) > 0 {
-		currentContainers, listErr := c.Docker.ListContainers(recoveryCtx, false)
+		currentContainers, listErr := c.Docker.ListContainers(recoveryCtx, true)
 		if listErr == nil {
 			currentByID := make(map[string]container.Summary, len(currentContainers))
 			currentByName := make(map[string]container.Summary, len(currentContainers))
@@ -1914,7 +1914,10 @@ func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []co
 					}
 					continue
 				}
-				if startErr := c.Start(recoveryCtx, current.ID, user); startErr != nil {
+				startCtx, cancelStart := context.WithTimeout(ctx, containerRecoveryTimeout)
+				startErr := c.Start(startCtx, current.ID, user)
+				cancelStart()
+				if startErr != nil {
 					lastErrors[stopped.ID] = startErr
 					nextRemaining = append(nextRemaining, stopped)
 					continue
