@@ -579,18 +579,28 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	if !targetReady {
 		return nil
 	}
-	required, err := s.requiredSpace(ctx, opts.SourceEnvironmentID, kit.Ternary(request.IncludeVolumes, sourceVolumes, nil), inspected)
+	required, err := s.requiredSpace(ctx, plan, project.Name, opts.SourceEnvironmentID, kit.Ternary(request.IncludeVolumes, sourceVolumes, nil), inspected)
 	if err != nil {
 		return err
 	}
 	return targetChecks(ctx, plan, project, target, request, targetVolumes, externalVolumes, required)
 }
 
-func (s *Service) requiredSpace(ctx context.Context, sourceEnvironmentID string, names []string, inspected map[string]types.Volume) (int64, error) {
+func (s *Service) requiredSpace(
+	ctx context.Context, plan *types.ProjectTransferPreflight, projectName, sourceEnvironmentID string, names []string, inspected map[string]types.Volume,
+) (int64, error) {
 	var sizes map[string]volumeDomain.VolumeSizeData
-	if sourceEnvironmentID == environment.LocalEnvironmentID && slices.ContainsFunc(names, func(name string) bool {
+	unknown := slices.ContainsFunc(names, func(name string) bool {
 		return inspected[name].Size <= 0
-	}) {
+	})
+	if unknown && sourceEnvironmentID != environment.LocalEnvironmentID {
+		plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+			Code:     types.ProjectTransferTargetSpace,
+			Severity: types.ProjectTransferSeverityWarning,
+			Message:  fmt.Sprintf("The size of some volumes of project %s could not be measured on the source environment, so free space on the target environment was not verified.", projectName),
+		})
+	}
+	if unknown && sourceEnvironmentID == environment.LocalEnvironmentID {
 		var err error
 		if sizes, err = s.deps.VolumeSizes(ctx); err != nil {
 			return 0, fmt.Errorf("measure source volumes: %w", err)
@@ -851,7 +861,7 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 	if err != nil {
 		return err
 	}
-	if withVolumes && source.ID == "" && r.state.SourceRunning && !r.state.SourceStopped {
+	if withVolumes && source.ID == "" && r.state.SourceRunning {
 		r.state.SourceStopped = true
 		if saveErr := s.save(ctx, r); saveErr != nil {
 			return saveErr
