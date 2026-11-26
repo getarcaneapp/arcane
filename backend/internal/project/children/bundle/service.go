@@ -610,10 +610,19 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 	if err != nil {
 		return "", err
 	}
+	var restores []types.ProjectBackupRestoreVolume
 	steps := backup.RestoreSteps{
 		Docker:       s.deps.Docker,
 		DeleteVolume: s.deps.DeleteVolume,
 		User:         opts.User,
+		Write: func(ctx context.Context, _ string) error {
+			return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
+				ProjectID:   opts.ProjectID,
+				BackupID:    opts.BackupID,
+				Volumes:     restores,
+				LockVolumes: true,
+			})
+		},
 		Discard: func(ctx context.Context) (bool, []string) {
 			return s.discard(ctx, opts.User, projectID, request.Name)
 		},
@@ -626,20 +635,11 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 			strings.Join(binds, ", "),
 		))
 	}
-	var restores []types.ProjectBackupRestoreVolume
 	if err == nil {
 		state.Create, restores, err = newVolumes(target, included)
 	}
 	if err != nil {
 		return "", steps.Rollback(ctx, state, err)
-	}
-	steps.Write = func(ctx context.Context, _ string) error {
-		return s.deps.Backups.RestoreTo(ctx, types.ProjectBackupRestore{
-			ProjectID:   opts.ProjectID,
-			BackupID:    opts.BackupID,
-			Volumes:     restores,
-			LockVolumes: true,
-		})
 	}
 	err = steps.Apply(ctx, state)
 	releaseBackups(context.WithoutCancel(ctx))

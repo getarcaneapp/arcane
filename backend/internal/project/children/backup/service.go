@@ -47,6 +47,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	s3util "getarcane.dev/arcane/v3/pkg/s3"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
@@ -621,6 +622,10 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
+	image, err := volumes.ResolveHelperImage(ctx, dockerClient, volumes.ToolsImage(s.deps.Settings.GetSettingsConfig().ToolsImageRegistry.Value))
+	if err != nil {
+		return backup.Snapshot{}, err
+	}
 	held, releaseRepository, err := s.deps.Engine.HoldRepository(ctx, repository.ID)
 	if err != nil {
 		return backup.Snapshot{}, err
@@ -632,12 +637,14 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	}
 	p.Volumes = markInUse(p.Volumes, inUse)
 	var snapshot backup.Snapshot
-	reject := func(ctx context.Context, err error) error {
-		cleanupCtx, cancelCleanup := context.WithTimeout(ctx, time.Minute)
+	reject := func(_ context.Context, err error) error {
+		cleanupCtx, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer cancelCleanup()
+		rejected := snapshot.ID
+		snapshot = backup.Snapshot{}
 		return errors.Join(
-			s.fail(ctx, entry.ID, err.Error()),
-			s.deps.Engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, password, []string{snapshot.ID}),
+			s.fail(cleanupCtx, entry.ID, err.Error()),
+			s.deps.Engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, password, []string{rejected}),
 		)
 	}
 	err = backup.Capture(held, backup.CapturePlan{
@@ -656,7 +663,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 				return fmt.Errorf("read the .env file of project %s: %w", project.Name, envErr)
 			}
 		}
-		metaVolume, removeMeta, metaErr := s.writeManifest(ctx, dockerClient, backupManifest(project, p, externalEnv), env)
+		metaVolume, removeMeta, metaErr := s.writeManifest(ctx, dockerClient, image, backupManifest(project, p, externalEnv), env)
 		if metaErr != nil {
 			return metaErr
 		}
@@ -669,14 +676,14 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 		snapshot = created
 		return nil
 	})
-	if err != nil {
+	if snapshot.ID == "" {
 		return backup.Snapshot{}, err
 	}
-	confirmed, err := s.deps.Engine.ConfirmRunSnapshot(ctx, dockerClient, repository, password, entry.ID, snapshot.ID)
-	if err != nil {
-		return backup.Snapshot{}, errors.Join(err, reject(context.WithoutCancel(ctx), err))
+	confirmed, confirmErr := s.deps.Engine.ConfirmRunSnapshot(ctx, dockerClient, repository, password, entry.ID, snapshot.ID)
+	if confirmErr != nil {
+		return backup.Snapshot{}, errors.Join(err, confirmErr, reject(ctx, confirmErr))
 	}
-	return confirmed, nil
+	return confirmed, err
 }
 
 func (s *Service) projectFiles(ctx context.Context, dockerClient *client.Client, project types.Project, files bool) ([]mount.Mount, error) {
@@ -740,7 +747,7 @@ func (s *Service) record(ctx context.Context, id string, recovery any) error {
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: backup.ProjectTargetType, ID: id, Status: types.RunStatusRunning, RecoveryData: data})
 }
 
-func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, manifest types.ProjectManifest, env []byte) (string, func(), error) {
+func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, image string, manifest types.ProjectManifest, env []byte) (string, func(), error) {
 	data, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
 		return "", nil, fmt.Errorf("encode project backup manifest: %w", err)
@@ -754,14 +761,11 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 		return "", nil, fmt.Errorf("create project backup manifest volume: %w", createErr)
 	}
 	remove := func() {
-		if _, removeErr := dockerClient.VolumeRemove(context.WithoutCancel(ctx), name, client.VolumeRemoveOptions{Force: true}); removeErr != nil {
+		removeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
+		defer cancel()
+		if _, removeErr := dockerClient.VolumeRemove(removeCtx, name, client.VolumeRemoveOptions{Force: true}); removeErr != nil {
 			slog.WarnContext(ctx, "Failed to remove a project backup manifest volume", "volume", name, "error", removeErr)
 		}
-	}
-	image, err := volumes.ResolveHelperImage(ctx, dockerClient, volumes.ToolsImage(s.deps.Settings.GetSettingsConfig().ToolsImageRegistry.Value))
-	if err != nil {
-		remove()
-		return "", nil, err
 	}
 	holder, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:     &container.Config{Image: image, Cmd: []string{"true"}, NetworkDisabled: true, Labels: volumes.Labels()},
@@ -1301,13 +1305,13 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 		})
 		local := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.s3DestinationID == "" })
 		remote := slices.IndexFunc(snapshots, func(snapshot foundSnapshot) bool { return snapshot.s3DestinationID != "" })
-		var localSnapshot, remoteSnapshot foundSnapshot
-		if local >= 0 {
-			localSnapshot = snapshots[local]
+		snapshotAt := func(index int) foundSnapshot {
+			if index < 0 {
+				return foundSnapshot{}
+			}
+			return snapshots[index]
 		}
-		if remote >= 0 {
-			remoteSnapshot = snapshots[remote]
-		}
+		localSnapshot, remoteSnapshot := snapshotAt(local), snapshotAt(remote)
 		largest := slices.MaxFunc(snapshots, func(a, b foundSnapshot) int {
 			return cmp.Compare(a.snapshot.Summary.TotalBytesProcessed, b.snapshot.Summary.TotalBytesProcessed)
 		})
@@ -1390,7 +1394,8 @@ func (s *Service) addFoundCopies(ctx context.Context, entry ProjectBackup, local
 	hasLocal, hasRemote := localSnapshot.snapshot.ID != "", remoteSnapshot.snapshot.ID != ""
 	interrupted := entry.Status == types.VolumeBackupStatusFailed && (entry.Error == interruptedError || (entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""))
 	addLocal, addRemote := hasLocal && entry.LocalSnapshotID == "", hasRemote && entry.RemoteSnapshotID == ""
-	if (!interrupted && entry.Status != types.VolumeBackupStatusSucceeded) || (!addLocal && !addRemote) {
+	verified := interrupted && ((hasLocal && localSnapshot.snapshot.ID == entry.LocalSnapshotID) || (hasRemote && remoteSnapshot.snapshot.ID == entry.RemoteSnapshotID))
+	if (!interrupted && entry.Status != types.VolumeBackupStatusSucceeded) || (!addLocal && !addRemote && !verified) {
 		return 0, nil
 	}
 	updates := map[string]any{"destination": backup.Destination(backup.DestinationOptions{Local: entry.LocalSnapshotID != "" || hasLocal, Remote: entry.RemoteSnapshotID != "" || hasRemote})}

@@ -85,6 +85,7 @@ type (
 		PolicyOverridden error
 		HelperImage      func(ctx context.Context) (string, error)
 		AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
+		StopHelper       func(ctx context.Context, volumeName string) error
 		Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		Ctx              context.Context
 		Scheduler        types.DynamicScheduler
@@ -192,6 +193,7 @@ func NewService(deps Dependencies) *Service {
 		ArchiveFilename: backupArchiveFilename,
 		HelperImage:     deps.HelperImage,
 		StorageMount:    deps.Repository.StorageMount,
+		StopHelper:      deps.StopHelper,
 		HoldLocal:       deps.Repository.HoldLocal,
 		TempContainer:   s.createBackupTempContainerWithMount,
 		AcquireHelper:   deps.AcquireHelper,
@@ -464,13 +466,17 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 func (s *Service) captureSnapshot(
 	ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor, repository backup.Repository, password string,
 ) (backup.Snapshot, error) {
-	volumeName := entry.VolumeName
+	helperImage, err := s.deps.HelperImage(ctx)
+	if err != nil {
+		return backup.Snapshot{}, err
+	}
 	held, releaseRepository, err := s.deps.Engine.HoldRepository(ctx, repository.ID)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
 	defer releaseRepository()
 	var snapshot backup.Snapshot
+	var restartErr error
 	reject := func(ctx context.Context, err error) error {
 		cleanupCtx, cancelCleanup := context.WithTimeout(ctx, time.Minute)
 		defer cancelCleanup()
@@ -485,25 +491,33 @@ func (s *Service) captureSnapshot(
 		},
 		Stop:     nil,
 		Rejected: reject,
-		Mounts:   []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: true}},
-		Volumes:  []string{volumeName},
+		Mounts: []mount.Mount{{
+			Type:     mount.TypeVolume,
+			Source:   entry.VolumeName,
+			Target:   "/volume",
+			ReadOnly: true,
+		}},
+		Volumes: []string{entry.VolumeName},
 	}
 	if plan.Policy != nil && plan.Policy.StopContainers {
 		capture.Stop = func(ctx context.Context) (func(context.Context) error, error) {
-			stopped, stopErr := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{volumeName}}, user)
+			stopped, stopErr := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{entry.VolumeName}}, user)
 			start := func(ctx context.Context) error {
 				remaining, startErr := s.deps.Containers.StartContainers(ctx, stopped, user)
-				if startErr == nil || len(remaining) == 0 {
-					return startErr
+				if startErr != nil && len(remaining) > 0 {
+					_, retryErr := s.deps.Containers.StartContainers(ctx, remaining, user)
+					startErr = errors.Join(startErr, retryErr)
 				}
-				_, retryErr := s.deps.Containers.StartContainers(ctx, remaining, user)
-				return errors.Join(startErr, retryErr)
+				if startErr != nil {
+					restartErr = fmt.Errorf("start the stopped containers again: %w", startErr)
+				}
+				return nil
 			}
 			return start, stopErr
 		}
 	}
 	err = backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
-		containerID, remove, helperErr := s.createBackupTempContainerWithMount(ctx, mounts[0])
+		containerID, remove, helperErr := backup.StartHelper(ctx, s.deps.Docker, helperImage, mounts[:1])
 		if helperErr != nil {
 			return helperErr
 		}
@@ -512,7 +526,7 @@ func (s *Service) captureSnapshot(
 		if ownerErr != nil {
 			return ownerErr
 		}
-		created, snapshotErr := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, volumeName, backup.RootSnapshotInput(mounts[0], ownerTag))
+		created, snapshotErr := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, entry.VolumeName, backup.RootSnapshotInput(mounts[0], ownerTag))
 		if snapshotErr != nil {
 			return fmt.Errorf("failed to create %s Rustic snapshot: %w", kit.Ternary(plan.LocalEnabled, "local", "S3"), snapshotErr)
 		}
@@ -520,13 +534,13 @@ func (s *Service) captureSnapshot(
 		return nil
 	})
 	if err != nil {
-		return backup.Snapshot{}, err
+		return backup.Snapshot{}, errors.Join(err, restartErr)
 	}
 	confirmed, err := s.deps.Engine.ConfirmRunSnapshot(held, dockerClient, repository, password, entry.ID, snapshot.ID)
 	if err != nil {
-		return backup.Snapshot{}, errors.Join(err, reject(context.WithoutCancel(held), err))
+		return backup.Snapshot{}, errors.Join(err, reject(context.WithoutCancel(held), err), restartErr)
 	}
-	return confirmed, nil
+	return confirmed, restartErr
 }
 
 func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*types.VolumeBackup, error) {
