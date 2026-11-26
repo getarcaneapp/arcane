@@ -18,7 +18,9 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -146,7 +148,22 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 	}, nil
 }
 
+func (h *VolumeHandler) requireVolumeAccess(ctx context.Context, envID, perm, volumeName string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil
+	}
+	vol, err := h.volumeService.GetVolumeByName(ctx, volumeName)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireComposeResourcePermission(ctx, h.volumeService.db, envID, perm, authz.ResourceTypeVolume, vol.Name, vol.Name, vol.Labels)
+}
+
 func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*handlerutil.Out[*types.Volume], error) {
+	if err := h.requireVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
+		return nil, err
+	}
 	vol, err := h.volumeService.GetVolumeByName(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.Error404NotFound("Volume not found: " + err.Error())
@@ -214,6 +231,11 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 }
 
 func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInput) (*handlerutil.Out[*types.Volume], error) {
+	if input.EnvironmentID == "0" {
+		if err := h.requireVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRename, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	if input.EnvironmentID != "0" {
 		remotePath := fmt.Sprintf("/api/agents/0/volumes/%s/rename", url.PathEscape(input.VolumeName))
 		response, err := handlerutil.RemoteJSONProxy(h.environmentService.ProxyJSONRequest).JSON[types.ApiResponse[*types.Volume]](ctx, input.EnvironmentID, http.MethodPost, remotePath, input.Body)
@@ -273,6 +295,9 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 }
 
 func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.requireVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesDelete, input.VolumeName); err != nil {
+		return nil, err
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err

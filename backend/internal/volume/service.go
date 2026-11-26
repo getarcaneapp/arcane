@@ -34,6 +34,7 @@ import (
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -41,6 +42,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/upload"
 	volumebackup "getarcane.dev/arcane/v3/internal/volume/children/backup"
 	"getarcane.dev/arcane/v3/internal/volume/children/workspace"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -935,6 +937,14 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}
 
 	enrichedVolumes := enrichVolumesWithUsageData(volResult.volumes, usageVolumes)
+	if allowedCompose, unrestricted, permErr := middleware.AllowedComposeProjects(ctx, s.db, types.LocalDockerEnvironmentID, authz.PermVolumesList); permErr != nil {
+		return nil, pagination.Response{}, types.VolumeUsageCounts{}, permErr
+	} else if !unrestricted {
+		ps, _ := middleware.PermissionsFromContext(ctx)
+		enrichedVolumes = slices.DeleteFunc(enrichedVolumes, func(v volume.Volume) bool {
+			return !middleware.ComposeResourcePermitted(ps, types.LocalDockerEnvironmentID, authz.PermVolumesList, authz.ResourceTypeVolume, v.Name, v.Name, v.Labels, allowedCompose)
+		})
+	}
 
 	isBackupVolume := s.BackupVolumeMatcher(ctx)
 	items := make([]types.Volume, 0, len(enrichedVolumes))

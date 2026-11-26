@@ -310,7 +310,7 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 	if perm == "" {
 		return true
 	}
-	if !ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), envID, "")) {
+	if !ps.AllowsRoute(perm, kit.Ternary(authz.IsEnvScoped(perm), envID, "")) {
 		slog.DebugContext(ctx, "Denying proxied request: permission denied", "method", method, "path", suffix, "permission", perm, "environmentId", envID)
 		return false
 	}

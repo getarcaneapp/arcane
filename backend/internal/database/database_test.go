@@ -1712,3 +1712,44 @@ func TestMigration00124_UserGroupsUpDown(t *testing.T) {
 		assert.Zero(t, count, table)
 	}
 }
+
+func TestMigration00124_ResourceRoleAssignmentsUpDown(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-resource-rbac-migration.db")
+	rawDB.SetMaxOpenConns(1)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 123))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 124))
+	_, err := rawDB.ExecContext(ctx, `PRAGMA foreign_keys=ON;`)
+	require.NoError(t, err)
+
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO users (id, username, password_hash) VALUES ('usr-1', 'alice', 'hash')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO groups (id, name) VALUES ('grp-1', 'Team A')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO roles (id, name, permissions, built_in) VALUES ('role-1', 'Viewer', '[]', 0)`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO environments (id, name, api_url, status, enabled) VALUES ('env-1', 'Local', 'http://localhost', 'online', 1)`)
+	require.NoError(t, err)
+
+	// Two distinct resource-scoped assignments for the same user/role/env must be allowed.
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO user_role_assignments
+		(id, user_id, role_id, environment_id, resource_type, resource_id, source)
+		VALUES ('ura-1', 'usr-1', 'role-1', 'env-1', 'project', 'proj-a', 'manual')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO user_role_assignments
+		(id, user_id, role_id, environment_id, resource_type, resource_id, source)
+		VALUES ('ura-2', 'usr-1', 'role-1', 'env-1', 'project', 'proj-b', 'manual')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO group_role_assignments
+		(id, group_id, role_id, environment_id, resource_type, resource_id, source)
+		VALUES ('gra-1', 'grp-1', 'role-1', 'env-1', 'project', 'proj-a', 'manual')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 123))
+	var count int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_role_assignments`).Scan(&count))
+	assert.Zero(t, count)
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM group_role_assignments`).Scan(&count))
+	assert.Zero(t, count)
+}

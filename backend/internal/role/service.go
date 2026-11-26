@@ -464,7 +464,7 @@ func (s *RoleService) ReplaceUserAssignments(ctx context.Context, userID, source
 func (s *RoleService) ReplaceUserAssignmentsInDB(ctx context.Context, tx *gorm.DB, userID, source string, desired []UserRoleAssignment) error {
 	seen := make(map[string]struct{}, len(desired))
 	desired = slices.DeleteFunc(desired, func(a UserRoleAssignment) bool {
-		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID)
+		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID) + "\x00" + kit.FromPtr(a.ResourceType) + "\x00" + kit.FromPtr(a.ResourceID)
 		if _, dup := seen[key]; dup {
 			return true
 		}
@@ -525,6 +525,9 @@ func validateAssignmentsExist(tx *gorm.DB, desired []UserRoleAssignment) error {
 	roleIDSet := make(map[string]struct{}, len(desired))
 	envIDSet := make(map[string]struct{}, len(desired))
 	for _, a := range desired {
+		if err := ValidateResourceScope(a.EnvironmentID, a.ResourceType, a.ResourceID); err != nil {
+			return err
+		}
 		roleIDSet[a.RoleID] = struct{}{}
 		if a.EnvironmentID != nil {
 			envIDSet[*a.EnvironmentID] = struct{}{}
@@ -539,6 +542,24 @@ func ValidateRoleAndEnvIDsExist(tx *gorm.DB, roleIDSet, envIDSet map[string]stru
 		return err
 	}
 	return VerifyIDsExist(tx.Table("environments"), envIDSet, "environment")
+}
+
+func ValidateResourceScope(environmentID, resourceType, resourceID *string) error {
+	rt := strings.TrimSpace(kit.FromPtr(resourceType))
+	rid := strings.TrimSpace(kit.FromPtr(resourceID))
+	if rt == "" && rid == "" {
+		return nil
+	}
+	if rt == "" || rid == "" {
+		return common.Classify(common.ErrInvalidRoleAssignment, errors.New("invalid role assignment: resourceType and resourceId must both be set"))
+	}
+	if strings.TrimSpace(kit.FromPtr(environmentID)) == "" {
+		return common.Classify(common.ErrInvalidRoleAssignment, errors.New("invalid role assignment: resource-scoped assignments require an environmentId"))
+	}
+	if !authz.IsKnownResourceType(rt) {
+		return common.Classify(common.ErrInvalidRoleAssignment, fmt.Errorf("invalid role assignment: unknown resourceType %q", rt))
+	}
+	return nil
 }
 
 func VerifyIDsExist(query *gorm.DB, idSet map[string]struct{}, kind string) error {
@@ -648,11 +669,13 @@ func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB,
 	// Scan permissions as a raw string; GORM cannot wire StringSlice on anonymous structs.
 	type row struct {
 		EnvironmentID *string `gorm:"column:environment_id"`
+		ResourceType  *string `gorm:"column:resource_type"`
+		ResourceID    *string `gorm:"column:resource_id"`
 		Permissions   string  `gorm:"column:permissions"`
 	}
 	var rows []row
 	if err := tx.Table("user_role_assignments AS ura").
-		Select("r.permissions AS permissions, ura.environment_id AS environment_id").
+		Select("r.permissions AS permissions, ura.environment_id AS environment_id, ura.resource_type AS resource_type, ura.resource_id AS resource_id").
 		Joins("INNER JOIN roles r ON r.id = ura.role_id").
 		Where("ura.user_id = ?", userID).
 		Scan(&rows).Error; err != nil {
@@ -661,7 +684,7 @@ func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB,
 	if hasGroupTables(tx) {
 		var groupRows []row
 		if err := tx.Table("group_members AS gm").
-			Select("r.permissions AS permissions, gra.environment_id AS environment_id").
+			Select("r.permissions AS permissions, gra.environment_id AS environment_id, gra.resource_type AS resource_type, gra.resource_id AS resource_id").
 			Joins("INNER JOIN group_role_assignments gra ON gra.group_id = gm.group_id").
 			Joins("INNER JOIN roles r ON r.id = gra.role_id").
 			Where("gm.user_id = ?", userID).
@@ -676,10 +699,13 @@ func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB,
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode role permissions: %w", err)
 		}
-		if r.EnvironmentID == nil {
-			ps.AddGlobal(perms...)
-		} else {
+		switch {
+		case r.EnvironmentID != nil && r.ResourceType != nil && r.ResourceID != nil && *r.ResourceType != "" && *r.ResourceID != "":
+			ps.AddResource(*r.EnvironmentID, *r.ResourceType, *r.ResourceID, perms...)
+		case r.EnvironmentID != nil:
 			ps.AddEnv(*r.EnvironmentID, perms...)
+		default:
+			ps.AddGlobal(perms...)
 		}
 	}
 	return ps, nil
@@ -746,6 +772,11 @@ func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, k
 	}
 	for permission := range permissions.PerEnv[*key.EnvironmentID] {
 		restricted.AddEnv(*key.EnvironmentID, permission)
+	}
+	for resKey, resPerms := range permissions.PerResource[*key.EnvironmentID] {
+		for permission := range resPerms {
+			restricted.AddResource(*key.EnvironmentID, resKey.Type, resKey.ID, permission)
+		}
 	}
 	return restricted, nil
 }

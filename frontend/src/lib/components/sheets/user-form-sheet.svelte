@@ -12,13 +12,13 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { Role } from '#lib/types/role.js';
+	import type { Role, UserRoleAssignmentInput } from '#lib/types/role.js';
 	import type { UserUpdate } from '#lib/types/ui/user.js';
 	import type { User } from '#lib/types/user.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
-	type RoleAssignmentInput = { roleId: string; environmentId?: string };
+	type RoleAssignmentInput = UserRoleAssignmentInput;
 	type UserSubmission = UserUpdate & {
 		roleAssignments?: RoleAssignmentInput[];
 	};
@@ -99,7 +99,9 @@
 			.array(
 				z.object({
 					roleId: z.string().min(1),
-					environmentId: z.string().optional()
+					environmentId: z.string().optional(),
+					resourceType: z.enum(['project', 'container', 'volume', 'network', 'image', 'gitops']).optional(),
+					resourceId: z.string().optional()
 				})
 			)
 			.refine(

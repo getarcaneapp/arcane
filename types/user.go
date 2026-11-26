@@ -102,7 +102,15 @@ type (
 	RoleAssignmentSummary struct {
 		RoleID        string  `json:"roleId" doc:"Role ID granted by this assignment"`
 		EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
+		ResourceType  *string `json:"resourceType,omitempty" enum:"project,container,volume,network,image,gitops" doc:"Optional resource kind this assignment is scoped to"`
+		ResourceID    *string `json:"resourceId,omitempty" doc:"Optional resource identifier this assignment is scoped to"`
 		Source        string  `json:"source" doc:"How the assignment was created" enum:"manual,oidc,ldap"`
+	}
+
+	ResourceGrant struct {
+		Type        string   `json:"type" enum:"project,container,volume,network,image,gitops" doc:"Resource kind"`
+		ID          string   `json:"id" doc:"Resource identifier"`
+		Permissions []string `json:"permissions" doc:"Permissions granted on this resource"`
 	}
 
 	UserGroupSummary struct {
@@ -112,29 +120,30 @@ type (
 	}
 
 	User struct {
-		FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
-		DisplayName            *string                 `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
-		Email                  *string                 `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
-		AvatarURL              *string                 `json:"avatarUrl,omitempty" readOnly:"true" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
-		BackdropURL            *string                 `json:"backdropUrl,omitempty" readOnly:"true" doc:"URL to the user's uploaded background image; omitted when none is uploaded"`
-		OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" readOnly:"true" doc:"OIDC subject identifier for SSO users"`
-		LdapID                 *string                 `json:"ldapId,omitempty" readOnly:"true" doc:"LDAP unique identifier for users synced from a directory"`
-		Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
-		LastLogin              *string                 `json:"lastLogin,omitempty" readOnly:"true" doc:"Date and time of the user's most recent sign-in; omitted when the user has never signed in"`
-		PermissionsByEnv       map[string][]string     `json:"permissionsByEnv" readOnly:"true" doc:"Permissions by environment ID; 'global' applies to all environments and organization endpoints"`
-		Preferences            UserPreferences         `json:"preferences" required:"false" doc:"Personal display and UI preferences"`
-		ID                     string                  `json:"id" readOnly:"true" doc:"Unique identifier of the user" example:"550e8400-e29b-41d4-a716-446655440000"`
-		Username               string                  `json:"username" required:"false" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"No @ character" doc:"Username (no @)"`
-		Password               string                  `json:"password,omitempty" writeOnly:"true" minLength:"8" doc:"Password of the user; never returned"`
-		TimeFormat             TimeFormat              `json:"timeFormat" required:"false" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
-		CreatedAt              string                  `json:"createdAt,omitempty" readOnly:"true" doc:"Date and time when the user was created"`
-		UpdatedAt              string                  `json:"updatedAt,omitempty" readOnly:"true" doc:"Date and time when the user was last updated"`
-		RoleAssignments        []RoleAssignmentSummary `json:"roleAssignments" readOnly:"true" doc:"Role assignments held by the user"`
-		Groups                 []UserGroupSummary      `json:"groups,omitempty" readOnly:"true" doc:"Groups this user belongs to"`
-		IsGlobalAdmin          bool                    `json:"isGlobalAdmin" readOnly:"true" doc:"Whether the user effectively holds global administrator access"`
-		CanDelete              bool                    `json:"canDelete" readOnly:"true" doc:"Whether the user can currently be deleted"`
-		RequiresPasswordChange bool                    `json:"requiresPasswordChange" readOnly:"true" doc:"Whether the user must change their password"`
-		Disabled               bool                    `json:"disabled" readOnly:"true" doc:"Whether the user is disabled and cannot sign in"`
+		FontSize               *int                       `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
+		DisplayName            *string                    `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
+		Email                  *string                    `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
+		AvatarURL              *string                    `json:"avatarUrl,omitempty" readOnly:"true" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
+		BackdropURL            *string                    `json:"backdropUrl,omitempty" readOnly:"true" doc:"URL to the user's uploaded background image; omitted when none is uploaded"`
+		OidcSubjectId          *string                    `json:"oidcSubjectId,omitempty" readOnly:"true" doc:"OIDC subject identifier for SSO users"`
+		LdapID                 *string                    `json:"ldapId,omitempty" readOnly:"true" doc:"LDAP unique identifier for users synced from a directory"`
+		Locale                 *string                    `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
+		LastLogin              *string                    `json:"lastLogin,omitempty" readOnly:"true" doc:"Date and time of the user's most recent sign-in; omitted when the user has never signed in"`
+		PermissionsByEnv       map[string][]string        `json:"permissionsByEnv" readOnly:"true" doc:"Permissions by environment ID; 'global' applies to all environments and organization endpoints"`
+		ResourcePermissions    map[string][]ResourceGrant `json:"resourcePermissionsByEnv,omitempty" readOnly:"true" doc:"Resource-scoped permissions grouped by environment ID"`
+		Preferences            UserPreferences            `json:"preferences" required:"false" doc:"Personal display and UI preferences"`
+		ID                     string                     `json:"id" readOnly:"true" doc:"Unique identifier of the user" example:"550e8400-e29b-41d4-a716-446655440000"`
+		Username               string                     `json:"username" required:"false" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"No @ character" doc:"Username (no @)"`
+		Password               string                     `json:"password,omitempty" writeOnly:"true" minLength:"8" doc:"Password of the user; never returned"`
+		TimeFormat             TimeFormat                 `json:"timeFormat" required:"false" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
+		CreatedAt              string                     `json:"createdAt,omitempty" readOnly:"true" doc:"Date and time when the user was created"`
+		UpdatedAt              string                     `json:"updatedAt,omitempty" readOnly:"true" doc:"Date and time when the user was last updated"`
+		RoleAssignments        []RoleAssignmentSummary    `json:"roleAssignments" readOnly:"true" doc:"Role assignments held by the user"`
+		Groups                 []UserGroupSummary         `json:"groups,omitempty" readOnly:"true" doc:"Groups this user belongs to"`
+		IsGlobalAdmin          bool                       `json:"isGlobalAdmin" readOnly:"true" doc:"Whether the user effectively holds global administrator access"`
+		CanDelete              bool                       `json:"canDelete" readOnly:"true" doc:"Whether the user can currently be deleted"`
+		RequiresPasswordChange bool                       `json:"requiresPasswordChange" readOnly:"true" doc:"Whether the user must change their password"`
+		Disabled               bool                       `json:"disabled" readOnly:"true" doc:"Whether the user is disabled and cannot sign in"`
 	}
 
 	Actor struct {

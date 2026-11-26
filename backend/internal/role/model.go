@@ -15,9 +15,11 @@ type (
 	UserRoleAssignment struct {
 		database.BaseModel
 
+		EnvironmentID *string `json:"environmentId,omitempty" gorm:"column:environment_id;index"`
+		ResourceType  *string `json:"resourceType,omitempty" gorm:"column:resource_type"`
+		ResourceID    *string `json:"resourceId,omitempty" gorm:"column:resource_id"`
 		UserID        string  `json:"userId" gorm:"column:user_id;not null;index"`
 		RoleID        string  `json:"roleId" gorm:"column:role_id;not null;index"`
-		EnvironmentID *string `json:"environmentId,omitempty" gorm:"column:environment_id;index"`
 		Source        string  `json:"source" gorm:"column:source;not null;default:'manual'"`
 	}
 

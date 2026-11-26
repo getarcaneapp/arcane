@@ -39,11 +39,13 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image/children/patch"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -1124,6 +1126,15 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	if err := g.Wait(); err != nil {
 		return nil, pagination.Response{}, err
+	}
+
+	if allowedRefs, unrestricted, permErr := middleware.AllowedProjectImageRefs(ctx, s.db, types.LocalDockerEnvironmentID, authz.PermImagesList); permErr != nil {
+		return nil, pagination.Response{}, permErr
+	} else if !unrestricted {
+		ps, _ := middleware.PermissionsFromContext(ctx)
+		dockerImages = slices.DeleteFunc(dockerImages, func(img image.Summary) bool {
+			return !middleware.ImagePermitted(ps, types.LocalDockerEnvironmentID, authz.PermImagesList, img.ID, img.RepoTags, allowedRefs)
+		})
 	}
 
 	imageIDs := make([]string, 0, len(dockerImages))

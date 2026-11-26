@@ -49,6 +49,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/lifecycle"
@@ -61,6 +62,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -2914,6 +2916,12 @@ func (s *ProjectService) ListAllProjects(ctx context.Context) ([]Project, error)
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]types.Project, pagination.Response, error) {
 	updatesFilter := strings.TrimSpace(params.Filters["updates"])
 	query := s.db.WithContext(ctx).Model(&Project{})
+	if allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList); allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []types.Project{}, pagination.BuildResponse(0, 0, params), nil
+		}
+		query = query.Where("id IN ?", allowedIDs)
+	}
 	if archivedFilter := strings.TrimSpace(params.Filters["archived"]); !strings.EqualFold(archivedFilter, "all") {
 		archived, _ := kit.ParseBool(archivedFilter)
 		query = query.Where("is_archived = ?", archived)

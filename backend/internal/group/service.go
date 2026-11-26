@@ -390,7 +390,7 @@ func replaceRoleAssignmentsInTx(tx *gorm.DB, groupID, source string, desired []G
 	seen := make(map[string]struct{}, len(desired))
 	rows := make([]GroupRoleAssignment, 0, len(desired))
 	for _, a := range desired {
-		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID)
+		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID) + "\x00" + kit.FromPtr(a.ResourceType) + "\x00" + kit.FromPtr(a.ResourceID)
 		if _, dup := seen[key]; dup {
 			continue
 		}
@@ -399,6 +399,8 @@ func replaceRoleAssignmentsInTx(tx *gorm.DB, groupID, source string, desired []G
 			GroupID:       groupID,
 			RoleID:        a.RoleID,
 			EnvironmentID: a.EnvironmentID,
+			ResourceType:  a.ResourceType,
+			ResourceID:    a.ResourceID,
 			Source:        source,
 		})
 	}
@@ -446,6 +448,9 @@ func validateGroupAssignmentsExist(tx *gorm.DB, desired []GroupRoleAssignment) e
 	roleIDSet := make(map[string]struct{}, len(desired))
 	envIDSet := make(map[string]struct{}, len(desired))
 	for _, a := range desired {
+		if err := role.ValidateResourceScope(a.EnvironmentID, a.ResourceType, a.ResourceID); err != nil {
+			return err
+		}
 		roleIDSet[a.RoleID] = struct{}{}
 		if a.EnvironmentID != nil {
 			envIDSet[*a.EnvironmentID] = struct{}{}

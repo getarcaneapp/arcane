@@ -18,11 +18,29 @@ import {
 
 let current = $state.raw<User | null>(null);
 
+const isResourceTargetablePermission = (perm: string): boolean => {
+	if (perm.endsWith(':create') || perm.endsWith(':prune')) return false;
+	return (
+		perm.startsWith('projects:') ||
+		perm.startsWith('containers:') ||
+		perm.startsWith('volumes:') ||
+		perm.startsWith('networks:') ||
+		perm.startsWith('images:') ||
+		perm.startsWith('gitops:')
+	);
+};
+
 export const userHasPermissionInAnyEnvironment = (user: User | null | undefined, perm: string): boolean => {
 	if (!user?.permissionsByEnv) return false;
 	const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
 	if (global.includes(SUDO_PERMISSION) || global.includes(perm)) return true;
-	return Object.values(user.permissionsByEnv).some((permissions) => permissions.includes(perm));
+	if (Object.values(user.permissionsByEnv).some((permissions) => permissions.includes(perm))) return true;
+	if (isResourceTargetablePermission(perm) && user.resourcePermissionsByEnv) {
+		return Object.values(user.resourcePermissionsByEnv).some((grants) =>
+			grants.some((grant) => grant.permissions.includes(perm))
+		);
+	}
+	return false;
 };
 
 const setUser = async (user: User) => {
@@ -63,9 +81,16 @@ const clearUser = () => {
 const permissions = (envId?: string): Set<string> => {
 	const user = current;
 	if (!user?.permissionsByEnv) return new Set();
+	const envResourcePerms =
+		envId && envId !== GLOBAL_SCOPE && user.resourcePermissionsByEnv?.[envId]
+			? user.resourcePermissionsByEnv[envId].flatMap((grant) =>
+					grant.permissions.filter((perm) => isResourceTargetablePermission(perm))
+				)
+			: [];
 	return new Set([
 		...(user.permissionsByEnv[GLOBAL_SCOPE] ?? []),
-		...((envId && envId !== GLOBAL_SCOPE && user.permissionsByEnv[envId]) || [])
+		...((envId && envId !== GLOBAL_SCOPE && user.permissionsByEnv[envId]) || []),
+		...envResourcePerms
 	]);
 };
 

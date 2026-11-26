@@ -24,9 +24,11 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -186,7 +188,22 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 	}, nil
 }
 
+func (h *ImageHandler) requireImageAccess(ctx context.Context, envID, perm, imageRef string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil
+	}
+	detail, err := h.imageService.GetImageDetail(ctx, imageRef)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireImagePermission(ctx, h.imageService.db, envID, perm, detail.ID, detail.RepoTags)
+}
+
 func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*handlerutil.Out[types.ImageDetailSummary], error) {
+	if err := h.requireImageAccess(ctx, input.EnvironmentID, authz.PermImagesRead, input.ImageID); err != nil {
+		return nil, err
+	}
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -208,6 +225,9 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*han
 	if err != nil {
 		return nil, err
 	}
+	if accessErr := h.requireImageAccess(ctx, input.EnvironmentID, authz.PermImagesTag, imageName); accessErr != nil {
+		return nil, accessErr
+	}
 	if strings.TrimSpace(input.Body.Repository) == "" {
 		return nil, huma.Error400BadRequest("repository is required")
 	}
@@ -228,6 +248,9 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 	imageName, err := validateImageName(input.ImageName)
 	if err != nil {
 		return nil, err
+	}
+	if accessErr := h.requireImageAccess(ctx, input.EnvironmentID, authz.PermImagesRead, imageName); accessErr != nil {
+		return nil, accessErr
 	}
 
 	history, err := h.imageService.GetImageHistory(ctx, imageName)
@@ -265,6 +288,9 @@ func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput)
 	if err != nil {
 		return nil, err
 	}
+	if accessErr := h.requireImageAccess(ctx, input.EnvironmentID, authz.PermImagesRead, imageName); accessErr != nil {
+		return nil, accessErr
+	}
 
 	reader, err := h.imageService.ExportImage(ctx, imageName)
 	if err != nil {
@@ -297,6 +323,9 @@ func validateImageName(raw string) (string, error) {
 }
 
 func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.requireImageAccess(ctx, input.EnvironmentID, authz.PermImagesDelete, input.ImageID); err != nil {
+		return nil, err
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err

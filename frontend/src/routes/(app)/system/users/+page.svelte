@@ -50,7 +50,12 @@
 	const editingAssignments = $derived(
 		userToEdit?.roleAssignments
 			?.filter((a) => a.source === 'manual')
-			.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId }))
+			.map((a) => ({
+				roleId: a.roleId,
+				environmentId: a.environmentId,
+				resourceType: a.resourceType,
+				resourceId: a.resourceId
+			}))
 			.sort(compareAssignments) ?? []
 	);
 

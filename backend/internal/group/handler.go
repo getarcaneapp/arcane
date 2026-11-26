@@ -249,7 +249,12 @@ func (h *GroupHandler) SetGroupRoleAssignments(ctx context.Context, input *SetGr
 func toGroupRoleAssignmentModels(inputs []types.UserRoleAssignmentInput) []GroupRoleAssignment {
 	desired := make([]GroupRoleAssignment, len(inputs))
 	for i, a := range inputs {
-		desired[i] = GroupRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
+		desired[i] = GroupRoleAssignment{
+			RoleID:        a.RoleID,
+			EnvironmentID: a.EnvironmentID,
+			ResourceType:  a.ResourceType,
+			ResourceID:    a.ResourceID,
+		}
 	}
 	return desired
 }
@@ -298,6 +303,8 @@ func toGroupRoleAssignmentDTO(r *GroupRoleAssignment) types.GroupRoleAssignment 
 		GroupID:       r.GroupID,
 		RoleID:        r.RoleID,
 		EnvironmentID: r.EnvironmentID,
+		ResourceType:  r.ResourceType,
+		ResourceID:    r.ResourceID,
 		Source:        r.Source,
 		CreatedAt:     r.CreatedAt,
 	}

@@ -214,7 +214,22 @@ func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOps
 	}, nil
 }
 
+func (h *GitOpsSyncHandler) requireSyncAccess(ctx context.Context, environmentID, perm, syncID string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, environmentID) {
+		return nil
+	}
+	sync, err := h.syncService.GetSyncByID(ctx, environmentID, syncID)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireGitOpsSyncPermission(ctx, environmentID, perm, sync.ID, sync.ProjectID)
+}
+
 func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInput) (*handlerutil.Out[types.GitOpsSync], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsRead, input.SyncID); err != nil {
+		return nil, err
+	}
 	sync, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -234,6 +249,9 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 }
 
 func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*handlerutil.Out[types.GitOpsSync], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsUpdate, input.SyncID); err != nil {
+		return nil, err
+	}
 	submitted, err := input.SubmittedFields()
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid request body", err)
@@ -268,6 +286,9 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 }
 
 func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsDelete, input.SyncID); err != nil {
+		return nil, err
+	}
 	if err := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsRemoveStackConditions, "removeStack", strconv.FormatBool(input.RemoveStack)); err != nil {
 		return nil, err
 	}
@@ -285,6 +306,9 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 }
 
 func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *GitOpsSyncActionInput) (*handlerutil.Out[types.GitOpsSyncResult], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsSync, input.SyncID); err != nil {
+		return nil, err
+	}
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID, authz.GitOpsSyncModeConditions); err != nil {
 		return nil, err
 	}

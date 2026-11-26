@@ -18,7 +18,9 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -192,7 +194,22 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	}, nil
 }
 
+func (h *NetworkHandler) requireNetworkAccess(ctx context.Context, envID, perm, networkID string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil
+	}
+	netInspect, err := h.networkService.GetNetworkByID(ctx, networkID)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireComposeResourcePermission(ctx, h.networkService.db, envID, perm, authz.ResourceTypeNetwork, netInspect.ID, netInspect.Name, netInspect.Labels)
+}
+
 func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*handlerutil.Out[types.NetworkInspect], error) {
+	if err := h.requireNetworkAccess(ctx, input.EnvironmentID, authz.PermNetworksRead, input.NetworkID); err != nil {
+		return nil, err
+	}
 	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
@@ -259,6 +276,9 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *types.En
 }
 
 func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.requireNetworkAccess(ctx, input.EnvironmentID, authz.PermNetworksDelete, input.NetworkID); err != nil {
+		return nil, err
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -290,6 +310,10 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 }
 
 func (h *NetworkHandler) RunNetworkAction(ctx context.Context, input *NetworkActionInput) (*handlerutil.Out[types.MessageResponse], error) {
+	actionPerm := kit.Ternary(input.Action == "connect", authz.PermNetworksConnect, authz.PermNetworksDisconnect)
+	if err := h.requireNetworkAccess(ctx, input.EnvironmentID, actionPerm, input.NetworkID); err != nil {
+		return nil, err
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err

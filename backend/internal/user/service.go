@@ -805,6 +805,8 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 			dto.RoleAssignments[i] = types.RoleAssignmentSummary{
 				RoleID:        r.RoleID,
 				EnvironmentID: r.EnvironmentID,
+				ResourceType:  r.ResourceType,
+				ResourceID:    r.ResourceID,
 				Source:        r.Source,
 			}
 		}
@@ -826,8 +828,35 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 	if ps, err := s.roleService.ResolvePermissions(ctx, u.ID); err == nil && ps != nil {
 		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
 		dto.PermissionsByEnv = permissionSetToMap(ps)
+		dto.ResourcePermissions = resourcePermissionsToMap(ps)
 	}
 	return dto
+}
+
+func resourcePermissionsToMap(ps *authz.PermissionSet) map[string][]types.ResourceGrant {
+	if ps == nil || len(ps.PerResource) == 0 {
+		return nil
+	}
+	out := make(map[string][]types.ResourceGrant, len(ps.PerResource))
+	for envID, resources := range ps.PerResource {
+		grants := make([]types.ResourceGrant, 0, len(resources))
+		for key, perms := range resources {
+			list := slices.Collect(maps.Keys(perms))
+			slices.Sort(list)
+			grants = append(grants, types.ResourceGrant{
+				Type:        key.Type,
+				ID:          key.ID,
+				Permissions: list,
+			})
+		}
+		if len(grants) > 0 {
+			out[envID] = grants
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func permissionSetToMap(ps *authz.PermissionSet) map[string][]string {

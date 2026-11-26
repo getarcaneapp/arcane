@@ -2,6 +2,8 @@ import type { RoleAssignmentSource } from './user';
 
 export type RoleScope = 'global' | 'env';
 
+export type ResourceScopeType = 'project' | 'container' | 'volume' | 'network' | 'image' | 'gitops';
+
 export type Role = {
 	id: string;
 	name: string;
@@ -18,6 +20,8 @@ export type RoleAssignment = {
 	userId: string;
 	roleId: string;
 	environmentId?: string;
+	resourceType?: ResourceScopeType;
+	resourceId?: string;
 	source: RoleAssignmentSource;
 	createdAt: string;
 };
@@ -25,6 +29,8 @@ export type RoleAssignment = {
 export type UserRoleAssignmentInput = {
 	roleId: string;
 	environmentId?: string;
+	resourceType?: ResourceScopeType;
+	resourceId?: string;
 };
 
 export type SetUserRoleAssignments = {
