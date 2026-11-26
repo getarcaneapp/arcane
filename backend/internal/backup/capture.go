@@ -126,7 +126,7 @@ func volumeIdentities(ctx context.Context, inspect func(ctx context.Context, nam
 		case !exists:
 			return nil, common.Classify(common.ErrConflict, fmt.Errorf("volume %s was removed after the backup was queued, so it was not backed up; start the backup again", name))
 		}
-		created[name] = found.CreatedAt
+		created[name] = fmt.Sprintf("%q %q %q %v %v", found.CreatedAt, found.Driver, found.Mountpoint, found.Labels, found.Options)
 	}
 	return created, nil
 }
