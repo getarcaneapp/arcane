@@ -65,6 +65,8 @@ END) WITH ORDINALITY AS t(p, ord)
 WHERE settings.key = 'systemVolumeBackupConfig' AND COALESCE(p ->> 'id', '') <> '';
 DELETE FROM settings WHERE key = 'systemVolumeBackupConfig';
 `
+	// The down migrations flatten global volume policies into the environment-blind manager setting,
+	// so a policy created for a docker-host environment comes back owned by the manager's environment.
 	v125SQLiteDown = `
 CREATE TABLE system_backup_policies (
     id TEXT PRIMARY KEY,

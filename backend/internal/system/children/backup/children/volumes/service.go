@@ -32,6 +32,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/types/v3"
 )
 
@@ -511,12 +512,17 @@ func (s *Service) runScheduledSystemVolumeBackup(ctx context.Context, policyID, 
 		return types.SchedulerOutcome{}, err
 	}
 	defer lease.Release(ctx)
-	policy, err := s.policies.Get(ctx, backup.PolicyVolume, "", policyID)
+	policy, err := s.policies.Enabled(ctx, policyID)
 	if err != nil {
 		return types.SchedulerOutcome{}, err
 	}
-	if policy == nil || !policy.Enabled {
+	if policy == nil {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
+	}
+	// Scheduled jobs run in the manager's environment, so a policy owned by a docker-host environment
+	// is refused rather than backing up the manager's volumes under its selection.
+	if policy.EnvironmentID != envcontext.EnvironmentIDOrDefault(ctx) {
+		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy belongs to another environment"}, nil
 	}
 	remoteDisabled, err := s.policies.CheckRemote(ctx, policy, backup.RemoteCheck{
 		S3Destinations: s.s3Destinations,
@@ -741,6 +747,19 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) int {
 	}
 	for i := range policies {
 		s.rescheduleSystemVolumeBackup(ctx, &policies[i])
+	}
+	// Scheduled jobs run in the manager's environment, so global policies owned by a docker-host
+	// environment are not scheduled here; report them instead of dropping them silently.
+	if all, allErr := s.policies.AllEnabled(ctx, backup.PolicyVolume); allErr == nil {
+		unscheduled := 0
+		for i := range all {
+			if all[i].SubjectID == "" && all[i].EnvironmentID != envcontext.EnvironmentIDOrDefault(ctx) {
+				unscheduled++
+			}
+		}
+		if unscheduled > 0 {
+			slog.WarnContext(ctx, "System volume backup policies for other environments are not scheduled", "count", unscheduled)
+		}
 	}
 	return len(policies)
 }
