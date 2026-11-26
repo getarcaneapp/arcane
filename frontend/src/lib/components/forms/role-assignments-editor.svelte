@@ -6,9 +6,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { projectService } from '#lib/services/project-service.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { Project } from '#lib/types/project.js';
 	import {
 		type ResourceScopeType,
 		type Role,
@@ -22,6 +20,8 @@
 		createRoleEnvironmentLabelers,
 		GLOBAL_ENVIRONMENT_OPTION_ID
 	} from '#lib/utils/options.js';
+
+	import ProjectResourcePicker from './project-resource-picker.svelte';
 
 	type Assignment = { roleId: string; environmentId?: string; resourceType?: ResourceScopeType; resourceId?: string };
 
@@ -50,36 +50,6 @@
 	};
 
 	let { assignments = $bindable([]), roles, environments, disabled = false }: Props = $props();
-
-	let projectsByEnv = $state<Record<string, Project[]>>({});
-	const loadingEnvs = new Set<string>();
-
-	$effect(() => {
-		const envIds = new Set(
-			assignments.filter((a) => a.environmentId && a.resourceType === 'project').map((a) => a.environmentId as string)
-		);
-		for (const envId of envIds) {
-			if (projectsByEnv[envId] !== undefined || loadingEnvs.has(envId)) continue;
-			loadingEnvs.add(envId);
-			void projectService
-				.getProjectsForEnvironment(envId, { pagination: { page: 1, limit: 1000 }, sort: { column: 'name', direction: 'asc' } })
-				.then((page) => {
-					projectsByEnv = { ...projectsByEnv, [envId]: page.data ?? [] };
-				})
-				.catch(() => {
-					projectsByEnv = { ...projectsByEnv, [envId]: [] };
-				})
-				.finally(() => {
-					loadingEnvs.delete(envId);
-				});
-		}
-	});
-
-	function projectLabel(envId: string | undefined, projectId: string | undefined): string {
-		if (!projectId) return m.select_project();
-		const match = (envId ? projectsByEnv[envId] : undefined)?.find((p) => p.id === projectId);
-		return match?.name ?? projectId;
-	}
 
 	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.global_org_wide()));
 	const selectedLabel = $derived(createRoleEnvironmentLabelers(roles, envOptions, m.common_select_option()));
@@ -174,7 +144,7 @@
 
 <div class="space-y-3">
 	{#if quickPresetRoles.length > 0}
-		<div class="space-y-2 rounded-md border p-3">
+		<div class="space-y-1">
 			{#each quickPresetRoles as role (role.id)}
 				<label class="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-accent/40">
 					<Checkbox
@@ -197,7 +167,7 @@
 	{/if}
 
 	{#if assignments.length === 0}
-		<p class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+		<p class="py-4 text-center text-sm text-muted-foreground">
 			{m.users_role_assignments_description()}
 		</p>
 	{/if}
@@ -205,7 +175,7 @@
 	{#each assignments as assignment, index (assignment)}
 		{@const envValue = envIdToSelectValue(assignment.environmentId)}
 		{@const resourceTypeValue = assignment.resourceType ?? ALL_RESOURCES_OPTION}
-		<div class="space-y-2 rounded-md border border-border/70 bg-card/10 p-3">
+		<div class="space-y-2 rounded-xl bg-card/10 p-3">
 			<div class="grid grid-cols-1 gap-2 sm:grid-cols-halves-action sm:items-center">
 				<Select.Root
 					type="single"
@@ -301,24 +271,13 @@
 						</Select.Content>
 					</Select.Root>
 
-					{#if assignment.resourceType === 'project' && (projectsByEnv[assignment.environmentId]?.length ?? 0) > 0}
-						<Select.Root
-							type="single"
+					{#if assignment.resourceType === 'project'}
+						<ProjectResourcePicker
+							environmentId={assignment.environmentId}
 							value={assignment.resourceId ?? ''}
 							{disabled}
-							onValueChange={(v) => updateAssignment(index, { resourceId: v })}
-						>
-							<Select.Trigger class="w-full" aria-label={m.select_project()}>
-								<span class="min-w-0 truncate">{projectLabel(assignment.environmentId, assignment.resourceId)}</span>
-							</Select.Trigger>
-							<Select.Content>
-								{#each projectsByEnv[assignment.environmentId] ?? [] as proj (proj.id)}
-									<Select.Item value={proj.id} label={proj.name}>
-										{proj.name}
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
+							onChange={(v) => updateAssignment(index, { resourceId: v })}
+						/>
 					{:else if assignment.resourceType}
 						<Input
 							value={assignment.resourceId ?? ''}

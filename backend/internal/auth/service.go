@@ -56,6 +56,7 @@ type (
 	}
 
 	AuthService struct {
+		db                *database.DB
 		userService       *user.UserService
 		settingsService   *settings.SettingsService
 		eventService      *event.EventService
@@ -77,6 +78,7 @@ type (
 	AuthServiceParams struct {
 		fx.In
 
+		DB                *database.DB
 		UserService       *user.UserService
 		SettingsService   *settings.SettingsService
 		EventService      *event.EventService
@@ -136,6 +138,7 @@ func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {
 
 func NewAuthService(p AuthServiceParams) *AuthService {
 	return &AuthService{
+		db:                p.DB,
 		userService:       p.UserService,
 		settingsService:   p.SettingsService,
 		eventService:      p.EventService,
@@ -554,11 +557,20 @@ func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *us
 		return fmt.Errorf("list oidc mappings: %w", err)
 	}
 
-	err = s.roleService.WithTx(ctx, func(tx *gorm.DB) error {
+	err = s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if assignErr := s.roleService.ReplaceUserAssignmentsInDB(ctx, tx, localUser.ID, role.RoleAssignmentSourceOidc, role.MappedAssignments(mappings, groups)); assignErr != nil {
 			return assignErr
 		}
-		if groupErr := usergroup.SyncUserMembershipsInDB(ctx, tx, localUser.ID, usergroup.SourceOidc, groups); groupErr != nil {
+		claimGroups, loadErr := usergroup.LoadClaimGroupsInDB(ctx, tx)
+		if loadErr != nil {
+			return loadErr
+		}
+		if groupErr := usergroup.SyncUserMembershipsInDB(ctx, tx, usergroup.MembershipSync{
+			ClaimGroups: claimGroups,
+			UserID:      localUser.ID,
+			Source:      usergroup.SourceOidc,
+			Claims:      groups,
+		}); groupErr != nil {
 			return groupErr
 		}
 		return s.roleService.AssertGlobalAdminExists(ctx, tx)

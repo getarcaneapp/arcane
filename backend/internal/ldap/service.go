@@ -479,7 +479,7 @@ func (s *LdapService) deprovisionUsers(ctx context.Context, tx *gorm.DB, cfg *se
 			if err := s.roleService.ReplaceUserAssignmentsInDB(ctx, tx, u.ID, role.RoleAssignmentSourceLdap, nil); err != nil {
 				return nil, fmt.Errorf("failed to clear roles of LDAP user %s: %w", u.Username, err)
 			}
-			if err := group.SyncUserMembershipsInDB(ctx, tx, u.ID, group.SourceLdap, nil); err != nil {
+			if err := group.SyncUserMembershipsInDB(ctx, tx, group.MembershipSync{UserID: u.ID, Source: group.SourceLdap}); err != nil {
 				return nil, fmt.Errorf("failed to clear group memberships of LDAP user %s: %w", u.Username, err)
 			}
 		} else if err := tx.Delete(&user.User{}, "id = ?", u.ID).Error; err != nil {
@@ -503,6 +503,30 @@ func (s *LdapService) assignRoles(ctx context.Context, tx *gorm.DB, synced []syn
 	for _, r := range roles {
 		permissions[r.ID] = r.Permissions
 	}
+	type claimRoleRow struct {
+		ClaimValue string `gorm:"column:claim_value"`
+		RoleID     string `gorm:"column:role_id"`
+	}
+	var groupClaimRoles []claimRoleRow
+	if tx.Migrator().HasTable("group_idp_mappings") && tx.Migrator().HasTable("group_role_assignments") {
+		if err := tx.Table("group_idp_mappings AS gim").
+			Select("gim.claim_value, gra.role_id").
+			Joins("INNER JOIN group_role_assignments gra ON gra.group_id = gim.group_id").
+			Where("gra.environment_id IS NULL").
+			Scan(&groupClaimRoles).Error; err != nil {
+			return fmt.Errorf("failed to load group global role mappings: %w", err)
+		}
+	}
+	groupRolesByClaim := make(map[string][]string, len(groupClaimRoles))
+	for _, row := range groupClaimRoles {
+		if key := strings.ToLower(strings.TrimSpace(row.ClaimValue)); key != "" {
+			groupRolesByClaim[key] = append(groupRolesByClaim[key], row.RoleID)
+		}
+	}
+	claimGroups, loadErr := group.LoadClaimGroupsInDB(ctx, tx)
+	if loadErr != nil {
+		return loadErr
+	}
 	// Grant new global admins before revoking old ones so a handoff passes the last-admin guard.
 	admins := make([]syncedUser, 0, len(synced))
 	others := make([]syncedUser, 0, len(synced))
@@ -511,6 +535,11 @@ func (s *LdapService) assignRoles(ctx context.Context, tx *gorm.DB, synced []syn
 		for _, a := range role.MappedAssignments(mappings, u.groups) {
 			if a.EnvironmentID == nil {
 				granted.AddGlobal(permissions[a.RoleID]...)
+			}
+		}
+		for _, claim := range u.groups {
+			for _, roleID := range groupRolesByClaim[strings.ToLower(strings.TrimSpace(claim))] {
+				granted.AddGlobal(permissions[roleID]...)
 			}
 		}
 		if granted.IsGlobalAdmin() {
@@ -526,7 +555,12 @@ func (s *LdapService) assignRoles(ctx context.Context, tx *gorm.DB, synced []syn
 		}
 		err := s.roleService.ReplaceUserAssignmentsInDB(ctx, tx, u.id, role.RoleAssignmentSourceLdap, role.MappedAssignments(mappings, u.groups))
 		if err == nil {
-			err = group.SyncUserMembershipsInDB(ctx, tx, u.id, group.SourceLdap, u.groups)
+			err = group.SyncUserMembershipsInDB(ctx, tx, group.MembershipSync{
+				ClaimGroups: claimGroups,
+				UserID:      u.id,
+				Source:      group.SourceLdap,
+				Claims:      u.groups,
+			})
 		}
 		if err == nil {
 			err = s.roleService.AssertGlobalAdminExists(ctx, tx)

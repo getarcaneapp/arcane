@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	v125SQLiteUp = `
+	v126SQLiteUp = `
 CREATE TABLE IF NOT EXISTS group_idp_mappings (
     id TEXT PRIMARY KEY,
     claim_value TEXT NOT NULL,
@@ -18,7 +18,7 @@ CREATE INDEX IF NOT EXISTS idx_gim_claim ON group_idp_mappings(claim_value);
 CREATE INDEX IF NOT EXISTS idx_gim_group ON group_idp_mappings(group_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_gim_uniq ON group_idp_mappings(claim_value, group_id, source);
 `
-	v125PostgresUp = `
+	v126PostgresUp = `
 CREATE TABLE IF NOT EXISTS group_idp_mappings (
     id text PRIMARY KEY,
     claim_value text NOT NULL,
@@ -31,11 +31,11 @@ CREATE INDEX IF NOT EXISTS idx_gim_claim ON group_idp_mappings USING btree (clai
 CREATE INDEX IF NOT EXISTS idx_gim_group ON group_idp_mappings USING btree (group_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_gim_uniq ON group_idp_mappings USING btree (claim_value, group_id, source);
 `
-	v125Down = `
+	v126Down = `
 DROP TABLE IF EXISTS group_idp_mappings;
 `
 )
 
 func init() {
-	goose.AddMigrationContext(run(v125SQLiteUp, v125PostgresUp), run(v125Down, v125Down))
+	goose.AddMigrationContext(run(v126SQLiteUp, v126PostgresUp), run(v126Down, v126Down))
 }

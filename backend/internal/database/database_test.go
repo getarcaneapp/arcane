@@ -1754,13 +1754,13 @@ func TestMigration00125_ResourceRoleAssignmentsUpDown(t *testing.T) {
 	assert.Zero(t, count)
 }
 
-func TestMigration00125_GroupIdpMappingsUpDown(t *testing.T) {
+func TestMigration00126_GroupIdpMappingsUpDown(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-group-idp-migration.db")
 	rawDB.SetMaxOpenConns(1)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 124))
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 125))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 126))
 	_, err := rawDB.ExecContext(ctx, `PRAGMA foreign_keys=ON;`)
 	require.NoError(t, err)
 
@@ -1775,7 +1775,7 @@ func TestMigration00125_GroupIdpMappingsUpDown(t *testing.T) {
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM group_idp_mappings`).Scan(&count))
 	assert.Zero(t, count)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 124))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 125))
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'group_idp_mappings'`).Scan(&count))
 	assert.Zero(t, count)
 }

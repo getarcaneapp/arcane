@@ -884,6 +884,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	authSvc := newTestAuthService()
 	authSvc.userService = userSvc
 	authSvc.settingsService = settingsSvc
+	authSvc.db = db
 	authSvc.roleService = role.NewRoleService(db)
 
 	existing := &user.User{ID: "existing-canonical-identity", Username: "José", Email: new("néw@example.com")}
@@ -957,6 +958,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 			authSvc := newTestAuthService()
 			authSvc.userService = userSvc
 			authSvc.settingsService = settingsSvc
+			authSvc.db = db
 			authSvc.roleService = role.NewRoleService(db)
 
 			userInfo := types.OidcUserInfo{

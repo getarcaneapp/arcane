@@ -168,10 +168,6 @@ func legacyRolesContainsAdmin(raw string) bool {
 	return false
 }
 
-func (s *RoleService) WithTx(ctx context.Context, fn func(tx *gorm.DB) error) error {
-	return s.db.DB.WithContext(ctx).Transaction(fn)
-}
-
 func (s *RoleService) AssertGlobalAdminExists(ctx context.Context, tx *gorm.DB) error {
 	count, err := s.CountGlobalAdmins(ctx, tx, "")
 	if err != nil {

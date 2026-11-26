@@ -7,10 +7,11 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import RoleAssignmentsEditor from '#lib/components/forms/role-assignments-editor.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -68,15 +69,16 @@
 	async function handleAddIdpMapping() {
 		const claim = newClaimValue.trim();
 		if (!group || !claim || isUpdatingMappings) return;
+		const groupId = group.id;
 		isUpdatingMappings = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(groupService.createIdpMapping({ claimValue: claim, groupId: group.id })),
+			result: await tryCatch(groupService.createIdpMapping({ claimValue: claim, groupId })),
 			message: m.common_create_failed({ resource: claim }),
 			setLoadingState: (value) => (isUpdatingMappings = value),
 			onSuccess: async (created) => {
 				mappings = [...mappings, created];
 				newClaimValue = '';
-				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.idpMappings(group.id) });
+				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.idpMappings(groupId) });
 				toast.success(m.common_create_success({ resource: created.claimValue }));
 			}
 		});
@@ -84,6 +86,7 @@
 
 	async function handleDeleteIdpMapping(mapping: GroupIdpMapping) {
 		if (!group || isUpdatingMappings) return;
+		const groupId = group.id;
 		isUpdatingMappings = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(groupService.deleteIdpMapping(mapping.id)),
@@ -91,7 +94,7 @@
 			setLoadingState: (value) => (isUpdatingMappings = value),
 			onSuccess: async () => {
 				mappings = mappings.filter((item) => item.id !== mapping.id);
-				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.idpMappings(group.id) });
+				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.idpMappings(groupId) });
 				toast.success(m.common_delete_success({ resource: mapping.claimValue }));
 			}
 		});
@@ -160,127 +163,126 @@
 <SettingsPageLayout {title} description={m.groups_subtitle()} pageType="form">
 	{#snippet mainContent()}
 		<form onsubmit={handleSubmit} class="space-y-6">
-			<div class="space-y-4 rounded-lg border p-4">
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="space-y-2">
-						<Label for="group-name">{m.common_name()}</Label>
-						<Input id="group-name" bind:value={name} placeholder={m.group_name_placeholder()} required disabled={isLoading} />
-					</div>
-					<div class="space-y-2">
-						<Label for="group-description">{m.common_description()}</Label>
+			<SettingsSection title={m.group_details()}>
+				<SettingsRow for="group-name" label={m.common_name()}>
+					{#snippet children({ describedBy })}
+						<Input
+							id="group-name"
+							bind:value={name}
+							placeholder={m.group_name_placeholder()}
+							required
+							disabled={isLoading}
+							aria-describedby={describedBy}
+						/>
+					{/snippet}
+				</SettingsRow>
+				<SettingsRow for="group-description" label={m.common_description()}>
+					{#snippet children({ describedBy })}
 						<Input
 							id="group-description"
 							bind:value={description}
 							placeholder={m.group_description_placeholder()}
 							disabled={isLoading}
+							aria-describedby={describedBy}
 						/>
-					</div>
-				</div>
-			</div>
+					{/snippet}
+				</SettingsRow>
+			</SettingsSection>
 
-			<div class="space-y-3 rounded-lg border p-4">
-				<div>
-					<h3 class="text-sm font-medium">{m.group_members()}</h3>
-					<p class="text-xs text-muted-foreground">{m.group_members_description()}</p>
-				</div>
+			<SettingsSection title={m.group_members()} description={m.group_members_description()}>
+				<div class="flex flex-col gap-3 px-5 py-4">
+					<Input bind:value={userSearch} placeholder={m.search_users()} disabled={isLoading} />
 
-				<Input bind:value={userSearch} placeholder={m.search_users()} disabled={isLoading} />
-
-				{#if filteredUsers.length === 0}
-					<p class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">{m.no_users_found()}</p>
-				{:else}
-					<div class="max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
-						{#each filteredUsers as user (user.id)}
-							{@const synced = syncedMemberIds.has(user.id)}
-							<label class="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-accent/40">
-								<div class="flex min-w-0 items-center gap-3">
-									<Checkbox
-										checked={isUserSelected(user.id)}
-										disabled={isLoading}
-										onCheckedChange={(checked) => toggleUser(user.id, checked === true)}
-									/>
-									<div class="min-w-0">
-										<div class="truncate text-sm font-medium">{user.username}</div>
-										{#if user.displayName || user.email}
-											<div class="truncate text-xs text-muted-foreground">
-												{[user.displayName, user.email].filter(Boolean).join(' · ')}
-											</div>
-										{/if}
-									</div>
-								</div>
-								{#if synced}
-									<Badge variant="gray" size="sm">{m.idp()}</Badge>
-								{/if}
-							</label>
-						{/each}
-					</div>
-				{/if}
-			</div>
-
-			<div class="space-y-3 rounded-lg border p-4">
-				<div>
-					<h3 class="text-sm font-medium">{m.group_role_assignments()}</h3>
-					<p class="text-xs text-muted-foreground">{m.group_role_assignments_description()}</p>
-				</div>
-
-				<RoleAssignmentsEditor bind:assignments={manualRoleAssignments} {roles} {environments} disabled={isLoading} />
-			</div>
-
-			{#if group}
-				<div class="space-y-3 rounded-lg border p-4">
-					<div>
-						<h3 class="text-sm font-medium">{m.group_idp_mappings()}</h3>
-						<p class="text-xs text-muted-foreground">{m.group_idp_mappings_description()}</p>
-					</div>
-
-					<div class="flex gap-2">
-						<Input
-							bind:value={newClaimValue}
-							placeholder={m.group_idp_claim_placeholder()}
-							disabled={isLoading || isUpdatingMappings}
-							onkeydown={(e) => {
-								if (e.key === 'Enter') {
-									e.preventDefault();
-									handleAddIdpMapping();
-								}
-							}}
-						/>
-						<ArcaneButton
-							action="base"
-							tone="outline"
-							type="button"
-							disabled={isLoading || isUpdatingMappings || !newClaimValue.trim()}
-							loading={isUpdatingMappings}
-							onclick={handleAddIdpMapping}
-							customLabel={m.add_claim_mapping()}
-						/>
-					</div>
-
-					{#if mappings.length === 0}
-						<p class="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
-							{m.no_group_idp_mappings()}
-						</p>
+					{#if filteredUsers.length === 0}
+						<p class="py-4 text-center text-sm text-muted-foreground">{m.no_users_found()}</p>
 					{:else}
-						<div class="flex flex-wrap gap-2">
-							{#each mappings as mapping (mapping.id)}
-								<Badge variant="outline">
-									<span>{mapping.claimValue}</span>
-									{#if mapping.source === 'manual'}
-										<button
-											type="button"
-											class="ml-1 rounded-sm p-0.5 text-muted-foreground hover:text-destructive"
-											aria-label={m.common_remove()}
-											disabled={isLoading || isUpdatingMappings}
-											onclick={() => handleDeleteIdpMapping(mapping)}
-										>
-											<CloseIcon class="size-3" />
-										</button>
+						<div class="max-h-64 space-y-1 overflow-y-auto">
+							{#each filteredUsers as user (user.id)}
+								{@const synced = syncedMemberIds.has(user.id)}
+								<label class="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-accent/40">
+									<div class="flex min-w-0 items-center gap-3">
+										<Checkbox
+											checked={isUserSelected(user.id)}
+											disabled={isLoading}
+											onCheckedChange={(checked) => toggleUser(user.id, checked === true)}
+										/>
+										<div class="min-w-0">
+											<div class="truncate text-sm font-medium">{user.username}</div>
+											{#if user.displayName || user.email}
+												<div class="truncate text-xs text-muted-foreground">
+													{[user.displayName, user.email].filter(Boolean).join(' · ')}
+												</div>
+											{/if}
+										</div>
+									</div>
+									{#if synced}
+										<Badge variant="gray" size="sm">{m.idp()}</Badge>
 									{/if}
-								</Badge>
+								</label>
 							{/each}
 						</div>
 					{/if}
 				</div>
+			</SettingsSection>
+
+			<SettingsSection title={m.group_role_assignments()} description={m.group_role_assignments_description()}>
+				<div class="px-5 py-4">
+					<RoleAssignmentsEditor bind:assignments={manualRoleAssignments} {roles} {environments} disabled={isLoading} />
+				</div>
+			</SettingsSection>
+
+			{#if group}
+				<SettingsSection title={m.oidc_ldap_group_mappings()} description={m.oidc_ldap_group_mappings_description()}>
+					<div class="flex flex-col gap-3 px-5 py-4">
+						<div class="flex gap-2">
+							<Input
+								bind:value={newClaimValue}
+								placeholder={m.oidc_ldap_group_claim_placeholder()}
+								disabled={isLoading || isUpdatingMappings}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										handleAddIdpMapping();
+									}
+								}}
+							/>
+							<ArcaneButton
+								action="base"
+								tone="outline"
+								type="button"
+								disabled={isLoading || isUpdatingMappings || !newClaimValue.trim()}
+								loading={isUpdatingMappings}
+								onclick={handleAddIdpMapping}
+								customLabel={m.add_claim_mapping()}
+							/>
+						</div>
+
+						{#if mappings.length === 0}
+							<p class="py-3 text-center text-xs text-muted-foreground">
+								{m.no_oidc_ldap_group_mappings()}
+							</p>
+						{:else}
+							<div class="flex flex-wrap gap-2">
+								{#each mappings as mapping (mapping.id)}
+									<Badge variant="outline">
+										<span>{mapping.claimValue}</span>
+										{#if mapping.source === 'manual'}
+											<button
+												type="button"
+												class="ml-1 rounded-sm p-0.5 text-muted-foreground hover:text-destructive"
+												aria-label={m.common_remove()}
+												disabled={isLoading || isUpdatingMappings}
+												onclick={() => handleDeleteIdpMapping(mapping)}
+											>
+												<CloseIcon class="size-3" />
+											</button>
+										{/if}
+									</Badge>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</SettingsSection>
 			{/if}
 
 			<div class="flex items-center justify-end gap-2">

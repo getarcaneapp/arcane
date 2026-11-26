@@ -45,6 +45,13 @@ type (
 		RoleAssignments *[]GroupRoleAssignment
 		Name            string
 	}
+
+	MembershipSync struct {
+		ClaimGroups map[string][]string
+		UserID      string
+		Source      string
+		Claims      []string
+	}
 )
 
 func NewGroupService(db *database.DB, roleService *role.RoleService) *GroupService {
@@ -482,7 +489,7 @@ func (s *GroupService) CreateIdpMapping(ctx context.Context, claimValue, groupID
 	}
 	var mapping GroupIdpMapping
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := verifyIDsExist(tx.Model(&Group{}), map[string]struct{}{groupID: {}}, "group"); err != nil {
+		if err := role.VerifyIDsExist(tx.Model(&Group{}), map[string]struct{}{groupID: {}}, "group"); err != nil {
 			return err
 		}
 		mapping = GroupIdpMapping{
@@ -520,28 +527,43 @@ func (s *GroupService) DeleteIdpMapping(ctx context.Context, id string) error {
 	})
 }
 
+func LoadClaimGroupsInDB(ctx context.Context, tx *gorm.DB) (map[string][]string, error) {
+	if !tx.WithContext(ctx).Migrator().HasTable("group_idp_mappings") {
+		return nil, nil
+	}
+	var mappings []GroupIdpMapping
+	if err := tx.WithContext(ctx).Select("group_id", "claim_value").Find(&mappings).Error; err != nil {
+		return nil, fmt.Errorf("failed to resolve group IdP mappings: %w", err)
+	}
+	claimGroups := make(map[string][]string, len(mappings))
+	for _, mapping := range mappings {
+		key := strings.ToLower(strings.TrimSpace(mapping.ClaimValue))
+		if key != "" && !slices.Contains(claimGroups[key], mapping.GroupID) {
+			claimGroups[key] = append(claimGroups[key], mapping.GroupID)
+		}
+	}
+	return claimGroups, nil
+}
+
 // SyncUserMembershipsInDB replaces a user's synced group memberships for source
 // ('oidc' or 'ldap') based on group_idp_mappings matching the provided IdP claim values.
 // Manual memberships are never touched.
-func SyncUserMembershipsInDB(ctx context.Context, tx *gorm.DB, userID, source string, claims []string) error {
-	m := tx.WithContext(ctx).Migrator()
-	if !m.HasTable("group_idp_mappings") || !m.HasTable("group_members") {
+func SyncUserMembershipsInDB(ctx context.Context, tx *gorm.DB, opts MembershipSync) error {
+	if !tx.WithContext(ctx).Migrator().HasTable("group_members") {
 		return nil
 	}
 	var matchedGroupIDs []string
-	if len(claims) > 0 {
-		if err := tx.WithContext(ctx).
-			Model(&GroupIdpMapping{}).
-			Where("claim_value IN ?", claims).
-			Distinct("group_id").
-			Pluck("group_id", &matchedGroupIDs).Error; err != nil {
-			return fmt.Errorf("failed to resolve group IdP mappings: %w", err)
+	for _, claim := range opts.Claims {
+		for _, groupID := range opts.ClaimGroups[strings.ToLower(strings.TrimSpace(claim))] {
+			if !slices.Contains(matchedGroupIDs, groupID) {
+				matchedGroupIDs = append(matchedGroupIDs, groupID)
+			}
 		}
 	}
 	if err := tx.WithContext(ctx).
-		Where("user_id = ? AND source = ?", userID, source).
+		Where("user_id = ? AND source = ?", opts.UserID, opts.Source).
 		Delete(&GroupMember{}).Error; err != nil {
-		return fmt.Errorf("failed to clear %s group memberships: %w", source, err)
+		return fmt.Errorf("failed to clear %s group memberships: %w", opts.Source, err)
 	}
 	if len(matchedGroupIDs) == 0 {
 		return nil
@@ -550,12 +572,12 @@ func SyncUserMembershipsInDB(ctx context.Context, tx *gorm.DB, userID, source st
 	for i, gid := range matchedGroupIDs {
 		rows[i] = GroupMember{
 			GroupID: gid,
-			UserID:  userID,
-			Source:  source,
+			UserID:  opts.UserID,
+			Source:  opts.Source,
 		}
 	}
 	if err := tx.WithContext(ctx).Create(&rows).Error; err != nil {
-		return fmt.Errorf("failed to insert %s group memberships: %w", source, err)
+		return fmt.Errorf("failed to insert %s group memberships: %w", opts.Source, err)
 	}
 	return nil
 }
