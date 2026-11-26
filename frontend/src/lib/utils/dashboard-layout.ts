@@ -53,23 +53,63 @@ export const DASHBOARD_WIDGET_TYPES: Record<DashboardWidgetType, DashboardWidget
 
 const WIDGET_TYPES = Object.keys(DASHBOARD_WIDGET_TYPES) as DashboardWidgetType[];
 
+export const DASHBOARD_ENVIRONMENTS_VIEW_KEY = 'dashboard-environments-view';
+
 export type EnvironmentsBoardView = 'cards' | 'table';
+export type EnvironmentsBoardViewPref = 'auto' | EnvironmentsBoardView;
+
+export interface EnvironmentsLayoutOptions {
+	view?: EnvironmentsBoardView;
+	cardColumns?: number;
+}
 
 const ENVIRONMENTS_CARDS_MIN_H = 6;
 
-function defaultEnvironmentsHeight(environmentCount: number, view: EnvironmentsBoardView): number {
-	if (view === 'cards') {
+export function resolveEnvironmentsBoardView(
+	pref: EnvironmentsBoardViewPref,
+	environmentCount: number,
+	isMobile: boolean
+): EnvironmentsBoardView {
+	if (isMobile) return 'cards';
+	if (pref !== 'auto') return pref;
+	return environmentCount > 6 ? 'table' : 'cards';
+}
+
+function readPersistedEnvironmentsLayout(environmentCount: number): EnvironmentsLayoutOptions {
+	let pref: EnvironmentsBoardViewPref = 'table';
+	if (typeof window !== 'undefined') {
+		try {
+			const raw = window.localStorage.getItem(DASHBOARD_ENVIRONMENTS_VIEW_KEY);
+			const parsed: unknown = raw ? JSON.parse(raw) : null;
+			if (parsed === 'auto' || parsed === 'cards' || parsed === 'table') {
+				pref = parsed;
+			}
+		} catch {
+			// Fall back to default table view when stored preference is unreadable.
+		}
+	}
+	const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+	const hasTwoCardColumns = typeof window !== 'undefined' && window.matchMedia('(width >= 80rem)').matches;
+	return {
+		view: resolveEnvironmentsBoardView(pref, environmentCount, isMobile),
+		cardColumns: hasTwoCardColumns ? 2 : 1
+	};
+}
+
+function defaultEnvironmentsHeight(environmentCount: number, options?: EnvironmentsLayoutOptions): number {
+	if (options?.view === 'cards') {
 		if (environmentCount === 0) return 4;
-		return Math.min(Math.max(Math.ceil(environmentCount / 2) * 4 + 2, ENVIRONMENTS_CARDS_MIN_H), 10);
+		const columns = Math.max(options.cardColumns ?? 2, 1);
+		return Math.min(Math.max(Math.ceil(environmentCount / columns) * 4 + 2, ENVIRONMENTS_CARDS_MIN_H), 10);
 	}
 	return Math.min(Math.max(environmentCount + 2, 4), 10);
 }
 
 export function defaultDashboardLayout(
 	environmentCount: number,
-	environmentsView: EnvironmentsBoardView = 'table'
+	environmentsLayout?: EnvironmentsLayoutOptions
 ): DashboardWidget[] {
-	const environmentsHeight = defaultEnvironmentsHeight(environmentCount, environmentsView);
+	const environmentsHeight = defaultEnvironmentsHeight(environmentCount, environmentsLayout);
 	const below = 2 + environmentsHeight;
 	return [
 		{ id: 'healthy', type: 'healthy', x: 0, y: 0, w: 3, h: 2 },
@@ -126,10 +166,11 @@ function settleLayout(layout: DashboardWidget[], pinnedId?: string): DashboardWi
 export function moveWidget(
 	layout: DashboardWidget[],
 	id: string,
-	changes: Partial<Pick<DashboardWidgetLayout, 'x' | 'y' | 'w' | 'h'>>
+	changes: Partial<Pick<DashboardWidgetLayout, 'x' | 'y' | 'w' | 'h'>>,
+	environmentsView: EnvironmentsBoardView = 'table'
 ): DashboardWidget[] {
 	return settleLayout(
-		layout.map((widget) => (widget.id === id ? clampWidget({ ...widget, ...changes }) : widget)),
+		layout.map((widget) => (widget.id === id ? clampWidget({ ...widget, ...changes }, environmentsView) : widget)),
 		id
 	);
 }
@@ -176,14 +217,14 @@ export function createDashboardWidget(
 export function resolveDashboardLayout(
 	saved: DashboardWidgetLayout[] | undefined,
 	environmentCount: number,
-	environmentsView: EnvironmentsBoardView = 'table'
+	environmentsLayout?: EnvironmentsLayoutOptions
 ): DashboardWidget[] {
-	const defaults = defaultDashboardLayout(environmentCount, environmentsView);
+	const defaults = defaultDashboardLayout(environmentCount, environmentsLayout);
 	const known = (saved ?? [])
 		.flatMap((widget) => {
 			const { id } = widget;
 			const type = WIDGET_TYPES.find((key) => key === (widget.type ?? id));
-			return type && id ? [clampWidget({ ...widget, id, type }, environmentsView)] : [];
+			return type && id ? [clampWidget({ ...widget, id, type }, environmentsLayout?.view)] : [];
 		})
 		.filter(
 			(widget, index, all) =>
@@ -202,8 +243,9 @@ export function resolveDashboardLayout(
 
 function pinDashboardWidget(instance: DashboardWidgetInput): boolean {
 	const saved = userStore.current?.preferences?.dashboardLayout ?? [];
+	const enabledCount = environmentStore.available.filter((environment) => environment.enabled).length;
 	const layout = [
-		...resolveDashboardLayout(saved, environmentStore.available.filter((environment) => environment.enabled).length),
+		...resolveDashboardLayout(saved, enabledCount, readPersistedEnvironmentsLayout(enabledCount)),
 		...saved.filter((widget) => !widget.id)
 	];
 	const next = addDashboardWidget(layout, instance);
