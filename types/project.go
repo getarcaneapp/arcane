@@ -647,10 +647,13 @@ type (
 	}
 
 	ComposeIdentity struct {
-		ComposeProjectName  *string
-		ResolvedProjectName string
-		ServiceCount        int
-		ExplicitProjectName bool
+		ComposeProjectName       *string
+		ResolvedProjectName      string
+		ComposeFile              string
+		ProjectTags              []ProjectTagOption
+		ServiceCount             int
+		ExplicitProjectName      bool
+		ProjectTagsAuthoritative bool
 	}
 
 	ProjectRenameJournal struct {
