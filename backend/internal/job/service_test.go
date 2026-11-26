@@ -148,21 +148,17 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	nextRun := time.Date(2026, time.July, 10, 8, 0, 0, 0, time.UTC)
-	fakeScheduler := newFakeJobScheduler("auto-update")
-	fakeScheduler.runtimeStates["auto-update"] = types.JobRuntimeState{
-		Schedule:  "0 8 * * *",
-		NextRun:   &nextRun,
-		Scheduled: true,
-	}
-
-	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{LocalDockerEnabled: true}, fakeScheduler)
+	jobSvc := newJobServiceForTest(t, ctx, db, settingsSvc, &config.Config{LocalDockerEnabled: true}, newFakeJobScheduler("auto-update"))
+	require.NoError(t, jobSvc.runs.Install(ctx, "auto-update", "0 8 * * *"))
+	_, nextRun, err := jobSvc.runs.ScheduleState(ctx, "auto-update")
+	require.NoError(t, err)
+	require.NotNil(t, nextRun)
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
 	autoUpdateJob := findJobStatusByID(t, jobs.Jobs, "auto-update")
 	require.Equal(t, "0 8 * * *", autoUpdateJob.Schedule)
-	require.Equal(t, nextRun, *autoUpdateJob.NextRun)
+	require.Equal(t, *nextRun, *autoUpdateJob.NextRun)
 
 	now := time.Now().UTC()
 	failed := types.SchedulerRun{

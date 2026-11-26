@@ -55,6 +55,9 @@ func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, c
 			if err := q.service.GetState(ctx, coordinatorType, id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 				return false, err
 			}
+			if _, err := q.compactActivity(ctx, id, state.PendingActivitySync); err != nil {
+				return false, err
+			}
 			if prepareMutationErr := q.prepareMutation(&state, environmentID, jobID, change); prepareMutationErr != nil {
 				return false, prepareMutationErr
 			}
@@ -187,13 +190,18 @@ func (q *Coordinator) Records(ctx context.Context) ([]types.SchedulerQueueRecord
 }
 
 func (q *Coordinator) states(ctx context.Context) ([]types.SchedulerCoordinatorState, error) {
-	entries, err := listStates[types.SchedulerCoordinatorState](ctx, q.service)
+	entries, err := listStates[types.SchedulerCoordinatorState](ctx, q.service, coordinatorType)
+	if err != nil {
+		return nil, err
+	}
+	acknowledged, err := q.acknowledgements(ctx)
 	if err != nil {
 		return nil, err
 	}
 	states := make([]types.SchedulerCoordinatorState, 0, len(entries))
 	for _, entry := range entries {
 		normalizeRecordTimes(&entry.State.Record)
+		dropAcknowledged(entry.State.PendingActivitySync, acknowledged[entry.ActorID])
 		q.runtime.NameActor(entry.ActorID, entry.State.Record.JobID+"@"+entry.State.Record.EnvironmentID)
 		states = append(states, entry.State)
 	}
@@ -201,23 +209,28 @@ func (q *Coordinator) states(ctx context.Context) ([]types.SchedulerCoordinatorS
 }
 
 func (q *Coordinator) summaries(ctx context.Context) ([]coordinatorSummary, error) {
-	entries, err := listStates[coordinatorSummary](ctx, q.service)
+	entries, err := listStates[coordinatorSummary](ctx, q.service, coordinatorType)
+	if err != nil {
+		return nil, err
+	}
+	acknowledged, err := q.acknowledgements(ctx)
 	if err != nil {
 		return nil, err
 	}
 	summaries := make([]coordinatorSummary, 0, len(entries))
 	for _, entry := range entries {
+		dropAcknowledged(entry.State.PendingActivitySync, acknowledged[entry.ActorID])
 		q.runtime.NameActor(entry.ActorID, entry.State.Record.JobID+"@"+entry.State.Record.EnvironmentID)
 		summaries = append(summaries, entry.State)
 	}
 	return summaries, nil
 }
 
-func listStates[T any](ctx context.Context, service *actor.Service) ([]stateEntry[T], error) {
+func listStates[T any](ctx context.Context, service *actor.Service, actorType string) ([]stateEntry[T], error) {
 	entries := []stateEntry[T]{}
 	cursor := ""
 	for {
-		page, err := service.ListStates(ctx, coordinatorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
+		page, err := service.ListStates(ctx, actorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
 		if err != nil {
 			return nil, fmt.Errorf("list job coordinator states: %w", err)
 		}
@@ -391,22 +404,34 @@ func (q *Coordinator) SetExecutor(execute, reconcile func(context.Context, types
 }
 
 func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (types.SchedulerQueueRecord, *time.Time, error) {
-	var state types.SchedulerCoordinatorState
+	var state struct {
+		Record struct{ JobID, EnvironmentID, Schedule, ScheduleJobID string }
+	}
 	if err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex("0\x00"+jobID), &state); err != nil {
-		return state.Record, nil, err
+		return types.SchedulerQueueRecord{}, nil, err
 	}
-	normalizeRecordTimes(&state.Record)
-	if state.Record.ScheduleJobID == "" {
-		return state.Record, nil, nil
+	record := types.SchedulerQueueRecord{
+		JobID:         state.Record.JobID,
+		EnvironmentID: state.Record.EnvironmentID,
+		Schedule:      state.Record.Schedule,
+		ScheduleJobID: state.Record.ScheduleJobID,
 	}
-	job, err := q.service.GetJob(ctx, state.Record.ScheduleJobID)
+	nextRun, err := q.NextRun(ctx, record)
+	return record, nextRun, err
+}
+
+func (q *Coordinator) NextRun(ctx context.Context, record types.SchedulerQueueRecord) (*time.Time, error) {
+	if record.ScheduleJobID == "" {
+		return nil, nil
+	}
+	job, err := q.service.GetJob(ctx, record.ScheduleJobID)
 	if errors.Is(err, actor.ErrJobNotFound) || (err == nil && job.Status.IsTerminal()) {
-		return state.Record, nil, nil
+		return nil, nil
 	}
 	if err != nil {
-		return state.Record, nil, err
+		return nil, err
 	}
-	return state.Record, new(job.DueTime.UTC()), nil
+	return new(job.DueTime.UTC()), nil
 }
 
 func (q *Coordinator) Activate() { q.enabled.Store(true); q.signal() }

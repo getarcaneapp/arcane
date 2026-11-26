@@ -237,12 +237,7 @@ func LoadComposeProjectFromContent(ctx context.Context, opts types.ComposeConten
 		return nil, fmt.Errorf("failed to load compose project: %w", err)
 	}
 
-	var rawSources map[string]string
-	if !isNilVolumeSourcePathMapper(opts.PathMapper) {
-		rawSources = harvestRawSources(ctx, configDetails, loaderOptions...)
-	}
-
-	return finishLoadedProject(ctx, project, workingDir, opts.PathMapper, false, rawSources, nil)
+	return finishLoadedProject(ctx, project, workingDir, opts.PathMapper, false, configDetails, loaderOptions, nil)
 }
 
 func wrapTypeCastMappingLenient(mapping map[tree.Path]interp.Cast) map[tree.Path]interp.Cast {
@@ -424,12 +419,7 @@ func LoadComposeProject(ctx context.Context, opts LoadOptions) (project *compose
 		project.ComposeFiles = append(project.ComposeFiles, configFile.Filename)
 	}
 
-	var rawSources map[string]string
-	if !isNilVolumeSourcePathMapper(opts.PathMapper) {
-		rawSources = harvestRawSources(ctx, cfg, loaderOptions...)
-	}
-
-	project, err = finishLoadedProject(ctx, project, workdir, opts.PathMapper, true, rawSources, opts.Prepare)
+	project, err = finishLoadedProject(ctx, project, workdir, opts.PathMapper, true, cfg, loaderOptions, opts.Prepare)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +433,8 @@ func finishLoadedProject(ctx context.Context,
 	workingDir string,
 	pathMapper types.VolumeSourcePathMapper,
 	translateFileResources bool,
-	rawSources map[string]string,
+	cfg composeTypes.ConfigDetails,
+	loaderOptions []func(*loader.Options),
 	prepare PrepareProjectFunc) (*composeTypes.Project,
 	error,
 ) {
@@ -462,10 +453,13 @@ func finishLoadedProject(ctx context.Context,
 	}
 
 	if !isNilVolumeSourcePathMapper(pathMapper) {
+		before := remapTargetValues(project, translateFileResources)
 		if err := pathMapper.TranslateVolumeSources(project, translateFileResources); err != nil {
 			return nil, fmt.Errorf("failed to translate paths for docker host: %w", err)
 		}
-		RemapEscapedRelativeSources(ctx, pathMapper, project, workingDir, rawSources, translateFileResources)
+		if hasUnmappedRemapTarget(pathMapper, project, workingDir, translateFileResources, before) {
+			RemapEscapedRelativeSources(ctx, pathMapper, project, workingDir, harvestRawSources(ctx, cfg, loaderOptions...), translateFileResources)
+		}
 	}
 
 	return project, nil
