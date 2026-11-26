@@ -2054,7 +2054,7 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", removeAllErr)
 			if errors.Is(removeAllErr, os.ErrPermission) {
 				return fmt.Errorf(
-					"failed to remove project files: %s is not writable by the runtime user (uid %d, gid %d); fix its ownership or set PUID/PGID to a user that can write to it: %w",
+					"failed to remove project files: %s or its parent directory is not writable by the runtime user (uid %d, gid %d); fix their ownership or set PUID/PGID to a user that can write to both: %w",
 					proj.Path, os.Geteuid(), os.Getegid(), removeAllErr,
 				)
 			}
