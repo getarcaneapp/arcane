@@ -987,7 +987,11 @@ func (s *Service) createVolumeWorkspaceMutationContainer(ctx context.Context, vo
 		return "", nil, err
 	}
 	config := &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()}
-	hostConfig := volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount})
+	hostConfig := volumes.HostConfig(volumes.HelperHost{
+		Image:  helperImage,
+		Binds:  []string{volumeName + ":/volume"},
+		Mounts: []mount.Mount{backupMount},
+	})
 	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig})
 	})

@@ -387,7 +387,7 @@ func restoreData(
 			if safetyID == "" {
 				touched, err := runStages(ctx, request.Stages, rustic)
 				if err != nil && !touched {
-					return backup.UnchangedError{Err: err}
+					return fmt.Errorf("%w (%w)", err, backup.ErrRestoreUnchanged)
 				}
 				return err
 			}
