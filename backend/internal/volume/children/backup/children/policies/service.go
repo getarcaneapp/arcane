@@ -21,6 +21,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/types/v3"
 )
 
@@ -180,6 +181,11 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 	}
 	if policy == nil {
 		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
+	}
+	// Scheduled jobs run in the manager's environment, so a policy owned by a docker-host environment
+	// is refused rather than resolving a same-named volume against the wrong daemon.
+	if policy.EnvironmentID != envcontext.EnvironmentIDOrDefault(ctx) {
+		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy belongs to another environment"}, nil
 	}
 	// The remote is checked once the run is admitted, against the policy the backup then runs with, so S3 enabled or
 	// moved while the run waited is checked too. A missing repository disables S3 (or the policy) before the plan

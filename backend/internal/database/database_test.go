@@ -1151,8 +1151,9 @@ func TestMigration124_MovesVolumePoliciesIntoBackupPolicies(t *testing.T) {
 	_, err := rawDB.ExecContext(ctx, `INSERT INTO project_backups (id, project_id, project_name, created_at) VALUES ('pb1', 'p1', 'web', CURRENT_TIMESTAMP)`)
 	require.NoError(t, err)
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO volume_backup_policies
-		(id, volume_name, enabled, schedule, retention_count, stop_containers, local_enabled, s3_enabled, s3_destination_id)
-		VALUES ('vp1', 'data', 1, '0 3 * * *', 4, 1, 0, 1, 's3-1'), ('vp2', 'cache', 0, '0 2 * * *', 7, 0, 1, 0, NULL)`)
+		(id, volume_name, environment_id, enabled, schedule, retention_count, stop_containers, local_enabled, s3_enabled, s3_destination_id)
+		VALUES ('vp1', 'data', '0', 1, '0 3 * * *', 4, 1, 0, 1, 's3-1'), ('vp2', 'cache', 'dh-1', 0, '0 2 * * *', 7, 0, 1, 0, NULL),
+		('vp3', 'data', '', 1, '0 1 * * *', 2, 0, 1, 0, NULL)`)
 	require.NoError(t, err)
 	tables := func() map[string]bool {
 		rows, queryErr := rawDB.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('backup_policies', 'volume_backup_policies')`)
@@ -1189,6 +1190,19 @@ func TestMigration124_MovesVolumePoliciesIntoBackupPolicies(t *testing.T) {
 		[]any{kind, subject, enabled, schedule, retention, stopContainers, localEnabled, s3Enabled, destination, options})
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT s3_destination_id FROM backup_policies WHERE id = 'vp2'`).Scan(&destination))
 	assert.Empty(t, destination)
+	// The fork scopes volume policies by environment, so the copy has to keep it and normalize the
+	// empty value 00118 may have left behind; two environments can both own a volume named "data".
+	var environments []string
+	rows, err := rawDB.QueryContext(ctx, `SELECT id || '=' || environment_id FROM backup_policies ORDER BY id`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var row string
+		require.NoError(t, rows.Scan(&row))
+		environments = append(environments, row)
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	assert.Equal(t, []string{"vp1=0", "vp2=dh-1", "vp3=0"}, environments)
 	_, err = rawDB.ExecContext(ctx, `INSERT INTO backup_policies (id, subject_kind, subject_id, schedule) VALUES ('pp1', 'project', 'p1', '0 2 * * *')`)
 	require.NoError(t, err)
 
@@ -1196,7 +1210,7 @@ func TestMigration124_MovesVolumePoliciesIntoBackupPolicies(t *testing.T) {
 	assert.Equal(t, map[string]bool{"volume_backup_policies": true}, tables())
 	assert.Zero(t, projectColumns())
 	var volumes []string
-	rows, err := rawDB.QueryContext(ctx, `SELECT id || ':' || volume_name || ':' || retention_count FROM volume_backup_policies ORDER BY id`)
+	rows, err = rawDB.QueryContext(ctx, `SELECT id || ':' || volume_name || ':' || retention_count || ':' || environment_id FROM volume_backup_policies ORDER BY id`)
 	require.NoError(t, err)
 	for rows.Next() {
 		var row string
@@ -1205,7 +1219,7 @@ func TestMigration124_MovesVolumePoliciesIntoBackupPolicies(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 	require.NoError(t, rows.Close())
-	assert.Equal(t, []string{"vp1:data:4", "vp2:cache:7"}, volumes)
+	assert.Equal(t, []string{"vp1:data:4:0", "vp2:cache:7:dh-1", "vp3:data:2:0"}, volumes)
 	var backups int
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM project_backups`).Scan(&backups))
 	assert.Equal(t, 1, backups)

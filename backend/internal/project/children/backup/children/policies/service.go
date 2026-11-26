@@ -28,6 +28,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/types/v3"
 )
 
@@ -345,6 +346,11 @@ func (s *Service) runScheduled(ctx context.Context, t flow.Task) (any, error) {
 	}
 	if policy == nil {
 		return canceled, nil
+	}
+	// Scheduled jobs run in the manager's environment, so a policy owned by a docker-host environment
+	// is refused rather than backing up the project against the wrong daemon.
+	if policy.EnvironmentID != envcontext.EnvironmentIDOrDefault(ctx) {
+		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy belongs to another environment"}, nil
 	}
 	remoteDisabled := false
 	err = s.deps.BackUp(ctx, ScheduledBackup{

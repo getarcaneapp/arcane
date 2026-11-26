@@ -44,7 +44,7 @@ SELECT
 FROM (
     SELECT DISTINCT
         source.api_key_id AS api_key_id,
-        CASE WHEN COALESCE(source.environment_id, '') = '' THEN reader.environment_id ELSE source.environment_id END AS environment_id
+        CASE WHEN COALESCE(source.environment_id, '') = '' THEN NULLIF(reader.environment_id, '') ELSE source.environment_id END AS environment_id
     FROM api_key_permissions AS source
     JOIN api_key_permissions AS reader
         ON reader.api_key_id = source.api_key_id AND reader.permission = 'projects:read'
@@ -74,7 +74,7 @@ SELECT
 FROM (
     SELECT DISTINCT
         source.api_key_id AS api_key_id,
-        CASE WHEN COALESCE(source.environment_id, '') = '' THEN reader.environment_id ELSE source.environment_id END AS environment_id
+        CASE WHEN COALESCE(source.environment_id, '') = '' THEN NULLIF(reader.environment_id, '') ELSE source.environment_id END AS environment_id
     FROM api_key_permissions AS source
     JOIN api_key_permissions AS reader
         ON reader.api_key_id = source.api_key_id AND reader.permission = 'projects:read'
@@ -120,7 +120,7 @@ SELECT gen_random_uuid()::text, grants.api_key_id, 'projects:backup', grants.env
 FROM (
     SELECT DISTINCT
         source.api_key_id AS api_key_id,
-        CASE WHEN COALESCE(source.environment_id, '') = '' THEN reader.environment_id ELSE source.environment_id END AS environment_id
+        CASE WHEN COALESCE(source.environment_id, '') = '' THEN NULLIF(reader.environment_id, '') ELSE source.environment_id END AS environment_id
     FROM api_key_permissions AS source
     JOIN api_key_permissions AS reader
         ON reader.api_key_id = source.api_key_id AND reader.permission = 'projects:read'
@@ -142,7 +142,7 @@ SELECT gen_random_uuid()::text, grants.api_key_id, 'projects:restore', grants.en
 FROM (
     SELECT DISTINCT
         source.api_key_id AS api_key_id,
-        CASE WHEN COALESCE(source.environment_id, '') = '' THEN reader.environment_id ELSE source.environment_id END AS environment_id
+        CASE WHEN COALESCE(source.environment_id, '') = '' THEN NULLIF(reader.environment_id, '') ELSE source.environment_id END AS environment_id
     FROM api_key_permissions AS source
     JOIN api_key_permissions AS reader
         ON reader.api_key_id = source.api_key_id AND reader.permission = 'projects:read'

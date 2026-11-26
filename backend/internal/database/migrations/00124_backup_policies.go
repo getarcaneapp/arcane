@@ -28,7 +28,7 @@ INSERT INTO backup_policies (
     id, subject_kind, subject_id, environment_id, enabled, schedule, retention_count, stop_containers, local_enabled,
     s3_enabled, s3_destination_id, options, created_at, updated_at
 )
-SELECT id, 'volume', volume_name, COALESCE(environment_id, '0'), enabled, schedule, retention_count, stop_containers,
+SELECT id, 'volume', volume_name, COALESCE(NULLIF(environment_id, ''), '0'), enabled, schedule, retention_count, stop_containers,
     local_enabled, s3_enabled, COALESCE(s3_destination_id, ''), '{}', created_at, updated_at
 FROM volume_backup_policies;
 DROP TABLE volume_backup_policies;
@@ -59,7 +59,7 @@ INSERT INTO backup_policies (
     id, subject_kind, subject_id, environment_id, enabled, schedule, retention_count, stop_containers, local_enabled,
     s3_enabled, s3_destination_id, options, created_at, updated_at
 )
-SELECT id, 'volume', volume_name, COALESCE(environment_id, '0'), enabled, schedule, retention_count, stop_containers,
+SELECT id, 'volume', volume_name, COALESCE(NULLIF(environment_id, ''), '0'), enabled, schedule, retention_count, stop_containers,
     local_enabled, s3_enabled, COALESCE(s3_destination_id, ''), '{}', created_at, updated_at
 FROM volume_backup_policies;
 DROP TABLE volume_backup_policies;

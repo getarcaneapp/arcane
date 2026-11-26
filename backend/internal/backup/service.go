@@ -1164,13 +1164,14 @@ func DisableMissingRemote(remoteErr error, localEnabled bool, s3Enabled, enabled
 
 func NewPolicies(db *database.DB) *Policies { return &Policies{db: db} }
 
-// policyScope keeps volume and project policies inside the environment that owns them; system
-// policies belong to the manager itself.
+// policyScope keeps volume policies inside the environment that owns the volume name. Project
+// policies are keyed by a project UUID, which is unique across environments, and system policies
+// belong to the manager itself.
 func policyScope(ctx context.Context, kind string) (string, []any) {
-	if kind == PolicySystem {
-		return "", nil
+	if kind == PolicyVolume {
+		return "environment_id = ?", []any{envcontext.EnvironmentIDOrDefault(ctx)}
 	}
-	return "environment_id = ?", []any{envcontext.EnvironmentIDOrDefault(ctx)}
+	return "", nil
 }
 
 func scopePolicies(query *gorm.DB, ctx context.Context, kind string) *gorm.DB {
