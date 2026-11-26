@@ -27,12 +27,12 @@
 
 	const resourceTypeOptions: Array<{ value: string; label: () => string }> = [
 		{ value: ALL_RESOURCES_OPTION, label: () => m.all_resources_in_environment() },
-		{ value: 'project', label: () => m.resource_scope_project() },
-		{ value: 'container', label: () => m.resource_scope_container() },
-		{ value: 'volume', label: () => m.resource_scope_volume() },
-		{ value: 'network', label: () => m.resource_scope_network() },
-		{ value: 'image', label: () => m.resource_scope_image() },
-		{ value: 'gitops', label: () => m.resource_scope_gitops() }
+		{ value: 'project', label: () => m.project() },
+		{ value: 'container', label: () => m.container() },
+		{ value: 'volume', label: () => m.resource_volume_cap() },
+		{ value: 'network', label: () => m.resource_network_cap() },
+		{ value: 'image', label: () => m.common_image() },
+		{ value: 'gitops', label: () => m.webhook_target_resource_label_gitops() }
 	];
 
 	function resourceTypeLabel(value: string | undefined): string {

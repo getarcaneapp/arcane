@@ -843,7 +843,7 @@ func resourcePermissionsToMap(ps *authz.PermissionSet) map[string][]types.Resour
 		for key, perms := range resources {
 			list := slices.Collect(maps.Keys(perms))
 			slices.Sort(list)
-			grants = append(grants, types.ResourceGrant{
+			grants = append(grants, types.ResourceGrant{ //exhaustruct:enforce
 				Type:        key.Type,
 				ID:          key.ID,
 				Permissions: list,

@@ -13,6 +13,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 
+	"kit.getarcane.app"
+
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -78,12 +80,23 @@ func SessionHTTPError(err error) error {
 	return nil
 }
 
-func requireUploadPermission(ctx context.Context, kind, environmentID string) error {
+func requireUploadPermission(ctx context.Context, kind, environmentID, target string) error {
 	perms := authz.UploadKindConditions.Required("kind", kind)
 	if len(perms) == 0 {
 		return huma.Error403Forbidden("permission denied: unknown upload kind " + kind)
 	}
+	if kind == types.UploadKindVolumeBackup && target != "" {
+		return middleware.RequireResourcePermissions(ctx, environmentID, authz.ResourceTypeVolume, target, perms)
+	}
 	return middleware.RequirePermissions(ctx, environmentID, perms)
+}
+
+func (h *UploadHandler) requireSessionPermission(ctx context.Context, kind, environmentID, uploadID string) error {
+	session, err := h.uploadService.GetSession(ctx, kind, uploadID)
+	if err != nil {
+		return requireUploadPermission(ctx, kind, environmentID, "")
+	}
+	return requireUploadPermission(ctx, kind, environmentID, session.Target)
 }
 
 func sessionResponse(session *types.UploadSession) *handlerutil.Out[types.UploadSession] {
@@ -96,7 +109,7 @@ func sessionResponse(session *types.UploadSession) *handlerutil.Out[types.Upload
 }
 
 func (h *UploadHandler) CreateSession(ctx context.Context, input *CreateUploadSessionInput) (*handlerutil.Out[types.UploadSession], error) {
-	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
+	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID, strings.TrimSpace(input.Body.Target)); err != nil {
 		return nil, err
 	}
 	session, err := h.uploadService.CreateSession(ctx, input.Kind, input.Body)
@@ -110,7 +123,7 @@ func (h *UploadHandler) CreateSession(ctx context.Context, input *CreateUploadSe
 }
 
 func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput) (*handlerutil.Out[types.UploadSession], error) {
-	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
+	if err := h.requireSessionPermission(ctx, input.Kind, input.EnvironmentID, input.UploadID); err != nil {
 		return nil, err
 	}
 	session, err := h.uploadService.WriteChunk(ctx, input.Kind, input.UploadID, input.Index, input.RawBody)
@@ -124,7 +137,7 @@ func (h *UploadHandler) UploadChunk(ctx context.Context, input *UploadChunkInput
 }
 
 func (h *UploadHandler) ReadChunk(ctx context.Context, input *ReadChunkInput) (*ReadChunkOutput, error) {
-	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
+	if err := h.requireSessionPermission(ctx, input.Kind, input.EnvironmentID, input.UploadID); err != nil {
 		return nil, err
 	}
 	data, err := h.uploadService.ReadChunk(ctx, input.Kind, input.UploadID, input.Index)
@@ -141,7 +154,7 @@ func (h *UploadHandler) ReadChunk(ctx context.Context, input *ReadChunkInput) (*
 }
 
 func (h *UploadHandler) GetSession(ctx context.Context, input *GetUploadSessionInput) (*handlerutil.Out[types.UploadSession], error) {
-	if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
+	if err := h.requireSessionPermission(ctx, input.Kind, input.EnvironmentID, input.UploadID); err != nil {
 		return nil, err
 	}
 	session, err := h.uploadService.GetSession(ctx, input.Kind, input.UploadID)
@@ -158,6 +171,16 @@ func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSes
 	if input.Kind != types.UploadKindProjectArchive {
 		return nil, huma.Error403Forbidden("permission denied: " + input.Kind + " uploads cannot be downloaded")
 	}
+	source, err := h.uploadService.GetSession(ctx, input.Kind, input.UploadID)
+	if err != nil {
+		if httpErr := SessionHTTPError(err); httpErr != nil {
+			return nil, httpErr
+		}
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	if permErr := middleware.RequireResourcePermissions(ctx, input.EnvironmentID, authz.ResourceTypeProject, source.Target, []string{authz.PermProjectsExport}); permErr != nil {
+		return nil, permErr
+	}
 	reader, session, err := h.uploadService.DownloadSession(ctx, input.Kind, input.UploadID)
 	if err != nil {
 		if httpErr := SessionHTTPError(err); httpErr != nil {
@@ -169,9 +192,11 @@ func (h *UploadHandler) DownloadSession(ctx context.Context, input *GetUploadSes
 }
 
 func (h *UploadHandler) DeleteSession(ctx context.Context, input *DeleteUploadSessionInput) (*handlerutil.Out[types.MessageResponse], error) {
-	ps, _ := middleware.PermissionsFromContext(ctx)
-	if input.Kind != types.UploadKindProjectArchive || !ps.Allows(authz.PermProjectsExport, input.EnvironmentID) {
-		if err := requireUploadPermission(ctx, input.Kind, input.EnvironmentID); err != nil {
+	session, _ := h.uploadService.GetSession(ctx, input.Kind, input.UploadID)
+	if input.Kind != types.UploadKindProjectArchive || middleware.RequireResourcePermissions(
+		ctx, input.EnvironmentID, authz.ResourceTypeProject, kit.FromPtr(session).Target, []string{authz.PermProjectsExport},
+	) != nil {
+		if err := h.requireSessionPermission(ctx, input.Kind, input.EnvironmentID, input.UploadID); err != nil {
 			return nil, err
 		}
 	}
@@ -195,7 +220,7 @@ func LegacyMultipartMiddleware(api huma.API, service *UploadService, kind string
 				slog.WarnContext(ctx.Context(), "failed to write legacy upload error response", "error", err)
 			}
 		}
-		if err := requireUploadPermission(ctx.Context(), kind, authz.EnvIDFromPath(ctx.URL().Path)); err != nil {
+		if err := requireUploadPermission(ctx.Context(), kind, authz.EnvIDFromPath(ctx.URL().Path), ctx.Param("volumeName")); err != nil {
 			writeErr(http.StatusForbidden, "permission denied")
 			return
 		}

@@ -125,6 +125,16 @@ func RequirePermissions(ctx context.Context, environmentID string, perms []strin
 	return nil
 }
 
+func RequireResourcePermissions(ctx context.Context, environmentID, resourceType, resourceID string, perms []string) error {
+	ps, _ := PermissionsFromContext(ctx)
+	for _, perm := range perms {
+		if !ps.AllowsResource(perm, environmentID, resourceType, resourceID) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
+	}
+	return nil
+}
+
 func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {
 	if scope, scoped := httpx.EnvironmentScopeFromContext(ctx.Context()); scoped && authz.IsEnvScoped(perm) {
 		denied := slices.DeleteFunc(slices.Clone(scope.IDs), func(id string) bool {

@@ -428,7 +428,11 @@ func newUploadCmd() *cobra.Command {
 			output.Info("Uploading image: %s", filePath)
 
 			jsonOutput := cmdutil.JSONOutputEnabled(cmd)
-			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, types.UploadKindImage, filePath, !jsonOutput)
+			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, cmdutil.UploadOptions{
+				Kind:         types.UploadKindImage,
+				FilePath:     filePath,
+				ShowProgress: !jsonOutput,
+			})
 			if err != nil {
 				return err
 			}

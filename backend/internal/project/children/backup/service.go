@@ -260,7 +260,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 }
 
 func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.ProjectBackup, error) {
-	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsBackup)
+	requester := backup.NewResourceRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsBackup, authz.ResourceTypeProject, opts.ProjectID)
 	project, err := s.deps.Project(ctx, opts.ProjectID, projectDetails)
 	if err != nil {
 		return types.ProjectBackup{}, err
@@ -275,7 +275,9 @@ func (s *Service) StartBackup(ctx context.Context, opts StartOptions) (types.Pro
 			return types.ProjectBackup{}, activeErr
 		}
 		if len(active) > 0 {
-			if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, opts.EnvironmentID, policies.StopPermissions)); permErr != nil {
+			if permErr := common.Classify(common.ErrForbidden, middleware.RequireResourcePermissions(
+				ctx, opts.EnvironmentID, authz.ResourceTypeProject, opts.ProjectID, policies.StopPermissions,
+			)); permErr != nil {
 				return types.ProjectBackup{}, permErr
 			}
 		}
@@ -717,6 +719,8 @@ func (s *Service) authorize(ctx context.Context, requester types.BackupRequester
 			APIKeyID:      requester.APIKeyID,
 			EnvironmentID: requester.EnvironmentID,
 			Permission:    permission,
+			ResourceType:  requester.ResourceType,
+			ResourceID:    requester.ResourceID,
 		}); err != nil {
 			return err
 		}
@@ -1515,10 +1519,10 @@ func (s *Service) StartRestore(ctx context.Context, opts StartRestoreOptions) (s
 		Volumes:      targets,
 		Files:        files,
 	}
-	if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, opts.EnvironmentID, p.extraPermissions())); permErr != nil {
+	if permErr := common.Classify(common.ErrForbidden, middleware.RequireResourcePermissions(ctx, opts.EnvironmentID, authz.ResourceTypeProject, opts.ProjectID, p.extraPermissions())); permErr != nil {
 		return "", permErr
 	}
-	requester := backup.NewRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore)
+	requester := backup.NewResourceRequester(ctx, opts.User, opts.EnvironmentID, authz.PermProjectsRestore, authz.ResourceTypeProject, opts.ProjectID)
 	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
 		return "", authorizeErr
 	}

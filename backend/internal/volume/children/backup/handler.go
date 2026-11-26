@@ -17,8 +17,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/upload"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -31,6 +33,7 @@ type (
 		environmentService *environment.EnvironmentService
 		uploadService      *upload.UploadService
 		appCtx             context.Context
+		checkVolumeAccess  func(ctx context.Context, envID, perm, volumeName string) error
 	}
 
 	ListBackupsInput struct {
@@ -91,14 +94,40 @@ type (
 		EnvironmentService *environment.EnvironmentService
 		UploadService      *upload.UploadService
 		AppCtx             context.Context
+		CheckVolumeAccess  func(ctx context.Context, envID, perm, volumeName string) error
 	}
 )
 
 func NewHandler(p HandlerParams) *Handler {
-	return &Handler{service: p.Service, activityService: p.ActivityService, environmentService: p.EnvironmentService, uploadService: p.UploadService, appCtx: p.AppCtx}
+	return &Handler{
+		service:            p.Service,
+		activityService:    p.ActivityService,
+		environmentService: p.EnvironmentService,
+		uploadService:      p.UploadService,
+		appCtx:             p.AppCtx,
+		checkVolumeAccess:  p.CheckVolumeAccess,
+	}
+}
+
+func (h *Handler) requireBackupAccess(ctx context.Context, envID, perm, backupID string) error {
+	if h.checkVolumeAccess == nil {
+		return nil
+	}
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil
+	}
+	entry, err := h.service.deps.Store.Run(ctx, backupID)
+	if err != nil || entry == nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return h.checkVolumeAccess(ctx, envID, perm, entry.VolumeName)
 }
 
 func (h *Handler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
+	if err := h.requireBackupAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.BackupID); err != nil {
+		return nil, err
+	}
 	user, _ := handlerutil.CurrentUserFromContext(ctx)
 	reader, size, err := h.service.DownloadBackup(ctx, input.BackupID, user)
 	if err != nil {
@@ -120,6 +149,11 @@ func (h *Handler) DownloadBackup(ctx context.Context, input *DownloadBackupInput
 }
 
 func (h *Handler) ListBackups(ctx context.Context, input *ListBackupsInput) (*ListBackupsOutput, error) {
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	params := pagination.QueryParams{
 		Search:    input.Search,
 		Sort:      input.Sort,
@@ -150,6 +184,11 @@ func (h *Handler) ListBackups(ctx context.Context, input *ListBackupsInput) (*Li
 }
 
 func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*handlerutil.Out[types.VolumeBackupEntry], error) {
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesBackup, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -164,6 +203,9 @@ func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*
 }
 
 func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.requireBackupAccess(ctx, input.EnvironmentID, authz.PermVolumesBackup, input.BackupID); err != nil {
+		return nil, err
+	}
 	user, _ := handlerutil.CurrentUserFromContext(ctx)
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -190,6 +232,9 @@ func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*
 }
 
 func (h *Handler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBackupsInput) (*DiscoverVolumeBackupsOutput, error) {
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermVolumesBackup, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermVolumesBackup)
+	}
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
@@ -209,6 +254,9 @@ func (h *Handler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBack
 }
 
 func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*handlerutil.Out[*types.VolumeBackup], error) {
+	if err := h.requireBackupAccess(ctx, input.EnvironmentID, authz.PermVolumesBackup, input.BackupID); err != nil {
+		return nil, err
+	}
 	user, _ := handlerutil.CurrentUserFromContext(ctx)
 	var uploaded *types.VolumeBackup
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
@@ -240,6 +288,11 @@ func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*
 }
 
 func (h *Handler) ExportVolumeArchive(ctx context.Context, input *ExportVolumeArchiveInput) (*handlerutil.Out[types.UploadSession], error) {
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesBackup, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}

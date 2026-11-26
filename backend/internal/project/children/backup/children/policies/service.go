@@ -179,7 +179,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequ
 				return common.Classify(common.ErrValidation, validateErr)
 			}
 			if *cmp.Or(update.StopContainers, new(true)) {
-				if permErr := common.Classify(common.ErrForbidden, middleware.RequirePermissions(ctx, requester.EnvironmentID, StopPermissions)); permErr != nil {
+				if permErr := common.Classify(common.ErrForbidden, middleware.RequireResourcePermissions(ctx, requester.EnvironmentID, authz.ResourceTypeProject, projectID, StopPermissions)); permErr != nil {
 					return permErr
 				}
 			}

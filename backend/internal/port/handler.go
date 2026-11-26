@@ -5,6 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -34,6 +36,10 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ha
 			return nil, huma.Error500InternalServerError("failed to list ports: " + err.Error())
 		}
 		return &handlerutil.Page[types.PortMapping]{Body: body}, nil
+	}
+
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermContainersList, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermContainersList)
 	}
 
 	items, paginationResp, err := h.portService.ListPortsPaginated(ctx, params)

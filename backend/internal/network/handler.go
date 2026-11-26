@@ -123,6 +123,10 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *types.Envi
 		return &handlerutil.Out[types.NetworkUsageCounts]{Body: body}, nil
 	}
 
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermNetworksList, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermNetworksList)
+	}
+
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get network counts: " + err.Error())
@@ -203,7 +207,14 @@ func (h *NetworkHandler) requireNetworkAccess(ctx context.Context, envID, perm, 
 	if err != nil {
 		return huma.Error403Forbidden("permission denied: " + perm)
 	}
-	return middleware.RequireComposeResourcePermission(ctx, h.networkService.db, envID, perm, authz.ResourceTypeNetwork, netInspect.ID, netInspect.Name, netInspect.Labels)
+	return middleware.RequireComposeResourcePermission(ctx, h.networkService.db, middleware.ComposeResourceAccessInput{
+		EnvID:        envID,
+		Permission:   perm,
+		ResourceType: authz.ResourceTypeNetwork,
+		ResourceID:   netInspect.ID,
+		ResourceName: netInspect.Name,
+		Labels:       netInspect.Labels,
+	})
 }
 
 func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*handlerutil.Out[types.NetworkInspect], error) {
@@ -259,6 +270,9 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *types.En
 			return nil, huma.Error500InternalServerError("Failed to build network topology: " + err.Error())
 		}
 		return &handlerutil.Out[types.NetworkTopology]{Body: body}, nil
+	}
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermNetworksRead, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermNetworksRead)
 	}
 
 	topology, err := h.networkService.GetNetworkTopology(ctx)

@@ -20,9 +20,10 @@ import (
 
 type (
 	Handler struct {
-		service         *Service
-		activityService *activity.ActivityService
-		appCtx          context.Context
+		service           *Service
+		activityService   *activity.ActivityService
+		appCtx            context.Context
+		checkVolumeAccess func(ctx context.Context, envID, perm, volumeName string) error
 	}
 
 	GetVolumeWorkspaceInput struct {
@@ -44,8 +45,8 @@ type (
 	}
 )
 
-func NewHandler(service *Service, activityService *activity.ActivityService, appCtx context.Context) *Handler {
-	return &Handler{service: service, activityService: activityService, appCtx: appCtx}
+func NewHandler(service *Service, activityService *activity.ActivityService, appCtx context.Context, checkVolumeAccess func(ctx context.Context, envID, perm, volumeName string) error) *Handler {
+	return &Handler{service: service, activityService: activityService, appCtx: appCtx, checkVolumeAccess: checkVolumeAccess}
 }
 
 func volumeWorkspaceHTTPError(err error) error {
@@ -64,6 +65,11 @@ func volumeWorkspaceHTTPError(err error) error {
 }
 
 func (h *Handler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	result, err := h.service.GetVolumeWorkspace(ctx, input.VolumeName, input.Path)
 	if err != nil {
 		return nil, volumeWorkspaceHTTPError(err)
@@ -72,6 +78,11 @@ func (h *Handler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorksp
 }
 
 func (h *Handler) GetVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*handlerutil.Out[types.WorkspaceFileContent], error) {
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	result, err := h.service.GetVolumeWorkspaceFile(ctx, input.VolumeName, input.RelativePath)
 	if err != nil {
 		return nil, volumeWorkspaceHTTPError(err)
@@ -80,6 +91,11 @@ func (h *Handler) GetVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWo
 }
 
 func (h *Handler) DownloadVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*huma.StreamResponse, error) {
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	reader, size, err := h.service.DownloadVolumeWorkspaceFile(ctx, input.VolumeName, input.RelativePath)
 	if err != nil {
 		return nil, volumeWorkspaceHTTPError(err)
@@ -87,13 +103,25 @@ func (h *Handler) DownloadVolumeWorkspaceFile(ctx context.Context, input *GetVol
 	return handlerutil.DownloadResponse(reader, size, path.Base(input.RelativePath)), nil
 }
 
-func requireVolumeWorkspacePermissions(ctx context.Context, environmentID string, changes []types.VolumeWorkspaceFileChange) error {
+func (h *Handler) requireVolumeWorkspacePermissions(ctx context.Context, environmentID, volumeName string, changes []types.VolumeWorkspaceFileChange) error {
 	permissions, ok := middleware.PermissionsFromContext(ctx)
 	if !ok || permissions == nil {
 		return huma.Error403Forbidden("insufficient permissions")
 	}
 	required, _ := authz.WorkspaceRequiredPermissions(authz.VolumeWorkspaceConditions, changes, func(c types.VolumeWorkspaceFileChange) string { return c.Operation })
+	if len(required) == 0 {
+		if h.checkVolumeAccess != nil {
+			return h.checkVolumeAccess(ctx, environmentID, authz.PermVolumesUpload, volumeName)
+		}
+		return nil
+	}
 	for _, permission := range required {
+		if h.checkVolumeAccess != nil {
+			if err := h.checkVolumeAccess(ctx, environmentID, permission, volumeName); err != nil {
+				return huma.Error403Forbidden("insufficient permissions for volume workspace operation")
+			}
+			continue
+		}
 		if !permissions.Allows(permission, environmentID) {
 			return huma.Error403Forbidden("insufficient permissions for volume workspace operation")
 		}
@@ -106,7 +134,7 @@ func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolume
 	if err != nil {
 		return nil, err
 	}
-	if requireVolumeWorkspacePermissionsErr := requireVolumeWorkspacePermissions(ctx, input.EnvironmentID, manifest.FileChanges); requireVolumeWorkspacePermissionsErr != nil {
+	if requireVolumeWorkspacePermissionsErr := h.requireVolumeWorkspacePermissions(ctx, input.EnvironmentID, input.VolumeName, manifest.FileChanges); requireVolumeWorkspacePermissionsErr != nil {
 		return nil, requireVolumeWorkspacePermissionsErr
 	}
 	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, h.service.MaxFileSizeBytes(ctx))

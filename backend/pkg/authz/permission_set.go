@@ -108,7 +108,7 @@ func (ps *PermissionSet) AllowsResource(perm, envID, resourceType, resourceID st
 	if ps.Allows(perm, envID) {
 		return true
 	}
-	if ps == nil || envID == "" || resourceType == "" || resourceID == "" {
+	if ps == nil || envID == "" || resourceID == "" || !slices.Contains(ResourceTypesForPermission(perm), resourceType) {
 		return false
 	}
 	if envResources, ok := ps.PerResource[envID]; ok {

@@ -4894,11 +4894,5 @@
   "idp": "IdP",
   "all_resources_in_environment": "All resources in environment",
   "resource_scope": "Resource Scope",
-  "resource_identifier": "Resource ID or Name",
-  "resource_scope_project": "Project",
-  "resource_scope_container": "Container",
-  "resource_scope_volume": "Volume",
-  "resource_scope_network": "Network",
-  "resource_scope_image": "Image",
-  "resource_scope_gitops": "GitOps Sync"
+  "resource_identifier": "Resource ID or Name"
 }

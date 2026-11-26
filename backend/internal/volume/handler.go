@@ -148,20 +148,8 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 	}, nil
 }
 
-func (h *VolumeHandler) requireVolumeAccess(ctx context.Context, envID, perm, volumeName string) error {
-	ps, ok := middleware.PermissionsFromContext(ctx)
-	if !ok || ps.Allows(perm, envID) {
-		return nil
-	}
-	vol, err := h.volumeService.GetVolumeByName(ctx, volumeName)
-	if err != nil {
-		return huma.Error403Forbidden("permission denied: " + perm)
-	}
-	return middleware.RequireComposeResourcePermission(ctx, h.volumeService.db, envID, perm, authz.ResourceTypeVolume, vol.Name, vol.Name, vol.Labels)
-}
-
 func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*handlerutil.Out[*types.Volume], error) {
-	if err := h.requireVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
+	if err := h.volumeService.CheckVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
 		return nil, err
 	}
 	vol, err := h.volumeService.GetVolumeByName(ctx, input.VolumeName)
@@ -232,7 +220,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 
 func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInput) (*handlerutil.Out[*types.Volume], error) {
 	if input.EnvironmentID == "0" {
-		if err := h.requireVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRename, input.VolumeName); err != nil {
+		if err := h.volumeService.CheckVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRename, input.VolumeName); err != nil {
 			return nil, err
 		}
 	}
@@ -295,7 +283,7 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 }
 
 func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := h.requireVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesDelete, input.VolumeName); err != nil {
+	if err := h.volumeService.CheckVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesDelete, input.VolumeName); err != nil {
 		return nil, err
 	}
 	user, err := handlerutil.RequireUser(ctx)
@@ -366,6 +354,9 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *types.Environme
 }
 
 func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*handlerutil.Out[VolumeUsageResponse], error) {
+	if err := h.volumeService.CheckVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
+		return nil, err
+	}
 	inUse, containers, err := h.volumeService.GetVolumeUsage(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), "Failed to get volume usage: "+err.Error())
@@ -415,6 +406,10 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *types.Environ
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
 		return &handlerutil.Out[[]VolumeSizeInfo]{Body: body}, nil
+	}
+
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermVolumesList, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermVolumesList)
 	}
 
 	sizes, err := h.volumeService.GetVolumeSizes(ctx)

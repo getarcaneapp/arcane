@@ -3,6 +3,7 @@ import { setMode } from 'mode-watcher';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/role.js';
 import type { User } from '#lib/types/user.js';
+import { isResourceTargetablePermission } from '#lib/utils/access-policy.js';
 import { setLocale } from '#lib/utils/formatting.js';
 import {
 	applyAccentColor,
@@ -17,18 +18,6 @@ import {
 } from '#lib/utils/theme.svelte.js';
 
 let current = $state.raw<User | null>(null);
-
-const isResourceTargetablePermission = (perm: string): boolean => {
-	if (perm.endsWith(':create') || perm.endsWith(':prune')) return false;
-	return (
-		perm.startsWith('projects:') ||
-		perm.startsWith('containers:') ||
-		perm.startsWith('volumes:') ||
-		perm.startsWith('networks:') ||
-		perm.startsWith('images:') ||
-		perm.startsWith('gitops:')
-	);
-};
 
 export const userHasPermissionInAnyEnvironment = (user: User | null | undefined, perm: string): boolean => {
 	if (!user?.permissionsByEnv) return false;

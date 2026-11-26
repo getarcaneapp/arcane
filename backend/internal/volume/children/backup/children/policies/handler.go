@@ -15,7 +15,9 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
@@ -26,6 +28,7 @@ type (
 		activityService    *activity.ActivityService
 		environmentService *environment.EnvironmentService
 		appCtx             context.Context
+		checkVolumeAccess  func(ctx context.Context, envID, perm, volumeName string) error
 	}
 
 	GetVolumeBackupPolicyInput struct {
@@ -40,8 +43,14 @@ type (
 	}
 )
 
-func NewHandler(service *Service, activityService *activity.ActivityService, environmentService *environment.EnvironmentService, appCtx context.Context) *Handler {
-	return &Handler{service: service, activityService: activityService, environmentService: environmentService, appCtx: appCtx}
+func NewHandler(
+	service *Service,
+	activityService *activity.ActivityService,
+	environmentService *environment.EnvironmentService,
+	appCtx context.Context,
+	checkVolumeAccess func(ctx context.Context, envID, perm, volumeName string) error,
+) *Handler {
+	return &Handler{service: service, activityService: activityService, environmentService: environmentService, appCtx: appCtx, checkVolumeAccess: checkVolumeAccess}
 }
 
 func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPolicyInput) (*handlerutil.Out[types.VolumeBackupPolicyCollection], error) {
@@ -50,7 +59,7 @@ func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPol
 		response, err := handlerutil.RemoteJSONProxy(
 			h.environmentService.ProxyJSONRequest,
 		).JSON[types.ApiResponse[types.VolumeBackupPolicyCollection]](
-			ctx,
+			context.WithValue(ctx, middleware.ContextKeyForwardPermissions, true),
 			input.EnvironmentID,
 			http.MethodGet,
 			remotePath,
@@ -61,6 +70,11 @@ func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPol
 		}
 		return &handlerutil.Out[types.VolumeBackupPolicyCollection]{Body: *response}, nil
 	}
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesRead, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 
 	policies, err := h.service.GetBackupPolicies(ctx, input.VolumeName)
 	if err != nil {
@@ -70,6 +84,11 @@ func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPol
 }
 
 func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBackupPolicyInput) (*handlerutil.Out[types.VolumeBackupPolicyCollection], error) {
+	if input.EnvironmentID == "0" && h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesBackup, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	user, _ := handlerutil.CurrentUserFromContext(ctx)
 	var policies *types.VolumeBackupPolicyCollection
 	var remoteResponse *types.ApiResponse[types.VolumeBackupPolicyCollection]
@@ -107,7 +126,7 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 			remoteResponse, proxyErr = handlerutil.RemoteJSONProxy(
 				h.environmentService.ProxyJSONRequest,
 			).JSON[types.ApiResponse[types.VolumeBackupPolicyCollection]](
-				activityCtx,
+				context.WithValue(activityCtx, middleware.ContextKeyForwardPermissions, true),
 				input.EnvironmentID,
 				http.MethodPut,
 				remotePath,

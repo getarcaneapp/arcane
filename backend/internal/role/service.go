@@ -833,6 +833,16 @@ func (s *RoleService) resolveApiKeyPermissionsInDB(ctx context.Context, db *gorm
 				}
 			}
 		}
+		for envID, resources := range owner.PerResource {
+			if mo.PointerToOption(grant.EnvironmentID).OrElse(envID) != envID {
+				continue
+			}
+			for key, resourcePermissions := range resources {
+				if _, ok := resourcePermissions[grant.Permission]; ok {
+					permissions.AddResource(envID, key.Type, key.ID, grant.Permission)
+				}
+			}
+		}
 	}
 	return permissions, nil
 }

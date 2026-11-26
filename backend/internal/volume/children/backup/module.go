@@ -20,7 +20,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	if h.service != nil {
 		policiesService, browserService, restoreService = h.service.policies, h.service.browser, h.service.restore
 	}
-	policies.RegisterRoutes(api, policies.NewHandler(policiesService, h.activityService, h.environmentService, h.appCtx))
+	policies.RegisterRoutes(api, policies.NewHandler(policiesService, h.activityService, h.environmentService, h.appCtx, h.checkVolumeAccess))
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-volume-backups",
@@ -51,7 +51,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesBackup, h.ExportVolumeArchive)
 
-	restore.RegisterRoutes(api, restore.NewHandler(restoreService, h.activityService, h.uploadService, h.appCtx))
+	restore.RegisterRoutes(api, restore.NewHandler(restoreService, h.activityService, h.uploadService, h.appCtx, h.checkVolumeAccess))
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-volume-backup",
@@ -91,5 +91,5 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermVolumesRead, h.DownloadBackup)
 
-	browser.RegisterRoutes(api, browser.NewHandler(browserService))
+	browser.RegisterRoutes(api, browser.NewHandler(browserService, h.checkVolumeAccess))
 }

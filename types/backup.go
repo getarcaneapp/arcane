@@ -35,6 +35,8 @@ type (
 		APIKeyID      string `json:"apiKeyId,omitempty"`
 		EnvironmentID string `json:"environmentId"`
 		Permission    string `json:"permission"`
+		ResourceType  string `json:"resourceType,omitempty"`
+		ResourceID    string `json:"resourceId,omitempty"`
 	}
 
 	S3DestinationUsage struct {

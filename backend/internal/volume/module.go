@@ -58,12 +58,13 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 	}
 
 	RegisterVolumes(api, m.dockerService, m.service, m.activityService, m.environmentService, appCtx)
-	workspace.RegisterRoutes(api, workspace.NewHandler(service.workspace, m.activityService, appCtx.Context()))
+	workspace.RegisterRoutes(api, workspace.NewHandler(service.workspace, m.activityService, appCtx.Context(), service.CheckVolumeAccess))
 	backup.RegisterRoutes(api, backup.NewHandler(backup.HandlerParams{
 		Service:            service.backup,
 		ActivityService:    m.activityService,
 		EnvironmentService: m.environmentService,
 		UploadService:      m.uploadService,
+		CheckVolumeAccess:  service.CheckVolumeAccess,
 		AppCtx:             appCtx.Context(),
 	}))
 }

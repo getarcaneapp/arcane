@@ -14,6 +14,8 @@ import (
 	"kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	wshub "getarcane.dev/arcane/v3/pkg/ws"
 	"getarcane.dev/types/v3"
 )
@@ -61,6 +63,15 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 	for ctx.Err() == nil {
 		want := kit.FromPtr(ids.Load())
 		want = want[:min(len(want), container.ResourceSampleLimit)]
+		if ps, hasPerms := middleware.PermissionsFromContext(ctx); hasPerms && !ps.Allows(authz.PermContainersRead, c.Param("id")) {
+			filtered := make([]string, 0, len(want))
+			for _, cid := range want {
+				if h.containerService.CheckContainerAccess(ctx, c.Param("id"), authz.PermContainersRead, cid) == nil {
+					filtered = append(filtered, cid)
+				}
+			}
+			want = filtered
+		}
 		subCtx, cancelSub := context.WithCancel(ctx)
 		go func() {
 			defer cancelSub()

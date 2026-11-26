@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	v124SQLiteUp = `
+	v125SQLiteUp = `
 ALTER TABLE user_role_assignments ADD COLUMN resource_type TEXT;
 ALTER TABLE user_role_assignments ADD COLUMN resource_id TEXT;
 DROP INDEX IF EXISTS idx_ura_uniq;
@@ -18,7 +18,7 @@ DROP INDEX IF EXISTS idx_gra_uniq;
 CREATE UNIQUE INDEX idx_gra_uniq ON group_role_assignments(group_id, role_id, COALESCE(environment_id, ''), COALESCE(resource_type, ''), COALESCE(resource_id, ''), source);
 CREATE INDEX IF NOT EXISTS idx_gra_resource ON group_role_assignments(environment_id, resource_type, resource_id);
 `
-	v124PostgresUp = `
+	v125PostgresUp = `
 ALTER TABLE user_role_assignments ADD COLUMN IF NOT EXISTS resource_type text;
 ALTER TABLE user_role_assignments ADD COLUMN IF NOT EXISTS resource_id text;
 DROP INDEX IF EXISTS idx_ura_uniq;
@@ -35,7 +35,7 @@ CREATE UNIQUE INDEX idx_gra_uniq ON group_role_assignments USING btree (
 );
 CREATE INDEX IF NOT EXISTS idx_gra_resource ON group_role_assignments USING btree (environment_id, resource_type, resource_id);
 `
-	v124SQLiteDown = `
+	v125SQLiteDown = `
 DELETE FROM user_role_assignments WHERE resource_type IS NOT NULL;
 DROP INDEX IF EXISTS idx_ura_resource;
 DROP INDEX IF EXISTS idx_ura_uniq;
@@ -50,7 +50,7 @@ ALTER TABLE group_role_assignments DROP COLUMN resource_id;
 ALTER TABLE group_role_assignments DROP COLUMN resource_type;
 CREATE UNIQUE INDEX idx_gra_uniq ON group_role_assignments(group_id, role_id, COALESCE(environment_id, ''), source);
 `
-	v124PostgresDown = `
+	v125PostgresDown = `
 DELETE FROM user_role_assignments WHERE resource_type IS NOT NULL;
 DROP INDEX IF EXISTS idx_ura_resource;
 DROP INDEX IF EXISTS idx_ura_uniq;
@@ -68,5 +68,5 @@ CREATE UNIQUE INDEX idx_gra_uniq ON group_role_assignments USING btree (group_id
 )
 
 func init() {
-	goose.AddMigrationContext(run(v124SQLiteUp, v124PostgresUp), run(v124SQLiteDown, v124PostgresDown))
+	goose.AddMigrationContext(run(v125SQLiteUp, v125PostgresUp), run(v125SQLiteDown, v125PostgresDown))
 }

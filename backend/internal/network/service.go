@@ -474,7 +474,15 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 	} else if !unrestricted {
 		ps, _ := middleware.PermissionsFromContext(ctx)
 		networkList.Items = slices.DeleteFunc(networkList.Items, func(n network.Summary) bool {
-			return !middleware.ComposeResourcePermitted(ps, types.LocalDockerEnvironmentID, authz.PermNetworksList, authz.ResourceTypeNetwork, n.ID, n.Name, n.Labels, allowedCompose)
+			return !middleware.ComposeResourcePermitted(ps, middleware.ComposeResourceAccessInput{
+				EnvID:          types.LocalDockerEnvironmentID,
+				Permission:     authz.PermNetworksList,
+				ResourceType:   authz.ResourceTypeNetwork,
+				ResourceID:     n.ID,
+				ResourceName:   n.Name,
+				Labels:         n.Labels,
+				AllowedCompose: allowedCompose,
+			})
 		})
 	}
 

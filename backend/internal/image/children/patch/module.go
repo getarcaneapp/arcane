@@ -1,6 +1,7 @@
 package patch
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -9,10 +10,11 @@ import (
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-func RegisterRoutes(api huma.API, imagePatchService *Service, appCtx handlerutil.ActivityAppContext) {
+func RegisterRoutes(api huma.API, imagePatchService *Service, appCtx handlerutil.ActivityAppContext, checkImageAccess func(ctx context.Context, envID, perm, imageRef string) error) {
 	h := &ImagePatchHandler{
 		imagePatchService: imagePatchService,
 		appCtx:            appCtx.Context(),
+		checkImageAccess:  checkImageAccess,
 	}
 
 	handlerutil.RegisterSecured(api,

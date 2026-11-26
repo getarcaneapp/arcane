@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/distribution/reference"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
@@ -1093,6 +1094,24 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 	return result, nil
 }
 
+func (s *ImageService) CheckImageAccess(ctx context.Context, envID, perm, imageRef string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.AllowsResource(perm, envID, authz.ResourceTypeImage, imageRef) {
+		return nil
+	}
+	detail, err := s.GetImageDetail(ctx, imageRef)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireImagePermission(ctx, s.db, middleware.ImageAccessInput{
+		EnvID:       envID,
+		Permission:  perm,
+		ImageID:     detail.ID,
+		RepoTags:    detail.RepoTags,
+		RepoDigests: detail.RepoDigests,
+	})
+}
+
 func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]types.ImageSummary, pagination.Response, error) {
 	var (
 		dockerImages  []image.Summary
@@ -1132,8 +1151,15 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		return nil, pagination.Response{}, permErr
 	} else if !unrestricted {
 		ps, _ := middleware.PermissionsFromContext(ctx)
-		dockerImages = slices.DeleteFunc(dockerImages, func(img image.Summary) bool {
-			return !middleware.ImagePermitted(ps, types.LocalDockerEnvironmentID, authz.PermImagesList, img.ID, img.RepoTags, allowedRefs)
+		dockerImages = slices.DeleteFunc(slices.Clone(dockerImages), func(img image.Summary) bool {
+			return !middleware.ImagePermitted(ps, middleware.ImageAccessInput{
+				EnvID:       types.LocalDockerEnvironmentID,
+				Permission:  authz.PermImagesList,
+				ImageID:     img.ID,
+				RepoTags:    img.RepoTags,
+				RepoDigests: img.RepoDigests,
+				AllowedRefs: allowedRefs,
+			})
 		})
 	}
 

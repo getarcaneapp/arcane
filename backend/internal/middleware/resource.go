@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"fmt"
@@ -9,9 +10,49 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"kit.getarcane.app"
+	"kit.getarcane.app/updater/digest"
+	"kit.getarcane.app/updater/refs"
 
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/pkg/authz"
+	"getarcane.dev/arcane/v3/pkg/projects"
+)
+
+type (
+	ContainerAccessInput struct {
+		Labels         map[string]string
+		AllowedCompose map[string]struct{}
+		EnvID          string
+		Permission     string
+		ContainerID    string
+		Names          []string
+	}
+
+	ComposeResourceAccessInput struct {
+		Labels         map[string]string
+		AllowedCompose map[string]struct{}
+		EnvID          string
+		Permission     string
+		ResourceType   string
+		ResourceID     string
+		ResourceName   string
+	}
+
+	ImageAccessInput struct {
+		AllowedRefs map[string]struct{}
+		EnvID       string
+		Permission  string
+		ImageID     string
+		RepoTags    []string
+		RepoDigests []string
+	}
+
+	GitOpsSyncAccessInput struct {
+		ProjectID  *string
+		EnvID      string
+		Permission string
+		SyncID     string
+	}
 )
 
 const composeProjectLabel = "com.docker.compose.project"
@@ -27,7 +68,7 @@ func AllowedProjectIDs(ctx context.Context, envID, perm string) []string {
 }
 
 // AllowedComposeProjects returns (nil, true, nil) when the caller has unrestricted access for perm.
-// Otherwise it returns the lowercase set of compose project names owned by granted projects.
+// Otherwise it returns the lowercase set of canonical compose project names owned by granted projects.
 func AllowedComposeProjects(ctx context.Context, db *database.DB, envID, perm string) (map[string]struct{}, bool, error) {
 	ps, ok := PermissionsFromContext(ctx)
 	if !ok || ps.Allows(perm, envID) {
@@ -50,19 +91,22 @@ func AllowedComposeProjects(ctx context.Context, db *database.DB, envID, perm st
 		Scan(&rows).Error; err != nil {
 		return nil, false, fmt.Errorf("failed to resolve allowed compose projects: %w", err)
 	}
-	allowed := make(map[string]struct{}, len(rows)*2)
+	allowed := make(map[string]struct{}, len(rows))
 	for _, r := range rows {
-		for _, candidate := range []string{kit.FromPtr(r.ComposeProjectName), kit.FromPtr(r.DirName), r.Name} {
-			if name := strings.ToLower(strings.TrimSpace(candidate)); name != "" {
-				allowed[name] = struct{}{}
-			}
+		canonical := cmp.Or(
+			strings.TrimSpace(kit.FromPtr(r.ComposeProjectName)),
+			projects.NormalizeProjectName(strings.TrimSpace(kit.FromPtr(r.DirName))),
+			strings.TrimSpace(r.Name),
+		)
+		if name := strings.ToLower(canonical); name != "" {
+			allowed[name] = struct{}{}
 		}
 	}
 	return allowed, false, nil
 }
 
 // AllowedProjectImageRefs returns (nil, true, nil) when the caller has unrestricted access for perm.
-// Otherwise it returns the set of image refs referenced by projects granted perm on envID.
+// Otherwise it returns the canonical set of image references used by projects granted perm on envID.
 func AllowedProjectImageRefs(ctx context.Context, db *database.DB, envID, perm string) (map[string]struct{}, bool, error) {
 	ps, ok := PermissionsFromContext(ctx)
 	if !ok || ps.Allows(perm, envID) {
@@ -87,32 +131,51 @@ func AllowedProjectImageRefs(ctx context.Context, db *database.DB, envID, perm s
 		if raw == "" || raw == "[]" {
 			continue
 		}
-		var refs []string
-		if err := json.Unmarshal([]byte(raw), &refs); err != nil {
+		var imageRefs []string
+		if err := json.Unmarshal([]byte(raw), &imageRefs); err != nil {
 			continue
 		}
-		for _, ref := range refs {
-			if norm := strings.ToLower(strings.TrimSpace(ref)); norm != "" {
-				allowed[norm] = struct{}{}
+		for _, imageRef := range imageRefs {
+			for _, key := range canonicalImageRefKeys(imageRef) {
+				allowed[key] = struct{}{}
 			}
 		}
 	}
 	return allowed, false, nil
 }
 
-func ContainerPermitted(ps *authz.PermissionSet, envID, perm, containerID string, names []string, labels map[string]string, allowedCompose map[string]struct{}) bool {
-	if ps.AllowsResource(perm, envID, authz.ResourceTypeContainer, containerID) {
+// canonicalImageRefKeys normalizes registry/repository casing and default tag while preserving
+// Docker's case-sensitive tag spelling and supporting digest-pinned references.
+func canonicalImageRefKeys(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "<none>:<none>" || trimmed == "<none>@<none>" {
+		return nil
+	}
+	parsed, err := refs.NormalizeReference(trimmed)
+	if err != nil {
+		return []string{trimmed}
+	}
+	repoKey := strings.ToLower(parsed.RegistryHost) + "/" + strings.ToLower(parsed.Repository)
+	if dig, ok := digest.FromReferenceSuffix(trimmed); ok {
+		return []string{repoKey + "@" + strings.ToLower(dig)}
+	}
+	tag := cmp.Or(strings.TrimSpace(parsed.Tag), "latest")
+	return []string{repoKey + ":" + tag}
+}
+
+func ContainerPermitted(ps *authz.PermissionSet, in ContainerAccessInput) bool {
+	if ps.AllowsResource(in.Permission, in.EnvID, authz.ResourceTypeContainer, in.ContainerID) {
 		return true
 	}
-	for _, name := range names {
+	for _, name := range in.Names {
 		trimmed := strings.TrimPrefix(strings.TrimSpace(name), "/")
-		if trimmed != "" && ps.AllowsResource(perm, envID, authz.ResourceTypeContainer, trimmed) {
+		if trimmed != "" && ps.AllowsResource(in.Permission, in.EnvID, authz.ResourceTypeContainer, trimmed) {
 			return true
 		}
 	}
-	if len(allowedCompose) > 0 && labels != nil {
-		if projectName := strings.ToLower(strings.TrimSpace(labels[composeProjectLabel])); projectName != "" {
-			if _, ok := allowedCompose[projectName]; ok {
+	if len(in.AllowedCompose) > 0 && in.Labels != nil {
+		if projectName := strings.ToLower(strings.TrimSpace(in.Labels[composeProjectLabel])); projectName != "" {
+			if _, ok := in.AllowedCompose[projectName]; ok {
 				return true
 			}
 		}
@@ -120,16 +183,16 @@ func ContainerPermitted(ps *authz.PermissionSet, envID, perm, containerID string
 	return false
 }
 
-func ComposeResourcePermitted(ps *authz.PermissionSet, envID, perm, resourceType, resourceID, resourceName string, labels map[string]string, allowedCompose map[string]struct{}) bool {
-	if ps.AllowsResource(perm, envID, resourceType, resourceID) {
+func ComposeResourcePermitted(ps *authz.PermissionSet, in ComposeResourceAccessInput) bool {
+	if ps.AllowsResource(in.Permission, in.EnvID, in.ResourceType, in.ResourceID) {
 		return true
 	}
-	if resourceName != "" && ps.AllowsResource(perm, envID, resourceType, resourceName) {
+	if in.ResourceName != "" && ps.AllowsResource(in.Permission, in.EnvID, in.ResourceType, in.ResourceName) {
 		return true
 	}
-	if len(allowedCompose) > 0 && labels != nil {
-		if projectName := strings.ToLower(strings.TrimSpace(labels[composeProjectLabel])); projectName != "" {
-			if _, ok := allowedCompose[projectName]; ok {
+	if len(in.AllowedCompose) > 0 && in.Labels != nil {
+		if projectName := strings.ToLower(strings.TrimSpace(in.Labels[composeProjectLabel])); projectName != "" {
+			if _, ok := in.AllowedCompose[projectName]; ok {
 				return true
 			}
 		}
@@ -137,82 +200,96 @@ func ComposeResourcePermitted(ps *authz.PermissionSet, envID, perm, resourceType
 	return false
 }
 
-func ImagePermitted(ps *authz.PermissionSet, envID, perm, imageID string, repoTags []string, allowedRefs map[string]struct{}) bool {
-	if ps.AllowsResource(perm, envID, authz.ResourceTypeImage, imageID) {
+func ImagePermitted(ps *authz.PermissionSet, in ImageAccessInput) bool {
+	if ps.AllowsResource(in.Permission, in.EnvID, authz.ResourceTypeImage, in.ImageID) {
 		return true
 	}
-	for _, tag := range repoTags {
-		if tag != "" && ps.AllowsResource(perm, envID, authz.ResourceTypeImage, tag) {
+	for _, tag := range in.RepoTags {
+		if tag != "" && ps.AllowsResource(in.Permission, in.EnvID, authz.ResourceTypeImage, tag) {
 			return true
 		}
-		if len(allowedRefs) > 0 {
-			if _, ok := allowedRefs[strings.ToLower(strings.TrimSpace(tag))]; ok {
-				return true
+		if len(in.AllowedRefs) > 0 {
+			for _, key := range canonicalImageRefKeys(tag) {
+				if _, ok := in.AllowedRefs[key]; ok {
+					return true
+				}
+			}
+		}
+	}
+	for _, repoDigest := range in.RepoDigests {
+		if repoDigest != "" && ps.AllowsResource(in.Permission, in.EnvID, authz.ResourceTypeImage, repoDigest) {
+			return true
+		}
+		if len(in.AllowedRefs) > 0 {
+			for _, key := range canonicalImageRefKeys(repoDigest) {
+				if _, ok := in.AllowedRefs[key]; ok {
+					return true
+				}
 			}
 		}
 	}
 	return false
 }
 
-func GitOpsSyncPermitted(ps *authz.PermissionSet, envID, perm, syncID string, projectID *string) bool {
-	if ps.AllowsResource(perm, envID, authz.ResourceTypeGitOps, syncID) {
+func GitOpsSyncPermitted(ps *authz.PermissionSet, in GitOpsSyncAccessInput) bool {
+	if ps.AllowsResource(in.Permission, in.EnvID, authz.ResourceTypeGitOps, in.SyncID) {
 		return true
 	}
-	if pid := strings.TrimSpace(kit.FromPtr(projectID)); pid != "" {
-		return ps.AllowsResource(perm, envID, authz.ResourceTypeProject, pid)
+	if pid := strings.TrimSpace(kit.FromPtr(in.ProjectID)); pid != "" {
+		return ps.AllowsResource(in.Permission, in.EnvID, authz.ResourceTypeProject, pid)
 	}
 	return false
 }
 
-func RequireContainerPermission(ctx context.Context, db *database.DB, envID, perm, containerID string, names []string, labels map[string]string) error {
+func RequireComposeResourcePermission(ctx context.Context, db *database.DB, in ComposeResourceAccessInput) error {
 	ps, _ := PermissionsFromContext(ctx)
-	if ps.Allows(perm, envID) {
+	if ps.Allows(in.Permission, in.EnvID) {
 		return nil
 	}
-	allowedCompose, _, err := AllowedComposeProjects(ctx, db, envID, perm)
+	allowedCompose, _, err := AllowedComposeProjects(ctx, db, in.EnvID, in.Permission)
 	if err != nil {
 		return huma.Error500InternalServerError(err.Error())
 	}
-	if !ContainerPermitted(ps, envID, perm, containerID, names, labels, allowedCompose) {
-		return huma.Error403Forbidden("permission denied: " + perm)
+	if !ComposeResourcePermitted(ps, ComposeResourceAccessInput{ //exhaustruct:enforce
+		Labels:         in.Labels,
+		AllowedCompose: allowedCompose,
+		EnvID:          in.EnvID,
+		Permission:     in.Permission,
+		ResourceType:   in.ResourceType,
+		ResourceID:     in.ResourceID,
+		ResourceName:   in.ResourceName,
+	}) {
+		return huma.Error403Forbidden("permission denied: " + in.Permission)
 	}
 	return nil
 }
 
-func RequireComposeResourcePermission(ctx context.Context, db *database.DB, envID, perm, resourceType, resourceID, resourceName string, labels map[string]string) error {
+func RequireImagePermission(ctx context.Context, db *database.DB, in ImageAccessInput) error {
 	ps, _ := PermissionsFromContext(ctx)
-	if ps.Allows(perm, envID) {
+	if ps.Allows(in.Permission, in.EnvID) {
 		return nil
 	}
-	allowedCompose, _, err := AllowedComposeProjects(ctx, db, envID, perm)
+	allowedRefs, _, err := AllowedProjectImageRefs(ctx, db, in.EnvID, in.Permission)
 	if err != nil {
 		return huma.Error500InternalServerError(err.Error())
 	}
-	if !ComposeResourcePermitted(ps, envID, perm, resourceType, resourceID, resourceName, labels, allowedCompose) {
-		return huma.Error403Forbidden("permission denied: " + perm)
+	if !ImagePermitted(ps, ImageAccessInput{ //exhaustruct:enforce
+		AllowedRefs: allowedRefs,
+		EnvID:       in.EnvID,
+		Permission:  in.Permission,
+		ImageID:     in.ImageID,
+		RepoTags:    in.RepoTags,
+		RepoDigests: in.RepoDigests,
+	}) {
+		return huma.Error403Forbidden("permission denied: " + in.Permission)
 	}
 	return nil
 }
 
-func RequireImagePermission(ctx context.Context, db *database.DB, envID, perm, imageID string, repoTags []string) error {
+func RequireGitOpsSyncPermission(ctx context.Context, in GitOpsSyncAccessInput) error {
 	ps, _ := PermissionsFromContext(ctx)
-	if ps.Allows(perm, envID) {
-		return nil
-	}
-	allowedRefs, _, err := AllowedProjectImageRefs(ctx, db, envID, perm)
-	if err != nil {
-		return huma.Error500InternalServerError(err.Error())
-	}
-	if !ImagePermitted(ps, envID, perm, imageID, repoTags, allowedRefs) {
-		return huma.Error403Forbidden("permission denied: " + perm)
-	}
-	return nil
-}
-
-func RequireGitOpsSyncPermission(ctx context.Context, envID, perm, syncID string, projectID *string) error {
-	ps, _ := PermissionsFromContext(ctx)
-	if !GitOpsSyncPermitted(ps, envID, perm, syncID, projectID) {
-		return huma.Error403Forbidden("permission denied: " + perm)
+	if !GitOpsSyncPermitted(ps, in) {
+		return huma.Error403Forbidden("permission denied: " + in.Permission)
 	}
 	return nil
 }

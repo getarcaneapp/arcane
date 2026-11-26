@@ -337,7 +337,12 @@ and restored instead (no backup ID).`,
 			}
 			if opts.restoreArchiveFile != "" {
 				c.SetTimeout(30 * time.Minute)
-				sessionID, uploadErr := cmdutil.UploadFileInChunks(cmd.Context(), c, types.UploadKindVolumeBackup, opts.restoreArchiveFile, !cmdutil.JSONOutputEnabled(cmd))
+				sessionID, uploadErr := cmdutil.UploadFileInChunks(cmd.Context(), c, cmdutil.UploadOptions{
+					Kind:         types.UploadKindVolumeBackup,
+					FilePath:     opts.restoreArchiveFile,
+					Target:       resolved.Name,
+					ShowProgress: !cmdutil.JSONOutputEnabled(cmd),
+				})
 				if uploadErr != nil {
 					return uploadErr
 				}

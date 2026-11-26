@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
@@ -847,6 +848,25 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.Sy
 	return options, nil
 }
 
+func (s *VolumeService) CheckVolumeAccess(ctx context.Context, envID, perm, volumeName string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.AllowsResource(perm, envID, authz.ResourceTypeVolume, volumeName) {
+		return nil
+	}
+	vol, err := s.GetVolumeByName(ctx, volumeName)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireComposeResourcePermission(ctx, s.db, middleware.ComposeResourceAccessInput{
+		EnvID:        envID,
+		Permission:   perm,
+		ResourceType: authz.ResourceTypeVolume,
+		ResourceID:   vol.Name,
+		ResourceName: vol.Name,
+		Labels:       vol.Labels,
+	})
+}
+
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]types.Volume, pagination.Response, types.VolumeUsageCounts, error) {
 	startedAt := time.Now()
 	slog.DebugContext(
@@ -942,7 +962,15 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	} else if !unrestricted {
 		ps, _ := middleware.PermissionsFromContext(ctx)
 		enrichedVolumes = slices.DeleteFunc(enrichedVolumes, func(v volume.Volume) bool {
-			return !middleware.ComposeResourcePermitted(ps, types.LocalDockerEnvironmentID, authz.PermVolumesList, authz.ResourceTypeVolume, v.Name, v.Name, v.Labels, allowedCompose)
+			return !middleware.ComposeResourcePermitted(ps, middleware.ComposeResourceAccessInput{
+				EnvID:          types.LocalDockerEnvironmentID,
+				Permission:     authz.PermVolumesList,
+				ResourceType:   authz.ResourceTypeVolume,
+				ResourceID:     v.Name,
+				ResourceName:   v.Name,
+				Labels:         v.Labels,
+				AllowedCompose: allowedCompose,
+			})
 		})
 	}
 

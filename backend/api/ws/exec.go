@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"getarcane.dev/arcane/v3/internal/container"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	wshub "getarcane.dev/arcane/v3/pkg/ws"
 	"getarcane.dev/types/v3"
 )
@@ -23,6 +25,9 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	containerID, ok, err := requireWSParam(c, "containerId", "Container ID")
 	if !ok {
 		return err
+	}
+	if accessErr := h.containerService.CheckContainerAccess(c.Request().Context(), c.Param("id"), authz.PermContainersExec, containerID); accessErr != nil {
+		return c.JSON(http.StatusForbidden, map[string]any{"success": false, "error": "permission denied: " + authz.PermContainersExec})
 	}
 
 	cols, _ := strconv.ParseUint(c.QueryParam("cols"), 10, 16)

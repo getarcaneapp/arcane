@@ -197,6 +197,10 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 		return &handlerutil.Out[types.ContainerStatusCounts]{Body: body}, nil
 	}
 
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermContainersList, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermContainersList)
+	}
+
 	counts, err := h.containerService.GetContainerStatusCounts(ctx, StatusCountOptions{
 		IncludeInternal: input.IncludeInternal,
 		IncludeHidden:   input.IncludeHidden,
@@ -336,24 +340,8 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	}, nil
 }
 
-func (h *ContainerHandler) requireContainerAccess(ctx context.Context, envID, perm, containerID string) error {
-	ps, ok := middleware.PermissionsFromContext(ctx)
-	if !ok || ps.Allows(perm, envID) {
-		return nil
-	}
-	details, err := h.containerService.GetContainerDetails(ctx, containerID)
-	if err != nil {
-		return huma.Error403Forbidden("permission denied: " + perm)
-	}
-	allowedCompose, _ := h.containerService.allowedComposeProjects(ctx, envID, perm)
-	if !middleware.ContainerPermitted(ps, envID, perm, details.ID, []string{details.Name}, details.Labels, allowedCompose) {
-		return huma.Error403Forbidden("permission denied: " + perm)
-	}
-	return nil
-}
-
 func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[types.ContainerDetails], error) {
-	if err := h.requireContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, input.ContainerID); err != nil {
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, input.ContainerID); err != nil {
 		return nil, err
 	}
 	details, err := h.containerService.GetContainerDetails(ctx, input.ContainerID)
@@ -371,6 +359,11 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 }
 
 func (h *ContainerHandler) GetSwarmTaskHostnames(ctx context.Context, input *GetSwarmTaskHostnamesInput) (*handlerutil.Out[map[string]string], error) {
+	for _, containerID := range input.Body.ContainerIDs {
+		if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, containerID); err != nil {
+			return nil, err
+		}
+	}
 	hostnames, err := h.containerService.GetSwarmTaskHostnames(ctx, input.Body.ContainerIDs)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to retrieve Swarm task hostnames", err)
@@ -384,7 +377,7 @@ func (h *ContainerHandler) GetSwarmTaskHostnames(ctx context.Context, input *Get
 }
 
 func (h *ContainerHandler) GetContainerProcesses(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[types.ContainerProcesses], error) {
-	if err := h.requireContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, input.ContainerID); err != nil {
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, input.ContainerID); err != nil {
 		return nil, err
 	}
 	processes, err := h.containerService.GetContainerProcesses(ctx, input.ContainerID)
@@ -402,7 +395,7 @@ func (h *ContainerHandler) GetContainerProcesses(ctx context.Context, input *Get
 }
 
 func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *GetContainerInput) (*huma.StreamResponse, error) {
-	if err := h.requireContainerAccess(ctx, input.EnvironmentID, authz.PermContainersLogs, input.ContainerID); err != nil {
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersLogs, input.ContainerID); err != nil {
 		return nil, err
 	}
 	reader, filename, err := h.containerService.DownloadLogs(ctx, input.ContainerID)
@@ -414,6 +407,11 @@ func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *Get
 }
 
 func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[types.ContainerGenerateComposeResponse], error) {
+	for _, containerID := range input.Body.ContainerIDs {
+		if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, containerID); err != nil {
+			return nil, err
+		}
+	}
 	dockerHost, err := h.dockerService.DockerHost()
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -442,7 +440,7 @@ func (h *ContainerHandler) RunContainerAction(ctx context.Context, input *Contai
 		"unpause": authz.PermContainersPause,
 	}[input.Action]
 	if actionPerm != "" {
-		if err := h.requireContainerAccess(ctx, input.EnvironmentID, actionPerm, input.ContainerID); err != nil {
+		if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, actionPerm, input.ContainerID); err != nil {
 			return nil, err
 		}
 	}
@@ -551,6 +549,24 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 	if strings.TrimSpace(input.ContainerID) == "" {
 		return nil, huma.Error400BadRequest("container ID is required")
 	}
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, input.ContainerID); err != nil {
+		return nil, err
+	}
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermImagesCommit, input.EnvironmentID) {
+		details, err := h.containerService.GetContainerDetails(ctx, input.ContainerID)
+		if err != nil || (!ps.AllowsResource(authz.PermImagesCommit, input.EnvironmentID, authz.ResourceTypeImage, details.ImageID) &&
+			!ps.AllowsResource(authz.PermImagesCommit, input.EnvironmentID, authz.ResourceTypeImage, details.Image)) {
+			return nil, huma.Error403Forbidden("permission denied: " + authz.PermImagesCommit)
+		}
+	}
+	if repository := strings.TrimSpace(input.Body.Repository); repository != "" {
+		reference := strings.TrimSuffix(repository+":"+strings.TrimSpace(input.Body.Tag), ":")
+		if exists, existsErr := h.containerService.imageService.ImageExistsLocally(ctx, reference); existsErr != nil || exists {
+			if accessErr := h.containerService.imageService.CheckImageAccess(ctx, input.EnvironmentID, authz.PermImagesCommit, reference); accessErr != nil {
+				return nil, accessErr
+			}
+		}
+	}
 
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
@@ -571,6 +587,9 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 }
 
 func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[types.ContainerDetails], error) {
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRedeploy, input.ContainerID); err != nil {
+		return nil, err
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -663,7 +682,7 @@ func (h *ContainerHandler) recreatedContainerOutput(ctx context.Context, contain
 }
 
 func (h *ContainerHandler) GetContainerEditConfig(ctx context.Context, input *GetContainerEditConfigInput) (*handlerutil.Out[types.ContainerEditConfig], error) {
-	if err := h.requireContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, input.ContainerID); err != nil {
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersRead, input.ContainerID); err != nil {
 		return nil, err
 	}
 	editConfig, err := h.containerService.GetContainerEditConfig(ctx, input.ContainerID)
@@ -681,7 +700,7 @@ func (h *ContainerHandler) GetContainerEditConfig(ctx context.Context, input *Ge
 }
 
 func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContainerInput) (*handlerutil.Out[types.ContainerDetails], error) {
-	if err := h.requireContainerAccess(ctx, input.EnvironmentID, authz.PermContainersUpdate, input.ContainerID); err != nil {
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersUpdate, input.ContainerID); err != nil {
 		return nil, err
 	}
 	user, err := handlerutil.RequireUser(ctx)
@@ -728,7 +747,7 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 }
 
 func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := h.requireContainerAccess(ctx, input.EnvironmentID, authz.PermContainersDelete, input.ContainerID); err != nil {
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersDelete, input.ContainerID); err != nil {
 		return nil, err
 	}
 	user, err := handlerutil.RequireUser(ctx)
@@ -769,7 +788,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := h.requireContainerAccess(ctx, input.EnvironmentID, authz.PermContainersAutoUpdate, input.ContainerID); err != nil {
+	if err := h.containerService.CheckContainerAccess(ctx, input.EnvironmentID, authz.PermContainersAutoUpdate, input.ContainerID); err != nil {
 		return nil, err
 	}
 	if err := h.containerService.SetAutoUpdate(ctx, SetAutoUpdateOptions{Reference: input.ContainerID, Enabled: input.Body.Enabled}); err != nil {

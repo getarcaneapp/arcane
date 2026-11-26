@@ -1713,13 +1713,13 @@ func TestMigration00124_UserGroupsUpDown(t *testing.T) {
 	}
 }
 
-func TestMigration00124_ResourceRoleAssignmentsUpDown(t *testing.T) {
+func TestMigration00125_ResourceRoleAssignmentsUpDown(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-resource-rbac-migration.db")
 	rawDB.SetMaxOpenConns(1)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 123))
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 124))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 125))
 	_, err := rawDB.ExecContext(ctx, `PRAGMA foreign_keys=ON;`)
 	require.NoError(t, err)
 
@@ -1746,7 +1746,7 @@ func TestMigration00124_ResourceRoleAssignmentsUpDown(t *testing.T) {
 		VALUES ('gra-1', 'grp-1', 'role-1', 'env-1', 'project', 'proj-a', 'manual')`)
 	require.NoError(t, err)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 123))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 124))
 	var count int
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_role_assignments`).Scan(&count))
 	assert.Zero(t, count)
