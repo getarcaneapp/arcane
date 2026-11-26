@@ -29,7 +29,11 @@
 		</div>
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 		<div
-			class={cn('-mx-2 min-h-0 flex-1 scrollbar-visible overflow-y-auto px-2', moreBelow && 'scroll-fade-b')}
+			class={cn(
+				'-mx-2 min-h-0 flex-1 px-2',
+				scrollable ? 'scrollbar-visible overflow-y-auto' : 'overflow-y-hidden',
+				moreBelow && 'scroll-fade-b'
+			)}
 			tabindex={scrollable ? 0 : undefined}
 			{@attach trackOverflow((overflow) => {
 				moreBelow = overflow.below;

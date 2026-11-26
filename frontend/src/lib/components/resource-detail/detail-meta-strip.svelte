@@ -30,7 +30,7 @@
 				<item.icon class="size-4 shrink-0" />
 			{/if}
 			{#if item.label}
-				<span class="text-xs font-semibold tracking-wide uppercase">{item.label}</span>
+				<span class="text-xs font-medium text-muted-foreground">{item.label}</span>
 			{/if}
 			<span class={cn(item.mono && 'font-mono break-all select-all')}>{item.value}</span>
 		</div>
