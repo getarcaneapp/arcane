@@ -199,6 +199,7 @@ func NewService(deps Dependencies) *Service {
 		TempContainer:   s.createBackupTempContainerWithMount,
 		AcquireHelper:   deps.AcquireHelper,
 		AcquireRun:      s.acquireVolumeRun,
+		Uploads:         deps.Uploads,
 		Exec:            deps.Exec,
 	})
 	return s
@@ -964,17 +965,7 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 }
 
 func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
-	lease, err := s.acquireVolumeRun(ctx, volumeName)
-	if err != nil {
-		return err
-	}
-	lease.Release(ctx)
-	file, session, cleanup, err := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, request.UploadID)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	return s.restore.UploadAndRestore(ctx, volumeName, file, session.Filename, request.ComposeVolume, user)
+	return s.restore.UploadAndRestore(ctx, volumeName, request.UploadID, request.ComposeVolume, user)
 }
 
 // RestoreFile restores one backed-up file into the volume; legacy archives extract inside a helper that mounts backup storage at /backups.

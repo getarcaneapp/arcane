@@ -27,6 +27,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/backupbrowser"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/volumes"
@@ -54,6 +55,7 @@ type (
 		TempContainer   func(ctx context.Context, target mount.Mount) (string, func(), error)
 		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
 		AcquireRun      func(ctx context.Context, volumeName string) (*runs.Lease, error)
+		Uploads         *upload.UploadService
 		Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 	}
 
@@ -63,6 +65,7 @@ type (
 	}
 
 	runOptions struct {
+		Prepare    func(ctx context.Context) error
 		Write      func(ctx context.Context) error
 		User       types.Actor
 		VolumeName string
@@ -196,6 +199,11 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 		return "", leaseErr
 	}
 	defer lease.Release(ctx)
+	if opts.Prepare != nil {
+		if err := opts.Prepare(ctx); err != nil {
+			return "", err
+		}
+	}
 	var stopped []container.Summary
 	var safetyID string
 	var writeErr error
@@ -633,21 +641,8 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 	return stderr, nil
 }
 
-func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, composeVolume *types.ComposeVolumeTarget, user types.Actor) error {
-	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
-
-	gzr, err := gzip.NewReader(archive)
-	if err != nil {
-		return fmt.Errorf("invalid archive: %w", err)
-	}
-	first, nextErr := tar.NewReader(gzr).Next()
-	if nextErr != nil {
-		_ = gzr.Close()
-		return fmt.Errorf("invalid archive: %w", nextErr)
-	}
-	_ = gzr.Close()
-	// Extracting into an existing directory skips the archive's root entry, so a new volume takes its root owner and mode from it.
-	archiveRoot := first.Typeflag == tar.TypeDir && path.Clean(first.Name) == "."
+func (s *Service) UploadAndRestore(ctx context.Context, volumeName, uploadID string, composeVolume *types.ComposeVolumeTarget, user types.Actor) error {
+	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "uploadId", uploadID, "user", user.ID)
 
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()
@@ -663,16 +658,39 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		}
 		create = []client.VolumeCreateOptions{createOptions}
 	}
+	var archive io.ReadSeeker
+	var session *types.UploadSession
+	var first *tar.Header
+	cleanup := func() {}
+	defer func() { cleanup() }()
 	preBackupID, err := s.run(ctx, dockerClient, runOptions{
 		VolumeName: volumeName,
 		User:       user,
 		Create:     create,
+		Prepare: func(ctx context.Context) error {
+			file, consumed, release, consumeErr := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, uploadID)
+			if consumeErr != nil {
+				return consumeErr
+			}
+			archive, session, cleanup = file, consumed, release
+			gzr, gzipErr := gzip.NewReader(file)
+			if gzipErr != nil {
+				return fmt.Errorf("invalid archive: %w", gzipErr)
+			}
+			header, nextErr := tar.NewReader(gzr).Next()
+			_ = gzr.Close()
+			if nextErr != nil {
+				return fmt.Errorf("invalid archive: %w", nextErr)
+			}
+			first = header
+			return nil
+		},
 		Write: func(ctx context.Context) error {
 			return s.writeUpload(ctx, dockerClient, uploadWrite{
 				archive:     archive,
 				root:        first,
 				volumeName:  volumeName,
-				archiveRoot: archiveRoot,
+				archiveRoot: first.Typeflag == tar.TypeDir && path.Clean(first.Name) == ".",
 				newVolume:   composeVolume != nil,
 			})
 		},
@@ -683,7 +701,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 
 	metadata := database.JSON{
 		"action":               "backup_upload_restore",
-		"filename":             filename,
+		"filename":             session.Filename,
 		"pre_restore_backupId": preBackupID,
 		"created_volume":       composeVolume != nil,
 	}
