@@ -19,6 +19,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/project/children/bundle"
 	"getarcane.dev/arcane/v3/internal/project/children/transfer"
+	volumeDomain "getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -31,6 +32,7 @@ type (
 		Backups          *backup.Engine
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
+		VolumeSizes      func(ctx context.Context) (map[string]volumeDomain.VolumeSizeData, error)
 		ArchiveVolumes   func(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error
 		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
 		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error

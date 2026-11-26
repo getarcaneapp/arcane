@@ -27,6 +27,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	volumeDomain "getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
@@ -429,6 +430,9 @@ func TestProjectTransfer(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			return webhookCount, nil
+		},
+		VolumeSizes: func(context.Context) (map[string]volumeDomain.VolumeSizeData, error) {
+			return nil, nil
 		},
 		Activities: activities,
 		Backups: backup.NewEngine(admission, nil, func(_ context.Context, requester types.BackupRequester) error {
