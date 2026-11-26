@@ -99,6 +99,10 @@ type (
 		ReadOnly bool
 	}
 
+	PasswordOptions struct {
+		ReadOnly bool
+	}
+
 	DestinationOptions struct {
 		Local  bool
 		Remote bool
@@ -1587,6 +1591,24 @@ func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Cl
 		r.rekeyed.Store(repository.ID, key)
 	}
 	return key, nil
+}
+
+func (r *VolumeRepository) RepositoryPassword(ctx context.Context, dockerClient *client.Client, repository Repository, opts PasswordOptions) (string, error) {
+	if !opts.ReadOnly {
+		return r.Password(ctx, dockerClient, repository)
+	}
+	key, err := r.Password(ctx, dockerClient)
+	if err != nil || key == r.legacyPassword {
+		return key, err
+	}
+	_, listErr := r.deps.Engine.ListSnapshots(ctx, dockerClient, repository, key)
+	if listErr == nil || errors.Is(listErr, ErrRepositoryMissing) {
+		return key, nil
+	}
+	if _, legacyErr := r.deps.Engine.ListSnapshots(ctx, dockerClient, repository, r.legacyPassword); legacyErr != nil {
+		return "", listErr
+	}
+	return r.legacyPassword, nil
 }
 
 func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string) error {
