@@ -570,7 +570,7 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 				return fmt.Errorf("failed to delete environment federated service users: %w", deleteUsersErr)
 			}
 		}
-		federatedUserIDs = appendUniqueIDs(federatedUserIDs, envScopedUserIDs)
+		federatedUserIDs = kit.Unique(slices.Concat(federatedUserIDs, envScopedUserIDs))
 		if deleteVariablesErr := tx.Exec(`DELETE FROM global_variables
 			WHERE all_environments = ?
 			AND id IN (SELECT global_variable_id FROM global_variable_environments WHERE environment_id = ?)
@@ -641,15 +641,6 @@ func listEnvScopedRoleUsers(tx *gorm.DB, envID string) ([]string, error) {
 		userIDs = append(userIDs, groupUserIDs...)
 	}
 	return userIDs, nil
-}
-
-func appendUniqueIDs(base, extra []string) []string {
-	for _, id := range extra {
-		if !slices.Contains(base, id) {
-			base = append(base, id)
-		}
-	}
-	return base
 }
 
 func (s *EnvironmentService) createEnvironmentEvent(

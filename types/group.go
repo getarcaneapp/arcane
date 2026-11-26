@@ -4,13 +4,15 @@ import "time"
 
 type (
 	Group struct {
-		CreatedAt           time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
-		Description         *string    `json:"description,omitempty" maxLength:"500" doc:"Optional human description" unorm:"nfc" trim:"true"`
-		UpdatedAt           *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
-		ID                  string     `json:"id" readOnly:"true" doc:"Unique identifier of the group"`
-		Name                string     `json:"name" required:"false" minLength:"1" maxLength:"100" doc:"Display name of the group" example:"Platform Team" unorm:"nfc" trim:"true"`
-		MemberCount         int        `json:"memberCount" readOnly:"true" doc:"Number of users in this group"`
-		RoleAssignmentCount int        `json:"roleAssignmentCount" readOnly:"true" doc:"Number of role assignments granted to this group"`
+		CreatedAt           time.Time                 `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
+		Description         *string                   `json:"description,omitempty" maxLength:"500" doc:"Optional human description" unorm:"nfc" trim:"true"`
+		UpdatedAt           *time.Time                `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
+		ID                  string                    `json:"id" readOnly:"true" doc:"Unique identifier of the group"`
+		Name                string                    `json:"name" required:"false" minLength:"1" maxLength:"100" doc:"Display name of the group" example:"Platform Team" unorm:"nfc" trim:"true"`
+		MemberUserIDs       []string                  `json:"memberUserIds,omitempty" writeOnly:"true" doc:"Optional manual member user IDs to set atomically"`
+		RoleAssignments     []UserRoleAssignmentInput `json:"roleAssignments,omitempty" writeOnly:"true" doc:"Optional manual role assignments to set atomically"`
+		MemberCount         int                       `json:"memberCount" readOnly:"true" doc:"Number of users in this group"`
+		RoleAssignmentCount int                       `json:"roleAssignmentCount" readOnly:"true" doc:"Number of role assignments granted to this group"`
 	}
 
 	GroupMember struct {

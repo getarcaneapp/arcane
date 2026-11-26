@@ -443,7 +443,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 		return out
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 123))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 124))
 	checker := expanded("image-updates:check", "image-updates:apply")
 	assert.Equal(t, map[string][]string{
 		"r1": {"containers:list"},
@@ -467,7 +467,7 @@ func TestMigration102_CleansUpRBACPermissions(t *testing.T) {
 	renamedCatalogPermissions := []string{
 		"settings:read", "settings:update", "variables:read", "system-backups:read", "swarm:read",
 		"podman:read", "image-updates:read", "image-updates:check", "vulnerabilities:read", "activities:read",
-		"gitops:backup", "projects:deploy", "projects:create", "roles:list", "roles:read",
+		"gitops:backup", "projects:deploy", "projects:create",
 	}
 	for id, permissions := range rolePermissionsWhere(`id LIKE 'c%'`) {
 		permission := catalogRoles[id]
@@ -1669,13 +1669,13 @@ func TestConfigureSQLiteConnectionPool_AgentMode(t *testing.T) {
 	assert.Equal(t, sqliteWriteConns, sqlDBNormal.Stats().MaxOpenConnections)
 }
 
-func TestMigration00123_UserGroupsUpDown(t *testing.T) {
+func TestMigration00124_UserGroupsUpDown(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-groups-migration.db")
 	rawDB.SetMaxOpenConns(1)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 122))
 	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 123))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 124))
 	_, err := rawDB.ExecContext(ctx, `PRAGMA foreign_keys=ON;`)
 	require.NoError(t, err)
 
@@ -1705,7 +1705,7 @@ func TestMigration00123_UserGroupsUpDown(t *testing.T) {
 		assert.Zero(t, count, table)
 	}
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 122))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 123))
 	for _, table := range []string{"groups", "group_members", "group_role_assignments"} {
 		var count int
 		require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count))

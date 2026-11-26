@@ -24,12 +24,14 @@
 		groups,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRetry
+		onRetry,
+		refreshError
 	}: {
 		groups: Paginated<Group>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		onRetry: () => Promise<unknown>;
+		refreshError?: unknown;
 	} = $props();
 
 	const queryClient = useQueryClient();
@@ -57,7 +59,14 @@
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async ({ success }) => {
-				if (success > 0) await queryClient.invalidateQueries({ queryKey: queryKeys.groups.root });
+				if (success > 0) {
+					await Promise.all([
+						queryClient.invalidateQueries({ queryKey: queryKeys.groups.root }),
+						queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+						queryClient.invalidateQueries({ queryKey: queryKeys.roles.root }),
+						queryClient.invalidateQueries({ queryKey: queryKeys.auth.currentUser() })
+					]);
+				}
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -76,7 +85,12 @@
 			failureMessage: m.common_delete_failed({ resource: `${m.group()} "${safeName}"` }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.group()} "${safeName}"` }));
-				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.root });
+				await Promise.all([
+					queryClient.invalidateQueries({ queryKey: queryKeys.groups.root }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.roles.root }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.auth.currentUser() })
+				]);
 			}
 		});
 	}
@@ -191,6 +205,7 @@
 	bind:mobileFieldVisibility
 	{bulkActions}
 	{onRetry}
+	{refreshError}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

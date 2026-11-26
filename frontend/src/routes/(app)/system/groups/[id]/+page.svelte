@@ -27,18 +27,16 @@
 	}) {
 		isLoading = true;
 		const safeName = payload.name.trim() || data.group.name || m.common_unknown();
+		const patch = changedFields(
+			{ name: data.group.name, description: data.group.description ?? null },
+			{ name: payload.name, description: payload.description }
+		);
 		const result = await tryCatch(
-			(async () => {
-				const patch = changedFields(
-					{ name: data.group.name, description: data.group.description ?? null },
-					{ name: payload.name, description: payload.description }
-				);
-				if (Object.keys(patch).length > 0) {
-					await groupService.update(data.group.id, patch);
-				}
-				await groupService.setMembers(data.group.id, { userIds: payload.memberUserIds });
-				await groupService.setRoleAssignments(data.group.id, { assignments: payload.roleAssignments });
-			})()
+			groupService.update(data.group.id, {
+				...patch,
+				memberUserIds: payload.memberUserIds,
+				roleAssignments: payload.roleAssignments
+			})
 		);
 
 		await handleApiResultWithCallbacks({
@@ -46,7 +44,12 @@
 			message: m.common_update_failed({ resource: `${m.group()} "${safeName}"` }),
 			setLoadingState: (value) => (isLoading = value),
 			onSuccess: async () => {
-				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.root });
+				await Promise.all([
+					queryClient.invalidateQueries({ queryKey: queryKeys.groups.root }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.roles.root }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.auth.currentUser() })
+				]);
 				toast.success(m.common_update_success({ resource: `${m.group()} "${safeName}"` }));
 				await goto(resolve('/(app)/system/groups'));
 			}

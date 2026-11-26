@@ -147,8 +147,8 @@
 							<label class="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-accent/40">
 								<div class="flex min-w-0 items-center gap-3">
 									<Checkbox
-										checked={isUserSelected(user.id) || synced}
-										disabled={isLoading || synced}
+										checked={isUserSelected(user.id)}
+										disabled={isLoading}
 										onCheckedChange={(checked) => toggleUser(user.id, checked === true)}
 									/>
 									<div class="min-w-0">
@@ -161,7 +161,7 @@
 									</div>
 								</div>
 								{#if synced}
-									<Badge variant="gray" size="sm">IdP</Badge>
+									<Badge variant="gray" size="sm">{m.idp()}</Badge>
 								{/if}
 							</label>
 						{/each}

@@ -817,7 +817,9 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 			Joins("INNER JOIN groups g ON g.id = gm.group_id").
 			Where("gm.user_id = ?", u.ID).
 			Order("g.name ASC, gm.source ASC").
-			Scan(&groups).Error; err == nil {
+			Scan(&groups).Error; err != nil {
+			slog.ErrorContext(ctx, "failed to load user group memberships", "userId", u.ID, "error", err)
+		} else {
 			dto.Groups = groups
 		}
 	}

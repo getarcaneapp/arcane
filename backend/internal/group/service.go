@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -39,6 +38,13 @@ type (
 		Username    string    `gorm:"column:username"`
 		Source      string    `gorm:"column:source"`
 	}
+
+	GroupMutation struct {
+		Description     *string
+		MemberUserIDs   *[]string
+		RoleAssignments *[]GroupRoleAssignment
+		Name            string
+	}
 )
 
 func NewGroupService(db *database.DB, roleService *role.RoleService) *GroupService {
@@ -68,8 +74,8 @@ func (s *GroupService) GetGroup(ctx context.Context, id string) (*Group, error) 
 	return sqlite.FirstWhere[Group](ctx, s.db.DB, common.Classify(common.ErrGroupNotFound, errors.New("Group not found")), "id = ?", id)
 }
 
-func (s *GroupService) CreateGroup(ctx context.Context, name string, description *string) (*Group, error) {
-	input := types.Group{Name: name, Description: description}
+func (s *GroupService) CreateGroup(ctx context.Context, opts GroupMutation) (*Group, error) {
+	input := types.Group{Name: opts.Name, Description: opts.Description}
 	if err := normalization.Normalize(&input); err != nil {
 		return nil, common.Classify(common.ErrValidation, err)
 	}
@@ -81,6 +87,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, name string, description
 		Name:        input.Name,
 		Description: input.Description,
 	}
+	var affected []string
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var conflict int64
 		if err := tx.Model(&Group{}).Where("name = ?", input.Name).Count(&conflict).Error; err != nil {
@@ -89,16 +96,36 @@ func (s *GroupService) CreateGroup(ctx context.Context, name string, description
 		if conflict > 0 {
 			return common.Classify(common.ErrGroupNameTaken, errors.New("Group name already in use"))
 		}
-		return tx.Create(group).Error
+		if err := tx.Create(group).Error; err != nil {
+			return fmt.Errorf("failed to create group: %w", err)
+		}
+		if opts.MemberUserIDs != nil {
+			ids, err := replaceMembersInTx(tx, group.ID, SourceManual, *opts.MemberUserIDs)
+			if err != nil {
+				return err
+			}
+			affected = append(affected, ids...)
+		}
+		if opts.RoleAssignments != nil {
+			ids, err := replaceRoleAssignmentsInTx(tx, group.ID, SourceManual, *opts.RoleAssignments)
+			if err != nil {
+				return err
+			}
+			affected = append(affected, ids...)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
+	for _, userID := range kit.Unique(affected) {
+		s.roleService.InvalidateUser(userID)
+	}
 	return group, nil
 }
 
-func (s *GroupService) UpdateGroup(ctx context.Context, id, name string, description *string) (*Group, error) {
-	input := types.Group{Name: name, Description: description}
+func (s *GroupService) UpdateGroup(ctx context.Context, id string, opts GroupMutation) (*Group, error) {
+	input := types.Group{Name: opts.Name, Description: opts.Description}
 	if err := normalization.Normalize(&input); err != nil {
 		return nil, common.Classify(common.ErrValidation, err)
 	}
@@ -107,7 +134,14 @@ func (s *GroupService) UpdateGroup(ctx context.Context, id, name string, descrip
 	}
 
 	var out Group
+	var affected []string
+	mutatesAccess := opts.MemberUserIDs != nil || opts.RoleAssignments != nil
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if mutatesAccess {
+			if err := s.roleService.LockGlobalAdminGuard(tx); err != nil {
+				return err
+			}
+		}
 		var existing Group
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -124,16 +158,42 @@ func (s *GroupService) UpdateGroup(ctx context.Context, id, name string, descrip
 				return common.Classify(common.ErrGroupNameTaken, errors.New("Group name already in use"))
 			}
 		}
-		existing.Name = input.Name
-		existing.Description = input.Description
-		if err := tx.Save(&existing).Error; err != nil {
+		//exhaustruct:enforce
+		updated := Group{
+			BaseModel:   existing.BaseModel,
+			Name:        input.Name,
+			Description: input.Description,
+		}
+		if err := tx.Save(&updated).Error; err != nil {
 			return fmt.Errorf("failed to update group: %w", err)
 		}
-		out = existing
+		if opts.MemberUserIDs != nil {
+			ids, err := replaceMembersInTx(tx, id, SourceManual, *opts.MemberUserIDs)
+			if err != nil {
+				return err
+			}
+			affected = append(affected, ids...)
+		}
+		if opts.RoleAssignments != nil {
+			ids, err := replaceRoleAssignmentsInTx(tx, id, SourceManual, *opts.RoleAssignments)
+			if err != nil {
+				return err
+			}
+			affected = append(affected, ids...)
+		}
+		if mutatesAccess {
+			if err := s.roleService.AssertGlobalAdminExists(ctx, tx); err != nil {
+				return err
+			}
+		}
+		out = updated
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	for _, userID := range kit.Unique(affected) {
+		s.roleService.InvalidateUser(userID)
 	}
 	return &out, nil
 }
@@ -214,20 +274,6 @@ func (s *GroupService) ListMembers(ctx context.Context, groupID string) ([]Group
 }
 
 func (s *GroupService) ReplaceMembers(ctx context.Context, groupID, source string, userIDs []string) error {
-	seen := make(map[string]struct{}, len(userIDs))
-	deduped := make([]string, 0, len(userIDs))
-	for _, id := range userIDs {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		if _, dup := seen[id]; dup {
-			continue
-		}
-		seen[id] = struct{}{}
-		deduped = append(deduped, id)
-	}
-
 	var affected []string
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.roleService.LockGlobalAdminGuard(tx); err != nil {
@@ -240,39 +286,11 @@ func (s *GroupService) ReplaceMembers(ctx context.Context, groupID, source strin
 			}
 			return fmt.Errorf("failed to load group: %w", err)
 		}
-		if err := verifyIDsExist(tx.Table("users"), seen, "user"); err != nil {
-			return err
-		}
-
-		currentIDs, err := lockGroupMemberUserRows(tx, groupID)
+		ids, err := replaceMembersInTx(tx, groupID, source, userIDs)
 		if err != nil {
 			return err
 		}
-		affectedSet := make(map[string]struct{}, len(currentIDs)+len(deduped))
-		for _, id := range currentIDs {
-			affectedSet[id] = struct{}{}
-		}
-		for _, id := range deduped {
-			affectedSet[id] = struct{}{}
-		}
-		affected = slices.Collect(maps.Keys(affectedSet))
-
-		if clearErr := tx.Where("group_id = ? AND source = ?", groupID, source).Delete(&GroupMember{}).Error; clearErr != nil {
-			return fmt.Errorf("failed to clear %s group members: %w", source, clearErr)
-		}
-		if len(deduped) > 0 {
-			rows := make([]GroupMember, len(deduped))
-			for i, uid := range deduped {
-				rows[i] = GroupMember{
-					GroupID: groupID,
-					UserID:  uid,
-					Source:  source,
-				}
-			}
-			if insertErr := tx.Create(&rows).Error; insertErr != nil {
-				return fmt.Errorf("failed to insert %s group members: %w", source, insertErr)
-			}
-		}
+		affected = ids
 		return s.roleService.AssertGlobalAdminExists(ctx, tx)
 	})
 	if err != nil {
@@ -299,20 +317,6 @@ func (s *GroupService) ListRoleAssignments(ctx context.Context, groupID string) 
 }
 
 func (s *GroupService) ReplaceRoleAssignments(ctx context.Context, groupID, source string, desired []GroupRoleAssignment) error {
-	seen := make(map[string]struct{}, len(desired))
-	desired = slices.DeleteFunc(slices.Clone(desired), func(a GroupRoleAssignment) bool {
-		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID)
-		if _, dup := seen[key]; dup {
-			return true
-		}
-		seen[key] = struct{}{}
-		return false
-	})
-	for i := range desired {
-		desired[i].GroupID = groupID
-		desired[i].Source = source
-	}
-
 	var affected []string
 	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.roleService.LockGlobalAdminGuard(tx); err != nil {
@@ -325,23 +329,11 @@ func (s *GroupService) ReplaceRoleAssignments(ctx context.Context, groupID, sour
 			}
 			return fmt.Errorf("failed to load group: %w", err)
 		}
-		if err := validateGroupAssignmentsExist(tx, desired); err != nil {
-			return err
-		}
-		ids, err := lockGroupMemberUserRows(tx, groupID)
+		ids, err := replaceRoleAssignmentsInTx(tx, groupID, source, desired)
 		if err != nil {
 			return err
 		}
 		affected = ids
-
-		if clearErr := tx.Where("group_id = ? AND source = ?", groupID, source).Delete(&GroupRoleAssignment{}).Error; clearErr != nil {
-			return fmt.Errorf("failed to clear %s group role assignments: %w", source, clearErr)
-		}
-		if len(desired) > 0 {
-			if insertErr := tx.Create(&desired).Error; insertErr != nil {
-				return fmt.Errorf("failed to insert %s group role assignments: %w", source, insertErr)
-			}
-		}
 		return s.roleService.AssertGlobalAdminExists(ctx, tx)
 	})
 	if err != nil {
@@ -351,6 +343,81 @@ func (s *GroupService) ReplaceRoleAssignments(ctx context.Context, groupID, sour
 		s.roleService.InvalidateUser(userID)
 	}
 	return nil
+}
+
+func replaceMembersInTx(tx *gorm.DB, groupID, source string, userIDs []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(userIDs))
+	deduped := make([]string, 0, len(userIDs))
+	for _, id := range userIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		deduped = append(deduped, id)
+	}
+
+	if err := role.VerifyIDsExist(tx.Table("users"), seen, "user"); err != nil {
+		return nil, err
+	}
+	currentIDs, err := lockGroupMemberUserRows(tx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if clearErr := tx.Where("group_id = ? AND source = ?", groupID, source).Delete(&GroupMember{}).Error; clearErr != nil {
+		return nil, fmt.Errorf("failed to clear %s group members: %w", source, clearErr)
+	}
+	if len(deduped) > 0 {
+		rows := make([]GroupMember, len(deduped))
+		for i, uid := range deduped {
+			rows[i] = GroupMember{
+				GroupID: groupID,
+				UserID:  uid,
+				Source:  source,
+			}
+		}
+		if insertErr := tx.Create(&rows).Error; insertErr != nil {
+			return nil, fmt.Errorf("failed to insert %s group members: %w", source, insertErr)
+		}
+	}
+	return kit.Unique(slices.Concat(currentIDs, deduped)), nil
+}
+
+func replaceRoleAssignmentsInTx(tx *gorm.DB, groupID, source string, desired []GroupRoleAssignment) ([]string, error) {
+	seen := make(map[string]struct{}, len(desired))
+	rows := make([]GroupRoleAssignment, 0, len(desired))
+	for _, a := range desired {
+		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		rows = append(rows, GroupRoleAssignment{
+			GroupID:       groupID,
+			RoleID:        a.RoleID,
+			EnvironmentID: a.EnvironmentID,
+			Source:        source,
+		})
+	}
+	if err := validateGroupAssignmentsExist(tx, rows); err != nil {
+		return nil, err
+	}
+	ids, err := lockGroupMemberUserRows(tx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if clearErr := tx.Where("group_id = ? AND source = ?", groupID, source).Delete(&GroupRoleAssignment{}).Error; clearErr != nil {
+		return nil, fmt.Errorf("failed to clear %s group role assignments: %w", source, clearErr)
+	}
+	if len(rows) > 0 {
+		if insertErr := tx.Create(&rows).Error; insertErr != nil {
+			return nil, fmt.Errorf("failed to insert %s group role assignments: %w", source, insertErr)
+		}
+	}
+	return ids, nil
 }
 
 func lockGroupMemberUserRows(tx *gorm.DB, groupID string) ([]string, error) {
@@ -384,28 +451,5 @@ func validateGroupAssignmentsExist(tx *gorm.DB, desired []GroupRoleAssignment) e
 			envIDSet[*a.EnvironmentID] = struct{}{}
 		}
 	}
-	if err := verifyIDsExist(tx.Table("roles"), roleIDSet, "role"); err != nil {
-		return err
-	}
-	return verifyIDsExist(tx.Table("environments"), envIDSet, "environment")
-}
-
-func verifyIDsExist(query *gorm.DB, idSet map[string]struct{}, kind string) error {
-	if len(idSet) == 0 {
-		return nil
-	}
-	var found []string
-	if err := query.Where("id IN ?", slices.Collect(maps.Keys(idSet))).Pluck("id", &found).Error; err != nil {
-		return fmt.Errorf("failed to verify %s ids: %w", kind, err)
-	}
-	foundSet := make(map[string]struct{}, len(found))
-	for _, id := range found {
-		foundSet[id] = struct{}{}
-	}
-	for id := range idSet {
-		if _, ok := foundSet[id]; !ok {
-			return common.Classify(common.ErrInvalidRoleAssignment, fmt.Errorf("invalid assignment: %s %q does not exist", kind, id))
-		}
-	}
-	return nil
+	return role.ValidateRoleAndEnvIDsExist(tx, roleIDSet, envIDSet)
 }

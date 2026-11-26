@@ -47,6 +47,7 @@
 			bind:selectedIds={pageState.selectedIds}
 			bind:requestOptions={pageState.requestOptions}
 			onRetry={() => groupsQuery.refetch()}
+			refreshError={groupsQuery.error}
 		/>
 	{/snippet}
 </SettingsPageLayout>

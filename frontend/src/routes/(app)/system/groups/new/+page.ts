@@ -15,9 +15,9 @@ export const load: PageLoad = async ({ parent }) => {
 	}
 
 	const [usersPage, roles, environmentsPage] = await Promise.all([
-		queryClient.query(userListQuery({ pagination: { page: 1, limit: 1000 }, sort: { column: 'Username', direction: 'asc' } })),
+		queryClient.query(userListQuery({ pagination: { page: 1, limit: -1 }, sort: { column: 'Username', direction: 'asc' } })),
 		queryClient.query({ ...roleAllQuery(), staleTime: 30_000 }),
-		queryClient.query({ ...environmentListQuery({ pagination: { page: 1, limit: 1000 } }), staleTime: 30_000 })
+		queryClient.query({ ...environmentListQuery({ pagination: { page: 1, limit: -1 } }), staleTime: 30_000 })
 	]);
 
 	return {

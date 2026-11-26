@@ -27,19 +27,12 @@
 		isLoading = true;
 		const safeName = payload.name.trim() || m.common_unknown();
 		const result = await tryCatch(
-			(async () => {
-				const created = await groupService.create({
-					name: payload.name,
-					description: payload.description
-				});
-				if (payload.memberUserIds.length > 0) {
-					await groupService.setMembers(created.id, { userIds: payload.memberUserIds });
-				}
-				if (payload.roleAssignments.length > 0) {
-					await groupService.setRoleAssignments(created.id, { assignments: payload.roleAssignments });
-				}
-				return created;
-			})()
+			groupService.create({
+				name: payload.name,
+				description: payload.description,
+				memberUserIds: payload.memberUserIds,
+				roleAssignments: payload.roleAssignments
+			})
 		);
 
 		await handleApiResultWithCallbacks({
@@ -47,7 +40,12 @@
 			message: m.common_create_failed({ resource: `${m.group()} "${safeName}"` }),
 			setLoadingState: (value) => (isLoading = value),
 			onSuccess: async () => {
-				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.root });
+				await Promise.all([
+					queryClient.invalidateQueries({ queryKey: queryKeys.groups.root }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.users.all }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.roles.root }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.auth.currentUser() })
+				]);
 				toast.success(m.common_create_success({ resource: `${m.group()} "${safeName}"` }));
 				await goto(resolve('/(app)/system/groups'));
 			}

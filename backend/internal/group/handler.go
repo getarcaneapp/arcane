@@ -70,7 +70,11 @@ func (h *GroupHandler) ListGroups(ctx context.Context, input *ListGroupsInput) (
 	}
 	dtos := make([]types.Group, len(groups))
 	for i := range groups {
-		dtos[i] = h.toGroupDTO(ctx, &groups[i])
+		dto, dtoErr := h.toGroupDTO(ctx, &groups[i])
+		if dtoErr != nil {
+			return nil, huma.Error500InternalServerError("failed to load group counts: " + dtoErr.Error())
+		}
+		dtos[i] = dto
 	}
 	return &handlerutil.Page[types.Group]{
 		Body: types.Paginated[types.Group]{
@@ -89,19 +93,42 @@ func (h *GroupHandler) GetGroup(ctx context.Context, input *GetGroupInput) (*han
 		}
 		return nil, huma.Error500InternalServerError("failed to get group: " + err.Error())
 	}
+	dto, err := h.toGroupDTO(ctx, group)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to load group counts: " + err.Error())
+	}
 	return &handlerutil.Out[types.Group]{
-		Body: types.ApiResponse[types.Group]{Success: true, Data: h.toGroupDTO(ctx, group)},
+		Body: types.ApiResponse[types.Group]{Success: true, Data: dto},
 	}, nil
 }
 
 func (h *GroupHandler) CreateGroup(ctx context.Context, input *CreateGroupInput) (*handlerutil.Out[types.Group], error) {
-	group, err := h.groupService.CreateGroup(ctx, input.Body.Name, input.Body.Description)
+	var memberUserIDs *[]string
+	if len(input.Body.MemberUserIDs) > 0 {
+		ids := input.Body.MemberUserIDs
+		memberUserIDs = &ids
+	}
+	var roleAssignments *[]GroupRoleAssignment
+	if len(input.Body.RoleAssignments) > 0 {
+		desired := toGroupRoleAssignmentModels(input.Body.RoleAssignments)
+		roleAssignments = &desired
+	}
+	group, err := h.groupService.CreateGroup(ctx, GroupMutation{
+		Name:            input.Body.Name,
+		Description:     input.Body.Description,
+		MemberUserIDs:   memberUserIDs,
+		RoleAssignments: roleAssignments,
+	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
+	dto, err := h.toGroupDTO(ctx, group)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to load group counts: " + err.Error())
+	}
 	return &handlerutil.Out[types.Group]{
-		Body: types.ApiResponse[types.Group]{Success: true, Data: h.toGroupDTO(ctx, group)},
+		Body: types.ApiResponse[types.Group]{Success: true, Data: dto},
 	}, nil
 }
 
@@ -115,18 +142,32 @@ func (h *GroupHandler) UpdateGroup(ctx context.Context, input *UpdateGroupInput)
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
-	group, err := h.groupService.UpdateGroup(
-		ctx,
-		input.ID,
-		kit.Ternary(submitted["name"], input.Body.Name, current.Name),
-		kit.Ternary(submitted["description"], input.Body.Description, current.Description),
-	)
+	var memberUserIDs *[]string
+	if submitted["memberUserIds"] {
+		ids := input.Body.MemberUserIDs
+		memberUserIDs = &ids
+	}
+	var roleAssignments *[]GroupRoleAssignment
+	if submitted["roleAssignments"] {
+		desired := toGroupRoleAssignmentModels(input.Body.RoleAssignments)
+		roleAssignments = &desired
+	}
+	group, err := h.groupService.UpdateGroup(ctx, input.ID, GroupMutation{
+		Name:            kit.Ternary(submitted["name"], input.Body.Name, current.Name),
+		Description:     kit.Ternary(submitted["description"], input.Body.Description, current.Description),
+		MemberUserIDs:   memberUserIDs,
+		RoleAssignments: roleAssignments,
+	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
+	dto, err := h.toGroupDTO(ctx, group)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to load group counts: " + err.Error())
+	}
 	return &handlerutil.Out[types.Group]{
-		Body: types.ApiResponse[types.Group]{Success: true, Data: h.toGroupDTO(ctx, group)},
+		Body: types.ApiResponse[types.Group]{Success: true, Data: dto},
 	}, nil
 }
 
@@ -187,10 +228,7 @@ func (h *GroupHandler) ListGroupRoleAssignments(ctx context.Context, input *List
 }
 
 func (h *GroupHandler) SetGroupRoleAssignments(ctx context.Context, input *SetGroupRoleAssignmentsInput) (*handlerutil.Out[[]types.GroupRoleAssignment], error) {
-	desired := make([]GroupRoleAssignment, len(input.Body.Assignments))
-	for i, a := range input.Body.Assignments {
-		desired[i] = GroupRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
-	}
+	desired := toGroupRoleAssignmentModels(input.Body.Assignments)
 	if err := h.groupService.ReplaceRoleAssignments(ctx, input.ID, SourceManual, desired); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
@@ -208,19 +246,35 @@ func (h *GroupHandler) SetGroupRoleAssignments(ctx context.Context, input *SetGr
 	}, nil
 }
 
-func (h *GroupHandler) toGroupDTO(ctx context.Context, g *Group) types.Group {
-	memberCount, _ := h.groupService.CountMembers(ctx, g.ID)
-	roleCount, _ := h.groupService.CountRoleAssignments(ctx, g.ID)
+func toGroupRoleAssignmentModels(inputs []types.UserRoleAssignmentInput) []GroupRoleAssignment {
+	desired := make([]GroupRoleAssignment, len(inputs))
+	for i, a := range inputs {
+		desired[i] = GroupRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
+	}
+	return desired
+}
+
+func (h *GroupHandler) toGroupDTO(ctx context.Context, g *Group) (types.Group, error) {
+	memberCount, err := h.groupService.CountMembers(ctx, g.ID)
+	if err != nil {
+		return types.Group{}, err
+	}
+	roleCount, err := h.groupService.CountRoleAssignments(ctx, g.ID)
+	if err != nil {
+		return types.Group{}, err
+	}
 	//exhaustruct:enforce
 	return types.Group{
 		ID:                  g.ID,
 		Name:                g.Name,
 		Description:         g.Description,
+		MemberUserIDs:       nil,
+		RoleAssignments:     nil,
 		MemberCount:         memberCount,
 		RoleAssignmentCount: roleCount,
 		CreatedAt:           g.CreatedAt,
 		UpdatedAt:           g.UpdatedAt,
-	}
+	}, nil
 }
 
 func toGroupMemberDTO(m *GroupMemberDetail) types.GroupMember {

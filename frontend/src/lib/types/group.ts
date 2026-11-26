@@ -7,6 +7,8 @@ export type Group = {
 	id: string;
 	name: string;
 	description?: string | null;
+	memberUserIds?: string[];
+	roleAssignments?: UserRoleAssignmentInput[];
 	memberCount: number;
 	roleAssignmentCount: number;
 	createdAt: string;
@@ -41,6 +43,6 @@ export type SetGroupRoleAssignments = {
 	assignments: UserRoleAssignmentInput[];
 };
 
-export type GroupWritable = 'name' | 'description';
+export type GroupWritable = 'name' | 'description' | 'memberUserIds' | 'roleAssignments';
 export type GroupCreate = CreateRequest<Group, GroupWritable, 'name'>;
 export type GroupUpdate = UpdateRequest<Group, GroupWritable>;

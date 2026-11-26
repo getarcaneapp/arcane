@@ -4890,5 +4890,6 @@
   "no_users_found": "No users found.",
   "role_assignments_count": "{count} role assignment(s)",
   "members_count": "{count} member(s)",
-  "user_inherited_groups": "Groups (permissions inherited automatically)"
+  "user_inherited_groups": "Groups (permissions inherited automatically)",
+  "idp": "IdP"
 }

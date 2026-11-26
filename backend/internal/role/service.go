@@ -531,13 +531,17 @@ func validateAssignmentsExist(tx *gorm.DB, desired []UserRoleAssignment) error {
 		}
 	}
 
-	if err := verifyIDsExist(tx.Model(&Role{}), roleIDSet, "role"); err != nil {
-		return err
-	}
-	return verifyIDsExist(tx.Table("environments"), envIDSet, "environment")
+	return ValidateRoleAndEnvIDsExist(tx, roleIDSet, envIDSet)
 }
 
-func verifyIDsExist(query *gorm.DB, idSet map[string]struct{}, kind string) error {
+func ValidateRoleAndEnvIDsExist(tx *gorm.DB, roleIDSet, envIDSet map[string]struct{}) error {
+	if err := VerifyIDsExist(tx.Model(&Role{}), roleIDSet, "role"); err != nil {
+		return err
+	}
+	return VerifyIDsExist(tx.Table("environments"), envIDSet, "environment")
+}
+
+func VerifyIDsExist(query *gorm.DB, idSet map[string]struct{}, kind string) error {
 	if len(idSet) == 0 {
 		return nil
 	}
