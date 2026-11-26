@@ -748,6 +748,7 @@ const (
 	ProjectTransferVolumeMissing                                  = "volume_missing"
 	ProjectTransferVolumeShared                                   = "volume_shared"
 	ProjectTransferTargetSpace                                    = "target_space"
+	ProjectTransferVolumeBackupStore                              = "volume_backup_store"
 
 	ProjectVolumeNamed      ProjectVolumeKind = "named"
 	ProjectVolumeExternal   ProjectVolumeKind = "external"
