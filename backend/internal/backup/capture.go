@@ -164,7 +164,7 @@ func CheckNoWriters(ctx context.Context, dockerService *dockerInternal.DockerCli
 	for _, c := range running {
 		for _, m := range c.Mounts {
 			if m.Type == mount.TypeVolume && m.RW && slices.Contains(names, m.Name) {
-				return common.Classify(common.ErrConflict, fmt.Errorf("container %s writes to volume %s; stop it or export again", docker.ContainerNameFromNames(c.Names), m.Name))
+				return common.Classify(common.ErrConflict, fmt.Errorf("container %s writes to volume %s; stop it and try again", docker.ContainerNameFromNames(c.Names), m.Name))
 			}
 		}
 	}
