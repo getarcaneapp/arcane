@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -219,7 +220,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			}, nil
 		},
 		Stop: func(ctx context.Context, _ backup.RestoreState) error {
-			if len(opts.Create) > 0 {
+			if len(opts.Create) > 0 || errors.Is(writeErr, errVolumeUnchanged) {
 				return nil
 			}
 			more, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{opts.VolumeName}, RefuseArcaneWriters: true}, opts.User)
@@ -247,7 +248,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			return id, err
 		},
 		InUse: func(ctx context.Context) error {
-			if len(opts.Create) > 0 {
+			if len(opts.Create) > 0 || errors.Is(writeErr, errVolumeUnchanged) {
 				return nil
 			}
 			return backup.CheckNoWriters(ctx, s.deps.Docker, []string{opts.VolumeName})
@@ -255,6 +256,18 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 		Docker: s.deps.Docker,
 		Write: func(ctx context.Context, safety string) error {
 			if safety == "" {
+				if safetyID != "" {
+					_, remove, checkErr := s.ownerHelper(ctx, mount.Mount{
+						Type:   mount.TypeVolume,
+						Source: opts.VolumeName,
+						Target: "/volume",
+					})
+					if checkErr != nil {
+						writeErr = checkErr
+						return writeErr
+					}
+					remove()
+				}
 				writeErr = opts.Write(ctx)
 				return writeErr
 			}
@@ -268,7 +281,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			return s.RestoreSnapshot(ctx, dockerClient, entry, opts.VolumeName)
 		},
 		DeleteVolume: func(ctx context.Context, name string, _ types.Actor) error {
-			if err := s.deps.StopHelper(ctx, name); err != nil {
+			if err := s.deps.StopHelper(ctx, name); err != nil && !errdefs.IsNotFound(err) {
 				return err
 			}
 			_, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
@@ -329,14 +342,11 @@ func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Clie
 	owner, recorded := backup.VolumeOwnerFromTags(snapshot.Tags)
 	var containerID string
 	if recorded {
-		helperID, remove, helperErr := s.deps.TempContainer(ctx, target)
+		helperID, remove, helperErr := s.ownerHelper(ctx, target)
 		if helperErr != nil {
-			return fmt.Errorf("%w (%w)", helperErr, errVolumeUnchanged)
+			return helperErr
 		}
 		defer remove()
-		if _, _, err = s.deps.Exec(ctx, helperID, "", []string{"sh", "-c", "command -v chown && command -v chmod"}); err != nil {
-			return fmt.Errorf("the helper image cannot restore the volume owner, so pull the latest tools image and try again: %w (%w)", err, errVolumeUnchanged)
-		}
 		containerID = helperID
 	}
 	if err = s.deps.Engine.RestoreSnapshot(ctx, dockerClient, source.repository, source.password, source.snapshotID, target, backup.RestoreOptions{DeleteExtra: true}); err != nil {
@@ -346,6 +356,18 @@ func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Clie
 		return nil
 	}
 	return owner.Apply(ctx, s.deps.Exec, containerID)
+}
+
+func (s *Service) ownerHelper(ctx context.Context, target mount.Mount) (string, func(), error) {
+	helperID, remove, err := s.deps.TempContainer(ctx, target)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w (%w)", err, errVolumeUnchanged)
+	}
+	if _, _, err = s.deps.Exec(ctx, helperID, "", []string{"sh", "-c", "command -v chown && command -v chmod"}); err != nil {
+		remove()
+		return "", nil, fmt.Errorf("the helper image cannot restore the volume owner, so pull the latest tools image and try again: %w (%w)", err, errVolumeUnchanged)
+	}
+	return helperID, remove, nil
 }
 
 func (s *Service) resolveRestoreSelection(
@@ -641,7 +663,6 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		}
 		create = []client.VolumeCreateOptions{createOptions}
 	}
-	newVolume := composeVolume != nil
 	preBackupID, err := s.run(ctx, dockerClient, runOptions{
 		VolumeName: volumeName,
 		User:       user,
@@ -652,7 +673,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 				root:        first,
 				volumeName:  volumeName,
 				archiveRoot: archiveRoot,
-				newVolume:   newVolume,
+				newVolume:   composeVolume != nil,
 			})
 		},
 	})
@@ -664,7 +685,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		"action":               "backup_upload_restore",
 		"filename":             filename,
 		"pre_restore_backupId": preBackupID,
-		"created_volume":       newVolume,
+		"created_volume":       composeVolume != nil,
 	}
 	if logErr := s.deps.Events.LogResourceEvent(ctx, event.ResourceEvent{
 		Type:          event.EventTypeVolumeBackupRestore,

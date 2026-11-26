@@ -179,6 +179,7 @@ func New(p ModuleParams) *Module {
 			RetargetWebhooks: p.Transfer.RetargetWebhooks,
 			CountWebhooks:    p.Transfer.CountWebhooks,
 			VolumeSizes:      p.Transfer.VolumeSizes,
+			BackupStore:      p.Backups.Repository.StorageVolume,
 			Activities:       p.Activity,
 			Backups:          p.Transfer.Backups,
 		}),

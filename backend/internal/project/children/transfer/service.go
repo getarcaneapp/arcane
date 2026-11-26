@@ -65,6 +65,7 @@ type (
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
 		VolumeSizes      func(ctx context.Context) (map[string]volumeDomain.VolumeSizeData, error)
+		BackupStore      func(ctx context.Context) string
 		Activities       activity.MessageAppender
 		Backups          *backup.Engine
 	}
@@ -457,8 +458,9 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	resolved, inspected := projects.ClassifyProjectVolumes(project), map[string]types.Volume{}
 	if request.IncludeVolumes {
 		resolved, inspected, err = projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
-			Inspect: source.Volume,
-			Project: project,
+			Inspect:     source.Volume,
+			Project:     project,
+			BackupStore: kit.Ternary(opts.SourceEnvironmentID == environment.LocalEnvironmentID, s.deps.BackupStore(ctx), ""),
 		})
 		if err != nil {
 			return fmt.Errorf("inspect source volumes: %w", err)
@@ -466,12 +468,24 @@ func (s *Service) check(ctx context.Context, plan *types.ProjectTransferPrefligh
 	}
 	var externalVolumes, hostVolumes, sourceVolumes, missingVolumes, targetVolumes, built []string
 	for _, volume := range resolved {
-		switch volume.Kind {
-		case types.ProjectVolumeExternal:
+		switch {
+		case volume.BackupStore:
+			plan.Checks = append(plan.Checks, types.ProjectTransferCheck{
+				Code:     types.ProjectTransferVolumeBackupStore,
+				Severity: types.ProjectTransferSeverityError,
+				Message: fmt.Sprintf(
+					"Volume %s of project %s holds Arcane's backups, so its data cannot be copied; transfer the project without volume data or remove the volume from it.",
+					volume.Name, project.Name,
+				),
+			})
+		case volume.Kind == types.ProjectVolumeExternal:
 			externalVolumes = append(externalVolumes, volume.Name)
-		case types.ProjectVolumeDriverOpts:
+		case volume.Kind == types.ProjectVolumeDriverOpts:
 			hostVolumes = append(hostVolumes, volume.Name)
-		case types.ProjectVolumeNamed:
+			if request.IncludeVolumes {
+				targetVolumes = append(targetVolumes, targetVolumeName(project.Name, volume.Key, volume.Name, request.Name))
+			}
+		case volume.Kind == types.ProjectVolumeNamed:
 			targetName := targetVolumeName(project.Name, volume.Key, volume.Name, request.Name)
 			if request.IncludeVolumes {
 				targetVolumes = append(targetVolumes, targetName)
@@ -659,7 +673,7 @@ func targetChecks(
 					units.BytesSize(float64(required)), project.Name, probeErr,
 				),
 			})
-		} else if deleteErr := target.DeleteUpload(ctx, types.UploadKindProjectArchive, probe.ID); deleteErr != nil {
+		} else if deleteErr := target.DeleteUpload(context.WithoutCancel(ctx), types.UploadKindProjectArchive, probe.ID); deleteErr != nil {
 			return fmt.Errorf("remove the free space check upload on the target environment: %w", deleteErr)
 		}
 	}
@@ -832,24 +846,29 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 	if withVolumes && (r.source.Availability(ctx) != AvailabilityReady || r.target.Availability(ctx) != AvailabilityReady) {
 		return errors.New("the source or target environment no longer supports copying volume data; start the transfer again")
 	}
-	if withVolumes && r.state.SourceRunning && !r.state.SourceStopped {
+	artifact := kit.Ternary(withVolumes, artifactBundle, artifactFiles)
+	source, err := s.resumedSource(ctx, r, types.UploadKindProjectArchive, artifact)
+	if err != nil {
+		return err
+	}
+	if withVolumes && source.ID == "" && r.state.SourceRunning && !r.state.SourceStopped {
 		r.state.SourceStopped = true
-		if err := s.save(ctx, r); err != nil {
-			return err
+		if saveErr := s.save(ctx, r); saveErr != nil {
+			return saveErr
 		}
 		s.report(ctx, r, types.ActivityMessageLevelInfo, "Stopping the source project so its volume data is consistent")
 		downCtx, cancel := context.WithTimeout(ctx, operationTimeout)
-		err := r.source.DownProject(downCtx, r.input.ProjectID, r.input.User)
+		downErr := r.source.DownProject(downCtx, r.input.ProjectID, r.input.User)
 		cancel()
-		if err != nil {
-			return fmt.Errorf("stop the source project: %w", err)
+		if downErr != nil {
+			return fmt.Errorf("stop the source project: %w", downErr)
 		}
 	}
 	request := types.ExportProjectArchive{Volumes: nil, StopProject: withVolumes}
-	if withVolumes {
-		current, err := r.source.Project(ctx, r.input.ProjectID)
-		if err != nil {
-			return fmt.Errorf("check the source project: %w", err)
+	if withVolumes && source.ID == "" {
+		current, projectErr := r.source.Project(ctx, r.input.ProjectID)
+		if projectErr != nil {
+			return fmt.Errorf("check the source project: %w", projectErr)
 		}
 		if current.RunningCount > 0 {
 			return fmt.Errorf("%d source container(s) are still running; volume data was not copied", current.RunningCount)
@@ -861,15 +880,12 @@ func (s *Service) copyProject(ctx context.Context, r *run) error {
 			}) {
 				return fmt.Errorf("volume %s of the source project changed after the checks; volume data was not copied", volume.Key)
 			}
-			request.Volumes = append(request.Volumes, volume.Key)
 		}
 	}
-	artifact := kit.Ternary(withVolumes, artifactBundle, artifactFiles)
-	budget := operationTimeout * time.Duration(1+len(request.Volumes))
-	source, err := s.resumedSource(ctx, r, types.UploadKindProjectArchive, artifact)
-	if err != nil {
-		return err
+	for _, volume := range kit.Ternary(withVolumes, r.state.Volumes, nil) {
+		request.Volumes = append(request.Volumes, volume.Key)
 	}
+	budget := operationTimeout * time.Duration(1+len(request.Volumes))
 	if source.ID == "" {
 		s.report(ctx, r, types.ActivityMessageLevelInfo, "Exporting the "+artifact+" on the source environment")
 		exportCtx, cancel := context.WithTimeout(ctx, budget)

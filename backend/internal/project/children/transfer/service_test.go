@@ -434,6 +434,9 @@ func TestProjectTransfer(t *testing.T) {
 		VolumeSizes: func(context.Context) (map[string]volumeDomain.VolumeSizeData, error) {
 			return nil, nil
 		},
+		BackupStore: func(context.Context) string {
+			return "arcane-backups"
+		},
 		Activities: activities,
 		Backups: backup.NewEngine(admission, nil, func(_ context.Context, requester types.BackupRequester) error {
 			mu.Lock()
