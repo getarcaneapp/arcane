@@ -958,6 +958,11 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 }
 
 func (s *Service) RestoreUpload(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error {
+	lease, err := s.acquireVolumeRun(ctx, volumeName)
+	if err != nil {
+		return err
+	}
+	lease.Release(ctx)
 	file, session, cleanup, err := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, request.UploadID)
 	if err != nil {
 		return err
