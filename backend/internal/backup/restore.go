@@ -154,7 +154,7 @@ func (r RestoreSteps) Rollback(ctx context.Context, state RestoreState, cause er
 			}
 		}
 		if len(leftovers) > 0 {
-			return fmt.Errorf("%w; nothing was restored, but %s", cause, strings.Join(leftovers, ", "))
+			return fmt.Errorf("%w; the restore was not finished and could not be fully undone: %s; any volume listed here may hold partial data", cause, strings.Join(leftovers, ", "))
 		}
 		return fmt.Errorf("%w; nothing was restored", cause)
 	}
