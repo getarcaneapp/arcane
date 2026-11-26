@@ -1914,7 +1914,10 @@ func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []co
 					}
 					continue
 				}
-				if startErr := c.Start(recoveryCtx, current.ID, user); startErr != nil {
+				startCtx, cancelStart := context.WithTimeout(ctx, containerRecoveryTimeout)
+				startErr := c.Start(startCtx, current.ID, user)
+				cancelStart()
+				if startErr != nil {
 					lastErrors[stopped.ID] = startErr
 					nextRemaining = append(nextRemaining, stopped)
 					continue
