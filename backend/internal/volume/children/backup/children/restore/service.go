@@ -629,6 +629,9 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 		args = append(args, "./"+cleaned)
 	}
 	_, stderr, err := s.deps.Exec(ctx, containerID, "", args)
+	if err != nil && strings.Contains(err.Error(), "exited with code 44") {
+		return stderr, fmt.Errorf("failed to restore files: %w (%w)", err, backup.ErrRestoreUnchanged)
+	}
 	if err != nil {
 		return stderr, fmt.Errorf("failed to restore files: %w", err)
 	}
