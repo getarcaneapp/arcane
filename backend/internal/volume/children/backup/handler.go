@@ -56,8 +56,8 @@ type (
 	}
 
 	DiscoverVolumeBackupsInput struct {
-		EnvironmentID string                             `path:"id" doc:"Environment ID"`
-		Body          types.DiscoverVolumeBackupsRequest `doc:"Destination to scan"`
+		EnvironmentID string                       `path:"id" doc:"Environment ID"`
+		Body          types.DiscoverBackupsRequest `doc:"Destination to scan"`
 	}
 
 	DiscoverVolumeBackupsOutput struct {
@@ -193,8 +193,8 @@ func (h *Handler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBack
 	if _, err := handlerutil.RequireUser(ctx); err != nil {
 		return nil, err
 	}
-	if input.Body.Destination != types.VolumeBackupDestinationLocal && strings.TrimSpace(input.Body.S3DestinationID) == "" {
-		return nil, huma.Error400BadRequest("select an S3 destination to discover")
+	if err := input.Body.Validate(); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 	created, failures, err := h.service.DiscoverBackups(ctx, input.Body)
 	if err != nil {

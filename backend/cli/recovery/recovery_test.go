@@ -1,11 +1,14 @@
 package recovery
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/libtnb/sqlite"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -55,8 +58,9 @@ func TestFinalizeRestoredBackup(t *testing.T) {
 		"ARCANE_ENVIRONMENT":    "test",
 	}, "selected", "activity-1", types.RecoveryRestoreRequest{
 		BackupID: "request-id", RemoteSnapshotID: "snapshot-1", S3DestinationID: "destination-1", Size: 1234,
-		RecoveryKey:     recoveryKey,
-		ProjectsSetting: "/srv/projects",
+		RecoveryKey:                recoveryKey,
+		ProjectsSetting:            "/srv/projects",
+		ProjectsDirectoriesSetting: `[{"path":"/srv/more","enabled":true}]`,
 		SafetyBackup: &types.RecoverySafetyBackup{
 			ID: "safety", LocalSnapshotID: "safety-snapshot", Size: 4321,
 			CreatedAt: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC),
@@ -84,6 +88,12 @@ func TestFinalizeRestoredBackup(t *testing.T) {
 	var projectsSetting settings.SettingVariable
 	require.NoError(t, db.First(&projectsSetting, "key = ?", "projectsDirectory").Error)
 	require.Equal(t, "/srv/projects", projectsSetting.Value)
+	var projectsDirectories settings.SettingVariable
+	require.NoError(t, db.First(&projectsDirectories, "key = ?", "projectsDirectories").Error)
+	require.JSONEq(t, `[{"path":"/srv/more","enabled":true}]`, projectsDirectories.Value)
+	var discoveryPending settings.SettingVariable
+	require.NoError(t, db.First(&discoveryPending, "key = ?", backup.ProjectDiscoveryPendingKey).Error)
+	require.Equal(t, "true", discoveryPending.Value)
 	storedKey, err := backup.NewRecoveryKeyStore(&database.DB{DB: db}).Get(t.Context(), backup.RecoveryKeyConfigID)
 	require.NoError(t, err)
 	require.Equal(t, recoveryKey, storedKey)
@@ -108,6 +118,74 @@ func TestFinalizeRestoredBackupInternalFallsBackForLegacyManifest(t *testing.T) 
 }
 
 func TestRunStagesInternalRejectsStagesWithoutDestination(t *testing.T) {
-	err := runStages(t.Context(), nil, types.RecoveryRestoreRequest{}, nil, []types.RecoveryRestoreStage{{SourcePath: "/data"}})
+	_, err := runStages(t.Context(), []types.RecoveryRestoreStage{{SourcePath: "/data"}}, nil)
 	require.ErrorContains(t, err, "restore stage for /data has no destination")
+}
+
+func stagedRestoreRequest(data string) types.RecoveryRestoreRequest {
+	stage := func(snapshotID string) types.RecoveryRestoreStage {
+		return types.RecoveryRestoreStage{
+			Swap:       &types.RecoveryRestoreSwap{Directory: data, ID: snapshotID, Preserve: []string{"projects"}},
+			Target:     types.RecoveryRestoreTarget{Path: "/restore/" + backup.SwapStagingPrefix + snapshotID, Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: "arcane-data", Target: "/restore"}}},
+			SnapshotID: snapshotID,
+			SourcePath: "/data",
+			Globs:      []string{"!/projects", "!/projects/**"},
+			Repository: types.RecoveryRestoreRepository{Environment: nil, Mounts: nil},
+		}
+	}
+	return types.RecoveryRestoreRequest{Stages: []types.RecoveryRestoreStage{stage("restore")}, RollbackStages: []types.RecoveryRestoreStage{stage("safety")}}
+}
+
+func TestRestoreDataInternalSkipsRollbackWhenTheSwapChangesNothing(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission bits are ignored when running as root")
+	}
+	data := t.TempDir()
+	t.Cleanup(func() { require.NoError(t, os.Chmod(data, 0o700)) })
+	require.NoError(t, os.WriteFile(filepath.Join(data, "arcane.db"), []byte("live"), 0o600))
+	var restored []string
+	restarts := 0
+	err := restoreData(t.Context(), stagedRestoreRequest(data), func(_ context.Context, stage types.RecoveryRestoreStage) error {
+		restored = append(restored, stage.SnapshotID)
+		staging := filepath.Join(data, backup.SwapStagingPrefix+stage.SnapshotID)
+		require.NoError(t, os.MkdirAll(staging, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(staging, "arcane.db"), []byte("restored"), 0o600))
+		return os.Chmod(data, 0o500)
+	}, func() { restarts++ })
+
+	require.ErrorIs(t, err, backup.ErrSwapNotApplied)
+	require.ErrorContains(t, err, "Arcane's data was not changed and Arcane was restarted")
+	require.Equal(t, []string{"restore"}, restored)
+	require.Equal(t, 1, restarts)
+	entries, err := os.ReadDir(data)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	content, err := os.ReadFile(filepath.Join(data, "arcane.db"))
+	require.NoError(t, err)
+	require.Equal(t, "live", string(content))
+}
+
+func TestRestoreDataInternalSwapsStagedRestoreAroundProjects(t *testing.T) {
+	data := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(data, "projects", "demo"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(data, "projects", "demo", "compose.yaml"), []byte("services: {}"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(data, "arcane.db"), []byte("live"), 0o600))
+	restarts := 0
+	err := restoreData(t.Context(), stagedRestoreRequest(data), func(_ context.Context, stage types.RecoveryRestoreStage) error {
+		staging := filepath.Join(data, backup.SwapStagingPrefix+stage.SnapshotID)
+		require.NoError(t, os.MkdirAll(staging, 0o700))
+		return os.WriteFile(filepath.Join(staging, "arcane.db"), []byte("restored"), 0o600)
+	}, func() { restarts++ })
+
+	require.NoError(t, err)
+	require.Zero(t, restarts)
+	content, err := os.ReadFile(filepath.Join(data, "arcane.db"))
+	require.NoError(t, err)
+	require.Equal(t, "restored", string(content))
+	content, err = os.ReadFile(filepath.Join(data, "projects", "demo", "compose.yaml"))
+	require.NoError(t, err)
+	require.Equal(t, "services: {}", string(content))
+	entries, err := os.ReadDir(data)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
 }

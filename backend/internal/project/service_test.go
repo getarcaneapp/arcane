@@ -11100,6 +11100,51 @@ func TestProjectService_ListProjectsDirectories(t *testing.T) {
 	assert.Equal(t, []string{primary, extra, missing}, enabled)
 }
 
+func TestProjectService_ProjectFoldersIncludeFollowedLinkTargets(t *testing.T) {
+	data := t.TempDir()
+	projectsDirectory := filepath.Join(data, "projects")
+	compose := []byte("services: {}\n")
+	for _, folder := range []string{"projects/plain", "projects/group", "stacks/shop", "stacks/app", "shared-env"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(data, folder), 0o755))
+	}
+	for _, file := range []string{"compose.yaml", "projects/plain/compose.yaml", "stacks/shop/compose.yaml", "stacks/app/compose.yaml"} {
+		require.NoError(t, os.WriteFile(filepath.Join(data, file), compose, 0o644))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(data, "shared-env", "global.env"), []byte("A=1\n"), 0o644))
+	links := map[string]string{
+		"projects/shop":      "../stacks/shop",
+		"projects/group/app": "../../stacks/app",
+		"projects/shared":    "../shared-env",
+		"projects/arcane":    "..",
+	}
+	for link, target := range links {
+		require.NoError(t, os.Symlink(target, filepath.Join(data, link)))
+	}
+	resolve := func(folder string) string {
+		resolved, err := filepath.EvalSymlinks(filepath.Join(data, folder))
+		require.NoError(t, err)
+		return resolved
+	}
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
+		Ctx:    t.Context(),
+		DB:     &database.DB{DB: db},
+		Config: &config.Config{},
+		Env: settings.Env{
+			"projectsDirectory":     projectsDirectory,
+			"followProjectSymlinks": "true",
+			"projectScanMaxDepth":   "3",
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	folders, err := (&ProjectService{settingsService: settingsService}).ProjectFolders(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []string{projectsDirectory, resolve(""), resolve("stacks/app"), resolve("stacks/shop")}, folders)
+}
+
 func TestProjectBundleRoundTripsSharedExternalVolume(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	ctx := t.Context()

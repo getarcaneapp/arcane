@@ -62,6 +62,7 @@ type (
 		UploadSessionsCleanup *scheduler.UploadSessionsCleanupJob
 		GitCloneCleanup       *scheduler.GitCloneCleanupJob
 		BackupRepositoryPrune *scheduler.BackupRepositoryPruneJob
+		ProjectDiscovery      *scheduler.ProjectBackupDiscoveryJob
 	}
 
 	registerManagerJobsParams struct {
@@ -166,6 +167,11 @@ func startJobScheduler(p startJobSchedulerParams) {
 			p.Coordinator.Activate()
 			if _, submitErr := p.Coordinator.Submit(ctx, types.SchedulerRequest{JobID: p.Analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); submitErr != nil {
 				slog.WarnContext(ctx, "Failed to submit startup job", "job", p.Analytics.Name(), "error", submitErr)
+			}
+			if p.Config.LocalDockerEnabled {
+				if _, submitErr := p.Coordinator.Submit(ctx, types.SchedulerRequest{JobID: scheduler.ProjectBackupDiscoveryJobName, EnvironmentID: "0", Trigger: "startup"}); submitErr != nil {
+					slog.WarnContext(ctx, "Failed to submit startup job", "job", scheduler.ProjectBackupDiscoveryJobName, "error", submitErr)
+				}
 			}
 			// Standalone tasks wait until upgrade job recovery has read its job, so a resumed step's new checkpoint
 			// is never mistaken for one the previous process left.
@@ -276,7 +282,7 @@ func registerJobs(params registerJobsParams) error {
 		params.UpgradeLogCleanup,
 	}
 	if params.Config.LocalDockerEnabled {
-		jobs = append(jobs, params.PruningVolumeHelper, params.BackupRepositoryPrune)
+		jobs = append(jobs, params.PruningVolumeHelper, params.BackupRepositoryPrune, params.ProjectDiscovery)
 	}
 	for _, job := range jobs {
 		if err := params.Scheduler.RegisterJob(job); err != nil {

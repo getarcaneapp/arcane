@@ -152,7 +152,7 @@
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const backupTypeOptions = $derived([
-		{ label: m.system(), value: 'system', description: m.system_backups_type_system_description() },
+		{ label: m.system(), value: 'system', description: m.arcane_only_backup_description() },
 		{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }
 	]);
 	const configurationOptions = $derived([
@@ -453,6 +453,7 @@
 
 	let autoDiscovered = false;
 	let mounted = false;
+	// Page loads scan S3 destinations; a new or imported recovery key also scans local storage, which a reinstall leaves unrecorded.
 	async function discoverStoredBackups({ local = false } = {}) {
 		if (!mounted || !policyCollection.recoveryKeyStored || !canDiscoverBackups) return;
 		if (!local && (autoDiscovered || !data.destinations.length)) return;
@@ -810,6 +811,12 @@
 		contentClass={action === 'create' ? 'sm:max-w-190' : 'sm:max-w-140'}
 	>
 		<div class="space-y-5 py-2">
+			{#if action === 'restore'}
+				<Alert.Root size="sm">
+					<InfoIcon class="size-4" />
+					<Alert.Description>{m.restore_leaves_projects_description()}</Alert.Description>
+				</Alert.Root>
+			{/if}
 			{#if action === 'create'}
 				<SelectWithLabel
 					id="manual-backup-type"
@@ -1002,7 +1009,7 @@
 			{/if}
 			{@render recoveryKeySummary()}
 
-			<SettingsSection title={m.system()} description={m.system_backups_type_system_description()} variant="plain">
+			<SettingsSection title={m.system()} description={m.arcane_only_backup_description()} variant="plain">
 				{#snippet actions()}{@render addScheduleAction('system')}{/snippet}
 				{#if policyCollection.policies.length}
 					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">

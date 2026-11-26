@@ -575,6 +575,36 @@ func (s *ProjectService) projectsRoots(ctx context.Context) ([]types.ProjectsDir
 	return roots, nil
 }
 
+func (s *ProjectService) ProjectFolders(ctx context.Context) ([]string, error) {
+	statuses, err := s.projectsRoots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	roots := make([]string, 0, len(statuses))
+	for _, root := range statuses {
+		roots = append(roots, root.ContainerPath)
+	}
+	if !s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks") {
+		return roots, nil
+	}
+	folders := slices.Clone(roots)
+	for _, root := range roots {
+		discovered, discoverErr := projects.DiscoverProjectDirectories(ctx, s.discoverOptions(ctx, root, roots[0]))
+		if errors.Is(discoverErr, os.ErrNotExist) {
+			continue
+		}
+		if discoverErr != nil {
+			return nil, fmt.Errorf("find linked projects in %s: %w", root, discoverErr)
+		}
+		for _, project := range discovered {
+			if resolved, resolveErr := filepath.EvalSymlinks(project.Path); resolveErr == nil && resolved != filepath.Clean(project.Path) {
+				folders = append(folders, resolved)
+			}
+		}
+	}
+	return folders, nil
+}
+
 func (s *ProjectService) EnabledProjectsRoots(ctx context.Context) ([]string, error) {
 	roots, err := s.projectsRoots(ctx)
 	if err != nil {
@@ -3196,19 +3226,23 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) (int, err
 	return len(projectsList), nil
 }
 
+func (s *ProjectService) discoverOptions(ctx context.Context, root, globalEnvDirectory string) projects.DiscoverOptions {
+	return projects.DiscoverOptions{
+		Root:               root,
+		GlobalEnvDirectory: globalEnvDirectory,
+		SkipDirectories:    s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
+		MaxDepth:           s.settingsService.GetIntSetting(ctx, "projectScanMaxDepth"),
+		FollowSymlinks:     s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks"),
+	}
+}
+
 func (s *ProjectService) discoverRootProjects(ctx context.Context, roots []types.ProjectsDirectoryStatus, skipPaths map[string]struct{}) (seen, unavailableRoots map[string]struct{}, err error) {
 	seen, unavailableRoots = map[string]struct{}{}, map[string]struct{}{}
 	for _, root := range roots {
 		if !root.Enabled {
 			continue
 		}
-		discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, projects.DiscoverOptions{
-			Root:               root.ContainerPath,
-			GlobalEnvDirectory: roots[0].ContainerPath,
-			SkipDirectories:    s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
-			MaxDepth:           s.settingsService.GetIntSetting(ctx, "projectScanMaxDepth"),
-			FollowSymlinks:     s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks"),
-		})
+		discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, s.discoverOptions(ctx, root.ContainerPath, roots[0].ContainerPath))
 		switch {
 		case discoveryErr != nil && root.Primary && errors.Is(discoveryErr, os.ErrNotExist):
 			return nil, nil, discoveryErr
