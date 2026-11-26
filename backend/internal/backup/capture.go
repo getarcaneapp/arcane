@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"path"
 	"slices"
@@ -223,9 +224,11 @@ func StartHelper(ctx context.Context, dockerService *dockerInternal.DockerClient
 		return "", nil, fmt.Errorf("create helper container: %w", err)
 	}
 	remove := func() {
-		_, _ = dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		if _, removeErr := dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, helper.ID, volumes.RemoveOptions())
-		})
+		}); removeErr != nil {
+			slog.WarnContext(ctx, "Failed to remove the backup helper container", "containerId", helper.ID, "error", removeErr)
+		}
 	}
 	if _, err = dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
 		return dockerClient.ContainerStart(ctx, helper.ID, client.ContainerStartOptions{})
