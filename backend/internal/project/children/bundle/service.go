@@ -627,7 +627,6 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 			return s.discard(ctx, opts.User, projectID, request.Name)
 		},
 	}
-	state := backup.RestoreState{Redeploy: new(false)}
 	target, err := s.importTarget(ctx, projectID, included)
 	if binds := sharedBinds(target.services, manifest.ProjectDirs); err == nil && len(binds) > 0 && !request.ShareExternalVolumes {
 		err = common.Classify(common.ErrValidation, fmt.Errorf(
@@ -635,9 +634,9 @@ func (s *Service) RestoreAsNew(ctx context.Context, opts RestoreAsNewOptions) (s
 			strings.Join(binds, ", "),
 		))
 	}
-	if err == nil {
-		state.Create, restores, err = newVolumes(target, included)
-	}
+	create, restores, volumesErr := newVolumes(target, included)
+	err = cmp.Or(err, volumesErr)
+	state := backup.RestoreState{Redeploy: new(false), Create: create}
 	if err != nil {
 		return "", steps.Rollback(ctx, state, err)
 	}

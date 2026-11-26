@@ -192,12 +192,14 @@ func (o ArchiveOutput) Write(ctx context.Context, dockerService *dockerInternal.
 	return nil
 }
 
-func (o ArchiveOutput) add(ctx context.Context, dockerClient *client.Client, containerID, archive string, part mount.Mount) error {
+func (o ArchiveOutput) add(ctx context.Context, dockerClient *client.Client, containerID, archive string, part mount.Mount) (err error) {
 	reader, size, err := docker.CopyFromContainer(ctx, dockerClient, containerID, archive)
 	if err != nil {
 		return fmt.Errorf("read the archive of %s: %w", part.Source, err)
 	}
-	defer func() { _ = reader.Close() }()
+	defer func() {
+		err = errors.Join(err, reader.Close())
+	}()
 	return o.Add(ctx, part, size, reader)
 }
 
