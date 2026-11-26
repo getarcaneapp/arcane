@@ -30,6 +30,7 @@ type (
 	CapturePlan struct {
 		Inspect  func(ctx context.Context, name string) (types.Volume, bool, error)
 		Stop     func(ctx context.Context) (func(context.Context) error, error)
+		Watch    func(ctx context.Context) (func(context.Context) error, error)
 		Verify   func(ctx context.Context) error
 		Rejected func(ctx context.Context, err error) error
 		Mounts   []mount.Mount
@@ -80,6 +81,12 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 	if err != nil {
 		return err
 	}
+	unchanged := func(context.Context) error { return nil }
+	if plan.Watch != nil {
+		if unchanged, err = plan.Watch(ctx); err != nil {
+			return err
+		}
+	}
 	if plan.Stop != nil {
 		start, stopErr := plan.Stop(ctx)
 		if start != nil {
@@ -101,10 +108,14 @@ func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Contex
 	if readErr := read(ctx, plan.Mounts); readErr != nil {
 		return readErr
 	}
+	err = unchanged(ctx)
 	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
-	after, err := volumeIdentities(checkCtx, plan.Inspect, plan.Volumes)
-	if err == nil && !maps.Equal(before, after) {
-		err = errVolumeReplaced
+	if err == nil {
+		var after map[string]string
+		after, err = volumeIdentities(checkCtx, plan.Inspect, plan.Volumes)
+		if err == nil && !maps.Equal(before, after) {
+			err = errVolumeReplaced
+		}
 	}
 	if err == nil && plan.Verify != nil {
 		err = plan.Verify(checkCtx)

@@ -331,7 +331,7 @@ func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Clie
 func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Client, volumeName string, source snapshotSource) error {
 	snapshot, _, err := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, source.repository, source.password, "", source.snapshotID)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w (%w)", err, backup.ErrRestoreUnchanged)
 	}
 	target := mount.Mount{
 		Type:   mount.TypeVolume,

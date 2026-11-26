@@ -122,6 +122,16 @@ func TestRunStagesInternalRejectsStagesWithoutDestination(t *testing.T) {
 	require.ErrorContains(t, err, "restore stage for /data has no destination")
 }
 
+func countingArcane(restarts *int) arcaneContainer {
+	return arcaneContainer{
+		stop: func(context.Context) error { return nil },
+		start: func(context.Context) error {
+			*restarts++
+			return nil
+		},
+	}
+}
+
 func stagedRestoreRequest(data string) types.RecoveryRestoreRequest {
 	stage := func(snapshotID string) types.RecoveryRestoreStage {
 		return types.RecoveryRestoreStage{
@@ -133,7 +143,11 @@ func stagedRestoreRequest(data string) types.RecoveryRestoreRequest {
 			Repository: types.RecoveryRestoreRepository{Environment: nil, Mounts: nil},
 		}
 	}
-	return types.RecoveryRestoreRequest{Stages: []types.RecoveryRestoreStage{stage("restore")}, RollbackStages: []types.RecoveryRestoreStage{stage("safety")}}
+	return types.RecoveryRestoreRequest{
+		Stages:         []types.RecoveryRestoreStage{stage("restore")},
+		RollbackStages: []types.RecoveryRestoreStage{stage("safety")},
+		SafetyBackup:   &types.RecoverySafetyBackup{ID: "safety"},
+	}
 }
 
 func TestRestoreDataInternalSkipsRollbackWhenTheSwapChangesNothing(t *testing.T) {
@@ -151,10 +165,10 @@ func TestRestoreDataInternalSkipsRollbackWhenTheSwapChangesNothing(t *testing.T)
 		require.NoError(t, os.MkdirAll(staging, 0o700))
 		require.NoError(t, os.WriteFile(filepath.Join(staging, "arcane.db"), []byte("restored"), 0o600))
 		return os.Chmod(data, 0o500)
-	}, func() { restarts++ })
+	}, countingArcane(&restarts))
 
 	require.ErrorIs(t, err, backup.ErrSwapNotApplied)
-	require.ErrorContains(t, err, "Arcane's data was not changed and Arcane was restarted")
+	require.ErrorContains(t, err, "nothing was restored")
 	require.Equal(t, []string{"restore"}, restored)
 	require.Equal(t, 1, restarts)
 	entries, err := os.ReadDir(data)
@@ -175,7 +189,7 @@ func TestRestoreDataInternalSwapsStagedRestoreAroundProjects(t *testing.T) {
 		staging := filepath.Join(data, backup.SwapStagingPrefix+stage.SnapshotID)
 		require.NoError(t, os.MkdirAll(staging, 0o700))
 		return os.WriteFile(filepath.Join(staging, "arcane.db"), []byte("restored"), 0o600)
-	}, func() { restarts++ })
+	}, countingArcane(&restarts))
 
 	require.NoError(t, err)
 	require.Zero(t, restarts)

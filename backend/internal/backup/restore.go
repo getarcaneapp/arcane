@@ -46,6 +46,7 @@ type (
 		Verify       func(ctx context.Context) error
 		Discard      func(ctx context.Context) (bool, []string)
 		Subject      string
+		SafetyStep   string
 		User         types.Actor
 	}
 
@@ -76,7 +77,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 		}
 	}
 	if r.Safety != nil {
-		r.report(held, "Taking a safety backup")
+		r.report(held, cmp.Or(r.SafetyStep, "Taking a safety backup"))
 		var safetyID string
 		if safetyID, err = r.Safety(held); err != nil {
 			return r.Rollback(held, state, fmt.Errorf("take a safety backup: %w", err))
