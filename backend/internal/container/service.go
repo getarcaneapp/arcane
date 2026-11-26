@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
@@ -48,9 +49,11 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/containerlabel"
 	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -1988,6 +1991,56 @@ func (s *ContainerService) SampleResources(ctx context.Context, ids []string, ma
 	return s.stats.Collect(ctx, matched, maxAge, false)
 }
 
+func (s *ContainerService) allowedComposeProjects(ctx context.Context, envID, perm string) (map[string]struct{}, bool) {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil, true
+	}
+	projectIDs := ps.ResourceIDs(perm, envID, authz.ResourceTypeProject)
+	allowed := make(map[string]struct{}, len(projectIDs))
+	if s.projectService == nil {
+		return allowed, false
+	}
+	for _, projectID := range projectIDs {
+		proj, err := s.projectService.GetProjectFromDatabaseByID(ctx, projectID)
+		if err != nil || proj == nil {
+			continue
+		}
+		canonical := cmp.Or(
+			strings.TrimSpace(kit.FromPtr(proj.ComposeProjectName)),
+			projects.NormalizeProjectName(strings.TrimSpace(kit.FromPtr(proj.DirName))),
+			strings.TrimSpace(proj.Name),
+		)
+		if name := strings.ToLower(canonical); name != "" {
+			allowed[name] = struct{}{}
+		}
+	}
+	return allowed, false
+}
+
+func (s *ContainerService) CheckContainerAccess(ctx context.Context, envID, perm, containerID string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil
+	}
+	details, err := s.GetContainerDetails(ctx, containerID)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	allowedCompose, _ := s.allowedComposeProjects(ctx, envID, perm)
+	if !middleware.ContainerPermitted(ps, middleware.ContainerAccessInput{
+		EnvID:          envID,
+		Permission:     perm,
+		ContainerID:    details.ID,
+		Names:          []string{details.Name},
+		Labels:         details.Labels,
+		AllowedCompose: allowedCompose,
+	}) {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return nil
+}
+
 func (s *ContainerService) ListContainersPaginated(
 	ctx context.Context,
 	params pagination.QueryParams,
@@ -2011,6 +2064,19 @@ func (s *ContainerService) ListContainersPaginated(
 	}
 
 	dockerContainers = FilterExcludedContainers(dockerContainers, includeInternal, includeHidden)
+	if allowedCompose, unrestricted := s.allowedComposeProjects(ctx, types.LocalDockerEnvironmentID, authz.PermContainersList); !unrestricted {
+		ps, _ := middleware.PermissionsFromContext(ctx)
+		dockerContainers = slices.DeleteFunc(slices.Clone(dockerContainers), func(dc container.Summary) bool {
+			return !middleware.ContainerPermitted(ps, middleware.ContainerAccessInput{
+				EnvID:          types.LocalDockerEnvironmentID,
+				Permission:     authz.PermContainersList,
+				ContainerID:    dc.ID,
+				Names:          dc.Names,
+				Labels:         dc.Labels,
+				AllowedCompose: allowedCompose,
+			})
+		})
+	}
 	// Update lookup failures degrade to missing status rather than a failed list.
 	updateInfoMap, err := s.imageService.GetUpdateInfoByContainers(ctx, dockerContainers)
 	if err != nil {

@@ -29,6 +29,8 @@ type (
 	GroupRoleAssignment struct {
 		CreatedAt     time.Time `json:"createdAt" doc:"Creation timestamp"`
 		EnvironmentID *string   `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
+		ResourceType  *string   `json:"resourceType,omitempty" enum:"project,container,volume,network,image,gitops" doc:"Optional resource kind scope; requires environmentId and resourceId"`
+		ResourceID    *string   `json:"resourceId,omitempty" doc:"Optional resource identifier this assignment is scoped to; requires environmentId and resourceType"`
 		ID            string    `json:"id" doc:"Unique identifier of the assignment"`
 		GroupID       string    `json:"groupId" doc:"ID of the group holding this assignment"`
 		RoleID        string    `json:"roleId" doc:"ID of the granted role"`

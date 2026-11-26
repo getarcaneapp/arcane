@@ -49,6 +49,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/lifecycle"
@@ -61,6 +62,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -1961,6 +1963,7 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 		Write:    pack,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
+		Target:   proj.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
@@ -2914,6 +2917,13 @@ func (s *ProjectService) ListAllProjects(ctx context.Context) ([]Project, error)
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]types.Project, pagination.Response, error) {
 	updatesFilter := strings.TrimSpace(params.Filters["updates"])
 	query := s.db.WithContext(ctx).Model(&Project{})
+	allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList)
+	if allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []types.Project{}, pagination.BuildResponse(0, 0, params), nil
+		}
+		query = query.Where("id IN ?", allowedIDs)
+	}
 	if archivedFilter := strings.TrimSpace(params.Filters["archived"]); !strings.EqualFold(archivedFilter, "all") {
 		archived, _ := kit.ParseBool(archivedFilter)
 		query = query.Where("is_archived = ?", archived)
@@ -2983,8 +2993,8 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	if updatesFilter != "" {
 		s.preloadGitOpsSyncs(ctx, env, projectsArray)
 		items = s.enrichProjectsWithUpdateInfo(ctx, projectsArray, items, true, env)
-		// Untracked compose projects only join an unfiltered-by-tag has_update view.
-		if strings.EqualFold(updatesFilter, "has_update") && strings.TrimSpace(params.Filters["tags"]) == "" {
+		// Untracked compose projects only join an unfiltered-by-tag has_update view for unrestricted callers.
+		if allowedIDs == nil && strings.EqualFold(updatesFilter, "has_update") && strings.TrimSpace(params.Filters["tags"]) == "" {
 			if snapshot.Err != nil {
 				slog.WarnContext(ctx, "failed to list compose containers for project update rows", "error", snapshot.Err)
 			} else {
@@ -4285,15 +4295,32 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.ProjectStatusCounts, error) {
+	query := s.db.WithContext(ctx).Model(&Project{})
+	if allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList); allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return types.ProjectStatusCounts{}, nil
+		}
+		query = query.Where("id IN ?", allowedIDs)
+	}
 	var projectsList []Project
-	if listProjectsErr := s.db.WithContext(ctx).Find(&projectsList).Error; listProjectsErr != nil {
+	if listProjectsErr := query.Find(&projectsList).Error; listProjectsErr != nil {
 		return types.ProjectStatusCounts{}, fmt.Errorf("failed to list projects: %w", listProjectsErr)
 	}
 	snapshot := s.listing.Snapshot(ctx)
 	if snapshot.Err != nil {
 		return types.ProjectStatusCounts{}, fmt.Errorf("failed to list containers for project update count: %w", snapshot.Err)
 	}
-	updates := s.CountProjectsWithPendingUpdates(ctx, snapshot.Containers, projectsList)
+	allowedCompose, unrestricted, err := middleware.AllowedComposeProjects(ctx, s.db, types.LocalDockerEnvironmentID, authz.PermProjectsList)
+	if err != nil {
+		return types.ProjectStatusCounts{}, err
+	}
+	containers := make([]container.Summary, 0, len(snapshot.Containers))
+	for _, c := range snapshot.Containers {
+		if _, allowed := allowedCompose[strings.ToLower(docker.ComposeProjectLabel(c.Labels))]; unrestricted || allowed {
+			containers = append(containers, c)
+		}
+	}
+	updates := s.CountProjectsWithPendingUpdates(ctx, containers, projectsList)
 	counts := listing.StatusCounts(projectRecords(projectsList), snapshot)
 	return types.ProjectStatusCounts{
 		RunningProjects:  counts.RunningProjects,
@@ -4364,8 +4391,15 @@ func (s *ProjectService) GetProjectTags(ctx context.Context, projectID string) (
 }
 
 func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]types.ProjectTagOption, error) {
+	query := s.db.WithContext(ctx).Model(&ProjectTag{})
+	if allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList); allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []types.ProjectTagOption{}, nil
+		}
+		query = query.Where("project_id IN ?", allowedIDs)
+	}
 	var rows []types.ProjectTagAssignment
-	if err := s.db.WithContext(ctx).Model(&ProjectTag{}).Order("name, source DESC, color").Find(&rows).Error; err != nil {
+	if err := query.Order("name, source DESC, color").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list project tag options: %w", err)
 	}
 	// Rows are ordered by name with the UI source first, so each name's first row wins.
@@ -4379,8 +4413,15 @@ func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]types.Pro
 }
 
 func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]types.ProjectReference, error) {
+	query := s.db.WithContext(ctx).Model(&Project{})
+	if allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList); allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []types.ProjectReference{}, nil
+		}
+		query = query.Where("id IN ?", allowedIDs)
+	}
 	references := []types.ProjectReference{}
-	if err := s.db.WithContext(ctx).Model(&Project{}).Select("id", "name").Order("name").Find(&references).Error; err != nil {
+	if err := query.Select("id", "name").Order("name").Find(&references).Error; err != nil {
 		return nil, fmt.Errorf("list project references: %w", err)
 	}
 	return references, nil

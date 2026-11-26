@@ -7,6 +7,7 @@ import (
 type (
 	CreateUploadSessionRequest struct {
 		Filename  string `json:"filename" required:"true" doc:"Original filename; validated per kind"`
+		Target    string `json:"target,omitempty" doc:"Volume name a volume-backup upload will be restored into; lets volume-scoped grants create the session"`
 		Size      int64  `json:"size" required:"true" minimum:"1" doc:"Total file size in bytes"`
 		ChunkSize int64  `json:"chunkSize,omitempty" doc:"Chunk size in bytes; server default and bounds apply"`
 	}
@@ -16,6 +17,7 @@ type (
 		ID             string    `json:"id"`
 		Kind           string    `json:"kind"`
 		Filename       string    `json:"filename"`
+		Target         string    `json:"target,omitempty"`
 		ReceivedChunks []int     `json:"receivedChunks"`
 		Size           int64     `json:"size"`
 		ChunkSize      int64     `json:"chunkSize"`

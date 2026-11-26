@@ -23,20 +23,29 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-type DownloadOptions struct {
-	OutputPath   string
-	Special      bool
-	ShowProgress bool
-}
+type (
+	DownloadOptions struct {
+		OutputPath   string
+		Special      bool
+		ShowProgress bool
+	}
+
+	UploadOptions struct {
+		Kind         string
+		FilePath     string
+		Target       string
+		ShowProgress bool
+	}
+)
 
 const (
 	uploadChunkAttempts = 3
 )
 
-func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath string, showProgress bool) (string, error) {
+func UploadFileInChunks(ctx context.Context, c *client.Client, opts UploadOptions) (string, error) {
 	log := charmLog.Default()
 
-	absPath, err := filepath.Abs(filePath)
+	absPath, err := filepath.Abs(opts.FilePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
@@ -50,19 +59,20 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 		return "", fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	loading := output.StartTracker(ctx, output.Stderr(), showProgress, "Creating upload session", "Uploading chunks")
+	loading := output.StartTracker(ctx, output.Stderr(), opts.ShowProgress, "Creating upload session", "Uploading chunks")
 	loading.NextStep()
 	defer loading.Stop()
-	created, err := c.PostJSON[types.UploadSession](ctx, clitypes.UploadSessions(c.EnvID(), kind), types.CreateUploadSessionRequest{
-		Filename: filepath.Base(filePath),
+	created, err := c.PostJSON[types.UploadSession](ctx, clitypes.UploadSessions(c.EnvID(), opts.Kind), types.CreateUploadSessionRequest{
+		Filename: filepath.Base(opts.FilePath),
 		Size:     fileInfo.Size(),
+		Target:   opts.Target,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create upload session: %w", err)
 	}
 	session := created.Data
 
-	log.Debugf("Uploading %s as %d chunks of %d bytes (session %s)", filePath, session.TotalChunks, session.ChunkSize, session.ID)
+	log.Debugf("Uploading %s as %d chunks of %d bytes (session %s)", opts.FilePath, session.TotalChunks, session.ChunkSize, session.ID)
 
 	loading.NextStep()
 	loading.SetProgress("", "Uploading", 0, fileInfo.Size(), true)
@@ -72,11 +82,11 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 	for index := range session.TotalChunks {
 		expected := kit.Ternary(index == session.TotalChunks-1, session.Size-int64(index)*session.ChunkSize, session.ChunkSize)
 		if _, readFullErr := io.ReadFull(file, buf[:expected]); readFullErr != nil {
-			AbortUploadSession(ctx, c, kind, session.ID)
+			AbortUploadSession(ctx, c, opts.Kind, session.ID)
 			return "", fmt.Errorf("failed to read file: %w", readFullErr)
 		}
 
-		chunkPath := clitypes.UploadSessionChunk(c.EnvID(), kind, session.ID, index)
+		chunkPath := clitypes.UploadSessionChunk(c.EnvID(), opts.Kind, session.ID, index)
 		for attempt := 1; ; attempt++ {
 			resp, chunkErr := c.RequestRaw(ctx, http.MethodPut, chunkPath, bytes.NewReader(buf[:expected]), map[string]string{"Content-Type": "application/octet-stream"})
 			if chunkErr == nil {
@@ -91,7 +101,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 				}
 			}
 			if attempt >= uploadChunkAttempts {
-				AbortUploadSession(ctx, c, kind, session.ID)
+				AbortUploadSession(ctx, c, opts.Kind, session.ID)
 				return "", fmt.Errorf("failed to upload file: %w", chunkErr)
 			}
 			log.Debugf("Retrying chunk %d after error: %v", index, chunkErr)

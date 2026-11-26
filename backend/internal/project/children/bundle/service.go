@@ -171,6 +171,7 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 		Write:    write,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(project.Name) + types.ProjectBundleExtension,
+		Target:   project.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", project.Name, err)

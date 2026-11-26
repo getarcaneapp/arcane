@@ -3,6 +3,7 @@ import { setMode } from 'mode-watcher';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/role.js';
 import type { User } from '#lib/types/user.js';
+import { isResourceTargetablePermission } from '#lib/utils/access-policy.js';
 import { setLocale } from '#lib/utils/formatting.js';
 import {
 	applyAccentColor,
@@ -22,7 +23,13 @@ export const userHasPermissionInAnyEnvironment = (user: User | null | undefined,
 	if (!user?.permissionsByEnv) return false;
 	const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
 	if (global.includes(SUDO_PERMISSION) || global.includes(perm)) return true;
-	return Object.values(user.permissionsByEnv).some((permissions) => permissions.includes(perm));
+	if (Object.values(user.permissionsByEnv).some((permissions) => permissions.includes(perm))) return true;
+	if (isResourceTargetablePermission(perm) && user.resourcePermissionsByEnv) {
+		return Object.values(user.resourcePermissionsByEnv).some((grants) =>
+			grants.some((grant) => grant.permissions.includes(perm))
+		);
+	}
+	return false;
 };
 
 const setUser = async (user: User) => {
@@ -63,9 +70,16 @@ const clearUser = () => {
 const permissions = (envId?: string): Set<string> => {
 	const user = current;
 	if (!user?.permissionsByEnv) return new Set();
+	const envResourcePerms =
+		envId && envId !== GLOBAL_SCOPE && user.resourcePermissionsByEnv?.[envId]
+			? user.resourcePermissionsByEnv[envId].flatMap((grant) =>
+					grant.permissions.filter((perm) => isResourceTargetablePermission(perm))
+				)
+			: [];
 	return new Set([
 		...(user.permissionsByEnv[GLOBAL_SCOPE] ?? []),
-		...((envId && envId !== GLOBAL_SCOPE && user.permissionsByEnv[envId]) || [])
+		...((envId && envId !== GLOBAL_SCOPE && user.permissionsByEnv[envId]) || []),
+		...envResourcePerms
 	]);
 };
 

@@ -337,6 +337,18 @@ func NewRequester(ctx context.Context, requestedBy types.Actor, environmentID, p
 	return types.BackupRequester{UserID: requestedBy.ID, APIKeyID: keyID, EnvironmentID: environmentID, Permission: permission}
 }
 
+func NewResourceRequester(ctx context.Context, requestedBy types.Actor, environmentID, permission, resourceType, resourceID string) types.BackupRequester {
+	keyID, _ := ctx.Value(middleware.ContextKeyApiKeyID).(string)
+	return types.BackupRequester{ //exhaustruct:enforce
+		UserID:        requestedBy.ID,
+		APIKeyID:      keyID,
+		EnvironmentID: environmentID,
+		Permission:    permission,
+		ResourceType:  resourceType,
+		ResourceID:    resourceID,
+	}
+}
+
 func NewEngine(admission *runs.Admission, imageService *image.ImageService, authorize func(context.Context, types.BackupRequester) error) *Engine {
 	return &Engine{
 		imageService: imageService,

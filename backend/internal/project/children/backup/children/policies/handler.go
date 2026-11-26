@@ -56,7 +56,8 @@ func (h *Handler) UpdatePolicies(ctx context.Context, input *UpdatePoliciesInput
 	if err != nil {
 		return nil, err
 	}
-	policies, err := h.service.UpdatePolicies(ctx, backup.NewRequester(ctx, *user, input.EnvironmentID, authz.PermProjectsBackup), input.ProjectID, input.Body.Policies)
+	requester := backup.NewResourceRequester(ctx, *user, input.EnvironmentID, authz.PermProjectsBackup, authz.ResourceTypeProject, input.ProjectID)
+	policies, err := h.service.UpdatePolicies(ctx, requester, input.ProjectID, input.Body.Policies)
 	if err != nil {
 		return nil, handlerutil.APIError(err)
 	}

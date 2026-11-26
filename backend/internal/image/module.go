@@ -55,7 +55,7 @@ func New(p Params) *Module {
 		build:               p.BuildService,
 		activity:            p.ActivityService,
 		upload:              p.UploadService,
-		attestationsHandler: attestations.NewHandler(attestations.NewService(p.Service.dockerService, p.Service.registryService.GetRegistryAuthForImage)),
+		attestationsHandler: attestations.NewHandler(attestations.NewService(p.Service.dockerService, p.Service.registryService.GetRegistryAuthForImage), p.Service.CheckImageAccess),
 	}
 }
 
@@ -69,13 +69,13 @@ func (m *Module) Service() *ImageService {
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		RegisterImages(api, nil, nil, nil, nil, nil, nil, nil, appCtx)
-		attestations.RegisterRoutes(api, attestations.NewHandler(nil))
-		patch.RegisterRoutes(api, nil, appCtx)
+		attestations.RegisterRoutes(api, attestations.NewHandler(nil, nil))
+		patch.RegisterRoutes(api, nil, appCtx, nil)
 		return
 	}
 	RegisterImages(api, m.docker, m.service, m.imageUpdate, m.settings, m.build, m.activity, m.upload, appCtx)
 	attestations.RegisterRoutes(api, m.attestationsHandler)
-	patch.RegisterRoutes(api, m.service.patch, appCtx)
+	patch.RegisterRoutes(api, m.service.patch, appCtx, m.service.CheckImageAccess)
 }
 
 func RegisterImages(

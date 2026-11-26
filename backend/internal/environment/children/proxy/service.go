@@ -156,12 +156,20 @@ func (s *Service) execute(
 ) (*agent.RemoteResponse, error) {
 	// Forward the activity batch ID so bulk actions proxied to a remote
 	// environment group the same way they do locally.
-	requestHeaders := make(http.Header, 3)
+	requestHeaders := make(http.Header, 4)
 	if batchID := activitylib.ActivityBatchIDFromContext(ctx); batchID != "" {
 		requestHeaders.Set(middleware.HeaderActivityBatchID, batchID)
 	}
 	if len(body) > 0 && method != http.MethodGet {
 		requestHeaders.Set("Content-Type", "application/json")
+	}
+	forward, _ := ctx.Value(middleware.ContextKeyForwardPermissions).(bool)
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && forward && !ps.Sudo {
+		forwarded, marshalErr := json.Marshal(ps.ForwardedPermissions(target.id))
+		if marshalErr != nil {
+			return nil, fmt.Errorf("failed to encode forwarded permissions: %w", marshalErr)
+		}
+		requestHeaders.Set(middleware.HeaderForwardedPermissions, string(forwarded))
 	}
 	agent.SetAgentToken(requestHeaders, kit.FromPtr(target.accessToken))
 

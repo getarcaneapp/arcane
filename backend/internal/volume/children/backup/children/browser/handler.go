@@ -7,13 +7,16 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	Handler struct {
-		service *Service
+		service           *Service
+		checkVolumeAccess func(ctx context.Context, envID, perm, volumeName string) error
 	}
 
 	BackupHasPathInput struct {
@@ -41,11 +44,29 @@ type (
 	}
 )
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, checkVolumeAccess func(ctx context.Context, envID, perm, volumeName string) error) *Handler {
+	return &Handler{service: service, checkVolumeAccess: checkVolumeAccess}
+}
+
+func (h *Handler) requireBackupAccess(ctx context.Context, envID, backupID string) error {
+	if h.checkVolumeAccess == nil {
+		return nil
+	}
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(authz.PermVolumesRead, envID) {
+		return nil
+	}
+	entry, err := h.service.deps.Run(ctx, backupID)
+	if err != nil || entry == nil {
+		return huma.Error403Forbidden("permission denied: " + authz.PermVolumesRead)
+	}
+	return h.checkVolumeAccess(ctx, envID, authz.PermVolumesRead, entry.VolumeName)
 }
 
 func (h *Handler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) (*handlerutil.Out[BackupHasPathResponse], error) {
+	if err := h.requireBackupAccess(ctx, input.EnvironmentID, input.BackupID); err != nil {
+		return nil, err
+	}
 	if input.Path == "" {
 		return nil, huma.Error400BadRequest("path is required")
 	}
@@ -64,6 +85,9 @@ func (h *Handler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) 
 }
 
 func (h *Handler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInput) (*handlerutil.Out[[]string], error) {
+	if err := h.requireBackupAccess(ctx, input.EnvironmentID, input.BackupID); err != nil {
+		return nil, err
+	}
 	files, err := h.service.ListBackupFiles(ctx, input.BackupID)
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
@@ -78,6 +102,9 @@ func (h *Handler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInp
 }
 
 func (h *Handler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFilesInput) (*handlerutil.Page[types.BackupFileEntry], error) {
+	if err := h.requireBackupAccess(ctx, input.EnvironmentID, input.BackupID); err != nil {
+		return nil, err
+	}
 	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
 	items, page, err := h.service.BrowseBackupFiles(ctx, input.BackupID, input.Path, params)
 	if errors.Is(err, common.ErrBadRequest) {

@@ -102,11 +102,74 @@ function hasPermissionForScope(
 		case 'env-plus-global':
 			return permissionsForEnv(user, envId).has(permission);
 		case 'any-effective-scope':
-			return Object.values(user.permissionsByEnv ?? {}).some((permissions) => permissions.includes(permission));
+			return (
+				Object.values(user.permissionsByEnv ?? {}).some((permissions) => permissions.includes(permission)) ||
+				(isResourceTargetablePermission(permission) &&
+					Object.values(user.resourcePermissionsByEnv ?? {}).some((grants) =>
+						grants.some((grant) => grant.permissions.includes(permission))
+					))
+			);
 		default:
 			return false;
 	}
 }
+
+const resourceTargetablePermissions = new Set([
+	'containers:autoupdate',
+	'containers:delete',
+	'containers:exec',
+	'containers:kill',
+	'containers:list',
+	'containers:logs',
+	'containers:pause',
+	'containers:read',
+	'containers:redeploy',
+	'containers:restart',
+	'containers:start',
+	'containers:stop',
+	'containers:update',
+	'gitops:backup',
+	'gitops:bidirectional',
+	'gitops:delete',
+	'gitops:lifecycle',
+	'gitops:list',
+	'gitops:read',
+	'gitops:sync',
+	'gitops:update',
+	'images:commit',
+	'images:delete',
+	'images:list',
+	'images:patch',
+	'images:push',
+	'images:read',
+	'images:tag',
+	'networks:connect',
+	'networks:delete',
+	'networks:disconnect',
+	'networks:list',
+	'networks:read',
+	'projects:archive',
+	'projects:backup',
+	'projects:delete',
+	'projects:deploy',
+	'projects:down',
+	'projects:export',
+	'projects:jobs:run',
+	'projects:list',
+	'projects:logs',
+	'projects:read',
+	'projects:restart',
+	'projects:restore',
+	'projects:update',
+	'volumes:backup',
+	'volumes:delete',
+	'volumes:list',
+	'volumes:read',
+	'volumes:rename',
+	'volumes:upload'
+]);
+
+export const isResourceTargetablePermission = (perm: string): boolean => resourceTargetablePermissions.has(perm);
 
 function permissionsForEnv(user: User, envId: string | undefined): Set<string> {
 	const out = new Set<string>();
@@ -115,6 +178,14 @@ function permissionsForEnv(user: User, envId: string | undefined): Set<string> {
 	if (envId && envId !== GLOBAL_SCOPE) {
 		const scoped = user.permissionsByEnv?.[envId];
 		if (scoped) for (const permission of scoped) out.add(permission);
+		const resourceScoped = user.resourcePermissionsByEnv?.[envId];
+		if (resourceScoped) {
+			for (const grant of resourceScoped) {
+				for (const permission of grant.permissions) {
+					if (isResourceTargetablePermission(permission)) out.add(permission);
+				}
+			}
+		}
 	}
 	return out;
 }

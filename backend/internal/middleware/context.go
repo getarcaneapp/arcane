@@ -30,6 +30,7 @@ const (
 	ContextKeyRemoteAddr             ContextKey = "remoteAddr"
 	ContextKeyCurrentUser            ContextKey = "currentUser"
 	ContextKeyAuthMethod             ContextKey = "authMethod"
+	ContextKeyForwardPermissions     ContextKey = "forwardPermissions"
 )
 
 func GetUserIDFromContext(ctx context.Context) (string, bool) {

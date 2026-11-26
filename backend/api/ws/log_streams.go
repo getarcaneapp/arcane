@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	wshub "getarcane.dev/arcane/v3/pkg/ws"
 	"getarcane.dev/types/v3"
 )
@@ -153,6 +156,9 @@ func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 	projectID, ok, err := requireWSParam(c, "projectId", "Project ID")
 	if !ok {
 		return err
+	}
+	if ps, hasPerms := middleware.PermissionsFromContext(c.Request().Context()); hasPerms && !ps.AllowsResource(authz.PermProjectsLogs, c.Param("id"), authz.ResourceTypeProject, projectID) {
+		return c.JSON(http.StatusForbidden, map[string]any{"success": false, "error": "permission denied: " + authz.PermProjectsLogs})
 	}
 
 	streamLogs := h.projectLogStreamer
@@ -334,6 +340,9 @@ func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 	containerID, ok, err := requireWSParam(c, "containerId", "Container ID")
 	if !ok {
 		return err
+	}
+	if accessErr := h.containerService.CheckContainerAccess(c.Request().Context(), c.Param("id"), authz.PermContainersLogs, containerID); accessErr != nil {
+		return c.JSON(http.StatusForbidden, map[string]any{"success": false, "error": "permission denied: " + authz.PermContainersLogs})
 	}
 
 	streamLogs := h.containerLogStreamer

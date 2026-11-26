@@ -61,7 +61,9 @@
 				.filter((assignment) => assignment.source === 'manual')
 				.map((assignment) => ({
 					roleId: assignment.roleId,
-					environmentId: assignment.environmentId
+					environmentId: assignment.environmentId,
+					resourceType: assignment.resourceType,
+					resourceId: assignment.resourceId
 				}))
 		)
 	);

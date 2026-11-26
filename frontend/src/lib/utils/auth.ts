@@ -87,16 +87,27 @@ export function userHasPermission(user: User | null | undefined, permission: str
 	if (!user?.permissionsByEnv) return false;
 	const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
 	if (global.includes(SUDO_PERMISSION) || global.includes(permission)) return true;
-	return envId ? (user.permissionsByEnv[envId] ?? []).includes(permission) : false;
+	if (!envId) return false;
+	if ((user.permissionsByEnv[envId] ?? []).includes(permission)) return true;
+	if (!permission.endsWith(':create') && !permission.endsWith(':prune') && user.resourcePermissionsByEnv?.[envId]) {
+		return user.resourcePermissionsByEnv[envId].some((grant) => grant.permissions.includes(permission));
+	}
+	return false;
 }
 
 const matchesAny = (path: string, prefixes: string[]) =>
 	prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 
 export function userHasAnyAccess(user: User): boolean {
-	if (!user.permissionsByEnv) return false;
-	for (const perms of Object.values(user.permissionsByEnv)) {
-		if (perms.length > 0) return true;
+	if (user.permissionsByEnv) {
+		for (const perms of Object.values(user.permissionsByEnv)) {
+			if (perms.length > 0) return true;
+		}
+	}
+	if (user.resourcePermissionsByEnv) {
+		for (const grants of Object.values(user.resourcePermissionsByEnv)) {
+			if (grants.some((grant) => grant.permissions.length > 0)) return true;
+		}
 	}
 	return false;
 }

@@ -1157,7 +1157,7 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 }
 
 func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName string, user types.Actor, request types.CreateVolumeBackupRequest) (types.VolumeBackupEntry, error) {
-	requester := backup.NewRequester(ctx, user, environmentID, authz.PermVolumesBackup)
+	requester := backup.NewResourceRequester(ctx, user, environmentID, authz.PermVolumesBackup, authz.ResourceTypeVolume, volumeName)
 	entry, plan, lease, err := s.prepareBackup(ctx, volumeName, types.VolumeBackupTriggerManual, request.PolicyID, func() (backupPlan, error) {
 		plan, err := s.resolveBackupPlan(ctx, volumeName, types.VolumeBackupTriggerManual, request, nil)
 		if err != nil {

@@ -287,12 +287,12 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 		if len(segments) == 2 && method == http.MethodPost ||
 			len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete) ||
 			len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks" {
-			if len(segments) == 3 && method == http.MethodDelete && segments[1] == types.UploadKindProjectArchive && ps.Allows(authz.PermProjectsExport, envID) {
+			if len(segments) == 3 && method == http.MethodDelete && segments[1] == types.UploadKindProjectArchive && ps.AllowsRoute(authz.PermProjectsExport, envID) {
 				return true
 			}
 			perms := authz.UploadKindConditions.Required("kind", segments[1])
 			denied := len(perms) == 0 || slices.ContainsFunc(perms, func(perm string) bool {
-				return !ps.Allows(perm, envID)
+				return !ps.AllowsRoute(perm, envID)
 			})
 			if denied {
 				slog.DebugContext(ctx, "Denying proxied upload session request: permission denied",
@@ -310,7 +310,7 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 	if perm == "" {
 		return true
 	}
-	if !ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), envID, "")) {
+	if !ps.AllowsRoute(perm, kit.Ternary(authz.IsEnvScoped(perm), envID, "")) {
 		slog.DebugContext(ctx, "Denying proxied request: permission denied", "method", method, "path", suffix, "permission", perm, "environmentId", envID)
 		return false
 	}

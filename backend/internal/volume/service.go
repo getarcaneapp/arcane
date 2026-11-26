@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
@@ -34,6 +35,7 @@ import (
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -41,6 +43,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/upload"
 	volumebackup "getarcane.dev/arcane/v3/internal/volume/children/backup"
 	"getarcane.dev/arcane/v3/internal/volume/children/workspace"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -845,6 +848,25 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.Sy
 	return options, nil
 }
 
+func (s *VolumeService) CheckVolumeAccess(ctx context.Context, envID, perm, volumeName string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.AllowsResource(perm, envID, authz.ResourceTypeVolume, volumeName) {
+		return nil
+	}
+	vol, err := s.GetVolumeByName(ctx, volumeName)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireComposeResourcePermission(ctx, s.db, middleware.ComposeResourceAccessInput{
+		EnvID:        envID,
+		Permission:   perm,
+		ResourceType: authz.ResourceTypeVolume,
+		ResourceID:   vol.Name,
+		ResourceName: vol.Name,
+		Labels:       vol.Labels,
+	})
+}
+
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]types.Volume, pagination.Response, types.VolumeUsageCounts, error) {
 	startedAt := time.Now()
 	slog.DebugContext(
@@ -935,6 +957,22 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}
 
 	enrichedVolumes := enrichVolumesWithUsageData(volResult.volumes, usageVolumes)
+	if allowedCompose, unrestricted, permErr := middleware.AllowedComposeProjects(ctx, s.db, types.LocalDockerEnvironmentID, authz.PermVolumesList); permErr != nil {
+		return nil, pagination.Response{}, types.VolumeUsageCounts{}, permErr
+	} else if !unrestricted {
+		ps, _ := middleware.PermissionsFromContext(ctx)
+		enrichedVolumes = slices.DeleteFunc(enrichedVolumes, func(v volume.Volume) bool {
+			return !middleware.ComposeResourcePermitted(ps, middleware.ComposeResourceAccessInput{
+				EnvID:          types.LocalDockerEnvironmentID,
+				Permission:     authz.PermVolumesList,
+				ResourceType:   authz.ResourceTypeVolume,
+				ResourceID:     v.Name,
+				ResourceName:   v.Name,
+				Labels:         v.Labels,
+				AllowedCompose: allowedCompose,
+			})
+		})
+	}
 
 	isBackupVolume := s.BackupVolumeMatcher(ctx)
 	items := make([]types.Volume, 0, len(enrichedVolumes))
