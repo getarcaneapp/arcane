@@ -231,6 +231,10 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 				return nil
 			}
 			left, err := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, opts.User)
+			if err != nil && len(left) > 0 {
+				remaining, retryErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), left, opts.User)
+				left, err = remaining, kit.Ternary(retryErr == nil, nil, errors.Join(err, retryErr))
+			}
 			stopped = left
 			return err
 		},
