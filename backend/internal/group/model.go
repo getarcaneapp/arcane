@@ -28,12 +28,21 @@ type (
 		RoleID        string  `json:"roleId" gorm:"column:role_id;not null;index"`
 		Source        string  `json:"source" gorm:"column:source;not null;default:'manual'"`
 	}
+
+	GroupIdpMapping struct {
+		database.BaseModel
+
+		ClaimValue string `json:"claimValue" gorm:"column:claim_value;not null;index"`
+		GroupID    string `json:"groupId" gorm:"column:group_id;not null;index"`
+		Source     string `json:"source" gorm:"column:source;not null;default:'manual'"`
+	}
 )
 
 const (
 	SourceManual = "manual"
 	SourceOidc   = "oidc"
 	SourceLdap   = "ldap"
+	SourceEnv    = "env"
 )
 
 func (Group) TableName() string { return "groups" }
@@ -41,3 +50,5 @@ func (Group) TableName() string { return "groups" }
 func (GroupMember) TableName() string { return "group_members" }
 
 func (GroupRoleAssignment) TableName() string { return "group_role_assignments" }
+
+func (GroupIdpMapping) TableName() string { return "group_idp_mappings" }

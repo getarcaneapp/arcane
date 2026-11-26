@@ -124,4 +124,34 @@ func RegisterGroups(api huma.API, groupService *GroupService) {
 		Tags:        []string{"Groups"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}), h.SetGroupRoleAssignments)
+
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
+		OperationID: "list-group-idp-mappings",
+		Method:      http.MethodGet,
+		Path:        "/groups/idp-mappings",
+		Summary:     "List IdP claim-to-group mappings",
+		Description: "Reserved for global admins.",
+		Tags:        []string{"Groups"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}), h.ListGroupIdpMappings)
+
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
+		OperationID: "create-group-idp-mapping",
+		Method:      http.MethodPost,
+		Path:        "/groups/idp-mappings",
+		Summary:     "Create an IdP claim-to-group mapping",
+		Description: "Map an OIDC or LDAP group claim value to an Arcane group. Reserved for global admins.",
+		Tags:        []string{"Groups"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}), h.CreateGroupIdpMapping)
+
+	huma.Register(api, middleware.RequireGlobalAdmin(api, huma.Operation{
+		OperationID: "delete-group-idp-mapping",
+		Method:      http.MethodDelete,
+		Path:        "/groups/idp-mappings/{id}",
+		Summary:     "Delete an IdP claim-to-group mapping",
+		Description: "Reserved for global admins.",
+		Tags:        []string{"Groups"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}), h.DeleteGroupIdpMapping)
 }

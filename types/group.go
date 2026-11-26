@@ -44,4 +44,13 @@ type (
 	SetGroupRoleAssignments struct {
 		Assignments []UserRoleAssignmentInput `json:"assignments" doc:"Desired manual role assignments for the group"`
 	}
+
+	GroupIdpMapping struct {
+		CreatedAt  time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
+		UpdatedAt  *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
+		ID         string     `json:"id" readOnly:"true" doc:"Unique identifier of the mapping"`
+		ClaimValue string     `json:"claimValue" required:"false" minLength:"1" maxLength:"255" doc:"OIDC or LDAP group claim value that triggers this mapping" example:"platform-eng"`
+		GroupID    string     `json:"groupId" required:"false" doc:"ID of the Arcane group to sync matching users into"`
+		Source     string     `json:"source" readOnly:"true" enum:"manual,env" doc:"Origin of the mapping"`
+	}
 )

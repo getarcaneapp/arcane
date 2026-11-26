@@ -63,6 +63,7 @@
 		group={data.group}
 		members={data.members}
 		roleAssignments={data.roleAssignments}
+		idpMappings={data.idpMappings}
 		users={data.users}
 		roles={data.roles}
 		environments={data.environments}

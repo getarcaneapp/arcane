@@ -21,6 +21,8 @@
 		GLOBAL_ENVIRONMENT_OPTION_ID
 	} from '#lib/utils/options.js';
 
+	import ProjectResourcePicker from './project-resource-picker.svelte';
+
 	type Assignment = { roleId: string; environmentId?: string; resourceType?: ResourceScopeType; resourceId?: string };
 
 	const ALL_RESOURCES_OPTION = '__all__';
@@ -142,7 +144,7 @@
 
 <div class="space-y-3">
 	{#if quickPresetRoles.length > 0}
-		<div class="space-y-2 rounded-md border p-3">
+		<div class="space-y-1">
 			{#each quickPresetRoles as role (role.id)}
 				<label class="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-accent/40">
 					<Checkbox
@@ -165,7 +167,7 @@
 	{/if}
 
 	{#if assignments.length === 0}
-		<p class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
+		<p class="py-4 text-center text-sm text-muted-foreground">
 			{m.users_role_assignments_description()}
 		</p>
 	{/if}
@@ -173,7 +175,7 @@
 	{#each assignments as assignment, index (assignment)}
 		{@const envValue = envIdToSelectValue(assignment.environmentId)}
 		{@const resourceTypeValue = assignment.resourceType ?? ALL_RESOURCES_OPTION}
-		<div class="space-y-2 rounded-md border border-border/70 bg-card/10 p-3">
+		<div class="space-y-2 rounded-xl bg-card/10 p-3">
 			<div class="grid grid-cols-1 gap-2 sm:grid-cols-halves-action sm:items-center">
 				<Select.Root
 					type="single"
@@ -269,7 +271,14 @@
 						</Select.Content>
 					</Select.Root>
 
-					{#if assignment.resourceType}
+					{#if assignment.resourceType === 'project'}
+						<ProjectResourcePicker
+							environmentId={assignment.environmentId}
+							value={assignment.resourceId ?? ''}
+							{disabled}
+							onChange={(v) => updateAssignment(index, { resourceId: v })}
+						/>
+					{:else if assignment.resourceType}
 						<Input
 							value={assignment.resourceId ?? ''}
 							{disabled}

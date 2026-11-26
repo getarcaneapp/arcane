@@ -1753,3 +1753,29 @@ func TestMigration00125_ResourceRoleAssignmentsUpDown(t *testing.T) {
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM group_role_assignments`).Scan(&count))
 	assert.Zero(t, count)
 }
+
+func TestMigration00126_GroupIdpMappingsUpDown(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-group-idp-migration.db")
+	rawDB.SetMaxOpenConns(1)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 125))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 126))
+	_, err := rawDB.ExecContext(ctx, `PRAGMA foreign_keys=ON;`)
+	require.NoError(t, err)
+
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO groups (id, name) VALUES ('grp-1', 'Platform')`)
+	require.NoError(t, err)
+	_, err = rawDB.ExecContext(ctx, `INSERT INTO group_idp_mappings (id, claim_value, group_id, source) VALUES ('gim-1', 'platform-eng', 'grp-1', 'manual')`)
+	require.NoError(t, err)
+
+	_, err = rawDB.ExecContext(ctx, `DELETE FROM groups WHERE id = 'grp-1'`)
+	require.NoError(t, err)
+	var count int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM group_idp_mappings`).Scan(&count))
+	assert.Zero(t, count)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 125))
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'group_idp_mappings'`).Scan(&count))
+	assert.Zero(t, count)
+}

@@ -60,6 +60,18 @@ type (
 		ID   string `path:"id" doc:"Group ID"`
 		Body types.SetGroupRoleAssignments
 	}
+
+	ListGroupIdpMappingsInput struct {
+		GroupID string `query:"groupId" doc:"Optional group ID filter"`
+	}
+
+	CreateGroupIdpMappingInput struct {
+		types.Create[types.GroupIdpMapping]
+	}
+
+	DeleteGroupIdpMappingInput struct {
+		ID string `path:"id" doc:"Mapping ID"`
+	}
 )
 
 func (h *GroupHandler) ListGroups(ctx context.Context, input *ListGroupsInput) (*handlerutil.Page[types.Group], error) {
@@ -307,5 +319,50 @@ func toGroupRoleAssignmentDTO(r *GroupRoleAssignment) types.GroupRoleAssignment 
 		ResourceID:    r.ResourceID,
 		Source:        r.Source,
 		CreatedAt:     r.CreatedAt,
+	}
+}
+
+func (h *GroupHandler) ListGroupIdpMappings(ctx context.Context, input *ListGroupIdpMappingsInput) (*handlerutil.Out[[]types.GroupIdpMapping], error) {
+	rows, err := h.groupService.ListIdpMappings(ctx, input.GroupID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to list group IdP mappings: " + err.Error())
+	}
+	dtos := make([]types.GroupIdpMapping, len(rows))
+	for i := range rows {
+		dtos[i] = toGroupIdpMappingDTO(&rows[i])
+	}
+	return &handlerutil.Out[[]types.GroupIdpMapping]{
+		Body: types.ApiResponse[[]types.GroupIdpMapping]{Success: true, Data: dtos},
+	}, nil
+}
+
+func (h *GroupHandler) CreateGroupIdpMapping(ctx context.Context, input *CreateGroupIdpMappingInput) (*handlerutil.Out[types.GroupIdpMapping], error) {
+	row, err := h.groupService.CreateIdpMapping(ctx, input.Body.ClaimValue, input.Body.GroupID)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return &handlerutil.Out[types.GroupIdpMapping]{
+		Body: types.ApiResponse[types.GroupIdpMapping]{Success: true, Data: toGroupIdpMappingDTO(row)},
+	}, nil
+}
+
+func (h *GroupHandler) DeleteGroupIdpMapping(ctx context.Context, input *DeleteGroupIdpMappingInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.groupService.DeleteIdpMapping(ctx, input.ID); err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return handlerutil.MessageOutput("group IdP mapping deleted", ""), nil
+}
+
+func toGroupIdpMappingDTO(m *GroupIdpMapping) types.GroupIdpMapping {
+	//exhaustruct:enforce
+	return types.GroupIdpMapping{
+		ID:         m.ID,
+		ClaimValue: m.ClaimValue,
+		GroupID:    m.GroupID,
+		Source:     m.Source,
+		CreatedAt:  m.CreatedAt,
+		UpdatedAt:  m.UpdatedAt,
 	}
 }

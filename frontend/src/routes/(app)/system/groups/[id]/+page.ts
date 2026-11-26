@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 
 import { environmentListQuery } from '#lib/query/environments.js';
-import { groupDetailQuery, groupMembersQuery, groupRoleAssignmentsQuery } from '#lib/query/groups.js';
+import { groupDetailQuery, groupIdpMappingsQuery, groupMembersQuery, groupRoleAssignmentsQuery } from '#lib/query/groups.js';
 import { roleAllQuery } from '#lib/query/roles.js';
 import { userListQuery } from '#lib/query/users.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -25,9 +25,10 @@ export const load: PageLoad = async ({ parent, params }) => {
 		error(404, 'Group not found');
 	}
 
-	const [members, roleAssignments, usersPage, roles, environmentsPage] = await Promise.all([
+	const [members, roleAssignments, idpMappings, usersPage, roles, environmentsPage] = await Promise.all([
 		queryClient.query(groupMembersQuery(params.id)),
 		queryClient.query(groupRoleAssignmentsQuery(params.id)),
+		queryClient.query(groupIdpMappingsQuery(params.id)),
 		queryClient.query(userListQuery({ pagination: { page: 1, limit: -1 }, sort: { column: 'Username', direction: 'asc' } })),
 		queryClient.query({ ...roleAllQuery(), staleTime: 30_000 }),
 		queryClient.query({ ...environmentListQuery({ pagination: { page: 1, limit: -1 } }), staleTime: 30_000 })
@@ -37,6 +38,7 @@ export const load: PageLoad = async ({ parent, params }) => {
 		group: groupResult.data,
 		members,
 		roleAssignments,
+		idpMappings,
 		users: usersPage.data,
 		roles,
 		environments: environmentsPage.data
