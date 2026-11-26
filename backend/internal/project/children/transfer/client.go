@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/docker"
@@ -167,6 +168,9 @@ func (e remoteEnvironment) DeployProject(ctx context.Context, projectID string, 
 		var line streamLine
 		if json.Unmarshal(scanner.Bytes(), &line) != nil {
 			continue
+		}
+		if strings.Contains(line.Error, common.ErrProjectLocked.Error()) {
+			return common.Classify(common.ErrProjectLocked, errors.New(line.Error))
 		}
 		if line.Error != "" {
 			return errors.New(line.Error)
