@@ -231,6 +231,10 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 				return nil
 			}
 			left, err := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), stopped, opts.User)
+			if err != nil && len(left) > 0 {
+				remaining, retryErr := s.deps.Containers.StartContainers(context.WithoutCancel(ctx), left, opts.User)
+				left, err = remaining, kit.Ternary(retryErr == nil, nil, errors.Join(err, retryErr))
+			}
 			stopped = left
 			return err
 		},
@@ -534,6 +538,8 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 		"sh",
 		path.Join("/backups", filename),
 	}
+	hostConfig := volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount})
+	hostConfig.AutoRemove = false
 	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 			Config: &container.Config{
@@ -542,7 +548,7 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 				NetworkDisabled: true,
 				Labels:          volumes.Labels(),
 			},
-			HostConfig: volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount}),
+			HostConfig: hostConfig,
 		})
 	})
 	if err != nil {
@@ -552,8 +558,12 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 		_, removeErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
-		if err != nil && removeErr != nil {
+		switch {
+		case removeErr == nil:
+		case err != nil:
 			err = errors.Join(err, fmt.Errorf("remove restore container: %w", removeErr))
+		default:
+			slog.WarnContext(ctx, "Failed to remove the restore helper container", "containerId", resp.ID, "error", removeErr)
 		}
 	}()
 	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {

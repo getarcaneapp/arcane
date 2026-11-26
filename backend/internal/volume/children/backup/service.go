@@ -537,7 +537,9 @@ func (s *Service) captureSnapshot(
 	if err != nil {
 		return backup.Snapshot{}, errors.Join(err, restartErr)
 	}
-	confirmed, err := s.deps.Engine.ConfirmRunSnapshot(held, dockerClient, repository, password, entry.ID, snapshot.ID)
+	confirmCtx, cancelConfirm := context.WithTimeout(context.WithoutCancel(held), time.Minute)
+	confirmed, err := s.deps.Engine.ConfirmRunSnapshot(confirmCtx, dockerClient, repository, password, entry.ID, snapshot.ID)
+	cancelConfirm()
 	if err != nil {
 		return backup.Snapshot{}, errors.Join(err, reject(context.WithoutCancel(held), err), restartErr)
 	}
