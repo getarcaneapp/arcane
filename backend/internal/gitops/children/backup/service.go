@@ -346,6 +346,9 @@ func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync,
 
 func (s *Service) snapshotLiveProject(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project, tracked []string) (*backupSnapshot, error) {
 	unlock, err := s.projectService.LockProject(ctx, "snapshot project for git push", project.ID)
+	for errors.Is(err, common.ErrProjectLocked) {
+		unlock, err = s.projectService.LockProject(ctx, "snapshot project for git push", project.ID)
+	}
 	if err != nil {
 		return nil, err
 	}
