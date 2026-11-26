@@ -233,7 +233,7 @@ func TestCheckScheduledRemoteCountsEveryTableOfTheRepository(t *testing.T) {
 		AccessKeyID: "access-key", SecretAccessKey: secret, ForcePathStyle: true,
 	}
 	require.NoError(t, db.Create(destination).Error)
-	destinations := s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil })
+	destinations := s3.NewS3DestinationService(db, func(context.Context, string) error { return nil })
 	check := func(root string, tables []string) error {
 		return CheckScheduledRemote(t.Context(), db, destinations, ScheduledRemoteRequest{DestinationID: destination.ID, Root: root, Tables: tables})
 	}

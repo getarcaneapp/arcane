@@ -166,7 +166,7 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	service := NewSystemService(SystemServiceParams{
 		DB:              db,
 		SettingsService: settingsService,
-		S3Destinations:  s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil }),
+		S3Destinations:  s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
 		Config:          &config.Config{},
 	})
 
@@ -217,7 +217,11 @@ func TestSystemBackupStoreExpiresRunsOfDeletedPolicies(t *testing.T) {
 	db, err := database.Initialize(t.Context(), "file:system-backup-unmanaged?mode=memory&cache=shared", database.MigrationOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	require.NoError(t, db.Create(&SystemBackupPolicy{BaseModel: database.BaseModel{ID: "nightly"}, Schedule: "0 2 * * *"}).Error)
+	require.NoError(t, db.Create(&backup.Policy{
+		BaseModel:   database.BaseModel{ID: "nightly"},
+		SubjectKind: backup.PolicySystem,
+		Schedule:    "0 2 * * *",
+	}).Error)
 	now := time.Now()
 	old := now.Add(-30 * 24 * time.Hour)
 	for _, run := range []SystemBackupRun{
@@ -229,7 +233,7 @@ func TestSystemBackupStoreExpiresRunsOfDeletedPolicies(t *testing.T) {
 	} {
 		require.NoError(t, db.Create(&run).Error)
 	}
-	store := (&SystemService{db: db}).backupStore(nil)
+	store := (&SystemService{db: db}).backupStore()
 
 	expired, err := store.ExpiredUnmanagedRunIDs(t.Context(), types.UnmanagedBackupSweep{Now: now, Retention: 7 * 24 * time.Hour})
 	require.NoError(t, err)
@@ -272,7 +276,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-schedules?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(
-		&SystemBackupPolicy{},
+		&backup.Policy{},
 		&SystemBackupRun{},
 		&backup.SystemBackupRecoveryConfig{},
 		&s3.S3Destination{},
@@ -285,7 +289,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	crypto.InitEncryption(crypto.Config{EncryptionKey: "system-backup-policy-test-key-32bytes", Environment: "test"})
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
-	s3Destinations := s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil })
+	s3Destinations := s3.NewS3DestinationService(db, func(context.Context, string) error { return nil })
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    t.Context(),
 		DB:     db,
@@ -322,6 +326,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		Ctx:              t.Context(),
 		Scheduler:        jobScheduler,
 		Admission:        gate,
+		Policies:         backup.NewPolicies(db),
 	})
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine, nil))
@@ -364,7 +369,14 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	})
 	require.NoError(t, err)
 	for _, local := range []bool{false, true} {
-		policy := &SystemBackupPolicy{Enabled: true, LocalEnabled: local, S3Enabled: true, S3DestinationID: destination.ID, Schedule: "0 2 * * *"}
+		policy := &backup.Policy{
+			SubjectKind:     backup.PolicySystem,
+			Enabled:         true,
+			LocalEnabled:    local,
+			S3Enabled:       true,
+			S3DestinationID: destination.ID,
+			Schedule:        "0 2 * * *",
+		}
 		require.NoError(t, gormDB.Create(policy).Error)
 		require.NoError(t, gormDB.Model(policy).Update("local_enabled", local).Error)
 		service.RegisterBackupJobOnStartup(t.Context())
@@ -392,13 +404,14 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-key-required?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &backup.SystemBackupRecoveryConfig{}, &s3.S3Destination{}))
+	require.NoError(t, gormDB.AutoMigrate(&backup.Policy{}, &backup.SystemBackupRecoveryConfig{}, &s3.S3Destination{}))
 	db := &database.DB{DB: gormDB}
 	service := NewSystemService(SystemServiceParams{
 		DB:             db,
-		S3Destinations: s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil }),
+		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
 		RecoveryKeys:   backup.NewRecoveryKeyStore(db),
 		Config:         &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
+		Policies:       backup.NewPolicies(db),
 	})
 
 	_, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{

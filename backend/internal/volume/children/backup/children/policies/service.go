@@ -26,7 +26,6 @@ import (
 
 type (
 	Dependencies struct {
-		DB             *database.DB
 		Policies       *backup.Policies
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
@@ -124,19 +123,11 @@ func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*ty
 }
 
 func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, updates []types.UpdateBackupPolicy) (*types.VolumeBackupPolicyCollection, error) {
-	s.deps.Policies.Lock()
-	defer s.deps.Policies.Unlock()
-	existing, err := s.deps.Policies.List(ctx, backup.PolicyVolume, volumeName)
-	if err != nil {
-		return nil, err
-	}
-	reconcile := backup.PolicyReconciliation[backup.Policy, types.UpdateBackupPolicy]{
-		Domain:   "volume",
-		DB:       s.deps.DB,
-		Existing: existing,
-		ID:       func(policy *backup.Policy) string { return policy.ID },
-		UpdateID: func(update types.UpdateBackupPolicy) string { return update.ID },
-		New:      func() backup.Policy { return backup.Policy{SubjectKind: backup.PolicyVolume, SubjectID: volumeName} },
+	reconcile := backup.PolicyReconciliation[types.UpdateBackupPolicy]{
+		Kind:      backup.PolicyVolume,
+		SubjectID: volumeName,
+		Domain:    "volume",
+		UpdateID:  func(update types.UpdateBackupPolicy) string { return update.ID },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateBackupPolicy) error {
 			normalized, validatePolicyUpdateErr := backup.ValidatePolicyUpdate(ctx, "volume", update, s.deps.S3Destinations)
 			if validatePolicyUpdateErr != nil {
@@ -148,7 +139,7 @@ func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, u
 				SubjectID:       volumeName,
 				Schedule:        normalized.Schedule,
 				S3DestinationID: normalized.S3DestinationID,
-				Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil},
+				Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil, VolumeNames: nil, IgnoreAnonymous: false},
 				RetentionCount:  normalized.RetentionCount,
 				Enabled:         normalized.Enabled,
 				StopContainers:  normalized.StopContainers,
@@ -160,7 +151,7 @@ func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, u
 		Unregister: s.jobs.Unregister,
 		Reschedule: s.reschedule,
 	}
-	if runErr := reconcile.Run(ctx, updates); runErr != nil {
+	if runErr := s.deps.Policies.Reconcile(ctx, reconcile, updates); runErr != nil {
 		return nil, runErr
 	}
 	return s.GetBackupPolicies(ctx, volumeName)
@@ -260,10 +251,15 @@ func (s *Service) RegisterJobsOnStartup(ctx context.Context) {
 		slog.ErrorContext(ctx, "Failed to load scheduled volume backups", "error", err)
 		return
 	}
+	count := 0
 	for i := range policies {
+		if policies[i].SubjectID == "" {
+			continue
+		}
 		s.reschedule(ctx, &policies[i])
+		count++
 	}
-	slog.InfoContext(ctx, "Registered scheduled volume backup jobs", "count", len(policies))
+	slog.InfoContext(ctx, "Registered scheduled volume backup jobs", "count", count)
 }
 
 func (s *Service) Remove(ctx context.Context, volumeName string) {

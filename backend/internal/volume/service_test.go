@@ -467,7 +467,7 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 	}).Error)
 
 	settingsService := newVolumeTestSettingsService(t)
-	s3Destinations := s3.NewS3DestinationService(db, nil, nil)
+	s3Destinations := s3.NewS3DestinationService(db, nil)
 	service := NewVolumeService(VolumeServiceParams{
 		Config:          &config.Config{},
 		DB:              db,

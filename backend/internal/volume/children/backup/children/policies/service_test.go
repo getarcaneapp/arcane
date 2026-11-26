@@ -59,9 +59,8 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	db := &database.DB{DB: gormDB}
 	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
 	service := NewService(Dependencies{
-		DB:             db,
 		Policies:       backup.NewPolicies(db),
-		S3Destinations: s3.NewS3DestinationService(db, nil, func(context.Context, string) error { return nil }),
+		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
 		LatestRun:      noLatestRun,
 		Ctx:            t.Context(),
 		Scheduler:      jobScheduler,
@@ -104,9 +103,8 @@ func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
 	}
 
 	service := NewService(Dependencies{
-		DB:             &database.DB{DB: gormDB},
 		Policies:       backup.NewPolicies(&database.DB{DB: gormDB}),
-		S3Destinations: s3.NewS3DestinationService(&database.DB{DB: gormDB}, nil, func(context.Context, string) error { return nil }),
+		S3Destinations: s3.NewS3DestinationService(&database.DB{DB: gormDB}, func(context.Context, string) error { return nil }),
 		LatestRun: func(_ context.Context, policyID string) (*types.VolumeBackupEntry, error) {
 			return latest[policyID], nil
 		},
@@ -139,9 +137,8 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	}
 	require.NoError(t, gormDB.Create(destination).Error)
 	service := NewService(Dependencies{
-		DB:             db,
 		Policies:       backup.NewPolicies(db),
-		S3Destinations: s3.NewS3DestinationService(db, nil, nil),
+		S3Destinations: s3.NewS3DestinationService(db, nil),
 		LatestRun:      noLatestRun,
 		Ctx:            t.Context(),
 		Scheduler:      &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)},
@@ -176,9 +173,8 @@ func TestBackupPolicyDestinationLookupFailure(t *testing.T) {
 	policy := &backup.Policy{SubjectKind: backup.PolicyVolume, SubjectID: "app-data", Schedule: "0 2 * * *", S3DestinationID: "missing"}
 	require.NoError(t, db.Create(policy).Error)
 	service := NewService(Dependencies{
-		DB:             &database.DB{DB: db},
 		Policies:       backup.NewPolicies(&database.DB{DB: db}),
-		S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil, nil),
+		S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil),
 		LatestRun:      noLatestRun,
 		Ctx:            t.Context(),
 		Scheduler:      &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)},

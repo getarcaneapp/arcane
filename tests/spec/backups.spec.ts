@@ -1526,7 +1526,7 @@ test.describe('System and volume restore', () => {
 				]
 			);
 
-			await page.goto('/system/backups');
+			await page.goto('/system/backups?tab=schedules');
 			const systemCard = page.getByTestId('backup-policy-system-system-nightly');
 			const volumeCard = page.getByTestId('backup-policy-volume-volume-nightly');
 			await expect(systemCard.getByText('System')).toHaveClass(/(^|\s)text-purple(\s|$)/);
@@ -1578,6 +1578,7 @@ test.describe('System and volume restore', () => {
 			await expect(runningBackup).toBeHidden({
 				timeout: 15000
 			});
+			await page.getByRole('tab', { name: 'Backups' }).click();
 			await expect(
 				page.getByRole('table').getByText('completed-batch-volume', { exact: true })
 			).toBeVisible();

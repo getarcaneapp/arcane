@@ -138,7 +138,6 @@ type (
 func NewService(deps Dependencies) *Service {
 	s := &Service{deps: deps}
 	s.policies = policies.NewService(policies.Dependencies{
-		DB:             deps.DB,
 		Policies:       deps.Policies,
 		Docker:         deps.Docker,
 		S3Destinations: deps.S3Destinations,
@@ -313,7 +312,7 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 		SubjectID:       volumeName,
 		Schedule:        policy.Schedule,
 		S3DestinationID: policy.S3DestinationID,
-		Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil},
+		Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil, VolumeNames: nil, IgnoreAnonymous: false},
 		RetentionCount:  policy.RetentionCount,
 		Enabled:         true,
 		StopContainers:  policy.StopContainers,
@@ -655,23 +654,14 @@ func (s *Service) pruneUnmanagedBackups(ctx context.Context) error {
 	if days <= 0 {
 		return nil
 	}
-	systemPolicies, err := s.deps.Settings.SystemVolumeBackupPolicies()
-	if err != nil {
-		return err
-	}
-	owners := []string{types.SystemVolumeManualSeriesOwner}
-	for _, policy := range systemPolicies.Policies {
-		owners = append(owners, policy.ID)
-	}
 	now := time.Now()
 	return s.DeleteExpiredBackups(ctx, ExpiredBackupDeletion{
 		IncludeRemote: true,
 		Expired: func(ctx context.Context, within []string) ([]string, error) {
 			return s.expiredUnmanagedBackupIDs(ctx, types.UnmanagedBackupSweep{
-				Now:                   now,
-				SystemVolumePolicyIDs: owners,
-				Within:                within,
-				Retention:             time.Duration(days) * 24 * time.Hour,
+				Now:       now,
+				Within:    within,
+				Retention: time.Duration(days) * 24 * time.Hour,
 			})
 		},
 	})
@@ -785,11 +775,11 @@ func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.Unm
 		Find(&candidates).Error; loadErr != nil {
 		return nil, fmt.Errorf("failed to load volume backups: %w", loadErr)
 	}
-	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs, sweep.SystemVolumePolicyIDs), sweep)
+	return backup.ExpiredUnmanagedRunIDs(ctx, s.deps.DB, "volume_backups", orphanedVolumeBackupIDs(candidates, volumeNames, policyIDs), sweep)
 }
 
 // Manual backups outlive their schedule, so only their volume decides.
-func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, policyIDs, systemPolicyIDs []string) []string {
+func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, policyIDs []string) []string {
 	var orphaned []string
 	for _, candidate := range candidates {
 		if candidate.Trigger == types.VolumeBackupTriggerDiscovered {
@@ -798,7 +788,7 @@ func orphanedVolumeBackupIDs(candidates []unmanagedCandidate, volumeNames, polic
 		managed := candidate.PolicyID == "" || candidate.Trigger == types.VolumeBackupTriggerManual || slices.Contains(policyIDs, candidate.PolicyID)
 		if series, ok := strings.CutPrefix(candidate.PolicyID, types.SystemVolumePolicyPrefix); ok && candidate.Trigger != types.VolumeBackupTriggerManual {
 			owner, _, _ := strings.Cut(series, ":")
-			managed = slices.Contains(systemPolicyIDs, owner)
+			managed = owner == types.SystemVolumeManualSeriesOwner || slices.Contains(policyIDs, owner)
 		}
 		if !managed || !slices.Contains(volumeNames, candidate.VolumeName) {
 			orphaned = append(orphaned, candidate.ID)

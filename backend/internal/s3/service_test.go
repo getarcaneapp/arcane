@@ -18,9 +18,7 @@ import (
 	"kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
-	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/s3"
 	"getarcane.dev/types/v3"
@@ -31,12 +29,8 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(
-		&S3Destination{},
-		&settings.SettingVariable{},
-	))
+	require.NoError(t, gormDB.AutoMigrate(&S3Destination{}))
 	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_runs (s3_destination_id text, remote_snapshot_id text, status text)").Error)
-	require.NoError(t, gormDB.Exec("CREATE TABLE system_backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE volume_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE backup_policies (s3_destination_id text, s3_enabled numeric)").Error)
 	require.NoError(t, gormDB.Exec("CREATE TABLE project_backups (s3_destination_id text, remote_snapshot_id text, status text)").Error)
@@ -44,15 +38,7 @@ func setupS3DestinationServiceTest(t *testing.T) (*S3DestinationService, *gorm.D
 		EncryptionKey: "test-encryption-key-for-s3-destination-32bytes",
 		Environment:   "test",
 	})
-	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
-		Ctx:    t.Context(),
-		DB:     &database.DB{DB: gormDB},
-		Config: &config.Config{},
-		Env:    settings.Env{},
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return NewS3DestinationService(&database.DB{DB: gormDB}, settingsService, func(context.Context, string) error { return nil }), gormDB
+	return NewS3DestinationService(&database.DB{DB: gormDB}, func(context.Context, string) error { return nil }), gormDB
 }
 
 func TestS3DestinationService_CRUD(t *testing.T) {

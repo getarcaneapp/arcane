@@ -33,7 +33,6 @@ import (
 
 type (
 	Dependencies struct {
-		DB             *database.DB
 		Engine         *backup.Engine
 		Policies       *backup.Policies
 		S3Destinations *s3.S3DestinationService
@@ -169,19 +168,11 @@ func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequ
 	if _, err := s.deps.ProjectName(ctx, projectID); err != nil {
 		return types.ProjectBackupPolicyCollection{}, err
 	}
-	s.deps.Policies.Lock()
-	existing, err := s.deps.Policies.List(ctx, backup.PolicyProject, projectID)
-	if err != nil {
-		s.deps.Policies.Unlock()
-		return types.ProjectBackupPolicyCollection{}, err
-	}
-	reconcile := backup.PolicyReconciliation[backup.Policy, types.UpdateProjectBackupPolicy]{
-		Domain:   "project",
-		DB:       s.deps.DB,
-		Existing: existing,
-		ID:       func(policy *backup.Policy) string { return policy.ID },
-		UpdateID: func(update types.UpdateProjectBackupPolicy) string { return update.ID },
-		New:      func() backup.Policy { return backup.Policy{SubjectKind: backup.PolicyProject, SubjectID: projectID} },
+	reconcile := backup.PolicyReconciliation[types.UpdateProjectBackupPolicy]{
+		Kind:      backup.PolicyProject,
+		SubjectID: projectID,
+		Domain:    "project",
+		UpdateID:  func(update types.UpdateProjectBackupPolicy) string { return update.ID },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateProjectBackupPolicy) error {
 			normalized, validateErr := backup.ValidatePolicyUpdate(ctx, "project", update.UpdateBackupPolicy, s.deps.S3Destinations)
 			if validateErr != nil {
@@ -206,7 +197,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequ
 				SubjectID:       projectID,
 				Schedule:        normalized.Schedule,
 				S3DestinationID: normalized.S3DestinationID,
-				Options:         backup.PolicyOptions{Volumes: volumes, SelectionMode: "", ProjectIDs: nil},
+				Options:         backup.PolicyOptions{Volumes: volumes, SelectionMode: "", ProjectIDs: nil, VolumeNames: nil, IgnoreAnonymous: false},
 				RetentionCount:  normalized.RetentionCount,
 				Enabled:         normalized.Enabled,
 				StopContainers:  *cmp.Or(update.StopContainers, new(true)),
@@ -218,12 +209,10 @@ func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequ
 		Unregister: s.jobs.Unregister,
 		Reschedule: s.reschedule,
 	}
-	runErr := reconcile.Run(ctx, updates)
-	s.deps.Policies.Unlock()
-	if runErr != nil {
+	if runErr := s.deps.Policies.Reconcile(ctx, reconcile, updates); runErr != nil {
 		return types.ProjectBackupPolicyCollection{}, runErr
 	}
-	if _, err = s.deps.ProjectName(ctx, projectID); errors.Is(err, common.ErrNotFound) {
+	if _, err := s.deps.ProjectName(ctx, projectID); errors.Is(err, common.ErrNotFound) {
 		s.Remove(ctx, projectID)
 		return types.ProjectBackupPolicyCollection{}, err
 	}
@@ -483,19 +472,10 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 }
 
 func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.BackupRequester, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
-	s.deps.Policies.Lock()
-	defer s.deps.Policies.Unlock()
-	existing, err := s.deps.Policies.List(ctx, backup.PolicyProject, "")
-	if err != nil {
-		return types.GlobalProjectBackupPolicyCollection{}, err
-	}
-	reconcile := backup.PolicyReconciliation[backup.Policy, types.UpdateGlobalProjectBackupPolicy]{
+	reconcile := backup.PolicyReconciliation[types.UpdateGlobalProjectBackupPolicy]{
+		Kind:     backup.PolicyProject,
 		Domain:   "global project",
-		DB:       s.deps.DB,
-		Existing: existing,
-		ID:       func(policy *backup.Policy) string { return policy.ID },
 		UpdateID: func(update types.UpdateGlobalProjectBackupPolicy) string { return update.ID },
-		New:      func() backup.Policy { return backup.Policy{SubjectKind: backup.PolicyProject} },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateGlobalProjectBackupPolicy) error {
 			if !update.SelectionMode.Valid() {
 				return common.Classify(common.ErrValidation, errors.New("selectionMode must be all, allowlist, or blocklist"))
@@ -518,9 +498,11 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.Back
 				Schedule:        normalized.Schedule,
 				S3DestinationID: normalized.S3DestinationID,
 				Options: backup.PolicyOptions{
-					Volumes:       nil,
-					SelectionMode: update.SelectionMode,
-					ProjectIDs:    kit.Ternary(update.SelectionMode == types.SystemVolumeSelectionAll, nil, projectIDs),
+					Volumes:         nil,
+					SelectionMode:   update.SelectionMode,
+					ProjectIDs:      kit.Ternary(update.SelectionMode == types.SystemVolumeSelectionAll, nil, projectIDs),
+					VolumeNames:     nil,
+					IgnoreAnonymous: false,
 				},
 				RetentionCount: normalized.RetentionCount,
 				Enabled:        normalized.Enabled,
@@ -535,7 +517,7 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.Back
 		},
 		Reschedule: s.rescheduleGlobal,
 	}
-	if runErr := reconcile.Run(ctx, updates); runErr != nil {
+	if runErr := s.deps.Policies.Reconcile(ctx, reconcile, updates); runErr != nil {
 		return types.GlobalProjectBackupPolicyCollection{}, runErr
 	}
 	return s.GlobalPolicies(ctx)

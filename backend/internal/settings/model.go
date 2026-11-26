@@ -226,7 +226,6 @@ type (
 		S3DestinationsCategoryPlaceholder SettingVariable `key:"s3DestinationsCategory,internal" default:"" meta:"label=S3 Destinations;type=internal;keywords=s3,storage,backup,aws,minio,backblaze,hetzner;category=s3destinations;description=Manage reusable S3-compatible storage destinations" catmeta:"id=s3destinations;title=S3 Destinations;icon=remoteenvironment;url=/system/backups/s3;description=Create and manage reusable S3-compatible backup destinations"`
 
 		SystemBackupsCategoryPlaceholder SettingVariable `key:"systemBackupsCategory,internal" default:"" meta:"label=Backups;type=internal;keywords=backup,recovery,restore,configuration,secrets;category=systembackups;description=Back up and restore this Arcane instance" catmeta:"id=systembackups;title=Backups;icon=backup;url=/system/backups;description=Create encrypted recovery backups of Arcane data and configuration"`
-		SystemVolumeBackupConfig         SettingVariable `key:"systemVolumeBackupConfig,internal" default:"{\"policies\":[]}"`
 		ProjectBackupDiscoveryPending    SettingVariable `key:"projectBackupDiscoveryPending,internal" default:"false"`
 
 		FederatedCredentialsCategoryPlaceholder SettingVariable `key:"federatedCredentialsCategory,internal" default:"" meta:"label=Federated Credentials;type=internal;keywords=federated,credentials,workload,identity,oidc,token exchange,ci,github,gitlab;category=authentication;description=Manage workload identity federation credentials"`

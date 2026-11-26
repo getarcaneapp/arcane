@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 
 	"gorm.io/gorm"
@@ -17,7 +16,6 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/s3"
 	"getarcane.dev/arcane/v3/pkg/update"
@@ -27,7 +25,6 @@ import (
 type (
 	S3DestinationService struct {
 		db                    *database.DB
-		settings              *settings.SettingsService
 		checkRemoteReferences func(ctx context.Context, destinationID string) error
 	}
 )
@@ -38,8 +35,8 @@ var (
 	errS3SecretRequired      = errors.New("re-enter the secret access key when changing the endpoint, bucket, region, access key ID, SSL mode, or path style")
 )
 
-func NewS3DestinationService(db *database.DB, settingsService *settings.SettingsService, checkRemoteReferences func(context.Context, string) error) *S3DestinationService {
-	return &S3DestinationService{db: db, settings: settingsService, checkRemoteReferences: checkRemoteReferences}
+func NewS3DestinationService(db *database.DB, checkRemoteReferences func(context.Context, string) error) *S3DestinationService {
+	return &S3DestinationService{db: db, checkRemoteReferences: checkRemoteReferences}
 }
 
 func destinationConfiguration(id string, input types.S3Destination) s3.Configuration {
@@ -259,7 +256,6 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 	db := s.db.WithContext(ctx)
 	counts := []*gorm.DB{
 		db.Table("system_backup_runs").Where("s3_destination_id = ? AND (remote_snapshot_id <> '' OR status = ?)", id, types.SystemBackupStatusRunning),
-		db.Table("system_backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
 		db.Table("volume_backups").Where("s3_destination_id = ? AND (remote_snapshot_id <> '' OR status = ?)", id, types.VolumeBackupStatusRunning),
 		db.Table("backup_policies").Where("s3_destination_id = ? AND s3_enabled = ?", id, true),
 		db.Table("project_backups").Where("s3_destination_id = ? AND (remote_snapshot_id <> '' OR status = ?)", id, types.VolumeBackupStatusRunning),
@@ -273,13 +269,7 @@ func (s *S3DestinationService) DestinationInUse(ctx context.Context, id string) 
 			return true, nil
 		}
 	}
-	global, err := s.settings.SystemVolumeBackupPolicies()
-	if err != nil {
-		return false, fmt.Errorf("failed to check S3 destination references: %w", err)
-	}
-	return slices.ContainsFunc(global.Policies, func(policy types.SystemVolumeBackupPolicy) bool {
-		return policy.S3Enabled && policy.S3DestinationID == id
-	}), nil
+	return false, nil
 }
 
 func (s *S3DestinationService) S3DestinationExists(ctx context.Context, id string) bool {

@@ -28,13 +28,16 @@ type (
 	}
 
 	PolicyOptions struct {
-		Volumes       []string                        `json:"volumes"`
-		SelectionMode types.SystemVolumeSelectionMode `json:"selectionMode"`
-		ProjectIDs    []string                        `json:"projectIds"`
+		Volumes         []string                        `json:"volumes"`
+		SelectionMode   types.SystemVolumeSelectionMode `json:"selectionMode"`
+		ProjectIDs      []string                        `json:"projectIds"`
+		VolumeNames     []string                        `json:"volumeNames"`
+		IgnoreAnonymous bool                            `json:"ignoreAnonymous"`
 	}
 )
 
 const (
+	PolicySystem  = "system"
 	PolicyVolume  = "volume"
 	PolicyProject = "project"
 )

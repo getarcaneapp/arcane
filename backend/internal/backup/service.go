@@ -167,28 +167,14 @@ type (
 		db *database.DB
 	}
 
-	PolicyReconciliation[P, U any] struct {
-		DB       *database.DB
-		ID       func(*P) string
-		UpdateID func(U) string
-		// New returns the blank policy for created entries, pre-scoped by the
-		// caller (e.g. with the volume name set).
-		New   func() P
-		Build func(ctx context.Context, policy *P, update U) error
-		// Persist overrides the default GORM transaction for settings-backed policies.
-		Persist    func(ctx context.Context, policies []P) error
+	PolicyReconciliation[U any] struct {
+		UpdateID   func(U) string
+		Build      func(ctx context.Context, policy *Policy, update U) error
 		Unregister func(ctx context.Context, policyID string)
-		Reschedule func(ctx context.Context, policy *P)
+		Reschedule func(ctx context.Context, policy *Policy)
+		Kind       string
+		SubjectID  string
 		Domain     string
-		Existing   []P
-	}
-
-	DisableRemoteRequest struct {
-		Model         any
-		ID            string
-		DestinationID string
-		Field         string
-		LocalEnabled  bool
 	}
 
 	ScheduledRemoteRequest struct {
@@ -206,6 +192,8 @@ type (
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
 		Reschedule     func(ctx context.Context, policy *Policy)
+		Root           string
+		Tables         []string
 	}
 
 	VolumeRepository struct {
@@ -1079,67 +1067,6 @@ func (e *Engine) HoldRepository(ctx context.Context, id string) (context.Context
 	return context.WithValue(ctx, heldRepository{engine: e, id: id}, true), sync.OnceFunc(unlock), nil
 }
 
-func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error {
-	byID := make(map[string]P, len(r.Existing))
-	for i := range r.Existing {
-		byID[r.ID(&r.Existing[i])] = r.Existing[i]
-	}
-	policies := make([]P, 0, len(updates))
-	kept := make(map[string]struct{}, len(updates))
-	for _, update := range updates {
-		policy := r.New()
-		if updateID := r.UpdateID(update); updateID != "" {
-			var ok bool
-			policy, ok = byID[updateID]
-			if !ok {
-				return fmt.Errorf("%s backup policy not found", r.Domain)
-			}
-			if _, duplicate := kept[updateID]; duplicate {
-				return fmt.Errorf("duplicate %s backup policy", r.Domain)
-			}
-		}
-		if err := r.Build(ctx, &policy, update); err != nil {
-			return err
-		}
-		if policyID := r.ID(&policy); policyID != "" {
-			kept[policyID] = struct{}{}
-		}
-		policies = append(policies, policy)
-	}
-	removed := slices.DeleteFunc(slices.Clone(r.Existing), func(policy P) bool {
-		_, ok := kept[r.ID(&policy)]
-		return ok
-	})
-
-	var persistErr error
-	switch {
-	case r.Persist != nil:
-		persistErr = r.Persist(ctx, policies)
-	default:
-		persistErr = r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			for i := range policies {
-				if saveErr := tx.Save(&policies[i]).Error; saveErr != nil {
-					return saveErr
-				}
-			}
-			if len(removed) == 0 {
-				return nil
-			}
-			return tx.Delete(&removed).Error
-		})
-	}
-	if persistErr != nil {
-		return fmt.Errorf("failed to save %s backup policies: %w", r.Domain, persistErr)
-	}
-	for i := range removed {
-		r.Unregister(ctx, r.ID(&removed[i]))
-	}
-	for i := range policies {
-		r.Reschedule(ctx, &policies[i])
-	}
-	return nil
-}
-
 func ValidatePolicyUpdate(ctx context.Context, domain string, update types.UpdateBackupPolicy, s3Service *s3.S3DestinationService) (types.UpdateBackupPolicy, error) {
 	normalized, err := schedule.Normalize(update.Schedule, domain+" backup")
 	if err != nil {
@@ -1224,13 +1151,6 @@ func DisableMissingRemote(remoteErr error, localEnabled bool, s3Enabled, enabled
 	return true, nil
 }
 
-func DisableStoredRemote(ctx context.Context, db *database.DB, req DisableRemoteRequest) (bool, error) {
-	result := db.WithContext(ctx).Model(req.Model).
-		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", req.ID, req.DestinationID, true, true, req.LocalEnabled).
-		Update(req.Field, false)
-	return result.Error == nil && result.RowsAffected > 0, result.Error
-}
-
 func NewPolicies(db *database.DB) *Policies { return &Policies{db: db} }
 
 func (p *Policies) List(ctx context.Context, kind, subjectID string) ([]Policy, error) {
@@ -1239,6 +1159,67 @@ func (p *Policies) List(ctx context.Context, kind, subjectID string) ([]Policy, 
 		return nil, fmt.Errorf("failed to load %s backup policies: %w", kind, err)
 	}
 	return policies, nil
+}
+
+func (p *Policies) Reconcile[U any](ctx context.Context, r PolicyReconciliation[U], updates []U) error {
+	p.Lock()
+	defer p.Unlock()
+	existing, err := p.List(ctx, r.Kind, r.SubjectID)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]Policy, len(existing))
+	for _, policy := range existing {
+		byID[policy.ID] = policy
+	}
+	policies := make([]Policy, 0, len(updates))
+	kept := make(map[string]struct{}, len(updates))
+	for _, update := range updates {
+		policy := Policy{SubjectKind: r.Kind, SubjectID: r.SubjectID}
+		if updateID := r.UpdateID(update); updateID != "" {
+			var ok bool
+			policy, ok = byID[updateID]
+			if !ok {
+				return fmt.Errorf("%s backup policy not found", r.Domain)
+			}
+			if _, duplicate := kept[updateID]; duplicate {
+				return fmt.Errorf("duplicate %s backup policy", r.Domain)
+			}
+		}
+		if buildErr := r.Build(ctx, &policy, update); buildErr != nil {
+			return buildErr
+		}
+		if policy.ID != "" {
+			kept[policy.ID] = struct{}{}
+		}
+		policies = append(policies, policy)
+	}
+	removed := slices.DeleteFunc(existing, func(policy Policy) bool {
+		_, ok := kept[policy.ID]
+		return ok
+	})
+
+	persistErr := p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i := range policies {
+			if saveErr := tx.Save(&policies[i]).Error; saveErr != nil {
+				return saveErr
+			}
+		}
+		if len(removed) == 0 {
+			return nil
+		}
+		return tx.Delete(&removed).Error
+	})
+	if persistErr != nil {
+		return fmt.Errorf("failed to save %s backup policies: %w", r.Domain, persistErr)
+	}
+	for i := range removed {
+		r.Unregister(ctx, removed[i].ID)
+	}
+	for i := range policies {
+		r.Reschedule(ctx, &policies[i])
+	}
+	return nil
 }
 
 func (p *Policies) Get(ctx context.Context, kind, subjectID, id string) (*Policy, error) {
@@ -1312,23 +1293,28 @@ func (p *Policies) Rename(tx *gorm.DB, kind, oldID, newID string) error {
 }
 
 func (p *Policies) DisableRemote(ctx context.Context, policy *Policy, field string) (bool, error) {
-	return DisableStoredRemote(ctx, p.db, DisableRemoteRequest{
-		Model:         &Policy{},
-		ID:            policy.ID,
-		DestinationID: policy.S3DestinationID,
-		LocalEnabled:  policy.LocalEnabled,
-		Field:         field,
-	})
+	result := p.db.WithContext(ctx).Model(&Policy{}).
+		Where("id = ? AND s3_destination_id = ? AND enabled = ? AND s3_enabled = ? AND local_enabled = ?", policy.ID, policy.S3DestinationID, true, true, policy.LocalEnabled).
+		Update(field, false)
+	return result.Error == nil && result.RowsAffected > 0, result.Error
 }
 
 func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check RemoteCheck) (bool, error) {
 	var remoteErr error
 	if policy.S3Enabled {
-		remoteErr = CheckScheduledRemote(ctx, p.db, check.S3Destinations, ScheduledRemoteRequest{
+		remote := ScheduledRemoteRequest{
 			DestinationID: policy.S3DestinationID,
-			Root:          path.Join(VolumeRoot, check.Settings.GetSettingsConfig().InstanceID.Value),
-			Tables:        VolumeRepositoryTables,
-		})
+			Root:          check.Root,
+			Tables:        check.Tables,
+		}
+		if check.Root == "" {
+			remote = ScheduledRemoteRequest{
+				DestinationID: policy.S3DestinationID,
+				Root:          path.Join(VolumeRoot, check.Settings.GetSettingsConfig().InstanceID.Value),
+				Tables:        VolumeRepositoryTables,
+			}
+		}
+		remoteErr = CheckScheduledRemote(ctx, p.db, check.S3Destinations, remote)
 	}
 	disabled, err := DisableMissingRemote(remoteErr, policy.LocalEnabled, &policy.S3Enabled, &policy.Enabled, func(field string) (bool, error) {
 		return p.DisableRemote(ctx, policy, field)
