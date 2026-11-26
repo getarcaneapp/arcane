@@ -145,6 +145,9 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 		}
 		return nil, huma.Error500InternalServerError("Failed to open upload: " + err.Error())
 	}
+	if !session.Complete {
+		return nil, upload.SessionHTTPError(common.ErrUploadSessionIncomplete)
+	}
 
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
