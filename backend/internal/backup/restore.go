@@ -58,6 +58,8 @@ type (
 
 const RestoreRoot = "/dest"
 
+var ErrRestoreUnchanged = errors.New("no files were replaced")
+
 func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	held, release, err := r.hold(ctx)
 	if err != nil {
@@ -107,6 +109,9 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	}
 	if err == nil && r.Verify != nil {
 		err = r.Verify(held)
+	}
+	if errors.Is(err, ErrRestoreUnchanged) {
+		state.SafetyID = ""
 	}
 	if err != nil {
 		return r.Rollback(held, state, err)

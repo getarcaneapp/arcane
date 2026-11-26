@@ -123,10 +123,7 @@ set -- "$tmp"
 ` + replaceVolumeScript
 )
 
-var (
-	errBackupRunning   = common.Classify(common.ErrConflict, errors.New("only finished backups can be restored"))
-	errVolumeUnchanged = errors.New("the volume was not changed")
-)
+var errBackupRunning = common.Classify(common.ErrConflict, errors.New("only finished backups can be restored"))
 
 func NewService(deps Dependencies) *Service {
 	return &Service{deps: deps}
@@ -206,7 +203,6 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 	}
 	var stopped []container.Summary
 	var safetyID string
-	var writeErr error
 	steps := backup.RestoreSteps{
 		Subject: "the volume",
 		Hold: func(ctx context.Context) (context.Context, func(), error) {
@@ -228,7 +224,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			}, nil
 		},
 		Stop: func(ctx context.Context, _ backup.RestoreState) error {
-			if len(opts.Create) > 0 || errors.Is(writeErr, errVolumeUnchanged) {
+			if len(opts.Create) > 0 {
 				return nil
 			}
 			more, err := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{opts.VolumeName}, RefuseArcaneWriters: true}, opts.User)
@@ -256,7 +252,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			return id, err
 		},
 		InUse: func(ctx context.Context) error {
-			if len(opts.Create) > 0 || errors.Is(writeErr, errVolumeUnchanged) {
+			if len(opts.Create) > 0 {
 				return nil
 			}
 			return backup.CheckNoWriters(ctx, s.deps.Docker, []string{opts.VolumeName})
@@ -271,16 +267,11 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 						Target: "/volume",
 					})
 					if checkErr != nil {
-						writeErr = checkErr
-						return writeErr
+						return checkErr
 					}
 					remove()
 				}
-				writeErr = opts.Write(ctx)
-				return writeErr
-			}
-			if errors.Is(writeErr, errVolumeUnchanged) {
-				return nil
+				return opts.Write(ctx)
 			}
 			entry, err := s.deps.Run(ctx, safety)
 			if err != nil {
@@ -369,11 +360,11 @@ func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Clie
 func (s *Service) ownerHelper(ctx context.Context, target mount.Mount) (string, func(), error) {
 	helperID, remove, err := s.deps.TempContainer(ctx, target)
 	if err != nil {
-		return "", nil, fmt.Errorf("%w (%w)", err, errVolumeUnchanged)
+		return "", nil, fmt.Errorf("%w (%w)", err, backup.ErrRestoreUnchanged)
 	}
 	if _, _, err = s.deps.Exec(ctx, helperID, "", []string{"sh", "-c", "command -v chown && command -v chmod"}); err != nil {
 		remove()
-		return "", nil, fmt.Errorf("the helper image cannot restore the volume owner, so pull the latest tools image and try again: %w (%w)", err, errVolumeUnchanged)
+		return "", nil, fmt.Errorf("the helper image cannot restore the volume owner, so pull the latest tools image and try again: %w (%w)", err, backup.ErrRestoreUnchanged)
 	}
 	return helperID, remove, nil
 }
@@ -739,7 +730,7 @@ func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, 
 			_, _, cleanupErr := s.deps.Exec(context.WithoutCancel(ctx), containerID, "", []string{"rm", "-rf", "--", tmpDir})
 			err = errors.Join(err, cleanupErr)
 			if err != nil && cleanupErr == nil && !upload.newVolume {
-				err = fmt.Errorf("%w (%w)", err, errVolumeUnchanged)
+				err = fmt.Errorf("%w (%w)", err, backup.ErrRestoreUnchanged)
 			}
 		}
 	}()
