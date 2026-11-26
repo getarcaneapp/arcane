@@ -1316,7 +1316,7 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 			return cmp.Compare(a.snapshot.Summary.TotalBytesProcessed, b.snapshot.Summary.TotalBytesProcessed)
 		})
 		if entry, recordedBefore := existing[backupID]; recordedBefore {
-			filled, fillErr := s.addFoundCopies(ctx, *entry, localSnapshot, remoteSnapshot, largest.snapshot.Summary.TotalBytesProcessed)
+			filled, fillErr := s.addFoundCopies(ctx, dockerClient, *entry, localSnapshot, remoteSnapshot, largest.snapshot.Summary.TotalBytesProcessed)
 			importErr = errors.Join(importErr, fillErr)
 			recorded += int(filled)
 			continue
@@ -1390,13 +1390,33 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 	return recorded, importErr
 }
 
-func (s *Service) addFoundCopies(ctx context.Context, entry ProjectBackup, localSnapshot, remoteSnapshot foundSnapshot, size int64) (int64, error) {
-	hasLocal, hasRemote := localSnapshot.snapshot.ID != "", remoteSnapshot.snapshot.ID != ""
+func (s *Service) addFoundCopies(ctx context.Context, dockerClient *client.Client, entry ProjectBackup, localSnapshot, remoteSnapshot foundSnapshot, size int64) (int64, error) {
 	interrupted := entry.Status == types.VolumeBackupStatusFailed && (entry.Error == interruptedError || (entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""))
+	if !interrupted && entry.Status != types.VolumeBackupStatusSucceeded {
+		return 0, nil
+	}
+	var manifestErr error
+	for index, copied := range []*foundSnapshot{&localSnapshot, &remoteSnapshot} {
+		saved := []string{entry.LocalSnapshotID, entry.RemoteSnapshotID}[index]
+		if copied.snapshot.ID == "" || (saved != "" && (!interrupted || saved != copied.snapshot.ID)) {
+			continue
+		}
+		releaseBackups, holdErr := s.HoldBackups(ctx, entry.ProjectID)
+		if holdErr != nil {
+			return 0, holdErr
+		}
+		_, readErr := s.readManifest(ctx, dockerClient, copied.source)
+		releaseBackups(ctx)
+		if readErr != nil {
+			manifestErr = errors.Join(manifestErr, fmt.Errorf("read the manifest of project backup %s: %w", entry.ID, readErr))
+			*copied = foundSnapshot{}
+		}
+	}
+	hasLocal, hasRemote := localSnapshot.snapshot.ID != "", remoteSnapshot.snapshot.ID != ""
 	addLocal, addRemote := hasLocal && entry.LocalSnapshotID == "", hasRemote && entry.RemoteSnapshotID == ""
 	verified := interrupted && ((hasLocal && localSnapshot.snapshot.ID == entry.LocalSnapshotID) || (hasRemote && remoteSnapshot.snapshot.ID == entry.RemoteSnapshotID))
-	if (!interrupted && entry.Status != types.VolumeBackupStatusSucceeded) || (!addLocal && !addRemote && !verified) {
-		return 0, nil
+	if !addLocal && !addRemote && !verified {
+		return 0, manifestErr
 	}
 	updates := map[string]any{"destination": backup.Destination(backup.DestinationOptions{Local: entry.LocalSnapshotID != "" || hasLocal, Remote: entry.RemoteSnapshotID != "" || hasRemote})}
 	if addLocal {
@@ -1412,7 +1432,7 @@ func (s *Service) addFoundCopies(ctx context.Context, entry ProjectBackup, local
 		Where("id = ? AND status = ? AND COALESCE(local_snapshot_id, '') = ? AND COALESCE(remote_snapshot_id, '') = ?",
 			entry.ID, entry.Status, entry.LocalSnapshotID, entry.RemoteSnapshotID).
 		Updates(updates)
-	return filled.RowsAffected, filled.Error
+	return filled.RowsAffected, errors.Join(manifestErr, filled.Error)
 }
 
 func snapshotTag(tags []string, prefix string) string {
