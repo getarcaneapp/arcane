@@ -690,7 +690,7 @@
 
 <div class="flex flex-col gap-4 pb-6">
 	<header class="flex flex-wrap items-start justify-between gap-4">
-		<h1 class="min-w-0 text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
+		<h1 class="min-w-0 text-2xl font-semibold tracking-tight">{heroGreeting}</h1>
 
 		<div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
 			{#if editingLayout}

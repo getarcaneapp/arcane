@@ -46,7 +46,7 @@
 
 :root {
 	color-scheme: light;
-	--radius: 0.875rem;
+	--radius: 0.75rem;
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.145 0 0);
 	--card: oklch(1 0 0);
@@ -250,7 +250,6 @@
 	--glass-shadow-color: oklch(0 0 0 / 0.6);
 }
 
-/* Over a backdrop photo the shell glass thins out and blurs harder. */
 html[data-backdrop] {
 	--shell-glass: color-mix(in oklch, var(--background) 72%, transparent);
 	--shell-glass-blur: none;
@@ -272,7 +271,6 @@ html.no-blur[data-backdrop] {
 	--shell-glass: color-mix(in oklch, var(--background) 92%, transparent);
 }
 
-/* Sticky table chrome is frosted so rows scrolling beneath it stay legible. */
 :root {
 	--table-head: color-mix(in oklab, var(--foreground) 5%, var(--background));
 	--table-sticky: color-mix(in oklab, var(--background) 75%, transparent);
@@ -343,14 +341,14 @@ html.reduce-effects *::after {
 }
 
 @theme inline {
-	--radius-xl: calc(var(--radius) * 1.4);
-	--radius-xs: var(--radius-xl);
-	--radius-sm: var(--radius-xl);
-	--radius-md: var(--radius-xl);
-	--radius-lg: var(--radius-xl);
-	--radius-2xl: var(--radius-xl);
-	--radius-3xl: var(--radius-xl);
-	--radius-4xl: var(--radius-xl);
+	--radius-xs: calc(var(--radius) - 6px);
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+	--radius-2xl: calc(var(--radius) + 6px);
+	--radius-3xl: calc(var(--radius) + 10px);
+	--radius-4xl: calc(var(--radius) + 14px);
 
 	--color-background: var(--background);
 	--color-row-hover: color-mix(in oklab, var(--primary) 8%, transparent);

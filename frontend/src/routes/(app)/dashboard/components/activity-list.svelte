@@ -58,7 +58,7 @@
 	{:else if visibleActivities.length === 0}
 		<p class="py-2 text-sm text-muted-foreground">{unavailable ? m.common_unavailable() : m.no_recent_activity()}</p>
 	{:else}
-		<ul class="divide-y divide-border/40">
+		<ul>
 			{#each visibleActivities as { key, activity, ids } (key)}
 				{@const environmentId = activity.sourceEnvironmentId || activity.environmentId}
 				{@const title = activityTitle(activity)}
