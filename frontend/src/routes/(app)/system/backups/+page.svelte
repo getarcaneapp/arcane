@@ -16,15 +16,19 @@
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useBackupActivity } from '#lib/hooks/use-backup-activity.svelte.js';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import {
 		AddIcon,
 		AlertIcon,
 		BackupIcon,
+		CalendarIcon,
 		CloudStorageIcon,
 		InfoIcon,
 		LockIcon,
@@ -71,9 +75,19 @@
 	import SystemBackupTable from './components/system-backup-table.svelte';
 
 	type ScheduleType = 'system' | 'project' | 'volume';
+	type BackupsTab = 'backups' | 'schedules';
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
+	const backupsTabItems = $derived([
+		{ value: 'backups', label: m.backups(), icon: BackupIcon },
+		{ value: 'schedules', label: m.schedules(), icon: CalendarIcon }
+	] satisfies TabItem[]);
+	const urlTab = useUrlTab<BackupsTab>({
+		validTabs: () => backupsTabItems.map((tab) => tab.value as BackupsTab),
+		defaultTab: () => 'backups'
+	});
+	const activeTab = $derived(urlTab.value);
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const backupsQuery = createQuery(() => ({
 		...systemBackupHistoryQuery(pageState.scope, pageState.requestOptions),
@@ -1009,88 +1023,6 @@
 			{/if}
 			{@render recoveryKeySummary()}
 
-			<SettingsSection title={m.system()} description={m.arcane_only_backup_description()} variant="plain">
-				{#snippet actions()}{@render addScheduleAction('system')}{/snippet}
-				{#if policyCollection.policies.length}
-					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
-						{#each policyCollection.policies as policy (policy.id)}
-							<BackupPolicyCard
-								{policy}
-								resourceType="system"
-								onEdit={() => openSchedule('system', policy.id)}
-								editDisabled={isReadOnly || !canUpdateBackupPolicies}
-								onRun={() => runPolicy('system', policy.id)}
-								runDisabled={isReadOnly ||
-									!canCreateBackups ||
-									!policyCollection.recoveryKeyStored ||
-									backupActivity.activeIds.length > 0 ||
-									runningPolicyId !== null}
-								running={runningPolicyId === policy.id}
-							/>
-						{/each}
-					</div>
-				{:else}
-					<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
-				{/if}
-			</SettingsSection>
-
-			<SettingsSection title={m.projects_title()} description={m.back_up_selected_projects()} variant="plain">
-				{#snippet actions()}{@render addScheduleAction('project')}{/snippet}
-				{#if projectPolicyCollection.policies.length}
-					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
-						{#each projectPolicyCollection.policies as policy (policy.id)}
-							<BackupPolicyCard
-								{policy}
-								resourceType="project"
-								showStopContainers
-								onEdit={() => openSchedule('project', policy.id)}
-								editDisabled={isReadOnly || !canUpdateBackupPolicies}
-								onRun={() => runPolicy('project', policy.id)}
-								runDisabled={isReadOnly ||
-									!canCreateBackups ||
-									!policy.enabled ||
-									projectActivity.activeIds.length > 0 ||
-									runningPolicyId !== null}
-								running={runningPolicyId === policy.id}
-							/>
-						{/each}
-					</div>
-				{:else}
-					<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
-				{/if}
-			</SettingsSection>
-
-			<SettingsSection title={m.resource_volumes_cap()} description={m.system_backups_type_volume_description()} variant="plain">
-				{#snippet actions()}{@render addScheduleAction('volume')}{/snippet}
-				{#if systemVolumePolicyCollection.policies.length}
-					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
-						{#each systemVolumePolicyCollection.policies as policy (policy.id)}
-							<BackupPolicyCard
-								{policy}
-								resourceType="volume"
-								showStopContainers
-								onEdit={() => openSchedule('volume', policy.id)}
-								editDisabled={isReadOnly || !canUpdateBackupPolicies}
-								onRun={() => runPolicy('volume', policy.id)}
-								runDisabled={isReadOnly || !canCreateBackups || backupActivity.activeIds.length > 0 || runningPolicyId !== null}
-								running={runningPolicyId === policy.id}
-							/>
-						{/each}
-					</div>
-				{:else}
-					<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
-				{/if}
-			</SettingsSection>
-
-			{#if unmanagedBackupRetentionDays !== undefined}
-				<p class="text-sm text-muted-foreground">
-					{Number(unmanagedBackupRetentionDays) > 0
-						? m.unmanaged_backup_retention_summary({ days: Number(unmanagedBackupRetentionDays) })
-						: m.unmanaged_backup_retention_disabled_summary()}
-					<a href={resolve('/(app)/settings/storage')} class="ml-1 text-primary-text hover:underline">{m.common_edit()}</a>
-				</p>
-			{/if}
-
 			{#each [...backupActivity.activeIds, ...projectActivity.activeIds] as activityId (activityId)}
 				<Alert.Root
 					><Alert.Description>
@@ -1104,21 +1036,120 @@
 				>
 			{/each}
 
-			<SystemBackupTable
-				emptyState={backupsEmptyState}
-				{backups}
-				{localDockerDisabled}
-				bind:requestOptions={pageState.requestOptions}
-				onRetry={() => backupsQuery.refetch()}
-				onRestore={(item) => openAction('restore', item)}
-				onRestoreFiles={openRestoreFiles}
-				onRestoreVolume={openVolumeRestore}
-				onOpenProject={openProjectBackups}
-				onRestoreProjectAsNew={openRestoreAsNew}
-				onUpload={(item) => openAction('upload', item)}
-				onDelete={(item) => openAction('delete', item)}
-				onOpenVolume={openVolumeBackups}
-			/>
+			<Tabs.Root value={activeTab} class="w-full">
+				<TabBar items={backupsTabItems} onValueChange={urlTab.select} />
+
+				<Tabs.Content value="backups" class="mt-6">
+					<SystemBackupTable
+						emptyState={backupsEmptyState}
+						{backups}
+						{localDockerDisabled}
+						bind:requestOptions={pageState.requestOptions}
+						onRetry={() => backupsQuery.refetch()}
+						onRestore={(item) => openAction('restore', item)}
+						onRestoreFiles={openRestoreFiles}
+						onRestoreVolume={openVolumeRestore}
+						onOpenProject={openProjectBackups}
+						onRestoreProjectAsNew={openRestoreAsNew}
+						onUpload={(item) => openAction('upload', item)}
+						onDelete={(item) => openAction('delete', item)}
+						onOpenVolume={openVolumeBackups}
+					/>
+				</Tabs.Content>
+
+				<Tabs.Content value="schedules" class="mt-6">
+					<div class="space-y-8">
+						<SettingsSection title={m.system()} description={m.arcane_only_backup_description()} variant="plain">
+							{#snippet actions()}{@render addScheduleAction('system')}{/snippet}
+							{#if policyCollection.policies.length}
+								<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
+									{#each policyCollection.policies as policy (policy.id)}
+										<BackupPolicyCard
+											{policy}
+											resourceType="system"
+											onEdit={() => openSchedule('system', policy.id)}
+											editDisabled={isReadOnly || !canUpdateBackupPolicies}
+											onRun={() => runPolicy('system', policy.id)}
+											runDisabled={isReadOnly ||
+												!canCreateBackups ||
+												!policyCollection.recoveryKeyStored ||
+												backupActivity.activeIds.length > 0 ||
+												runningPolicyId !== null}
+											running={runningPolicyId === policy.id}
+										/>
+									{/each}
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
+							{/if}
+						</SettingsSection>
+
+						<SettingsSection title={m.projects_title()} description={m.back_up_selected_projects()} variant="plain">
+							{#snippet actions()}{@render addScheduleAction('project')}{/snippet}
+							{#if projectPolicyCollection.policies.length}
+								<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
+									{#each projectPolicyCollection.policies as policy (policy.id)}
+										<BackupPolicyCard
+											{policy}
+											resourceType="project"
+											showStopContainers
+											onEdit={() => openSchedule('project', policy.id)}
+											editDisabled={isReadOnly || !canUpdateBackupPolicies}
+											onRun={() => runPolicy('project', policy.id)}
+											runDisabled={isReadOnly ||
+												!canCreateBackups ||
+												!policy.enabled ||
+												projectActivity.activeIds.length > 0 ||
+												runningPolicyId !== null}
+											running={runningPolicyId === policy.id}
+										/>
+									{/each}
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
+							{/if}
+						</SettingsSection>
+
+						<SettingsSection
+							title={m.resource_volumes_cap()}
+							description={m.system_backups_type_volume_description()}
+							variant="plain"
+						>
+							{#snippet actions()}{@render addScheduleAction('volume')}{/snippet}
+							{#if systemVolumePolicyCollection.policies.length}
+								<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2">
+									{#each systemVolumePolicyCollection.policies as policy (policy.id)}
+										<BackupPolicyCard
+											{policy}
+											resourceType="volume"
+											showStopContainers
+											onEdit={() => openSchedule('volume', policy.id)}
+											editDisabled={isReadOnly || !canUpdateBackupPolicies}
+											onRun={() => runPolicy('volume', policy.id)}
+											runDisabled={isReadOnly ||
+												!canCreateBackups ||
+												backupActivity.activeIds.length > 0 ||
+												runningPolicyId !== null}
+											running={runningPolicyId === policy.id}
+										/>
+									{/each}
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">{m.system_backups_no_schedules()}</p>
+							{/if}
+						</SettingsSection>
+
+						{#if unmanagedBackupRetentionDays !== undefined}
+							<p class="text-sm text-muted-foreground">
+								{Number(unmanagedBackupRetentionDays) > 0
+									? m.unmanaged_backup_retention_summary({ days: Number(unmanagedBackupRetentionDays) })
+									: m.unmanaged_backup_retention_disabled_summary()}
+								<a href={resolve('/(app)/settings/storage')} class="ml-1 text-primary-text hover:underline">{m.common_edit()}</a>
+							</p>
+						{/if}
+					</div>
+				</Tabs.Content>
+			</Tabs.Root>
 		</div>
 	{/snippet}
 	{#snippet additionalContent()}
