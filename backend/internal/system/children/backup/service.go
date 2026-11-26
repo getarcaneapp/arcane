@@ -1184,6 +1184,8 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 		ProjectsDirectoriesSetting: s.settingsService.GetStringSetting(ctx, "projectsDirectories"),
 		TemplatesSetting:           s.settingsService.GetStringSetting(ctx, "templatesDirectory"),
 		FollowSymlinksSetting:      s.settingsService.GetStringSetting(ctx, "followProjectSymlinks"),
+		ProjectScanMaxDepthSetting: s.settingsService.GetStringSetting(ctx, "projectScanMaxDepth"),
+		ProjectScanSkipDirsSetting: s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
 		ProjectsIncluded:           plan.ProjectsIncluded,
 		Stages:                     plan.Stages,
 		RollbackStages:             rollbackStages,
