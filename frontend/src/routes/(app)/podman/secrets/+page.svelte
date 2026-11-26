@@ -92,7 +92,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.podman_secrets_title()} subtitle={m.podman_secrets_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.podman_secrets_title()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			{#key pageState.scope}

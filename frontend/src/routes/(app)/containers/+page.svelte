@@ -144,7 +144,7 @@
 	<ContainerEnvironmentSync onActivate={handleEnvironmentChange} />
 {/key}
 
-<ResourcePageLayout title={m.containers()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.containers()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ContainerTable

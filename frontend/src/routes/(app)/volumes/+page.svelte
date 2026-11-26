@@ -116,7 +116,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.resource_volumes_cap()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.resource_volumes_cap()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			{#key pageState.scope}

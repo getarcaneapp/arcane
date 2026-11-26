@@ -37,6 +37,7 @@
 		onToggleMobileField,
 		customViewOptions,
 		customToolbarActions,
+		statusIndicator,
 		class: className,
 		imageNameFilterOptions = [],
 		wrapText = false,
@@ -58,6 +59,7 @@
 		onToggleMobileField?: (fieldId: string) => void;
 		customViewOptions?: Snippet;
 		customToolbarActions?: Snippet;
+		statusIndicator?: Snippet;
 		class?: string;
 		imageNameFilterOptions?: string[];
 		wrapText?: boolean;
@@ -305,6 +307,12 @@
 		{#if customToolbarActions}
 			<div class="order-4 flex w-full items-center justify-end md:order-none md:w-auto md:shrink-0">
 				{@render customToolbarActions()}
+			</div>
+		{/if}
+
+		{#if statusIndicator}
+			<div class="order-4 flex shrink-0 items-center md:order-none">
+				{@render statusIndicator()}
 			</div>
 		{/if}
 

@@ -68,7 +68,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.cluster()} subtitle={m.swarm_cluster_subtitle()} class="pb-6" {actionButtons}>
+<ResourcePageLayout title={m.cluster()} class="pb-6" {actionButtons}>
 	{#snippet mainContent()}
 		<div class="space-y-4 pb-6">
 			{#if failedEnvironments.length > 0}

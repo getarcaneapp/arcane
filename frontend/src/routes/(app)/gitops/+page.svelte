@@ -269,7 +269,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.git_syncs_title()} subtitle={m.git_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.git_syncs_title()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<SyncTable
 			{syncs}

@@ -64,7 +64,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.podman_quadlets_title()} subtitle={m.podman_quadlets_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.podman_quadlets_title()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-4">
 			{#if quadletEnvironments.length === 0}

@@ -75,7 +75,7 @@
 	}
 </script>
 
-<ResourcePageLayout title={m.auto_update()} subtitle={m.podman_autoupdate_subtitle()}>
+<ResourcePageLayout title={m.auto_update()}>
 	{#snippet mainContent()}
 		{#if podmanEnvs.length === 0}
 			<EmptyState icon={UpdateIcon} title={m.common_unavailable()} description={m.podman_autoupdate_unavailable()} />

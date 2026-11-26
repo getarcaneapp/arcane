@@ -24,7 +24,7 @@
 
 	interface Props {
 		title: string;
-		subtitle: string;
+		subtitle?: string;
 		searchPlaceholder: string;
 		clearSearchLabel: string;
 		searchingLabel: string;
@@ -62,7 +62,9 @@
 		<div class="flex items-start justify-between gap-4">
 			<div class="min-w-0">
 				<h1 class="text-2xl font-semibold tracking-tight">{title}</h1>
-				<p class="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+				{#if subtitle}
+					<p class="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+				{/if}
 			</div>
 			<SettingLock />
 		</div>

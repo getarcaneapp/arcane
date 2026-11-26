@@ -85,9 +85,7 @@
 							<div class="flex items-center">
 								{#if versionInfo.updateAvailable || debugUpgrade}
 									<ArcaneTooltip.Root>
-										<ArcaneTooltip.Trigger
-											class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'font-mono hover:text-foreground')}
-										>
+										<ArcaneTooltip.Trigger class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'hover:text-foreground')}>
 											{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion || m.common_unknown()}
 											<span class="ml-1.5 inline-flex size-1.5 rounded-full bg-warning"></span>
 										</ArcaneTooltip.Trigger>
@@ -110,7 +108,7 @@
 										</ArcaneTooltip.Content>
 									</ArcaneTooltip.Root>
 								{:else}
-									<Badge variant="gray" size="sm" mono>
+									<Badge variant="gray" size="sm">
 										{versionInfo.displayVersion || versionInfo.currentTag || versionInfo.currentVersion || m.common_unknown()}
 									</Badge>
 								{/if}

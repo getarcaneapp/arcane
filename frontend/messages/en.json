@@ -4867,5 +4867,9 @@
   "restore_leaves_projects_description": "Backups made without projects leave project folders as they are; restore projects from their project backups. Backups that include projects, such as older backups and safety backups, restore them too.",
   "found_project_backups": "Found {count} project backup(s).",
   "failed_to_discover_project_backups": "Failed to discover project backups.",
-  "schedules": "Schedules"
+  "schedules": "Schedules",
+  "count_unavailable": "{count} unavailable",
+  "count_not_shown": "{count} not shown",
+  "refresh_failed": "Refresh failed",
+  "unavailable_agents": "Unavailable agents"
 }

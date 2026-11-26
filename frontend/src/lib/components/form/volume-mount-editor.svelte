@@ -46,7 +46,7 @@
 	{#each rows as row, index (row)}
 		<div class="space-y-2 rounded-lg border border-border/50 p-3">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-				<Badge variant="outline" mono class="w-fit shrink-0">
+				<Badge variant="outline" class="w-fit shrink-0">
 					{#if row.kind === 'mount'}
 						{row.mountType ?? m.common_mount()}
 					{:else if row.kind === 'bind'}
@@ -92,7 +92,7 @@
 					<Label weight="normal">{m.read_only_label()}</Label>
 				</div>
 				{#if row.rawOptions}
-					<Badge variant="secondary" mono title={m.mount_options_note()}>
+					<Badge variant="secondary" title={m.mount_options_note()}>
 						{row.rawOptions}
 					</Badge>
 				{/if}

@@ -134,7 +134,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.podman_pods_title()} subtitle={m.podman_pods_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.podman_pods_title()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			{#key pageState.scope}

@@ -16,7 +16,6 @@
 <SettingsIndexPage
 	rootUrl={resolve('/(app)/settings')}
 	title={m.settings()}
-	subtitle={m.settings_subtitle()}
 	searchPlaceholder={m.settings_search_placeholder()}
 	groups={[
 		{ id: 'environment', title: m.resource_environment_cap(), urls: getSettingsSubpageUrlsInNavOrder() },

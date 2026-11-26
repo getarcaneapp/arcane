@@ -132,7 +132,7 @@
 		<Label>{label}</Label>
 		<div class="flex flex-wrap gap-1.5">
 			{#each rows[field] as cap (cap)}
-				<Badge variant="secondary" mono>
+				<Badge variant="secondary">
 					{cap}
 					<button type="button" onclick={() => (rows[field] = rows[field].filter((c) => c !== cap))} disabled={submitting}>
 						<CloseIcon class="size-3" />

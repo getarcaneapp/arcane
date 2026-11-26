@@ -154,7 +154,7 @@
 					</td>
 					<td class={bodyCell}>
 						{#if row.versionText}
-							<Badge variant="gray" size="sm" mono>
+							<Badge variant="gray" size="sm">
 								{row.versionText}
 								{#if row.updateAvailable}
 									<span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-warning"></span>

@@ -139,7 +139,7 @@
 	});
 </script>
 
-<ResourcePageLayout title={m.variables_title()} subtitle={m.variables_subtitle()} {actionButtons}>
+<ResourcePageLayout title={m.variables_title()} {actionButtons}>
 	{#snippet mainContent()}
 		<VariableTable {variables} environments={data.environments} onEdit={openEditSheet} onDelete={handleDelete} />
 	{/snippet}

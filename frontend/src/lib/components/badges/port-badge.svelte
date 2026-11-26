@@ -110,7 +110,7 @@
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
 							class:
-								'inline-flex h-6.5 shrink-0 items-stretch overflow-hidden rounded-xl border border-border font-mono text-xs font-medium transition-colors hover:border-sky/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+								'inline-flex h-6.5 shrink-0 items-stretch overflow-hidden rounded-xl border border-border text-xs font-medium transition-colors hover:border-sky/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 							href: toPortHref(p.hostPort!, baseServerUrl),
 							target: '_blank',
 							rel: 'noopener noreferrer'
@@ -148,7 +148,7 @@
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
 					<span
-						class="inline-flex h-6.5 shrink-0 items-center gap-1.5 rounded-xl border border-border px-2.5 font-mono text-xs font-medium text-muted-foreground tabular-nums"
+						class="inline-flex h-6.5 shrink-0 items-center gap-1.5 rounded-xl border border-border px-2.5 text-xs font-medium text-muted-foreground tabular-nums"
 					>
 						<span
 							>{p.containerPort}{#if p.proto}<span class="lowercase opacity-70">/{p.proto}</span>{/if}</span

@@ -12,7 +12,6 @@
 <SettingsIndexPage
 	rootUrl={resolve('/(app)/system')}
 	title={m.system()}
-	subtitle={m.system_subtitle()}
 	searchPlaceholder={m.search_system_settings()}
 	groups={[
 		{

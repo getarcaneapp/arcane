@@ -109,7 +109,7 @@
 	/>
 {/if}
 
-<ResourcePageLayout title={m.services()} subtitle={m.swarm_services_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.services()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<SwarmServicesTable
 			{services}

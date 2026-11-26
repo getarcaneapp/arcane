@@ -36,10 +36,6 @@
 				default: 'px-2.5 py-1',
 				lg: 'px-3 py-1.5 text-xs-plus'
 			},
-			mono: {
-				true: 'font-mono',
-				false: ''
-			},
 			minWidth: {
 				none: '',
 				'16': 'min-w-16',
@@ -61,8 +57,7 @@
 			size: 'default',
 			minWidth: 'none',
 			maxWidth: 'none',
-			hoverEffect: 'none',
-			mono: false
+			hoverEffect: 'none'
 		}
 	});
 
@@ -85,7 +80,6 @@
 		minWidth = 'none',
 		maxWidth = 'none',
 		hoverEffect = 'none',
-		mono = false,
 		beam = false,
 		children,
 		...restProps
@@ -95,7 +89,6 @@
 		minWidth?: BadgeMinWidth;
 		maxWidth?: BadgeMaxWidth;
 		hoverEffect?: BadgeHoverEffect;
-		mono?: boolean;
 		beam?: boolean;
 	} = $props();
 	void cn;
@@ -106,11 +99,7 @@
 	bind:this={ref}
 	data-slot="badge"
 	{href}
-	class={cn(
-		badgeVariants({ variant, size, minWidth, maxWidth, hoverEffect, mono }),
-		beam && 'relative overflow-visible',
-		className
-	)}
+	class={cn(badgeVariants({ variant, size, minWidth, maxWidth, hoverEffect }), beam && 'relative overflow-visible', className)}
 	{...restProps}
 >
 	{#if beam}

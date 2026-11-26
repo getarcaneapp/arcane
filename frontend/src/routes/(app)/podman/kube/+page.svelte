@@ -198,7 +198,7 @@
 			class="min-w-48"
 		/>
 		{#each selected as name (name)}
-			<Badge variant="secondary" mono>
+			<Badge variant="secondary">
 				{name}
 				<button
 					type="button"
