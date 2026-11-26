@@ -495,18 +495,10 @@ func (s *Service) captureSnapshot(
 		Inspect: func(ctx context.Context, name string) (types.Volume, bool, error) {
 			return backup.InspectVolume(ctx, dockerClient, name)
 		},
-		Stop:     nil,
-		Rejected: reject,
-		Mounts: []mount.Mount{{
-			Type:     mount.TypeVolume,
-			Source:   entry.VolumeName,
-			Target:   "/volume",
-			ReadOnly: true,
-		}},
-		Volumes: []string{entry.VolumeName},
-	}
-	if plan.Policy != nil && plan.Policy.StopContainers {
-		capture.Stop = func(ctx context.Context) (func(context.Context) error, error) {
+		Stop: func(ctx context.Context) (func(context.Context) error, error) {
+			if !kit.FromPtr(plan.Policy).StopContainers {
+				return nil, nil
+			}
 			stopped, stopErr := s.deps.Containers.StopContainers(ctx, backup.ContainerScope{Volumes: []string{entry.VolumeName}}, user)
 			start := func(ctx context.Context) error {
 				remaining, startErr := s.deps.Containers.StartContainers(ctx, stopped, user)
@@ -520,7 +512,15 @@ func (s *Service) captureSnapshot(
 				return nil
 			}
 			return start, stopErr
-		}
+		},
+		Rejected: reject,
+		Mounts: []mount.Mount{{
+			Type:     mount.TypeVolume,
+			Source:   entry.VolumeName,
+			Target:   "/volume",
+			ReadOnly: true,
+		}},
+		Volumes: []string{entry.VolumeName},
 	}
 	err = backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
 		containerID, remove, helperErr := backup.StartHelper(ctx, s.deps.Docker, helperImage, mounts[:1])
