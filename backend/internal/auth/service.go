@@ -19,6 +19,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
@@ -30,6 +31,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
+	usergroup "getarcane.dev/arcane/v3/internal/group"
 	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/session"
@@ -552,12 +554,24 @@ func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *us
 		return fmt.Errorf("list oidc mappings: %w", err)
 	}
 
-	err = s.roleService.ReplaceUserAssignments(ctx, localUser.ID, role.RoleAssignmentSourceOidc, role.MappedAssignments(mappings, groups))
+	err = s.roleService.WithTx(ctx, func(tx *gorm.DB) error {
+		if assignErr := s.roleService.ReplaceUserAssignmentsInDB(ctx, tx, localUser.ID, role.RoleAssignmentSourceOidc, role.MappedAssignments(mappings, groups)); assignErr != nil {
+			return assignErr
+		}
+		if groupErr := usergroup.SyncUserMembershipsInDB(ctx, tx, localUser.ID, usergroup.SourceOidc, groups); groupErr != nil {
+			return groupErr
+		}
+		return s.roleService.AssertGlobalAdminExists(ctx, tx)
+	})
 	if errors.Is(err, common.ErrNoGlobalAdminRemains) {
 		slog.WarnContext(ctx, "OIDC role sync would remove the last global admin; keeping existing assignments", "userId", localUser.ID)
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	s.roleService.InvalidateUser(localUser.ID)
+	return nil
 }
 
 func (s *AuthService) extractOidcGroups(_ context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) []string {

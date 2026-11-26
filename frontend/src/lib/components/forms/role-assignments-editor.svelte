@@ -6,7 +6,9 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { projectService } from '#lib/services/project-service.js';
 	import type { Environment } from '#lib/types/environment.js';
+	import type { Project } from '#lib/types/project.js';
 	import {
 		type ResourceScopeType,
 		type Role,
@@ -48,6 +50,36 @@
 	};
 
 	let { assignments = $bindable([]), roles, environments, disabled = false }: Props = $props();
+
+	let projectsByEnv = $state<Record<string, Project[]>>({});
+	const loadingEnvs = new Set<string>();
+
+	$effect(() => {
+		const envIds = new Set(
+			assignments.filter((a) => a.environmentId && a.resourceType === 'project').map((a) => a.environmentId as string)
+		);
+		for (const envId of envIds) {
+			if (projectsByEnv[envId] !== undefined || loadingEnvs.has(envId)) continue;
+			loadingEnvs.add(envId);
+			void projectService
+				.getProjectsForEnvironment(envId, { pagination: { page: 1, limit: 1000 }, sort: { column: 'name', direction: 'asc' } })
+				.then((page) => {
+					projectsByEnv = { ...projectsByEnv, [envId]: page.data ?? [] };
+				})
+				.catch(() => {
+					projectsByEnv = { ...projectsByEnv, [envId]: [] };
+				})
+				.finally(() => {
+					loadingEnvs.delete(envId);
+				});
+		}
+	});
+
+	function projectLabel(envId: string | undefined, projectId: string | undefined): string {
+		if (!projectId) return m.select_project();
+		const match = (envId ? projectsByEnv[envId] : undefined)?.find((p) => p.id === projectId);
+		return match?.name ?? projectId;
+	}
 
 	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.global_org_wide()));
 	const selectedLabel = $derived(createRoleEnvironmentLabelers(roles, envOptions, m.common_select_option()));
@@ -269,7 +301,25 @@
 						</Select.Content>
 					</Select.Root>
 
-					{#if assignment.resourceType}
+					{#if assignment.resourceType === 'project' && (projectsByEnv[assignment.environmentId]?.length ?? 0) > 0}
+						<Select.Root
+							type="single"
+							value={assignment.resourceId ?? ''}
+							{disabled}
+							onValueChange={(v) => updateAssignment(index, { resourceId: v })}
+						>
+							<Select.Trigger class="w-full" aria-label={m.select_project()}>
+								<span class="min-w-0 truncate">{projectLabel(assignment.environmentId, assignment.resourceId)}</span>
+							</Select.Trigger>
+							<Select.Content>
+								{#each projectsByEnv[assignment.environmentId] ?? [] as proj (proj.id)}
+									<Select.Item value={proj.id} label={proj.name}>
+										{proj.name}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{:else if assignment.resourceType}
 						<Input
 							value={assignment.resourceId ?? ''}
 							{disabled}

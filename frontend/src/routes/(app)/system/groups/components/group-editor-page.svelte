@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import RoleAssignmentsEditor from '#lib/components/forms/role-assignments-editor.svelte';
@@ -9,12 +11,17 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import { CloseIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { groupService } from '#lib/services/group-service.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { Group, GroupMember, GroupRoleAssignment } from '#lib/types/group.js';
+	import type { Group, GroupIdpMapping, GroupMember, GroupRoleAssignment } from '#lib/types/group.js';
 	import type { Role, UserRoleAssignmentInput } from '#lib/types/role.js';
 	import type { User } from '#lib/types/user.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type SubmitPayload = {
 		name: string;
@@ -28,6 +35,7 @@
 		group: Group | null;
 		members?: GroupMember[];
 		roleAssignments?: GroupRoleAssignment[];
+		idpMappings?: GroupIdpMapping[];
 		users: User[];
 		roles: Role[];
 		environments: Environment[];
@@ -40,6 +48,7 @@
 		group,
 		members = [],
 		roleAssignments = [],
+		idpMappings = [],
 		users,
 		roles,
 		environments,
@@ -47,9 +56,46 @@
 		onSubmit
 	}: Props = $props();
 
+	const queryClient = useQueryClient();
+
 	let name = $state(untrack(() => group?.name ?? ''));
 	let description = $state(untrack(() => group?.description ?? ''));
 	let userSearch = $state('');
+	let mappings = $state<GroupIdpMapping[]>(untrack(() => [...idpMappings]));
+	let newClaimValue = $state('');
+	let isUpdatingMappings = $state(false);
+
+	async function handleAddIdpMapping() {
+		const claim = newClaimValue.trim();
+		if (!group || !claim || isUpdatingMappings) return;
+		isUpdatingMappings = true;
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(groupService.createIdpMapping({ claimValue: claim, groupId: group.id })),
+			message: m.common_create_failed({ resource: claim }),
+			setLoadingState: (value) => (isUpdatingMappings = value),
+			onSuccess: async (created) => {
+				mappings = [...mappings, created];
+				newClaimValue = '';
+				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.idpMappings(group.id) });
+				toast.success(m.common_create_success({ resource: created.claimValue }));
+			}
+		});
+	}
+
+	async function handleDeleteIdpMapping(mapping: GroupIdpMapping) {
+		if (!group || isUpdatingMappings) return;
+		isUpdatingMappings = true;
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(groupService.deleteIdpMapping(mapping.id)),
+			message: m.common_delete_failed({ resource: mapping.claimValue }),
+			setLoadingState: (value) => (isUpdatingMappings = value),
+			onSuccess: async () => {
+				mappings = mappings.filter((item) => item.id !== mapping.id);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.groups.idpMappings(group.id) });
+				toast.success(m.common_delete_success({ resource: mapping.claimValue }));
+			}
+		});
+	}
 
 	let selectedUserIds = $state<string[]>(
 		untrack(() => members.filter((member) => member.source === 'manual').map((member) => member.userId))
@@ -179,6 +225,63 @@
 
 				<RoleAssignmentsEditor bind:assignments={manualRoleAssignments} {roles} {environments} disabled={isLoading} />
 			</div>
+
+			{#if group}
+				<div class="space-y-3 rounded-lg border p-4">
+					<div>
+						<h3 class="text-sm font-medium">{m.group_idp_mappings()}</h3>
+						<p class="text-xs text-muted-foreground">{m.group_idp_mappings_description()}</p>
+					</div>
+
+					<div class="flex gap-2">
+						<Input
+							bind:value={newClaimValue}
+							placeholder={m.group_idp_claim_placeholder()}
+							disabled={isLoading || isUpdatingMappings}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									handleAddIdpMapping();
+								}
+							}}
+						/>
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							type="button"
+							disabled={isLoading || isUpdatingMappings || !newClaimValue.trim()}
+							loading={isUpdatingMappings}
+							onclick={handleAddIdpMapping}
+							customLabel={m.add_claim_mapping()}
+						/>
+					</div>
+
+					{#if mappings.length === 0}
+						<p class="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
+							{m.no_group_idp_mappings()}
+						</p>
+					{:else}
+						<div class="flex flex-wrap gap-2">
+							{#each mappings as mapping (mapping.id)}
+								<Badge variant="outline">
+									<span>{mapping.claimValue}</span>
+									{#if mapping.source === 'manual'}
+										<button
+											type="button"
+											class="ml-1 rounded-sm p-0.5 text-muted-foreground hover:text-destructive"
+											aria-label={m.common_remove()}
+											disabled={isLoading || isUpdatingMappings}
+											onclick={() => handleDeleteIdpMapping(mapping)}
+										>
+											<CloseIcon class="size-3" />
+										</button>
+									{/if}
+								</Badge>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
 
 			<div class="flex items-center justify-end gap-2">
 				<ArcaneButton

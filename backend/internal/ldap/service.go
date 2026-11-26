@@ -27,6 +27,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/group"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -478,6 +479,9 @@ func (s *LdapService) deprovisionUsers(ctx context.Context, tx *gorm.DB, cfg *se
 			if err := s.roleService.ReplaceUserAssignmentsInDB(ctx, tx, u.ID, role.RoleAssignmentSourceLdap, nil); err != nil {
 				return nil, fmt.Errorf("failed to clear roles of LDAP user %s: %w", u.Username, err)
 			}
+			if err := group.SyncUserMembershipsInDB(ctx, tx, u.ID, group.SourceLdap, nil); err != nil {
+				return nil, fmt.Errorf("failed to clear group memberships of LDAP user %s: %w", u.Username, err)
+			}
 		} else if err := tx.Delete(&user.User{}, "id = ?", u.ID).Error; err != nil {
 			return nil, fmt.Errorf("failed to delete LDAP user %s: %w", u.Username, err)
 		}
@@ -521,6 +525,9 @@ func (s *LdapService) assignRoles(ctx context.Context, tx *gorm.DB, synced []syn
 			return fmt.Errorf("failed to create savepoint: %w", err)
 		}
 		err := s.roleService.ReplaceUserAssignmentsInDB(ctx, tx, u.id, role.RoleAssignmentSourceLdap, role.MappedAssignments(mappings, u.groups))
+		if err == nil {
+			err = group.SyncUserMembershipsInDB(ctx, tx, u.id, group.SourceLdap, u.groups)
+		}
 		if err == nil {
 			err = s.roleService.AssertGlobalAdminExists(ctx, tx)
 		}

@@ -458,3 +458,104 @@ func validateGroupAssignmentsExist(tx *gorm.DB, desired []GroupRoleAssignment) e
 	}
 	return role.ValidateRoleAndEnvIDsExist(tx, roleIDSet, envIDSet)
 }
+
+func (s *GroupService) ListIdpMappings(ctx context.Context, groupID string) ([]GroupIdpMapping, error) {
+	var out []GroupIdpMapping
+	query := s.db.WithContext(ctx).Model(&GroupIdpMapping{})
+	if trimmed := strings.TrimSpace(groupID); trimmed != "" {
+		query = query.Where("group_id = ?", trimmed)
+	}
+	if err := query.Order("claim_value ASC, group_id ASC").Find(&out).Error; err != nil {
+		return nil, fmt.Errorf("failed to list group IdP mappings: %w", err)
+	}
+	return out, nil
+}
+
+func (s *GroupService) CreateIdpMapping(ctx context.Context, claimValue, groupID string) (*GroupIdpMapping, error) {
+	claimValue = strings.TrimSpace(claimValue)
+	groupID = strings.TrimSpace(groupID)
+	if claimValue == "" {
+		return nil, common.Classify(common.ErrValidation, errors.New("claim value is required"))
+	}
+	if groupID == "" {
+		return nil, common.Classify(common.ErrValidation, errors.New("group id is required"))
+	}
+	var mapping GroupIdpMapping
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := verifyIDsExist(tx.Model(&Group{}), map[string]struct{}{groupID: {}}, "group"); err != nil {
+			return err
+		}
+		mapping = GroupIdpMapping{
+			ClaimValue: claimValue,
+			GroupID:    groupID,
+			Source:     SourceManual,
+		}
+		if err := tx.Create(&mapping).Error; err != nil {
+			return fmt.Errorf("failed to create group IdP mapping: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &mapping, nil
+}
+
+func (s *GroupService) DeleteIdpMapping(ctx context.Context, id string) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing GroupIdpMapping
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.Classify(common.ErrNotFound, errors.New("Group IdP mapping not found"))
+			}
+			return fmt.Errorf("failed to load group IdP mapping: %w", err)
+		}
+		if existing.Source == SourceEnv {
+			return common.Classify(common.ErrConflict, errors.New("Group IdP mapping is environment-managed and cannot be deleted"))
+		}
+		if err := tx.Delete(&GroupIdpMapping{}, "id = ?", id).Error; err != nil {
+			return fmt.Errorf("failed to delete group IdP mapping: %w", err)
+		}
+		return nil
+	})
+}
+
+// SyncUserMembershipsInDB replaces a user's synced group memberships for source
+// ('oidc' or 'ldap') based on group_idp_mappings matching the provided IdP claim values.
+// Manual memberships are never touched.
+func SyncUserMembershipsInDB(ctx context.Context, tx *gorm.DB, userID, source string, claims []string) error {
+	m := tx.WithContext(ctx).Migrator()
+	if !m.HasTable("group_idp_mappings") || !m.HasTable("group_members") {
+		return nil
+	}
+	var matchedGroupIDs []string
+	if len(claims) > 0 {
+		if err := tx.WithContext(ctx).
+			Model(&GroupIdpMapping{}).
+			Where("claim_value IN ?", claims).
+			Distinct("group_id").
+			Pluck("group_id", &matchedGroupIDs).Error; err != nil {
+			return fmt.Errorf("failed to resolve group IdP mappings: %w", err)
+		}
+	}
+	if err := tx.WithContext(ctx).
+		Where("user_id = ? AND source = ?", userID, source).
+		Delete(&GroupMember{}).Error; err != nil {
+		return fmt.Errorf("failed to clear %s group memberships: %w", source, err)
+	}
+	if len(matchedGroupIDs) == 0 {
+		return nil
+	}
+	rows := make([]GroupMember, len(matchedGroupIDs))
+	for i, gid := range matchedGroupIDs {
+		rows[i] = GroupMember{
+			GroupID: gid,
+			UserID:  userID,
+			Source:  source,
+		}
+	}
+	if err := tx.WithContext(ctx).Create(&rows).Error; err != nil {
+		return fmt.Errorf("failed to insert %s group memberships: %w", source, err)
+	}
+	return nil
+}

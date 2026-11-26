@@ -2,6 +2,8 @@ import type { Paginated } from '#lib/types/base.js';
 import type {
 	Group,
 	GroupCreate,
+	GroupIdpMapping,
+	GroupIdpMappingCreate,
 	GroupMember,
 	GroupRoleAssignment,
 	GroupUpdate,
@@ -50,6 +52,20 @@ class GroupAPIService extends BaseAPIService {
 
 	async setRoleAssignments(id: string, payload: SetGroupRoleAssignments): Promise<GroupRoleAssignment[]> {
 		return this.handleResponse(this.api.put(`/groups/${id}/roles`, payload)) as Promise<GroupRoleAssignment[]>;
+	}
+
+	async getIdpMappings(groupId?: string): Promise<GroupIdpMapping[]> {
+		return this.handleResponse(this.api.get('/groups/idp-mappings', { params: groupId ? { groupId } : undefined })) as Promise<
+			GroupIdpMapping[]
+		>;
+	}
+
+	async createIdpMapping(payload: GroupIdpMappingCreate): Promise<GroupIdpMapping> {
+		return this.handleResponse(this.api.post('/groups/idp-mappings', payload)) as Promise<GroupIdpMapping>;
+	}
+
+	async deleteIdpMapping(id: string): Promise<void> {
+		return this.handleResponse(this.api.delete(`/groups/idp-mappings/${id}`)) as Promise<void>;
 	}
 }
 

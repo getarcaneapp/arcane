@@ -111,7 +111,8 @@ export const queryKeys = {
 		list: (options: SearchPaginationSortRequest) => ['groups', 'list', stableSerialize(options)] as const,
 		detail: (groupId: string) => ['groups', 'detail', groupId] as const,
 		members: (groupId: string) => ['groups', 'detail', groupId, 'members'] as const,
-		roles: (groupId: string) => ['groups', 'detail', groupId, 'roles'] as const
+		roles: (groupId: string) => ['groups', 'detail', groupId, 'roles'] as const,
+		idpMappings: (groupId?: string) => ['groups', 'idp-mappings', groupId ?? 'all'] as const
 	},
 	users: {
 		all: ['users'] as const,

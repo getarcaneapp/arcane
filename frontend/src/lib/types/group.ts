@@ -48,3 +48,17 @@ export type SetGroupRoleAssignments = {
 export type GroupWritable = 'name' | 'description' | 'memberUserIds' | 'roleAssignments';
 export type GroupCreate = CreateRequest<Group, GroupWritable, 'name'>;
 export type GroupUpdate = UpdateRequest<Group, GroupWritable>;
+
+export type GroupIdpMapping = {
+	id: string;
+	claimValue: string;
+	groupId: string;
+	source: 'manual' | 'env';
+	createdAt: string;
+	updatedAt?: string;
+};
+
+export type GroupIdpMappingCreate = {
+	claimValue: string;
+	groupId: string;
+};

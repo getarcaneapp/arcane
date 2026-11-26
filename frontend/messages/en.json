@@ -4894,5 +4894,11 @@
   "idp": "IdP",
   "all_resources_in_environment": "All resources in environment",
   "resource_scope": "Resource Scope",
-  "resource_identifier": "Resource ID or Name"
+  "resource_identifier": "Resource ID or Name",
+  "select_project": "Select a project",
+  "group_idp_mappings": "OIDC / LDAP Group Mappings",
+  "group_idp_mappings_description": "Users whose OIDC or LDAP group claims match any value below are automatically synced into this group.",
+  "group_idp_claim_placeholder": "e.g. platform-eng or cn=platform,ou=groups",
+  "add_claim_mapping": "Add Mapping",
+  "no_group_idp_mappings": "No OIDC or LDAP group claim mappings configured."
 }

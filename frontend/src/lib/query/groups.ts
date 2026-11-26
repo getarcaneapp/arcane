@@ -31,3 +31,10 @@ export function groupRoleAssignmentsQuery(groupId: string) {
 		queryFn: () => groupService.getRoleAssignments(groupId)
 	});
 }
+
+export function groupIdpMappingsQuery(groupId?: string) {
+	return queryOptions({
+		queryKey: queryKeys.groups.idpMappings(groupId),
+		queryFn: () => groupService.getIdpMappings(groupId)
+	});
+}
