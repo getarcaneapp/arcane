@@ -655,18 +655,22 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName, uploadID str
 	var archive io.ReadSeeker
 	var session *types.UploadSession
 	var first *tar.Header
-	cleanup := func() {}
-	defer func() { cleanup() }()
+	var release func()
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
 	preBackupID, err := s.run(ctx, dockerClient, runOptions{
 		VolumeName: volumeName,
 		User:       user,
 		Create:     create,
 		Prepare: func(ctx context.Context) error {
-			file, consumed, release, consumeErr := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, uploadID)
+			file, consumed, cleanup, consumeErr := s.deps.Uploads.Consume(ctx, types.UploadKindVolumeBackup, uploadID)
 			if consumeErr != nil {
 				return consumeErr
 			}
-			archive, session, cleanup = file, consumed, release
+			archive, session, release = file, consumed, cleanup
 			gzr, gzipErr := gzip.NewReader(file)
 			if gzipErr != nil {
 				return fmt.Errorf("invalid archive: %w", gzipErr)
@@ -715,8 +719,8 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName, uploadID str
 	return nil
 }
 
-func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, upload uploadWrite) (err error) {
-	containerID, cleanup, err := s.deps.AcquireHelper(ctx, upload.volumeName)
+func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, job uploadWrite) (err error) {
+	containerID, cleanup, err := s.deps.AcquireHelper(ctx, job.volumeName)
 	if err != nil {
 		return err
 	}
@@ -732,36 +736,36 @@ func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, 
 		if !replaceStarted {
 			_, _, cleanupErr := s.deps.Exec(context.WithoutCancel(ctx), containerID, "", []string{"rm", "-rf", "--", tmpDir})
 			err = errors.Join(err, cleanupErr)
-			if err != nil && cleanupErr == nil && !upload.newVolume {
+			if err != nil && cleanupErr == nil && !job.newVolume {
 				err = fmt.Errorf("%w (%w)", err, backup.ErrRestoreUnchanged)
 			}
 		}
 	}()
 	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore temp dir stderr", "volume", upload.volumeName, "stderr", strings.TrimSpace(stderr))
+		slog.DebugContext(ctx, "volume service: restore temp dir stderr", "volume", job.volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
-	if _, seekErr := upload.archive.Seek(0, io.SeekStart); seekErr != nil {
+	if _, seekErr := job.archive.Seek(0, io.SeekStart); seekErr != nil {
 		return fmt.Errorf("failed to read uploaded archive: %w", seekErr)
 	}
-	if _, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{DestinationPath: tmpDir, Content: upload.archive}); err != nil {
+	if _, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{DestinationPath: tmpDir, Content: job.archive}); err != nil {
 		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 
-	if !upload.newVolume || !upload.archiveRoot {
+	if !job.newVolume || !job.archiveRoot {
 		_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `test -n "$(find "$1" -mindepth 1 -maxdepth 1)"`, "sh", tmpDir})
 		if err != nil {
 			return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
 		}
 		if strings.TrimSpace(stderr) != "" {
-			slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", upload.volumeName, "stderr", strings.TrimSpace(stderr))
+			slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", job.volumeName, "stderr", strings.TrimSpace(stderr))
 		}
 	}
-	if upload.newVolume && upload.archiveRoot {
+	if job.newVolume && job.archiveRoot {
 		owner := backup.VolumeOwner{
-			UID:  uint32(upload.root.Uid),
-			GID:  uint32(upload.root.Gid),
-			Mode: upload.root.Mode,
+			UID:  uint32(job.root.Uid),
+			GID:  uint32(job.root.Gid),
+			Mode: job.root.Mode,
 		}
 		if applyErr := owner.Apply(ctx, s.deps.Exec, containerID); applyErr != nil {
 			return applyErr
@@ -774,7 +778,7 @@ func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, 
 		return fmt.Errorf("failed to replace volume contents: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore replace stderr", "volume", upload.volumeName, "stderr", strings.TrimSpace(stderr))
+		slog.DebugContext(ctx, "volume service: restore replace stderr", "volume", job.volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 	return nil
 }

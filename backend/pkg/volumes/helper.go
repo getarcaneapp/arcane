@@ -26,9 +26,9 @@ import (
 type (
 	HelperHost struct {
 		Image       string
+		NetworkMode container.NetworkMode
 		Binds       []string
 		Mounts      []mount.Mount
-		NetworkMode container.NetworkMode
 		Keep        bool
 	}
 
