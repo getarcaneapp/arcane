@@ -280,7 +280,7 @@ type (
 const (
 	VolumeAdmissionScope           = "volume-backup"
 	ProjectSnapshotTag             = "arcane-kind:project"
-	volumeOwnerTagPrefix           = "arcane-owner:"
+	VolumeOwnerTagPrefix           = "arcane-owner:"
 	ProjectTargetType              = "project_backup"
 	ProjectRestoreAction           = "restore_project_backup"
 	ProjectDiscoveryPendingKey     = "projectBackupDiscoveryPending"
@@ -550,7 +550,7 @@ func ReadVolumeOwnerTag(ctx context.Context, exec HelperExec, containerID string
 	if err != nil {
 		return "", fmt.Errorf("read the owner of the volume root: %w", err)
 	}
-	tag := volumeOwnerTagPrefix + strings.TrimSpace(stdout)
+	tag := VolumeOwnerTagPrefix + strings.TrimSpace(stdout)
 	if _, ok := VolumeOwnerFromTags([]string{tag}); !ok {
 		return "", fmt.Errorf("unexpected owner of the volume root: %q", strings.TrimSpace(stdout))
 	}
@@ -559,7 +559,7 @@ func ReadVolumeOwnerTag(ctx context.Context, exec HelperExec, containerID string
 
 func VolumeOwnerFromTags(tags []string) (VolumeOwner, bool) {
 	for _, tag := range tags {
-		value, found := strings.CutPrefix(tag, volumeOwnerTagPrefix)
+		value, found := strings.CutPrefix(tag, VolumeOwnerTagPrefix)
 		if !found {
 			continue
 		}

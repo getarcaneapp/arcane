@@ -1135,6 +1135,11 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 	if volumeName == "" || volumeName == systemRecoverySnapshotLabel || slices.Contains(snapshot.Tags, backup.ProjectSnapshotTag) {
 		return nil
 	}
+	if snapshot.RunID() == "" && slices.ContainsFunc(snapshot.Tags, func(tag string) bool {
+		return strings.HasPrefix(tag, backup.VolumeOwnerTagPrefix)
+	}) {
+		return nil
+	}
 	createdAt := snapshot.Time
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
