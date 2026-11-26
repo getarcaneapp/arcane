@@ -341,7 +341,7 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, req Git
 	if err := s.EnsureGitOpsProjectLinked(ctx, req.Sync, req.Project); err != nil {
 		return err
 	}
-	if err := s.reconcileComposeTagsForProject(ctx, req.Project); err != nil {
+	if err := s.reconcileComposeTagsForProject(ctx, req.Project, types.ComposeIdentity{}); err != nil {
 		slog.WarnContext(ctx, "failed to reconcile Compose project tags during GitOps project creation", "projectId", req.Project.ID, "error", err)
 	}
 	if !req.SkipEvent {
@@ -3208,7 +3208,7 @@ func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []
 	}
 	for i := range projectsList {
 		s.refreshProjectImageRefs(ctx, &projectsList[i])
-		if err := s.reconcileComposeTagsForProject(ctx, &projectsList[i]); err != nil {
+		if err := s.reconcileComposeTagsForProject(ctx, &projectsList[i], types.ComposeIdentity{}); err != nil {
 			slog.WarnContext(ctx, "failed to reconcile Compose project tags after file change", "projectId", projectsList[i].ID, "error", err)
 		}
 	}
@@ -3459,7 +3459,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			}
 		}
 		if len(updates) == 0 {
-			return s.reconcileComposeTagsForProject(ctx, &existing)
+			return s.reconcileComposeTagsForProject(ctx, &existing, composeMetadata)
 		}
 		updates["updated_at"] = time.Now()
 		if uerr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", existing.ID).Updates(updates).Error; uerr != nil {
@@ -3477,20 +3477,26 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			slog.WarnContext(ctx, "multiple project directories resolve to the same compose project name", "composeProjectName", composeMetadata.ResolvedProjectName, "path", dirPath, "duplicates", duplicates)
 		}
 	}
-	return s.reconcileComposeTagsForProject(ctx, &existing)
+	return s.reconcileComposeTagsForProject(ctx, &existing, composeMetadata)
 }
 
 func (s *ProjectService) ApplyGitSyncEnvToDirectory(ctx context.Context, projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
 	return projectsync.ApplyGitSyncEnv(ctx, projectPath, projectsDirectory, gitEnvContent)
 }
 
-func (s *ProjectService) reconcileComposeTagsForProject(ctx context.Context, projectModel *Project) error {
+func (s *ProjectService) reconcileComposeTagsForProject(ctx context.Context, projectModel *Project, identity types.ComposeIdentity) error {
 	if projectModel == nil {
 		return nil
 	}
 	composeFile, err := s.ResolveProjectComposeFile(ctx, projectModel)
 	if err != nil {
 		return fmt.Errorf("resolve Compose file for tag reconciliation: %w", err)
+	}
+	if identity.ComposeFile == composeFile {
+		if !identity.ProjectTagsAuthoritative {
+			return nil
+		}
+		return s.reconcileComposeProjectTags(ctx, projectModel.ID, identity.ProjectTags)
 	}
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -3630,7 +3636,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if composeContent != nil || overrideContent != nil {
 		s.refreshComposeProjectName(ctx, proj)
 		s.refreshProjectImageRefs(ctx, proj)
-		if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj); reconcileErr != nil {
+		if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj, types.ComposeIdentity{}); reconcileErr != nil {
 			slog.WarnContext(ctx, "failed to reconcile Compose project tags after project content update", "projectId", proj.ID, "error", reconcileErr)
 		}
 		if countsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.None[ProjectStatus]()); countsErr != nil {
@@ -3857,7 +3863,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 
 	s.refreshComposeProjectName(ctx, proj)
 	s.refreshProjectImageRefs(ctx, proj)
-	if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj); reconcileErr != nil {
+	if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj, types.ComposeIdentity{}); reconcileErr != nil {
 		slog.WarnContext(ctx, "failed to reconcile Compose project tags after project content update", "projectId", proj.ID, "error", reconcileErr)
 	}
 	if countsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.None[ProjectStatus]()); countsErr != nil {

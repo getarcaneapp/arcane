@@ -59,6 +59,7 @@ type (
 		clientHost    string
 		boundHost     string
 		mu            sync.Mutex
+		diskUsageMu   sync.Mutex
 
 		localDockerDisabled bool
 	}
@@ -71,12 +72,17 @@ type (
 	dockerInventory struct {
 		containers atomic.Pointer[[]container.Summary]
 		images     atomic.Pointer[[]image.Summary]
+		diskUsage  atomic.Pointer[struct {
+			fetchedAt time.Time
+			usage     client.DiskUsageResult
+		}]
 	}
 )
 
 const (
 	dockerClientNegotiationTimeout = 5 * time.Second
 	dockerEventStreamHealthyAfter  = 30 * time.Second
+	dockerDiskUsageMaxAge          = 10 * time.Second
 )
 
 func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, opts ClientServiceOptions) *DockerClientService {
@@ -414,16 +420,34 @@ func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, 
 }
 
 func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsageResult, error) {
-	return s.ListCoalesced(ctx, &s.diskUsageFlight, "", func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
+	inventory := cmp.Or(s.inventory.Load(), &dockerInventory{})
+	if cached := inventory.diskUsage.Load(); cached != nil && time.Since(cached.fetchedAt) < dockerDiskUsageMaxAge {
+		return cached.usage, nil
+	}
+	return s.ListCoalesced(ctx, &s.diskUsageFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
+		s.diskUsageMu.Lock()
+		defer s.diskUsageMu.Unlock()
 		usageCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerDiskUsage)
 		defer cancel()
-		return FetchDiskUsage(usageCtx, dockerClient, client.DiskUsageOptions{
+		fetchedAt := time.Now()
+		usage, err := FetchDiskUsage(usageCtx, dockerClient, client.DiskUsageOptions{
 			Containers: true,
 			Images:     true,
 			Volumes:    true,
 			BuildCache: true,
 			Verbose:    true,
 		})
+		if err != nil {
+			return client.DiskUsageResult{}, err
+		}
+		inventory.diskUsage.Store(&struct {
+			fetchedAt time.Time
+			usage     client.DiskUsageResult
+		}{
+			fetchedAt: fetchedAt,
+			usage:     usage,
+		})
+		return usage, nil
 	})
 }
 

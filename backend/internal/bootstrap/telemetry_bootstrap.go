@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 
 	"go.opentelemetry.io/contrib/exporters/autoexport"
@@ -144,6 +145,9 @@ func (t *telemetryProviders) Shutdown(ctx context.Context) error {
 }
 
 func redactSecrets(s string) string {
+	if !strings.Contains(s, "://") && !strings.Contains(s, "/webhooks/trigger/") {
+		return s
+	}
 	s = urlUserinfo.ReplaceAllString(s, "$1")
 	return webhookToken.ReplaceAllString(urlQuery.ReplaceAllString(s, "$1"), "${1}:token")
 }

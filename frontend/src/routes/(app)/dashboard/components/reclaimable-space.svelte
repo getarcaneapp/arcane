@@ -78,7 +78,7 @@
 			<ArcaneButton action="prune" customLabel={m.prune()} onclick={onPrune} />
 		{/if}
 	{/snippet}
-	{#if loading && usage.length === 0}
+	{#if loading}
 		<div class="space-y-3 py-2">
 			<Skeleton class="h-7 w-24" />
 			<Skeleton class="h-2 w-full" />

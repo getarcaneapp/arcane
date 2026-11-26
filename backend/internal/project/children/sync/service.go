@@ -351,15 +351,19 @@ func LoadComposeMetadata(
 			return types.ComposeIdentity{ResolvedProjectName: normName}, err
 		}
 	}
+	composeFiles, envFiles, composeMeta, ok := projects.ComposeCacheDependencies(ctx, proj, dependencies, composeFile, projectsDirectory, autoInjectEnv)
 	meta := types.ComposeIdentity{
 		ServiceCount:        len(proj.Services),
 		ResolvedProjectName: cmp.Or(proj.Name, normName),
 		// Keep a COMPOSE_PROJECT_NAME override so containers match.
-		ComposeProjectName:  kit.Ternary(proj.Name != "" && proj.Name != normName, new(proj.Name), nil),
-		ExplicitProjectName: loadErr == nil && proj.Name != "" && proj.Name != normName,
+		ComposeProjectName:       kit.Ternary(proj.Name != "" && proj.Name != normName, new(proj.Name), nil),
+		ExplicitProjectName:      loadErr == nil && proj.Name != "" && proj.Name != normName,
+		ComposeFile:              kit.Ternary(ok, composeFile, ""),
+		ProjectTags:              composeMeta.ProjectTags,
+		ProjectTagsAuthoritative: composeMeta.ProjectTagsAuthoritative,
 	}
 
-	if composeFiles, envFiles, ok := projects.ComposeCacheDependencies(ctx, proj, dependencies, composeFile, projectsDirectory, autoInjectEnv); ok {
+	if ok {
 		if setErr := cache.Set(ctx, dirPath, fingerprint, dirPath, projectsDirectory, composeFile, composeFiles, envFiles, loadedAt, meta); setErr != nil {
 			slog.DebugContext(ctx, "failed to cache compose metadata", "path", dirPath, "error", setErr)
 		}
