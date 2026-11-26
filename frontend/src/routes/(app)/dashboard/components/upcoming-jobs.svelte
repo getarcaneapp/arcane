@@ -59,7 +59,7 @@
 	{:else if upcomingJobs.length === 0}
 		<p class="py-2 text-sm text-muted-foreground">{failed ? m.common_unavailable() : m.no_upcoming_jobs()}</p>
 	{:else}
-		<ul class="divide-y divide-border/40">
+		<ul>
 			{#each upcomingJobs as entry (`${entry.environmentId}:${entry.job.id}`)}
 				<li>
 					<a

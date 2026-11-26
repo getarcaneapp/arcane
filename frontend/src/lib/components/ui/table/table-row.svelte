@@ -20,8 +20,8 @@
 	class={cn(
 		// Fills go on the cells (rounded at the row ends) so the glass behind the table shows through.
 		'group/row cursor-pointer border-b border-border/40 *:transition-colors *:duration-150',
-		'in-[tbody]:hover:*:bg-row-hover data-expanded:*:bg-row-expanded data-[state=selected]:*:bg-row-selected data-[state=selected]:in-[tbody]:hover:*:bg-row-selected-hover',
-		variant === 'detail' && '*:bg-row-expanded in-[tbody]:hover:*:bg-row-expanded',
+		'in-[tbody]:hover:*:bg-row-hover data-expanded:*:rounded-b-none! data-expanded:*:bg-row-expanded data-[state=selected]:*:bg-row-selected data-[state=selected]:in-[tbody]:hover:*:bg-row-selected-hover',
+		variant === 'detail' && '*:rounded-t-none! *:bg-row-expanded in-[tbody]:hover:*:bg-row-expanded',
 		variant === 'static' && 'cursor-default in-[tbody]:hover:*:bg-transparent',
 		className
 	)}

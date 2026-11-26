@@ -6,7 +6,7 @@ replace getarcane.dev/types/v3 => ../types
 
 require (
 	charm.land/bubbles/v2 v2.2.2
-	charm.land/bubbletea/v2 v2.1.2
+	charm.land/bubbletea/v2 v2.1.3
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.1.1
 	charm.land/log/v2 v2.0.1
@@ -25,7 +25,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	github.com/stretchr/testify v1.12.1
-	github.com/theupdateframework/go-tuf/v2 v2.4.2
+	github.com/theupdateframework/go-tuf/v2 v2.5.0
 	go.yaml.in/yaml/v4 v4.0.0
 	google.golang.org/protobuf v1.36.12
 	kit.getarcane.app v0.8.0
@@ -41,9 +41,9 @@ require (
 	github.com/Microsoft/go-winio v0.6.4 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.48.0 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.33.21 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.21.3 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.48.1 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.33.22 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.21.4 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/harmonica v0.2.0 // indirect

@@ -6,10 +6,10 @@ export function trackOverflow(onChange: (overflow: ScrollOverflow) => void): Att
 	return (node) => {
 		const measure = () =>
 			onChange({
-				below: node.scrollHeight - node.scrollTop - node.clientHeight > 1,
+				below: node.scrollHeight - node.scrollTop - node.clientHeight > 4,
 				left: node.scrollLeft > 1,
 				right: node.scrollWidth - node.scrollLeft - node.clientWidth > 1,
-				scrollable: node.scrollHeight - node.clientHeight > 1
+				scrollable: node.scrollHeight - node.clientHeight > 4
 			});
 		const resizes = new ResizeObserver(measure);
 		const observeAll = () => {

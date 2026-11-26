@@ -4,7 +4,7 @@
 	import { tv, cn, type WithElementRef } from '#lib/utils.js';
 
 	export const badgeVariants = tv({
-		base: 'focus-visible:border-ring focus-visible:ring-ring aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-xl border text-xs-plus leading-5 font-medium transition-colors focus-visible:ring-3 [&>svg]:pointer-events-none [&>svg]:size-3',
+		base: 'focus-visible:border-ring focus-visible:ring-ring aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-sm border text-xs-plus leading-5 font-medium transition-colors focus-visible:ring-3 [&>svg]:pointer-events-none [&>svg]:size-3',
 		variants: {
 			variant: {
 				default: 'text-primary-text bg-primary/10 border-primary/25',
@@ -61,7 +61,7 @@
 			size: 'default',
 			minWidth: 'none',
 			maxWidth: 'none',
-			hoverEffect: 'lift',
+			hoverEffect: 'none',
 			mono: false
 		}
 	});
@@ -84,7 +84,7 @@
 		size = 'default',
 		minWidth = 'none',
 		maxWidth = 'none',
-		hoverEffect = 'lift',
+		hoverEffect = 'none',
 		mono = false,
 		beam = false,
 		children,
