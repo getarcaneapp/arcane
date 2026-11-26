@@ -33,9 +33,6 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 	)
 	allMounts := append([]mount.Mount{}, mounts...)
 	allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: CacheVolume, Target: "/cache"})
-	hostConfig := volumes.HostConfig(DefaultImage, nil, allMounts)
-	hostConfig.AutoRemove = false
-	hostConfig.NetworkMode = networkMode
 	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image:  DefaultImage,
@@ -43,7 +40,12 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 			Env:    env,
 			Labels: volumes.Labels(),
 		},
-		HostConfig: hostConfig,
+		HostConfig: volumes.HostConfig(volumes.HelperHost{
+			Image:       DefaultImage,
+			Mounts:      allMounts,
+			NetworkMode: networkMode,
+			Keep:        true,
+		}),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create Rustic container: %w", err)

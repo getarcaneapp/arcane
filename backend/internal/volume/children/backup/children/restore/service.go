@@ -559,8 +559,6 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 		"sh",
 		path.Join("/backups", filename),
 	}
-	hostConfig := volumes.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount})
-	hostConfig.AutoRemove = false
 	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 			Config: &container.Config{
@@ -569,7 +567,12 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 				NetworkDisabled: true,
 				Labels:          volumes.Labels(),
 			},
-			HostConfig: hostConfig,
+			HostConfig: volumes.HostConfig(volumes.HelperHost{
+				Image:  helperImage,
+				Binds:  []string{volumeName + ":/volume"},
+				Mounts: []mount.Mount{backupMount},
+				Keep:   true,
+			}),
 		})
 	})
 	if err != nil {

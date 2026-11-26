@@ -393,7 +393,11 @@ func createProjectVolumeCopyHolderContainer(ctx context.Context,
 			NetworkDisabled: true,
 			Labels:          Labels(),
 		},
-		HostConfig: helperHostConfig(copyRuntime.Image, []string{bind}, nil, false),
+		HostConfig: HostConfig(HelperHost{
+			Image: copyRuntime.Image,
+			Binds: []string{bind},
+			Keep:  true,
+		}),
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("create volume copy holder: %w", err)
