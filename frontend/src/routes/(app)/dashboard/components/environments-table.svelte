@@ -15,6 +15,7 @@
 		podCount: number | null;
 		updates: number;
 		reclaimable: number | null;
+		reclaimableLoading: boolean;
 		risk: { score: number; band: RiskBand; status: VulnerabilityScoreStatus } | null;
 		versionText: string | null;
 		updateAvailable: boolean;
@@ -205,7 +206,9 @@
 							</td>
 						{/if}
 						<td class={cn(bodyCell, 'text-right')}>
-							{#if row.reclaimable === null}
+							{#if row.reclaimableLoading}
+								<Skeleton class="ml-auto h-4 w-16" />
+							{:else if row.reclaimable === null}
 								<span class="text-xs text-muted-foreground">—</span>
 							{:else}
 								<span class="text-sm whitespace-nowrap tabular-nums"
