@@ -1377,9 +1377,6 @@ func (s *Service) Create(
 	}
 	var snapshot backup.Snapshot
 	forget := func(ctx context.Context) error {
-		if snapshot.ID == "" {
-			return nil
-		}
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer cancel()
 		if forgetErr := s.engine.ForgetSnapshots(cleanupCtx, dockerClient, repository, recoveryKey, []string{snapshot.ID}); forgetErr != nil {
@@ -1388,7 +1385,6 @@ func (s *Service) Create(
 		return nil
 	}
 	capture := backup.CapturePlan{
-		Inspect: nil,
 		Stop: func(ctx context.Context) (func(context.Context) error, error) {
 			for name, db := range databases {
 				if stageErr := stageDatabase(ctx, db, filepath.Join(layout.dataDirectory, name), filepath.Join(stage, name)); stageErr != nil {
@@ -1406,7 +1402,6 @@ func (s *Service) Create(
 		},
 		Rejected: func(ctx context.Context, _ error) error { return forget(ctx) },
 		Mounts:   snapshotMounts,
-		Volumes:  nil,
 	}
 	if captureErr := backup.Capture(ctx, capture, func(ctx context.Context, mounts []mount.Mount) error {
 		var createErr error

@@ -80,6 +80,9 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	if len(request.Stages) == 0 {
 		return errors.New("recovery request has no restore stages")
 	}
+	if request.SafetyBackup == nil || strings.TrimSpace(request.SafetyBackup.ID) == "" || len(request.RollbackStages) == 0 {
+		return errors.New("no pre-restore system backup is available for rollback")
+	}
 	dockerClient, err := client.New(client.FromEnv)
 	if err != nil {
 		return fmt.Errorf("connect to Docker: %w", err)
@@ -102,10 +105,8 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	}
 	arcane := arcaneContainer{
 		stop: func(ctx context.Context) error {
-			if _, stopErr := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)}); stopErr != nil && !errdefs.IsNotFound(stopErr) {
-				return fmt.Errorf("stop Arcane container: %w", stopErr)
-			}
-			return nil
+			_, stopErr := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)})
+			return stopErr
 		},
 		start: func(ctx context.Context) error {
 			_, startErr := dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
@@ -368,15 +369,16 @@ func restoreData(
 		Report: func(ctx context.Context, message string) {
 			slog.InfoContext(ctx, "System restore step", "step", message)
 		},
-		Stop:   func(ctx context.Context, _ backup.RestoreState) error { return arcane.stop(ctx) },
+		Stop: func(ctx context.Context, state backup.RestoreState) error {
+			if err := arcane.stop(ctx); err != nil && (state.SafetyID == "" || !errdefs.IsNotFound(err)) {
+				return err
+			}
+			return nil
+		},
 		Deploy: arcane.start,
 		Safety: func(context.Context) (string, error) {
-			if request.SafetyBackup == nil || len(request.RollbackStages) == 0 {
-				return "", errors.New("no pre-restore system backup is available for rollback")
-			}
 			return request.SafetyBackup.ID, nil
 		},
-		InUse: nil,
 		Write: func(ctx context.Context, safetyID string) error {
 			if safetyID == "" {
 				touched, err := runStages(ctx, request.Stages, rustic)
@@ -397,8 +399,6 @@ func restoreData(
 			}
 			return nil
 		},
-		Verify:  nil,
-		Discard: nil,
 	}
 	state := backup.RestoreState{
 		Redeploy: new(false),
