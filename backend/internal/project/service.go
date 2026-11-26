@@ -2052,6 +2052,12 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 		// An imported project can live anywhere, so removal is rooted at its parent directory.
 		if removeAllErr := (acfs.Root{Path: filepath.Dir(proj.Path)}).RemoveAll(ctx, "/"+filepath.Base(proj.Path)); removeAllErr != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", removeAllErr)
+			if errors.Is(removeAllErr, os.ErrPermission) {
+				return fmt.Errorf(
+					"failed to remove project files: %s or its parent directory is not writable by the runtime user (uid %d, gid %d); fix their ownership or set PUID/PGID to a user that can write to both: %w",
+					proj.Path, os.Geteuid(), os.Getegid(), removeAllErr,
+				)
+			}
 			return fmt.Errorf("failed to remove project files: %w", removeAllErr)
 		}
 		slog.InfoContext(ctx, "Project files removed successfully", "path", proj.Path)
