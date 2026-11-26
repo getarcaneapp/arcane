@@ -121,6 +121,12 @@ export type RoleAssignmentSummary = {
 	source: RoleAssignmentSource;
 };
 
+export type UserGroupSummary = {
+	id: string;
+	name: string;
+	source: RoleAssignmentSource;
+};
+
 export type User = {
 	id: string;
 	username: string;
@@ -130,6 +136,7 @@ export type User = {
 	avatarUrl?: string;
 	backdropUrl?: string;
 	roleAssignments: RoleAssignmentSummary[];
+	groups?: UserGroupSummary[];
 	permissionsByEnv: Record<string, string[]>;
 	isGlobalAdmin: boolean;
 	canDelete: boolean;
