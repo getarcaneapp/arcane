@@ -227,9 +227,9 @@ test.describe('All environments', () => {
 	}) => {
 		await mockRemoteEnvironment(page);
 		// The merged request names the current environment first, and any extra agent rewrites the scope,
-		// so match the builds list by its endpoint instead of by the environment ids in the path.
+		// so match the agent-scoped builds list instead of the environment ids in its path.
 		await page.route(
-			(url) => url.pathname.endsWith('/images/builds'),
+			(url) => url.pathname.startsWith('/api/agents/') && url.pathname.endsWith('/images/builds'),
 			(route) =>
 				route.fulfill({
 					json: {
