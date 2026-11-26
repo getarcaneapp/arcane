@@ -455,24 +455,28 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 }
 
 func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor) error {
-	return s.deps.Repository.WriteRunSnapshots(ctx, dockerClient, snapshotRun(entry, plan), backup.SnapshotWrite{
+	var restartErr error
+	err := s.deps.Repository.WriteRunSnapshots(ctx, dockerClient, snapshotRun(entry, plan), backup.SnapshotWrite{
 		Capture: func(ctx context.Context, repository backup.Repository, password string) (backup.Snapshot, error) {
-			return s.captureSnapshot(ctx, dockerClient, entry, plan, user, repository, password)
+			snapshot, restart, err := s.captureSnapshot(ctx, dockerClient, entry, plan, user, repository, password)
+			restartErr = restart
+			return snapshot, err
 		},
 		Save: func(ctx context.Context) error { return s.deps.Store.Save(ctx, entry) },
 	})
+	return errors.Join(err, restartErr)
 }
 
 func (s *Service) captureSnapshot(
 	ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor, repository backup.Repository, password string,
-) (backup.Snapshot, error) {
+) (backup.Snapshot, error, error) {
 	helperImage, err := s.deps.HelperImage(ctx)
 	if err != nil {
-		return backup.Snapshot{}, err
+		return backup.Snapshot{}, nil, err
 	}
 	held, releaseRepository, err := s.deps.Engine.HoldRepository(ctx, repository.ID)
 	if err != nil {
-		return backup.Snapshot{}, err
+		return backup.Snapshot{}, nil, err
 	}
 	defer releaseRepository()
 	var snapshot backup.Snapshot
@@ -506,7 +510,7 @@ func (s *Service) captureSnapshot(
 				remaining, startErr := s.deps.Containers.StartContainers(ctx, stopped, user)
 				if startErr != nil && len(remaining) > 0 {
 					_, retryErr := s.deps.Containers.StartContainers(ctx, remaining, user)
-					startErr = errors.Join(startErr, retryErr)
+					startErr = kit.Ternary(retryErr == nil, nil, errors.Join(startErr, retryErr))
 				}
 				if startErr != nil {
 					restartErr = fmt.Errorf("start the stopped containers again: %w", startErr)
@@ -534,15 +538,15 @@ func (s *Service) captureSnapshot(
 		return nil
 	})
 	if err != nil {
-		return backup.Snapshot{}, errors.Join(err, restartErr)
+		return backup.Snapshot{}, restartErr, err
 	}
 	confirmCtx, cancelConfirm := context.WithTimeout(context.WithoutCancel(held), time.Minute)
 	confirmed, err := s.deps.Engine.ConfirmRunSnapshot(confirmCtx, dockerClient, repository, password, entry.ID, snapshot.ID)
 	cancelConfirm()
 	if err != nil {
-		return backup.Snapshot{}, errors.Join(err, reject(context.WithoutCancel(held), err), restartErr)
+		return backup.Snapshot{}, restartErr, errors.Join(err, reject(context.WithoutCancel(held), err))
 	}
-	return confirmed, restartErr
+	return confirmed, restartErr, nil
 }
 
 func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*types.VolumeBackup, error) {

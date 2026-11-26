@@ -175,7 +175,7 @@ func CheckNoWriters(ctx context.Context, dockerService *dockerInternal.DockerCli
 	for _, c := range running {
 		for _, m := range c.Mounts {
 			if m.Type == mount.TypeVolume && m.RW && slices.Contains(names, m.Name) {
-				return common.Classify(common.ErrConflict, fmt.Errorf("container %s writes to volume %s; stop it or export again", docker.ContainerNameFromNames(c.Names), m.Name))
+				return common.Classify(common.ErrConflict, fmt.Errorf("container %s writes to volume %s; stop it and try again", docker.ContainerNameFromNames(c.Names), m.Name))
 			}
 		}
 	}
@@ -215,12 +215,14 @@ func (o ArchiveOutput) Write(ctx context.Context, dockerService *dockerInternal.
 	return nil
 }
 
-func (o ArchiveOutput) add(ctx context.Context, dockerClient *client.Client, containerID, archive string, part mount.Mount) error {
+func (o ArchiveOutput) add(ctx context.Context, dockerClient *client.Client, containerID, archive string, part mount.Mount) (err error) {
 	reader, size, err := docker.CopyFromContainer(ctx, dockerClient, containerID, archive)
 	if err != nil {
 		return fmt.Errorf("read the archive of %s: %w", part.Source, err)
 	}
-	defer func() { _ = reader.Close() }()
+	defer func() {
+		err = errors.Join(err, reader.Close())
+	}()
 	return o.Add(ctx, part, size, reader)
 }
 
