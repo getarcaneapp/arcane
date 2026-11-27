@@ -450,14 +450,18 @@ func TestValidatePath(t *testing.T) {
 
 		assert.NoError(t, err,
 			"expected valid path to be allowed: %v", err)
+		assert.NoError(t, ValidatePath(tmpDir, "..docker/compose.yaml"),
+			"expected dot-prefixed name to be allowed")
 	})
 
 	t.Run("rejects path traversal", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		err := ValidatePath(tmpDir, "../../../etc/passwd")
 
-		assert.Error(t, err,
+		require.Error(t, err,
 			"expected path traversal to be rejected")
+		require.Error(t, ValidatePath(tmpDir, "../x"))
+		assert.Error(t, ValidatePath(tmpDir, "a/../../x"))
 	})
 
 	t.Run("rejects absolute path escape", func(t *testing.T) {

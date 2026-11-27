@@ -87,6 +87,9 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 	repo, err := h.repoService.CreateRepository(ctx, input.Body, submitted, handlerutil.CurrentActor(ctx))
 	if err != nil {
 		apiErr := common.ToAPIError(err)
+		if apiErr.Code == common.APIErrorCodeValidationError {
+			return nil, handlerutil.APIError(err)
+		}
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create git repository")
 	}
 

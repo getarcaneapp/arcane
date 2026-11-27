@@ -30,7 +30,6 @@ import (
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	kitregistry "kit.getarcane.app/registry"
-	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/digest"
 	"kit.getarcane.app/updater/refs"
 
@@ -68,7 +67,6 @@ type (
 		activityService     *activity.ActivityService
 		engine              *flow.Engine
 		checkWorkflow       *flow.Workflow
-		credentials         *cache.Cache[string, []types.ContainerRegistryCredential]
 		// requestCredentials keeps caller credentials out of the workflow journal; they expire with the check's timeout.
 		requestCredentials *cache.Cache[string, []types.ContainerRegistryCredential]
 		composeBuildRefs   *cache.Cache[string, map[string]struct{}]
@@ -193,10 +191,6 @@ func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 		tags:                tags.NewService(p.RegistryService, p.DockerService, p.SettingsService, registryLimiter),
 		releaseNotes:        releasenotes.NewService(p.DockerService, p.SettingsService, p.RegistryService.ImageConfig),
 		activityService:     p.ActivityService,
-		credentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
-			Capacity: 8,
-			TTL:      time.Minute,
-		},
 		// They outlive the longest check: its slot wait plus its workflow timeout.
 		requestCredentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
 			Capacity: 64,
@@ -1509,45 +1503,15 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	}, snapshot, nil
 }
 
-// resolveBatchCredentials prefers caller credentials, else caches stored ones per scan; a resumed check uses stored ones.
-func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow.Task, input imageCheckInput) []types.ContainerRegistryCredential {
-	if supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey); ok && input.CredentialsKey != "" {
-		return supplied
-	}
-	credentials, _, err := s.credentials.GetOrLoad(t.ActivityID(), func(string) ([]types.ContainerRegistryCredential, bool, error) {
-		registries, loadErr := s.registryService.GetEnabledRegistries(ctx)
-		if loadErr != nil {
-			return nil, false, loadErr
-		}
-		loaded := make([]types.ContainerRegistryCredential, 0, len(registries))
-		for _, reg := range registries {
-			if strings.TrimSpace(reg.URL) == "" || strings.TrimSpace(reg.Username) == "" || reg.Token == "" {
-				continue
-			}
-
-			token, decryptErr := crypto.Decrypt(reg.Token)
-			if decryptErr != nil {
-				slog.DebugContext(ctx, "failed to decrypt registry token for batch check", "registryUrl", reg.URL, "error", decryptErr.Error())
-				continue
-			}
-			if strings.TrimSpace(token) == "" {
-				continue
-			}
-
-			loaded = append(loaded, types.ContainerRegistryCredential{
-				URL:      reg.URL,
-				Username: reg.Username,
-				Token:    strings.TrimSpace(token),
-				Enabled:  reg.Enabled,
-			})
-		}
-		return loaded, true, nil
-	})
-	if err != nil {
-		slog.DebugContext(ctx, "failed to load enabled registries for batch check", "error", err.Error())
+func (s *ImageUpdateService) resolveBatchCredentials(input imageCheckInput) []types.ContainerRegistryCredential {
+	if input.CredentialsKey == "" {
 		return nil
 	}
-	return credentials
+	supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey)
+	if !ok {
+		return nil
+	}
+	return supplied
 }
 
 func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activityID, imageRef string, result *types.ImageUpdateResponse, progress *int) {
@@ -1614,7 +1578,6 @@ func (s *ImageUpdateService) RunImageCheck(ctx context.Context, request types.Im
 	return s.engine.Run(ctx, s.checkWorkflow, request, activitylib.StartRequest{}, nil)
 }
 
-// CheckImages returns each ref's result; usable credentials replace the stored registries for this check.
 func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.ImageUpdateCheckRequest, credentials []types.ContainerRegistryCredential) (types.ImageUpdateBatchResponse, error) {
 	if !request.All && len(request.ImageRefs) == 0 {
 		return types.ImageUpdateBatchResponse{}, nil
@@ -1776,7 +1739,7 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	if err != nil {
 		return nil, err
 	}
-	res, snapshot, checkErr := s.checkSingleImageInBatch(ctx, s.resolveBatchCredentials(ctx, t, input), parts, composeBuildRefs, t.ActivityID(), time.Now())
+	res, snapshot, checkErr := s.checkSingleImageInBatch(ctx, s.resolveBatchCredentials(input), parts, composeBuildRefs, t.ActivityID(), time.Now())
 	// Shutdown hands the task back for redelivery rather than recording it as a failed check.
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -1843,7 +1806,7 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 	if input.Report && t.Recovered() {
 		return tagCheckOutput{Failures: []types.TargetOutcome{}}, nil
 	}
-	containerUpdates, err := s.checkContainerTagUpdates(context.WithValue(ctx, batchChangeCoalesceKey{}, true), tagRefs, s.resolveBatchCredentials(ctx, t, input), seedDigests)
+	containerUpdates, err := s.checkContainerTagUpdates(context.WithValue(ctx, batchChangeCoalesceKey{}, true), tagRefs, s.resolveBatchCredentials(input), seedDigests)
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
@@ -1874,7 +1837,6 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 	s.requestCredentials.Delete(request.CredentialsKey)
 	if t.ActivityID() != "" {
 		s.composeBuildRefs.Delete(t.ActivityID())
-		s.credentials.Delete(t.ActivityID())
 	}
 	groups, results, err := imageCheckResults(t)
 	if err != nil {

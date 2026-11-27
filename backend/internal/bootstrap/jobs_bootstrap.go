@@ -387,7 +387,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 
 	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)
 
-	subscribe([]string{"dockerClientRefreshInterval", "environmentHealthInterval"}, func(updates []types.SettingUpdate) {
+	subscribe([]string{"dockerClientRefreshInterval", "environmentHealthInterval", "eventCleanupInterval", "expiredSessionsCleanupInterval"}, func(updates []types.SettingUpdate) {
 		changedKeys := make([]string, 0, len(updates))
 		for _, update := range updates {
 			changedKeys = append(changedKeys, update.Key)

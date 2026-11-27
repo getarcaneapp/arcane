@@ -170,6 +170,8 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 	}
 
 	tunnelConn := NewWebSocketTunnelConn(conn)
+	// Unauthenticated peers only get to send a small register message.
+	conn.SetReadLimit(maxWebSocketRegisterMessageSize)
 	reject := func(reason string) error {
 		if reason != "" {
 			_ = tunnelConn.Send(&TunnelMessage{Type: MessageTypeRegisterResponse, Error: reason})
@@ -205,6 +207,7 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 		slog.WarnContext(ctx, "Rejected websocket agent tunnel with mismatched client certificate", "environmentId", envID, "error", identityErr)
 		return reject("client certificate does not match environment")
 	}
+	conn.SetReadLimit(maxWebSocketTunnelMessageSize)
 
 	s.manageConnectedTunnel(ctx, registerMsg, AgentTunnelConfig{
 		Conn:          tunnelConn,

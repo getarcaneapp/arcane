@@ -25,7 +25,7 @@
 
 	let { tabs, activeKey, onSelect, onClose, actions, children }: Props = $props();
 
-	const statusHost = $state<EditorStatusHost>({ current: null });
+	const statusHost = $state<EditorStatusHost>({ current: null, actions: null });
 	setEditorStatusHost(statusHost);
 	const status = $derived(statusHost.current?.());
 
@@ -60,8 +60,8 @@
 	class="@container flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-table-head"
 	style="--code-editor-background: transparent; --code-editor-gutter-background: var(--table-head)"
 >
-	{#if tabs.length > 0 || actions || status}
-		<div class="flex h-10 shrink-0 items-center gap-2 px-1.5">
+	{#if tabs.length > 0 || actions || statusHost.actions || status}
+		<div class="flex h-10 shrink-0 items-center gap-2 px-1.5 pointer-coarse:h-touch-target">
 			<div class="scrollbar-hide flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto">
 				{#each tabs as tab (tab.key)}
 					{@const isActive = activeKey === tab.key}
@@ -111,9 +111,10 @@
 				{/each}
 			</div>
 			{@render editorStatus('hidden shrink-0 @3xl:flex')}
-			{#if actions}
-				<div class="flex shrink-0 items-center gap-0.5">
-					{@render actions()}
+			{#if actions || statusHost.actions}
+				<div class="hidden shrink-0 items-center gap-0.5 has-[>*]:flex">
+					{@render statusHost.actions?.()}
+					{@render actions?.()}
 				</div>
 			{/if}
 		</div>

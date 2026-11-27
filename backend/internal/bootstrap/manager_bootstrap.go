@@ -172,6 +172,8 @@ func newRouter(p RouterParams) *echo.Echo {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{
 			"/api/auth/login",
+			"/api/auth/password",
+			"/api/auth/me/passkeys/reauth/password",
 			"/api/auth/passkey/login/begin",
 			"/api/auth/passkey/login/finish",
 			"/api/auth/passkey/mobile/finish",

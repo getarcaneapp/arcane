@@ -53,8 +53,3 @@ func (j *ExpiredSessionsCleanupJob) Run(ctx context.Context) (types.SchedulerOut
 		"deleted", deleted)
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
-
-func (j *ExpiredSessionsCleanupJob) Reschedule(ctx context.Context) error {
-	slog.InfoContext(ctx, "rescheduling expired sessions cleanup job in new scheduler; currently requires restart")
-	return nil
-}

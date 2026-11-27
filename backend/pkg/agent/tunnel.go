@@ -56,13 +56,14 @@ type (
 )
 
 const (
-	maxGRPCTunnelMessageSize                        = 16 * 1024 * 1024
-	maxWebSocketTunnelMessageSize                   = 2 * maxGRPCTunnelMessageSize
-	muxPooledFrameMinSize                           = 32 << 10
-	muxDataPayloadField                             = protowire.Number(15)
-	muxDataBytesField                               = protowire.Number(1)
-	MessageTypeRegister           TunnelMessageType = "register"
-	MessageTypeRegisterResponse   TunnelMessageType = "register_response"
+	maxGRPCTunnelMessageSize                          = 16 * 1024 * 1024
+	maxWebSocketTunnelMessageSize                     = 2 * maxGRPCTunnelMessageSize
+	maxWebSocketRegisterMessageSize                   = 64 << 10
+	muxPooledFrameMinSize                             = 32 << 10
+	muxDataPayloadField                               = protowire.Number(15)
+	muxDataBytesField                                 = protowire.Number(1)
+	MessageTypeRegister             TunnelMessageType = "register"
+	MessageTypeRegisterResponse     TunnelMessageType = "register_response"
 )
 
 var (

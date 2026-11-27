@@ -133,6 +133,14 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 	return nil, nil
 }
 
+// The URL is stored and shown in plain text, so it must not carry a secret.
+func validateURLHasNoPassword(rawURL string) error {
+	if git.URLHasPassword(rawURL) {
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "url", Err: errors.New("repository URL must not contain a password or token; use the token field instead")})
+	}
+	return nil
+}
+
 func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.GitRepository, submitted map[string]bool, actor types.Actor) (*GitRepository, error) {
 	if err := normalization.Normalize(&req); err != nil {
 		return nil, err
@@ -144,6 +152,9 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req types.G
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "url", Err: errors.New("repository URL is required")})
 	case req.AuthType == "":
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "authType", Err: errors.New("authentication type is required")})
+	}
+	if err := validateURLHasNoPassword(req.URL); err != nil {
+		return nil, err
 	}
 	var encryptedToken, encryptedSSHKey, encryptedSigningKey, encryptedPassphrase string
 	if req.Token != "" {
@@ -202,6 +213,12 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	repository, err := s.GetRepositoryByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+
+	if change.Submitted["url"] {
+		if validateURLErr := validateURLHasNoPassword(change.Request.URL); validateURLErr != nil {
+			return nil, validateURLErr
+		}
 	}
 
 	if validateCredentialTargetChangeErr := validation.ValidateCredentialTargetChange(

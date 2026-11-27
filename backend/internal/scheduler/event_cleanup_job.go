@@ -111,8 +111,3 @@ func (j *EventCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, erro
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
-
-func (j *EventCleanupJob) Reschedule(ctx context.Context) error {
-	slog.InfoContext(ctx, "rescheduling event cleanup job in new scheduler; currently requires restart")
-	return nil
-}

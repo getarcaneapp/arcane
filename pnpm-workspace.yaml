@@ -25,7 +25,6 @@ overrides:
   ajv: '>=8.18.0'
   eslint>ajv: ^6.14.0
   minimatch: '>=10.2.1'
-  socket.io-parser: '>=4.2.6'
   kysely: '>=0.28.14'
   effect: ^3.22.2
   picomatch: '>=4.0.4'
@@ -35,8 +34,8 @@ overrides:
   uuid: '>=11.1.1'
   fast-uri: '>=3.1.5'
   ws: '>=8.20.1'
-  '@sveltejs/kit': ^3.2.0
-  '@sveltejs/adapter-static': ^4.0.0
+  '@sveltejs/kit': ^3.4.1
+  '@sveltejs/adapter-static': ^4.0.1
   dompurify: '>=3.4.11'
   ts-deepmerge: '>=8.0.0'
   joi: '>=17.13.4'
@@ -54,15 +53,3 @@ catalog:
 peerDependencyRules:
   allowedVersions:
     'formsnap@2.0.1>sveltekit-superforms': ^3.0.0
-
-minimumReleaseAgeExclude:
-  - '@voidzero-dev/vite-plus-core@8.3.8001'
-  - '@voidzero-dev/vite-plus-darwin-arm64@1.8.0'
-  - '@voidzero-dev/vite-plus-darwin-x64@1.8.0'
-  - '@voidzero-dev/vite-plus-linux-arm64-gnu@1.8.0'
-  - '@voidzero-dev/vite-plus-linux-arm64-musl@1.8.0'
-  - '@voidzero-dev/vite-plus-linux-x64-gnu@1.8.0'
-  - '@voidzero-dev/vite-plus-linux-x64-musl@1.8.0'
-  - '@voidzero-dev/vite-plus-win32-arm64-msvc@1.8.0'
-  - '@voidzero-dev/vite-plus-win32-x64-msvc@1.8.0'
-  - vite-plus@1.8.0

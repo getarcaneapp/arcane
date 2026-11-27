@@ -30,7 +30,6 @@ import (
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/mapping"
 	"kit.getarcane.app/normalization"
-	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -43,7 +42,6 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment/children/snippets"
 	"getarcane.dev/arcane/v3/internal/environment/children/swarm"
 	"getarcane.dev/arcane/v3/internal/event"
-	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -300,11 +298,15 @@ func (s *EnvironmentService) ResolveAgentEnvironmentByToken(ctx context.Context,
 		if err != nil {
 			return "", fmt.Errorf("failed to resolve cached agent environment: %w", err)
 		}
-		if cached.Enabled {
-			return envID, nil
+		if subtle.ConstantTimeCompare([]byte(kit.FromPtr(cached.AccessToken)), []byte(token)) == 1 {
+			if cached.Enabled {
+				return envID, nil
+			}
+			s.agentTokens.sync(envID, "")
+			return "", errors.New("invalid agent token")
 		}
-		s.agentTokens.sync(envID, "")
-		return "", errors.New("invalid agent token")
+		// A resolve racing a rotation can re-cache the old token; drop it and ask the database.
+		s.agentTokens.byToken.Delete(token)
 	}
 	if wasCached {
 		s.agentTokens.mu.Lock()
@@ -797,35 +799,6 @@ func (s *EnvironmentService) IsKnownAccessToken(token string) bool {
 	defer s.accessTokenIndex.mu.RUnlock()
 	_, ok := s.accessTokenIndex.byHashed[hashed]
 	return ok
-}
-
-func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]types.ContainerRegistryCredential, error) {
-	var registries []registryInternal.ContainerRegistry
-	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
-		return nil, fmt.Errorf("failed to get enabled container registries: %w", err)
-	}
-
-	var creds []types.ContainerRegistryCredential
-	for _, reg := range registries {
-		if !reg.Enabled || reg.Username == "" || reg.Token == "" {
-			continue
-		}
-
-		decryptedToken, err := crypto.Decrypt(reg.Token)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token", "registryUrl", reg.URL, "error", err.Error())
-			continue
-		}
-
-		creds = append(creds, types.ContainerRegistryCredential{
-			URL:      reg.URL,
-			Username: reg.Username,
-			Token:    decryptedToken,
-			Enabled:  reg.Enabled,
-		})
-	}
-
-	return creds, nil
 }
 
 func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, environmentID string, user *types.Actor, activityService activity.Service) (string, error) {

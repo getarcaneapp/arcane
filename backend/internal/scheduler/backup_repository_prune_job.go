@@ -66,7 +66,3 @@ func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (types.SchedulerOutc
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
-
-func (j *BackupRepositoryPruneJob) Reschedule(_ context.Context) error {
-	return nil
-}
