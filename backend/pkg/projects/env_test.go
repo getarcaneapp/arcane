@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -104,6 +105,26 @@ func TestLoadEnvironment_DoesNotCreateMissingGlobalEnvFile(t *testing.T) {
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, GlobalEnvFileName))
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestWithTransientValidationEnvFile_RestoresAfterContextCancel(t *testing.T) {
+	projectDir := t.TempDir()
+	envPath := filepath.Join(projectDir, EffectiveEnvFileName)
+	originalContent := "VALUE=original\n"
+	require.NoError(t, os.WriteFile(envPath, []byte(originalContent), fs.FilePerm))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	validationErr := errors.New("validation failed")
+	updatedContent := "VALUE=validation\n"
+	err := WithTransientValidationEnvFile(ctx, projectDir, &updatedContent, func() error {
+		cancel()
+		return validationErr
+	})
+	require.ErrorIs(t, err, validationErr)
+
+	restoredContent, err := os.ReadFile(envPath)
+	require.NoError(t, err)
+	assert.Equal(t, originalContent, string(restoredContent))
 }
 
 func TestWithTransientValidationEnvFile_PreservesExternalSymlink(t *testing.T) {

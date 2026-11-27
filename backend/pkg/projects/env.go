@@ -373,18 +373,18 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 		}
 
 		defer func() {
+			// The restore must survive a cancelled request, or the unsaved .env stays on disk.
+			restoreCtx := context.WithoutCancel(ctx)
 			var restoreErr error
 			switch {
 			case originalExists:
-				restoreErr = WriteProjectFile(ctx, projectPath, projectPath, ".env", string(originalContent))
+				restoreErr = WriteProjectFile(restoreCtx, projectPath, projectPath, ".env", string(originalContent))
 			default:
-				restoreErr = acfs.Root{Path: projectPath}.Remove(ctx, "/.env")
+				restoreErr = acfs.Root{Path: projectPath}.Remove(restoreCtx, "/.env")
 			}
 
 			if restoreErr != nil && !errors.Is(restoreErr, os.ErrNotExist) {
-				if err == nil {
-					err = fmt.Errorf("restore env file after compose validation: %w", restoreErr)
-				}
+				err = errors.Join(err, fmt.Errorf("restore env file after compose validation: %w", restoreErr))
 			}
 		}()
 	}
