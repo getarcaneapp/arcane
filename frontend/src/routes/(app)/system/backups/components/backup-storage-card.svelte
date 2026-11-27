@@ -23,17 +23,18 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { BackupStorageStats, SystemVolumeBackupHistoryEntry } from '#lib/types/backup.js';
+	import type { SystemVolumeBackupHistoryEntry } from '#lib/types/backup.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import {
 		backupDestinationDisplay,
 		backupManagementLabel,
+		backupStorageRatios,
 		backupStorageSegments,
 		backupStorageTotals
 	} from '#lib/utils/backups.js';
-	import { readEachEnvironment } from '#lib/utils/environments.js';
-	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';
+	import { actAcrossEnvironments } from '#lib/utils/environments.js';
+	import { bytes, formatRelativeTime, instantEpochMilliseconds } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import BackupStorageBar from './backup-storage-bar.svelte';
@@ -63,24 +64,24 @@
 		const compression = Math.round((segments.compressionBytes / segments.totalBytes) * 100);
 		return { stored, compression, deduplication: Math.max(100 - stored - compression, 0) };
 	});
-	const compressionRatio = $derived(
-		segments.storedBytes > 0 ? (segments.storedBytes + segments.compressionBytes) / segments.storedBytes : 1
-	);
-	const deduplicationRatio = $derived(
-		segments.totalBytes > segments.deduplicationBytes
-			? segments.totalBytes / (segments.totalBytes - segments.deduplicationBytes)
-			: 1
-	);
+	const ratios = $derived(backupStorageRatios(segments));
 	const updatedAt = $derived(
-		repositories.reduce<string | undefined>(
-			(latest, repository) => (!latest || repository.updatedAt > latest ? repository.updatedAt : latest),
-			undefined
-		)
+		repositories.reduce<string | undefined>((latest, repository) => {
+			if (latest && (instantEpochMilliseconds(repository.updatedAt) ?? 0) <= (instantEpochMilliseconds(latest) ?? 0))
+				return latest;
+			return repository.updatedAt;
+		}, undefined)
 	);
 	const lastBackup = $derived(
 		(report?.byEnvironment ?? []).reduce<SystemVolumeBackupHistoryEntry | undefined>((latest, { data }) => {
 			if (!data.lastBackup) return latest;
-			return !latest || data.lastBackup.createdAt > latest.createdAt ? data.lastBackup : latest;
+			if (
+				latest &&
+				(instantEpochMilliseconds(data.lastBackup.createdAt) ?? 0) <= (instantEpochMilliseconds(latest.createdAt) ?? 0)
+			) {
+				return latest;
+			}
+			return data.lastBackup;
 		}, undefined)
 	);
 	const legend = $derived([
@@ -105,18 +106,12 @@
 	async function refresh() {
 		refreshing = true;
 		const result = await tryCatch(
-			readEachEnvironment(environments, (id, config) => systemBackupService.refreshStorageStats(id, config), {
-				repositories: []
-			} satisfies BackupStorageStats)
+			actAcrossEnvironments(environments, (scope, config) => systemBackupService.refreshStorageStats(scope, config))
 		);
 		refreshing = false;
-		const failed = result.error === null ? result.data.failedEnvironments : [];
-		if (result.error !== null || failed.length > 0) {
+		if (result.error !== null) {
 			toast.error(m.common_refresh_failed({ resource: m.backup_storage() }), {
-				description:
-					result.error === null
-						? failed.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n')
-						: extractApiErrorMessage(result.error)
+				description: extractApiErrorMessage(result.error)
 			});
 		}
 		await queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.storageStats(scope) });
@@ -237,14 +232,14 @@
 					ArrowDownIcon,
 					'bg-success/10 text-success',
 					m.compression(),
-					m.ratio_times({ ratio: compressionRatio.toFixed(2) }),
+					m.ratio_times({ ratio: ratios.compression.toFixed(2) }),
 					m.size_saved({ size: bytes.format(segments.compressionBytes, { unitSeparator: ' ' }) ?? '-' })
 				)}
 				{@render tile(
 					CopyIcon,
 					'bg-info/10 text-info',
 					m.deduplication(),
-					m.ratio_times({ ratio: deduplicationRatio.toFixed(2) }),
+					m.ratio_times({ ratio: ratios.deduplication.toFixed(2) }),
 					m.size_saved({ size: bytes.format(segments.deduplicationBytes, { unitSeparator: ' ' }) ?? '-' })
 				)}
 				{@render tile(

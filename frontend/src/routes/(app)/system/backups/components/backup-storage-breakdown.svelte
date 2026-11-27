@@ -5,11 +5,12 @@
 	import { CloudStorageIcon, EnvironmentsIcon, LocalFolderComputerIcon, RefreshIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
-	import type { BackupRepositoryStats, BackupStorageStats } from '#lib/types/backup.js';
+	import type { BackupStorageStats } from '#lib/types/backup.js';
 	import { cn } from '#lib/utils.js';
 	import {
 		backupDestinationName,
 		backupRepositoryKindLabel,
+		backupStorageRatios,
 		backupStorageSegments,
 		backupStorageTotals
 	} from '#lib/utils/backups.js';
@@ -35,15 +36,6 @@
 			...environments.flatMap(({ data }) => data.repositories.map((repository) => backupStorageSegments(repository).totalBytes))
 		)
 	);
-
-	function ratios(repository: BackupRepositoryStats): { compression: string; deduplication: string } {
-		const { totalBytes, storedBytes, compressionBytes } = backupStorageSegments(repository);
-		const rawBytes = storedBytes + compressionBytes;
-		return {
-			compression: (storedBytes > 0 ? rawBytes / storedBytes : 1).toFixed(1),
-			deduplication: (rawBytes > 0 ? totalBytes / rawBytes : 1).toFixed(1)
-		};
-	}
 
 	function snapshotCount(count: number): string {
 		return count === 1 ? m.snapshot_count_one() : m.snapshot_count({ count: count.toLocaleString() });
@@ -89,6 +81,8 @@
 					{#each data.repositories as repository (repository.id)}
 						{@const local = repository.destination === 'local'}
 						{@const Icon = local ? LocalFolderComputerIcon : CloudStorageIcon}
+						{@const segments = backupStorageSegments(repository)}
+						{@const ratios = backupStorageRatios(segments)}
 						<div class="flex gap-2.5 p-3">
 							<span
 								class={cn(
@@ -104,24 +98,21 @@
 									>
 									<Badge variant="outline" size="xs" class="shrink-0">{backupRepositoryKindLabel(repository.kind)}</Badge>
 								</div>
-								<div
-									class="w-(--total-share)"
-									style:--total-share="{Math.max((backupStorageSegments(repository).totalBytes / largestTotal) * 100, 8)}%"
-								>
+								<div class="w-(--total-share)" style:--total-share="{Math.max((segments.totalBytes / largestTotal) * 100, 8)}%">
 									<BackupStorageBar stats={repository} size="slim" />
 								</div>
 								<p class="text-xs-plus tabular-nums">
 									<span class="font-semibold">{bytes.format(repository.storedBytes, { unitSeparator: ' ' })}</span>
 									<span class="text-muted-foreground">
 										{m.of_size({
-											size: bytes.format(backupStorageSegments(repository).totalBytes, { unitSeparator: ' ' }) ?? '-'
+											size: bytes.format(segments.totalBytes, { unitSeparator: ' ' }) ?? '-'
 										})}
 									</span>
 								</p>
 								<div class="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-muted-foreground tabular-nums">
 									<span>{snapshotCount(repository.snapshotCount)}</span>
-									<span>{m.compression_ratio_detail({ ratio: ratios(repository).compression })}</span>
-									<span>{m.deduplication_ratio_detail({ ratio: ratios(repository).deduplication })}</span>
+									<span>{m.compression_ratio_detail({ ratio: ratios.compression.toFixed(1) })}</span>
+									<span>{m.deduplication_ratio_detail({ ratio: ratios.deduplication.toFixed(1) })}</span>
 									<span>{m.updated_time({ time: formatRelativeTime(repository.updatedAt) })}</span>
 								</div>
 							</div>

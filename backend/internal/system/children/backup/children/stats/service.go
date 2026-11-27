@@ -16,6 +16,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/backup"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -23,14 +24,14 @@ import (
 
 type (
 	Dependencies struct {
-		Engine           *backup.Engine
-		Docker           *dockerInternal.DockerClientService
-		Repository       *backup.VolumeRepository
-		S3Destinations   *s3.S3DestinationService
-		RecoveryKeys     *backup.RecoveryKeyStore
-		LocalRepository  func(ctx context.Context, dockerClient *mobyClient.Client, readOnly bool) (backup.Repository, error)
-		RemoteRepository func(ctx context.Context, destinationID string) (backup.Repository, error)
-		History          func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
+		Engine             *backup.Engine
+		Docker             *dockerInternal.DockerClientService
+		Repository         *backup.VolumeRepository
+		S3Destinations     *s3.S3DestinationService
+		Settings           *settings.SettingsService
+		RecoveryKeys       *backup.RecoveryKeyStore
+		SystemRepositories func(ctx context.Context, dockerClient *mobyClient.Client) ([]backup.Repository, error)
+		History            func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
 	}
 
 	Service struct {
@@ -55,12 +56,13 @@ func (s *Service) Get(ctx context.Context) (types.BackupStorageStats, error) {
 		return types.BackupStorageStats{}, err
 	}
 	destinations := s.deps.S3Destinations.DestinationsByID(ctx)
+	instanceID := strings.TrimSpace(s.deps.Settings.GetSettingsConfig().InstanceID.Value)
 	repositories := make([]types.BackupRepositoryStats, 0, len(stored))
 	for _, entry := range stored {
 		kind, rest, _ := strings.Cut(entry.ID, ":")
 		destination, rest, _ := strings.Cut(rest, ":")
-		destinationID, _, _ := strings.Cut(rest, ":")
-		if destinationID != "" && destinations[destinationID].ID == "" {
+		destinationID, repositoryInstanceID, _ := strings.Cut(rest, ":")
+		if (destinationID != "" && destinations[destinationID].ID == "") || (repositoryInstanceID != "" && repositoryInstanceID != instanceID) {
 			continue
 		}
 		repositories = append(repositories, types.BackupRepositoryStats{ //exhaustruct:enforce
@@ -135,44 +137,30 @@ func (s *Service) Refresh(ctx context.Context) (types.BackupStorageStats, error)
 }
 
 func (s *Service) targets(ctx context.Context, dockerClient *mobyClient.Client) ([]target, error) {
-	destinations, err := s.deps.S3Destinations.ListAllS3Destinations(ctx)
-	if err != nil {
-		return nil, err
-	}
 	var targets []target
 	systemKey, keyErr := s.deps.RecoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
 	if keyErr != nil && !errors.Is(keyErr, backup.ErrRecoveryKeyNotConfigured) {
 		return nil, keyErr
 	}
 	if keyErr == nil {
-		local, localErr := s.deps.LocalRepository(ctx, dockerClient, true)
-		if localErr != nil {
-			return nil, localErr
+		systemRepositories, err := s.deps.SystemRepositories(ctx, dockerClient)
+		if err != nil {
+			return nil, err
 		}
-		targets = append(targets, target{repository: local, password: systemKey})
-		for _, destination := range destinations {
-			remote, remoteErr := s.deps.RemoteRepository(ctx, destination.ID)
-			if remoteErr != nil {
-				return nil, remoteErr
-			}
-			targets = append(targets, target{repository: remote, password: systemKey})
+		for _, repository := range systemRepositories {
+			targets = append(targets, target{repository: repository, password: systemKey})
 		}
 	}
 	volumePassword, err := s.deps.Repository.Password(ctx, dockerClient)
 	if err != nil {
 		return nil, err
 	}
-	volumes, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
+	volumeRepositories, err := s.deps.Repository.Repositories(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
-	targets = append(targets, target{repository: volumes, password: volumePassword})
-	for _, destination := range destinations {
-		remote, remoteErr := s.deps.Repository.Remote(ctx, destination.ID, "")
-		if remoteErr != nil {
-			return nil, remoteErr
-		}
-		targets = append(targets, target{repository: remote, password: volumePassword})
+	for _, repository := range volumeRepositories {
+		targets = append(targets, target{repository: repository, password: volumePassword})
 	}
 	return targets, nil
 }

@@ -267,6 +267,14 @@ export function backupStorageSegments(
 	};
 }
 
+export function backupStorageRatios(segments: BackupStorageSegments): { compression: number; deduplication: number } {
+	const rawBytes = segments.storedBytes + segments.compressionBytes;
+	return {
+		compression: segments.storedBytes > 0 ? rawBytes / segments.storedBytes : 1,
+		deduplication: rawBytes > 0 ? segments.totalBytes / rawBytes : 1
+	};
+}
+
 export function backupRepositoryKindLabel(kind: BackupRepositoryStats['kind']): string {
 	return kind === 'system' ? m.system() : m.volumes_and_projects();
 }

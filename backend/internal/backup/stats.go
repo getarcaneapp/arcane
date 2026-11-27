@@ -139,14 +139,12 @@ func (e *Engine) refreshQueuedStats(id string) {
 	if queued == nil {
 		return
 	}
-	unlock, err := e.lockRepository(queued.ctx, id)
-	if err != nil {
+	err := e.RefreshStats(queued.ctx, queued.client, queued.repository, queued.password)
+	switch {
+	case errors.Is(err, ErrRepositoryBusy):
+		e.queueStats(queued.ctx, queued.client, queued.repository, queued.password)
+	case err != nil && !errors.Is(err, ErrRepositoryMissing):
 		slog.WarnContext(queued.ctx, "Failed to refresh backup repository stats", "repositoryId", id, "error", err)
-		return
-	}
-	defer unlock()
-	if saveErr := e.saveStats(queued.ctx, queued.client, queued.repository, queued.password); saveErr != nil && !errors.Is(saveErr, ErrRepositoryMissing) {
-		slog.WarnContext(queued.ctx, "Failed to refresh backup repository stats", "repositoryId", id, "error", saveErr)
 	}
 }
 

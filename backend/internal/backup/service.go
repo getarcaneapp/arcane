@@ -1637,6 +1637,26 @@ func (r *VolumeRepository) Remote(ctx context.Context, destinationID, instanceID
 	}, nil
 }
 
+func (r *VolumeRepository) Repositories(ctx context.Context, dockerClient *mobyClient.Client, opts LocalRepositoryOptions) ([]Repository, error) {
+	local, err := r.Local(ctx, dockerClient, opts)
+	if err != nil {
+		return nil, err
+	}
+	destinations, err := r.deps.S3Destinations.ListAllS3Destinations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list S3 destinations: %w", err)
+	}
+	repositories := []Repository{local}
+	for _, destination := range destinations {
+		remote, remoteErr := r.Remote(ctx, destination.ID, "")
+		if remoteErr != nil {
+			return nil, remoteErr
+		}
+		repositories = append(repositories, remote)
+	}
+	return repositories, nil
+}
+
 func (r *VolumeRepository) Password(ctx context.Context, dockerClient *mobyClient.Client, repositories ...Repository) (string, error) {
 	key, err := r.deps.RecoveryKeys.Get(ctx, RecoveryKeyConfigID)
 	if errors.Is(err, ErrRecoveryKeyNotConfigured) {
@@ -1693,21 +1713,9 @@ func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string
 	if err != nil {
 		return err
 	}
-	local, err := r.Local(ctx, dockerClient, LocalRepositoryOptions{})
+	repositories, err := r.Repositories(ctx, dockerClient, LocalRepositoryOptions{})
 	if err != nil {
 		return err
-	}
-	repositories := []Repository{local}
-	destinations, listErr := r.deps.S3Destinations.ListAllS3Destinations(ctx)
-	if listErr != nil {
-		return fmt.Errorf("failed to list S3 destinations for re-key: %w", listErr)
-	}
-	for _, destination := range destinations {
-		remote, remoteErr := r.Remote(ctx, destination.ID, "")
-		if remoteErr != nil {
-			return remoteErr
-		}
-		repositories = append(repositories, remote)
 	}
 	if rekeyErr := r.deps.Engine.RekeyRepositories(ctx, dockerClient, repositories, newKey, previousKey, r.legacyPassword); rekeyErr != nil {
 		return rekeyErr
