@@ -9,6 +9,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -23,6 +24,7 @@ import (
 
 	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
+	dockertypes "kit.getarcane.app/docker/types"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
 
@@ -34,6 +36,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/gitops"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/updater"
+	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -53,6 +56,16 @@ type (
 		WantCheck  bool
 	}
 
+	webhookActivityConfig struct {
+		ActivityType    types.ActivityType
+		Step            string
+		StartMessage    string
+		WriterStep      string
+		CompleteMessage string
+		Queue           bool
+		ProgressWriter  bool
+	}
+
 	WebhookService struct {
 		tokenHashes map[string]struct{}
 
@@ -62,6 +75,7 @@ type (
 		projectService     *project.ProjectService
 		gitOpsSyncService  *gitops.GitOpsSyncService
 		eventService       *event.EventService
+		activityService    activitylib.Service
 		environmentService *environment.EnvironmentService
 
 		actions      sync.WaitGroup
@@ -78,6 +92,7 @@ type (
 		ProjectService     *project.ProjectService
 		GitOpsSyncService  *gitops.GitOpsSyncService
 		EventService       *event.EventService
+		ActivityService    activitylib.Service
 		EnvironmentService *environment.EnvironmentService
 	}
 )
@@ -177,26 +192,93 @@ var (
 		WebhookTargetTypeGitOps:  "/api/agents/" + types.LocalDockerEnvironmentID + "/gitops/syncs?limit=-1",
 	}
 
-	webhookActionPermissions = map[string]map[string]string{
+	webhookActionPermissions = map[string]map[string][]string{
 		WebhookTargetTypeContainer: {
-			WebhookActionTypeUpdate:   authz.PermImageUpdatesApply,
-			WebhookActionTypeStart:    authz.PermContainersStart,
-			WebhookActionTypeStop:     authz.PermContainersStop,
-			WebhookActionTypeRestart:  authz.PermContainersRestart,
-			WebhookActionTypeRedeploy: authz.PermContainersRedeploy,
+			WebhookActionTypeUpdate:   {authz.PermImageUpdatesApply},
+			WebhookActionTypeStart:    {authz.PermContainersStart},
+			WebhookActionTypeStop:     {authz.PermContainersStop},
+			WebhookActionTypeRestart:  {authz.PermContainersRestart},
+			WebhookActionTypeRedeploy: {authz.PermContainersRedeploy},
 		},
 		WebhookTargetTypeProject: {
-			WebhookActionTypeUpdate:   authz.PermProjectsUpdate,
-			WebhookActionTypeUp:       authz.PermProjectsDeploy,
-			WebhookActionTypeDown:     authz.PermProjectsDown,
-			WebhookActionTypeRestart:  authz.PermProjectsRestart,
-			WebhookActionTypeRedeploy: authz.PermProjectsDeploy,
+			WebhookActionTypeUpdate:   {authz.PermImageUpdatesCheck, authz.PermImageUpdatesApply},
+			WebhookActionTypeUp:       {authz.PermProjectsDeploy},
+			WebhookActionTypeDown:     {authz.PermProjectsDown},
+			WebhookActionTypeRestart:  {authz.PermProjectsRestart},
+			WebhookActionTypeRedeploy: {authz.PermProjectsDeploy},
 		},
 		WebhookTargetTypeUpdater: {
-			WebhookActionTypeRun: authz.PermImageUpdatesApply,
+			WebhookActionTypeRun: {authz.PermImageUpdatesApply},
 		},
 		WebhookTargetTypeGitOps: {
-			WebhookActionTypeSync: authz.PermGitOpsSync,
+			WebhookActionTypeSync: {authz.PermGitOpsSync},
+		},
+	}
+
+	containerWebhookActivities = map[string]webhookActivityConfig{
+		WebhookActionTypeStart: {
+			ActivityType:    types.ActivityTypeContainerStart,
+			Step:            "Starting container",
+			StartMessage:    "Container start requested",
+			CompleteMessage: "Container started",
+		},
+		WebhookActionTypeStop: {
+			ActivityType:    types.ActivityTypeContainerStop,
+			Step:            "Stopping container",
+			StartMessage:    "Container stop requested",
+			CompleteMessage: "Container stopped",
+		},
+		WebhookActionTypeRestart: {
+			ActivityType:    types.ActivityTypeContainerRestart,
+			Step:            "Restarting container",
+			StartMessage:    "Container restart requested",
+			CompleteMessage: "Container restarted",
+		},
+		WebhookActionTypeRedeploy: {
+			ActivityType:    types.ActivityTypeContainerRedeploy,
+			Step:            "Starting redeploy",
+			StartMessage:    "Container redeploy requested",
+			WriterStep:      "Redeploying container",
+			CompleteMessage: "Container redeployed",
+			Queue:           true,
+			ProgressWriter:  true,
+		},
+	}
+
+	projectWebhookActivities = map[string]webhookActivityConfig{
+		WebhookActionTypeUp: {
+			ActivityType:    types.ActivityTypeProjectDeploy,
+			Step:            "Starting deployment",
+			StartMessage:    "Project deployment started",
+			WriterStep:      "Deploying project",
+			CompleteMessage: "Project deployment completed",
+			Queue:           true,
+			ProgressWriter:  true,
+		},
+		WebhookActionTypeDown: {
+			ActivityType:    types.ActivityTypeProjectDown,
+			Step:            "Stopping project",
+			StartMessage:    "Project stop requested",
+			WriterStep:      "Stopping project",
+			CompleteMessage: "Project stopped",
+			ProgressWriter:  true,
+		},
+		WebhookActionTypeRestart: {
+			ActivityType:    types.ActivityTypeProjectRestart,
+			Step:            "Restarting project",
+			StartMessage:    "Project restart requested",
+			WriterStep:      "Restarting project",
+			CompleteMessage: "Project restarted",
+			ProgressWriter:  true,
+		},
+		WebhookActionTypeRedeploy: {
+			ActivityType:    types.ActivityTypeProjectRedeploy,
+			Step:            "Starting redeploy",
+			StartMessage:    "Project redeploy started",
+			WriterStep:      "Redeploying project",
+			CompleteMessage: "Project redeploy completed",
+			Queue:           true,
+			ProgressWriter:  true,
 		},
 	}
 )
@@ -209,6 +291,7 @@ func NewWebhookService(p WebhookServiceParams) *WebhookService {
 		projectService:     p.ProjectService,
 		gitOpsSyncService:  p.GitOpsSyncService,
 		eventService:       p.EventService,
+		activityService:    p.ActivityService,
 		environmentService: p.EnvironmentService,
 		tokenHashes:        make(map[string]struct{}),
 	}
@@ -326,9 +409,14 @@ func resolveWebhookActionType(targetType, actionType string) (string, error) {
 }
 
 func authorizeWebhookAction(callerPerms *authz.PermissionSet, targetType, actionType, environmentID string) error {
-	permission, ok := webhookActionPermissions[targetType][actionType]
-	if !ok || !callerPerms.Allows(permission, environmentID) {
+	permissions, ok := webhookActionPermissions[targetType][actionType]
+	if !ok {
 		return ErrWebhookForbidden
+	}
+	for _, permission := range permissions {
+		if !callerPerms.Allows(permission, environmentID) {
+			return ErrWebhookForbidden
+		}
 	}
 	return nil
 }
@@ -877,42 +965,124 @@ func (s *WebhookService) executeRemoteWebhookAction(ctx context.Context, wh *Web
 	return result, nil
 }
 
+func webhookHandlerOptions(
+	wh *Webhook,
+	resourceType, resourceID, resourceName string,
+	metadata database.JSON,
+	cfg webhookActivityConfig,
+) activitylib.HandlerOptions {
+	return activitylib.HandlerOptions{
+		User:          &types.SystemUser,
+		Metadata:      metadata,
+		EnvironmentID: cmp.Or(wh.EnvironmentID, types.LocalDockerEnvironmentID),
+		Type:          cfg.ActivityType,
+		ResourceType:  resourceType,
+		ResourceID:    resourceID,
+		ResourceName:  resourceName,
+		Step:          cfg.Step,
+		Message:       cfg.StartMessage,
+		Queue:         cfg.Queue,
+	}
+}
+
+func (s *WebhookService) runWebhookActivity(
+	ctx context.Context,
+	opts activitylib.HandlerOptions,
+	cfg webhookActivityConfig,
+	fn func(context.Context) error,
+) error {
+	activityID, runtimeCtx := activitylib.StartHandlerActivity(ctx, s.activityService, opts)
+	if cfg.Queue {
+		activitylib.AwaitHandlerActivitySlot(runtimeCtx, s.activityService, activityID, opts.EnvironmentID)
+	}
+
+	actionCtx := runtimeCtx
+	var writer io.Writer
+	if cfg.ProgressWriter {
+		if appender, ok := s.activityService.(activitylib.MessageAppender); ok {
+			writer = activitylib.NewWriter(runtimeCtx, activitylib.WriterOptions{
+				Service:     appender,
+				ActivityID:  activityID,
+				Output:      io.Discard,
+				DefaultStep: cfg.WriterStep,
+			})
+			actionCtx = context.WithValue(runtimeCtx, dockertypes.ProgressWriterKey{}, writer)
+		}
+	}
+
+	completed := false
+	defer func() {
+		if completed {
+			return
+		}
+		if recovered := recover(); recovered != nil {
+			if writer != nil {
+				activitylib.FlushWriter(writer)
+			}
+			activitylib.CompleteHandlerActivity(runtimeCtx, s.activityService, activityID, cfg.CompleteMessage, concurrency.PanicToError(recovered))
+			panic(recovered)
+		}
+	}()
+
+	actionErr := fn(actionCtx)
+	if writer != nil {
+		activitylib.FlushWriter(writer)
+	}
+	completed = true
+	activitylib.CompleteHandlerActivity(runtimeCtx, s.activityService, activityID, cfg.CompleteMessage, actionErr)
+	return actionErr
+}
+
 func (s *WebhookService) executeContainerWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
 	containerID, err := s.resolveContainerWebhookTargetID(ctx, wh)
 	if err != nil {
 		return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, err)
 	}
 
-	switch actionType {
-	case WebhookActionTypeUpdate:
+	if actionType == WebhookActionTypeUpdate {
 		result, updateSingleContainerErr := s.updaterService.UpdateSingleContainer(ctx, containerID)
 		if updateSingleContainerErr != nil {
 			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, updateSingleContainerErr)
 		}
 		return result, nil
-	case WebhookActionTypeStart:
-		if startContainerErr := s.containerService.StartContainer(ctx, containerID, types.SystemUser); startContainerErr != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, startContainerErr)
-		}
-		return nil, nil
-	case WebhookActionTypeStop:
-		if stopContainerErr := s.containerService.StopContainer(ctx, containerID, types.SystemUser); stopContainerErr != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, stopContainerErr)
-		}
-		return nil, nil
-	case WebhookActionTypeRestart:
-		if restartContainerErr := s.containerService.RestartContainer(ctx, containerID, types.SystemUser); restartContainerErr != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, restartContainerErr)
-		}
-		return nil, nil
-	case WebhookActionTypeRedeploy:
-		if _, redeployContainerErr := s.containerService.RedeployContainer(ctx, containerID, types.SystemUser); redeployContainerErr != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, redeployContainerErr)
-		}
-		return nil, nil
-	default:
+	}
+
+	cfg, ok := containerWebhookActivities[actionType]
+	if !ok {
 		return nil, ErrWebhookInvalidAction
 	}
+
+	var actionFn func(context.Context) error
+	switch actionType {
+	case WebhookActionTypeStart:
+		actionFn = func(opCtx context.Context) error {
+			return s.containerService.StartContainer(opCtx, containerID, types.SystemUser)
+		}
+	case WebhookActionTypeStop:
+		actionFn = func(opCtx context.Context) error {
+			return s.containerService.StopContainer(opCtx, containerID, types.SystemUser)
+		}
+	case WebhookActionTypeRestart:
+		actionFn = func(opCtx context.Context) error {
+			return s.containerService.RestartContainer(opCtx, containerID, types.SystemUser)
+		}
+	case WebhookActionTypeRedeploy:
+		actionFn = func(opCtx context.Context) error {
+			// Re-resolve after waiting on the queue slot so a prior recreate does not leave a removed ID.
+			currentID, resolveErr := s.resolveContainerWebhookTargetID(opCtx, wh)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			_, redeployErr := s.containerService.RedeployContainer(opCtx, currentID, types.SystemUser)
+			return redeployErr
+		}
+	}
+
+	opts := webhookHandlerOptions(wh, "container", containerID, cmp.Or(wh.TargetRef, containerID), database.JSON{"containerID": containerID}, cfg)
+	if actionErr := s.runWebhookActivity(ctx, opts, cfg, actionFn); actionErr != nil {
+		return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, actionErr)
+	}
+	return nil, nil
 }
 
 func (s *WebhookService) resolveContainerWebhookTargetRef(ctx context.Context, targetID string) (string, error) {
@@ -970,50 +1140,58 @@ func (s *WebhookService) syncWebhookContainerTarget(ctx context.Context, wh *Web
 }
 
 func (s *WebhookService) executeProjectWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
-	switch actionType {
-	case WebhookActionTypeUpdate:
+	if actionType == WebhookActionTypeUpdate {
 		// Same check-then-apply the UI's project update uses; the webhook names the project, so exclusions do not apply.
 		// Failed image checks still let cleanly checked services update, but the webhook reports them as failed.
-		info, err := s.updaterService.CheckProjectUpdates(ctx, wh.TargetID)
-		if err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
+		info, checkProjectErr := s.updaterService.CheckProjectUpdates(ctx, wh.TargetID)
+		if checkProjectErr != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, checkProjectErr)
 		}
 		checkErr := projectCheckError(info)
-		result, err := s.updaterService.ApplyPending(ctx, types.UpdaterOptions{
+		result, applyErr := s.updaterService.ApplyPending(ctx, types.UpdaterOptions{
 			Type:                     "project",
 			ResourceIds:              []string{wh.TargetID},
 			IgnoreSettingsExclusions: true,
 		})
-		if err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, errors.Join(checkErr, err))
+		if applyErr != nil {
+			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, errors.Join(checkErr, applyErr))
 		}
 		if checkErr != nil {
 			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, errors.Join(checkErr, failedUpdateError(result)))
 		}
 		return result, nil
-	case WebhookActionTypeUp:
-		if err := s.projectService.DeployProject(ctx, wh.TargetID, types.SystemUser, nil); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
-		}
-		return nil, nil
-	case WebhookActionTypeDown:
-		if err := s.projectService.DownProject(ctx, wh.TargetID, types.SystemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
-		}
-		return nil, nil
-	case WebhookActionTypeRestart:
-		if err := s.projectService.RestartProject(ctx, wh.TargetID, nil, types.SystemUser); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
-		}
-		return nil, nil
-	case WebhookActionTypeRedeploy:
-		if err := s.projectService.RedeployProject(ctx, wh.TargetID, types.SystemUser, nil); err != nil {
-			return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, err)
-		}
-		return nil, nil
-	default:
+	}
+
+	cfg, ok := projectWebhookActivities[actionType]
+	if !ok {
 		return nil, ErrWebhookInvalidAction
 	}
+
+	var actionFn func(context.Context) error
+	switch actionType {
+	case WebhookActionTypeUp:
+		actionFn = func(opCtx context.Context) error {
+			return s.projectService.DeployProject(opCtx, wh.TargetID, types.SystemUser, nil)
+		}
+	case WebhookActionTypeDown:
+		actionFn = func(opCtx context.Context) error {
+			return s.projectService.DownProject(opCtx, wh.TargetID, types.SystemUser)
+		}
+	case WebhookActionTypeRestart:
+		actionFn = func(opCtx context.Context) error {
+			return s.projectService.RestartProject(opCtx, wh.TargetID, nil, types.SystemUser)
+		}
+	case WebhookActionTypeRedeploy:
+		actionFn = func(opCtx context.Context) error {
+			return s.projectService.RedeployProject(opCtx, wh.TargetID, types.SystemUser, nil)
+		}
+	}
+
+	opts := webhookHandlerOptions(wh, "project", wh.TargetID, cmp.Or(s.resolveWebhookTargetName(ctx, wh), wh.TargetID), database.JSON{"projectID": wh.TargetID}, cfg)
+	if actionErr := s.runWebhookActivity(ctx, opts, cfg, actionFn); actionErr != nil {
+		return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, actionErr)
+	}
+	return nil, nil
 }
 
 func (s *WebhookService) executeUpdaterWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
