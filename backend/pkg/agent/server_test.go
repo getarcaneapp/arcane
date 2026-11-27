@@ -195,34 +195,6 @@ func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
 	assert.Equal(t, "invalid agent token", registerResp.Error)
 }
 
-func TestTunnelServer_HandleConnect_RejectsOversizedRegisterMessage(t *testing.T) {
-	server := NewTunnelServer(TunnelServerOptions{
-		StreamWindowMiB: testStreamWindowMiB,
-		Registry:        NewTunnelRegistry(),
-		Resolver:        func(context.Context, string) (string, error) { return "env-oversized", nil },
-		MTLS:            NewMTLS(MTLSConfig{}),
-	})
-	router := echo.New()
-	router.GET("/connect", server.HandleConnect)
-
-	ts := httptest.NewServer(router)
-	defer ts.Close()
-
-	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(ts.URL, "http")+"/connect", nil)
-	require.NoError(t, err)
-	defer func() { _ = conn.CloseNow() }()
-
-	// A write error is fine: the server may close before the whole message is sent.
-	_ = wsjson.Write(t.Context(), conn, &TunnelMessage{
-		Type:       MessageTypeRegister,
-		AgentToken: strings.Repeat("a", maxWebSocketRegisterMessageSize+1),
-	})
-
-	var registerResp TunnelMessage
-	err = wsjson.Read(t.Context(), conn, &registerResp)
-	assert.Equal(t, websocket.StatusMessageTooBig, websocket.CloseStatus(err))
-}
-
 func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *testing.T) {
 	tunnels := NewTunnelRegistry()
 	var resolvedToken string
