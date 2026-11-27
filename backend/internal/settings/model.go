@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/robfig/cron/v3"
 	"github.com/samber/mo"
 
 	kit "kit.getarcane.app"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/pkg/validation"
 	"getarcane.dev/types/v3"
 )
@@ -371,7 +371,7 @@ func validateValue(meta settingFieldMeta, value string) error {
 	}
 	number, numberErr := strconv.ParseFloat(value, 64)
 	_, integerErr := strconv.Atoi(value)
-	_, cronErr := cron.ParseStandard(value)
+	_, cronErr := schedule.Normalize(value, meta.key)
 
 	if meta.key == "projectsDirectories" {
 		if _, err := projectsDirectoryContainerPaths(value); err != nil {
