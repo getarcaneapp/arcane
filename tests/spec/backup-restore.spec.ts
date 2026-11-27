@@ -417,7 +417,7 @@ test.describe('Project backup and restore', () => {
 	);
 
 	test(
-		'restores only the selected volume from an S3 backup',
+		'restores only the selected volume from an S3 backup and redeploys',
 		{ timeout: 300_000 },
 		async ({ page }) => {
 			const name = `e2e-project-s3-${Date.now()}`;
@@ -442,8 +442,20 @@ test.describe('Project backup and restore', () => {
 				await restore(page, project.id, snapshot.id, {
 					files: false,
 					volumes: ['data'],
-					redeploy: false
+					redeploy: true
 				});
+				await expect
+					.poll(
+						async () =>
+							(
+								await readApiData<{ status: string }>(
+									await page.request.get(`/api/agents/0/projects/${project?.id}`),
+									'Read restored project'
+								)
+							).status,
+						{ timeout: 60_000 }
+					)
+					.toBe('running');
 				expect(withoutMtime(readManifest(volume), ['.'])).toEqual(
 					withoutMtime(originalVolume, ['.'])
 				);
@@ -568,44 +580,47 @@ test.describe.skipIf(!SYSTEM_BACKUPS_SUPPORTED)('System backup and restore', () 
 		}
 	);
 
-	test(
-		'brings back the database and data directory with a full system restore',
-		{ timeout: 420_000 },
-		async ({ page }) => {
-			const volume = dataVolume();
-			const fixture = { volume, subpath: FIXTURE };
-			let kept: string | undefined;
-			let dropped: string | undefined;
-			try {
-				await ensureRecoveryKey(page);
-				const original = seedReadableFixture(fixture);
-				kept = (await createDestinationViaApi(page, { name: `e2e-kept-${Date.now()}` })).id;
+	for (const destination of ['local', 's3'] as const) {
+		test(
+			`brings back the database and data directory with a full restore from ${destination}`,
+			{ timeout: 420_000 },
+			async ({ page }) => {
+				const volume = dataVolume();
+				const fixture = { volume, subpath: FIXTURE };
+				let kept: string | undefined;
+				let dropped: string | undefined;
+				try {
+					await ensureRecoveryKey(page);
+					const original = seedReadableFixture(fixture);
+					kept = (await createDestinationViaApi(page, { name: `e2e-kept-${Date.now()}` })).id;
 
-				const snapshot = await backup(page, { destination: 'local' });
-				dropped = (await createDestinationViaApi(page, { name: `e2e-dropped-${Date.now()}` })).id;
-				mutate(fixture);
+					const snapshot = await backup(
+						page,
+						destination === 'local' ? { destination } : { destination, s3DestinationId: kept }
+					);
+					dropped = (await createDestinationViaApi(page, { name: `e2e-dropped-${Date.now()}` })).id;
+					mutate(fixture);
 
-				const restore = await page.request.post(
-					`/api/agents/0/backups/${snapshot.id}?action=restore`,
-					{ data: { recoveryKey: '' }, timeout: 180_000 }
-				);
-				expect(restore.status(), await restore.text()).toBe(200);
+					const restore = await page.request.post(
+						`/api/agents/0/backups/${snapshot.id}?action=restore`,
+						{ data: { recoveryKey: '' }, timeout: 180_000 }
+					);
+					expect(restore.status(), await restore.text()).toBe(200);
 
-				await expect
-					.poll(async () => (await destinationIds(page))?.includes(dropped as string), {
-						timeout: 300_000,
-						intervals: [2000]
-					})
-					.toBe(false);
-				expect(await destinationIds(page)).toContain(kept);
-				expect(readManifest({ volume: dataVolume(), subpath: FIXTURE })).toEqual(
-					ownedByArcane(original)
-				);
-			} finally {
-				removeFixture(volume);
-				if (kept) await deleteDestinationViaApi(page, kept);
-				if (dropped) await deleteDestinationViaApi(page, dropped);
+					await expect
+						.poll(async () => (await destinationIds(page))?.includes(dropped as string), {
+							timeout: 300_000,
+							intervals: [2000]
+						})
+						.toBe(false);
+					expect(await destinationIds(page)).toContain(kept);
+					expect(readManifest(fixture)).toEqual(ownedByArcane(original));
+				} finally {
+					removeFixture(volume);
+					if (kept) await deleteDestinationViaApi(page, kept);
+					if (dropped) await deleteDestinationViaApi(page, dropped);
+				}
 			}
-		}
-	);
+		);
+	}
 });
