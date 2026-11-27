@@ -12,6 +12,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/updater"
@@ -23,6 +24,7 @@ type (
 		eventService    *event.EventService
 		activityService *activity.ActivityService
 		buildService    *build.BuildService
+		imageService    *image.ImageService
 		settingsService *settings.SettingsService
 		updaterService  *updater.UpdaterService
 	}
@@ -33,6 +35,7 @@ type (
 		EventService    *event.EventService
 		ActivityService *activity.ActivityService
 		BuildService    *build.BuildService
+		ImageService    *image.ImageService
 		SettingsService *settings.SettingsService
 		UpdaterService  *updater.UpdaterService
 	}
@@ -47,6 +50,7 @@ func NewEventCleanupJob(p EventCleanupJobParams) *EventCleanupJob {
 		eventService:    p.EventService,
 		activityService: p.ActivityService,
 		buildService:    p.BuildService,
+		imageService:    p.ImageService,
 		settingsService: p.SettingsService,
 		updaterService:  p.UpdaterService,
 	}
@@ -103,6 +107,15 @@ func (j *EventCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, erro
 			"jobName", EventCleanupJobName,
 			"retentionDays", updateRetentionDays,
 			"deleted", deletedUpdates)
+	}
+
+	if deletedPatches, err := j.imageService.PrunePatchHistory(ctx, updateRetentionDays); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("prune image patch history: %w", err))
+	} else {
+		slog.InfoContext(ctx, "Image patch history cleanup completed successfully",
+			"jobName", EventCleanupJobName,
+			"retentionDays", updateRetentionDays,
+			"deleted", deletedPatches)
 	}
 
 	if cleanupErr != nil {
