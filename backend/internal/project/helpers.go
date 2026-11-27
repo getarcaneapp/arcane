@@ -15,6 +15,7 @@ import (
 
 	buildtypes "kit.getarcane.app/builds/types"
 
+	"getarcane.dev/arcane/v3/internal/imageupdate"
 	projectsync "getarcane.dev/arcane/v3/internal/project/children/sync"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/projects"
@@ -130,6 +131,9 @@ func deleteProjectWithTags(tx *gorm.DB, projectID string) error {
 	}
 	if err := tx.Where("mode IN ? AND project_id = ?", GitOpsPushModes, projectID).Delete(&GitOpsSync{}).Error; err != nil {
 		return fmt.Errorf("delete project git backups: %w", err)
+	}
+	if err := tx.Where("project_id = ?", projectID).Delete(&imageupdate.ImageUpdateRecord{}).Error; err != nil {
+		return fmt.Errorf("delete project image updates: %w", err)
 	}
 	if err := tx.Delete(&Project{}, "id = ?", projectID).Error; err != nil {
 		return fmt.Errorf("delete project: %w", err)

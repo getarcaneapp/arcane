@@ -471,6 +471,36 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
+func TestProjectService_DestroyProject_DeletesImageUpdates(t *testing.T) {
+	ctx := t.Context()
+	svc, db, projectsDir := setupProjectDestroyTestService(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-image-updates")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	dirName := "demo-image-updates"
+	project := &Project{
+		ID:      "project-destroy-image-updates",
+		Name:    "demo-image-updates",
+		DirName: &dirName,
+		Path:    projectPath,
+		Status:  ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
+		ID:         "sha256:project-destroy-image-updates",
+		ProjectID:  project.ID,
+		Repository: "nginx",
+		Tag:        "latest",
+	}).Error)
+
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, types.ProjectDestroyOptions{RemoveFiles: true}, types.Actor{}))
+
+	var count int64
+	require.NoError(t, db.WithContext(ctx).Model(&imageupdate.ImageUpdateRecord{}).Where("project_id = ?", project.ID).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
 func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T) {
 	ctx := t.Context()
 	svc, db, projectsDir := setupProjectDestroyTestService(t)
