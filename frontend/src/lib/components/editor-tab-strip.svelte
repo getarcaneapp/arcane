@@ -61,7 +61,7 @@
 	style="--code-editor-background: transparent; --code-editor-gutter-background: var(--table-head)"
 >
 	{#if tabs.length > 0 || actions || statusHost.actions || status}
-		<div class="flex h-10 shrink-0 items-center gap-2 px-1.5">
+		<div class="flex h-10 shrink-0 items-center gap-2 px-1.5 pointer-coarse:h-touch-target">
 			<div class="scrollbar-hide flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto">
 				{#each tabs as tab (tab.key)}
 					{@const isActive = activeKey === tab.key}

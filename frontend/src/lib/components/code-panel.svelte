@@ -93,9 +93,9 @@
 
 	$effect(() => {
 		if (!hostedToggle || !statusHost) return;
-		statusHost.actions = markdownPreviewToggle;
+		statusHost.actions = markdownViewToggle;
 		return () => {
-			if (statusHost.actions === markdownPreviewToggle) statusHost.actions = null;
+			if (statusHost.actions === markdownViewToggle) statusHost.actions = null;
 		};
 	});
 
@@ -133,22 +133,18 @@
 	}
 </script>
 
-{#snippet markdownViewToggle(className?: string)}
+{#snippet markdownViewToggle()}
 	<ArcaneButton
 		action="base"
 		tone={showMarkdownPreview ? 'outline-primary' : 'ghost'}
 		size="icon"
-		class={className}
+		class={variant === 'plain' ? 'size-6 pointer-coarse:min-h-touch-target pointer-coarse:min-w-touch-target' : undefined}
 		showLabel={false}
 		icon={EyeOnIcon}
 		customLabel={m.preview()}
 		aria-pressed={showMarkdownPreview}
 		onclick={() => selectMarkdownView(showMarkdownPreview ? 'raw' : 'preview')}
 	/>
-{/snippet}
-
-{#snippet markdownPreviewToggle()}
-	{@render markdownViewToggle('size-6')}
 {/snippet}
 
 {#snippet markdownPreview()}
@@ -241,7 +237,7 @@
 	<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
 		{#if isMarkdown && !hostedToggle}
 			<div class="flex shrink-0 justify-end px-2 pb-1">
-				{@render markdownPreviewToggle()}
+				{@render markdownViewToggle()}
 			</div>
 		{/if}
 		{@render panelBody()}
