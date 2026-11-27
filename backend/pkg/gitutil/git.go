@@ -349,7 +349,8 @@ func getKnownHostsPaths(
 func URLHasPassword(rawURL string) bool {
 	normalized, err := normalizeURL(rawURL)
 	if err != nil {
-		return false
+		// Unsupported schemes can still carry a password.
+		normalized = rawURL
 	}
 	endpoint, err := transport.NewEndpoint(normalized)
 	return err == nil && endpoint.Password != ""

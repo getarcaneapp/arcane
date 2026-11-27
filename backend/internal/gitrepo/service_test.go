@@ -287,7 +287,7 @@ func TestGitRepositoryService_RejectsURLWithEmbeddedPassword(t *testing.T) {
 	const secretURL = "https://bob:ghp_x@github.com/acme/private.git"
 
 	// The scheme-less form is accepted by the git client, which prepends https://.
-	for _, rawURL := range []string{secretURL, "bob:ghp_x@github.com/acme/private.git"} {
+	for _, rawURL := range []string{secretURL, "bob:ghp_x@github.com/acme/private.git", "ftp://bob:ghp_x@example.com/repo.git"} {
 		_, err := svc.CreateRepository(t.Context(), types.GitRepository{
 			Name:     "leaky",
 			URL:      rawURL,
