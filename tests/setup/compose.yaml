@@ -1,23 +1,20 @@
 services:
-  minio:
-    # quay.io/minio/minio went private on 2026-09-24; Chainguard's build is the anonymous-pull replacement.
-    image: cgr.dev/chainguard/minio:latest-dev@sha256:d7c906993247627c19f37fc1fa302c34cf2d209ae0e7dc7d52fb0be6ac2849ba
-    # A directory created under the data dir is served as a bucket, so backups
-    # have somewhere to write without a separate provisioning container.
-    entrypoint:
-      [
-        'sh',
-        '-c',
-        'mkdir -p /data/arcane-backups && exec minio server /data --address :9000 --console-address :9001'
-      ]
+  garage:
+    image: dxflrs/garage:v2.6.0@sha256:4b5a318fc9fe2fbec5d3af590eeafe05d83492e6411266fa0b9e215c20264013
+    command: ['/garage', 'server', '--single-node', '--default-bucket']
     environment:
-      - MINIO_ROOT_USER=arcane-test
-      - MINIO_ROOT_PASSWORD=arcane-test-secret
+      - GARAGE_DEFAULT_ACCESS_KEY=GK0123456789abcdef0123456789abcdef
+      - GARAGE_DEFAULT_SECRET_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - GARAGE_DEFAULT_BUCKET=arcane-backups
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+    tmpfs:
+      - /var/lib/garage
     healthcheck:
-      test: ['CMD', 'mc', 'ready', 'local']
-      interval: 2s
+      test: ['CMD', '/garage', 'health']
+      interval: 1s
       timeout: 5s
-      retries: 15
+      retries: 30
 
   docker-socket-proxy:
     image: wollomatic/socket-proxy:1.13.1
@@ -101,10 +98,11 @@ services:
     volumes:
       - arcane_data:/app/data
       - ./projects:/app/data/projects
+      - arcane_backups:/backups
     depends_on:
       docker-socket-proxy:
         condition: service_healthy
-      minio:
+      garage:
         condition: service_healthy
     build:
       args:
@@ -114,3 +112,4 @@ services:
 
 volumes:
   arcane_data:
+  arcane_backups:
