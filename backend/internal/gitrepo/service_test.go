@@ -286,22 +286,25 @@ func TestGitRepositoryService_RejectsURLWithEmbeddedPassword(t *testing.T) {
 	svc := setupGitRepositoryServiceTest(t)
 	const secretURL = "https://bob:ghp_x@github.com/acme/private.git"
 
-	_, err := svc.CreateRepository(t.Context(), types.GitRepository{
-		Name:     "leaky",
-		URL:      secretURL,
-		AuthType: "http",
-	}, nil, types.Actor{})
-	require.ErrorIs(t, err, common.ErrValidation)
-	fieldErr, ok := errors.AsType[*types.FieldError](err)
-	require.True(t, ok)
-	assert.Equal(t, "url", fieldErr.Field)
+	// The scheme-less form is accepted by the git client, which prepends https://.
+	for _, rawURL := range []string{secretURL, "bob:ghp_x@github.com/acme/private.git"} {
+		_, err := svc.CreateRepository(t.Context(), types.GitRepository{
+			Name:     "leaky",
+			URL:      rawURL,
+			AuthType: "http",
+		}, nil, types.Actor{})
+		require.ErrorIs(t, err, common.ErrValidation, rawURL)
+		fieldErr, ok := errors.AsType[*types.FieldError](err)
+		require.True(t, ok)
+		assert.Equal(t, "url", fieldErr.Field)
+	}
 
 	repo := createGitRepositoryServiceTestRepo(t, svc, types.GitRepository{
 		Name:     "ssh-repo",
 		URL:      "git@github.com:acme/private.git",
 		AuthType: "none",
 	})
-	_, err = svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
+	_, err := svc.UpdateRepository(t.Context(), repo.ID, RepositoryUpdate{
 		Request:   types.GitRepository{URL: secretURL},
 		Submitted: map[string]bool{"url": true},
 		Actor:     types.Actor{},

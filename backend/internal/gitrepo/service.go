@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/samber/mo"
@@ -136,12 +135,7 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 
 // The URL is stored and shown in plain text, so it must not carry a secret.
 func validateURLHasNoPassword(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		// scp-style URLs (git@host:org/repo.git) do not parse and cannot carry a password.
-		return nil
-	}
-	if _, hasPassword := parsed.User.Password(); hasPassword {
+	if git.URLHasPassword(rawURL) {
 		return common.Classify(common.ErrValidation, &types.FieldError{Field: "url", Err: errors.New("repository URL must not contain a password or token; use the token field instead")})
 	}
 	return nil
