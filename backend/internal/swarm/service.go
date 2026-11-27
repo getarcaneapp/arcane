@@ -551,12 +551,10 @@ func (s *SwarmService) ensureSwarmActive(ctx context.Context) (client.SwarmStatu
 			ControlAvailable: info.Swarm.ControlAvailable,
 		}
 	}
-	switch status.NodeState {
-	case swarm.LocalNodeStateActive:
-		return *status, nil
-	case swarm.LocalNodeStateInactive, swarm.LocalNodeStatePending, swarm.LocalNodeStateError, swarm.LocalNodeStateLocked:
+	if status.NodeState != swarm.LocalNodeStateActive {
+		return client.SwarmStatus{}, common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled")) //nolint:staticcheck // Preserve the existing error message.
 	}
-	return client.SwarmStatus{}, common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled")) //nolint:staticcheck // Preserve the existing error message.
+	return *status, nil
 }
 
 func (s *SwarmService) ensureSwarmInactive(ctx context.Context) error {

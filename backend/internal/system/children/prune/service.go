@@ -386,7 +386,7 @@ func (s *Service) pruneContainers(ctx context.Context, options types.PruneContai
 }
 
 func (s *Service) pruneImages(ctx context.Context, options types.PruneImagesOptions) (types.PruneAllResult, error) {
-	filterArgs := make(client.Filters)
+	filterArgs := make(client.Filters).Add("label!", volumehelper.ToolsImageLabel)
 	switch options.Mode {
 	case types.PruneImageModeNone:
 		return types.PruneAllResult{}, errors.New("image prune mode none is not allowed")
@@ -743,6 +743,7 @@ func (s *Service) selectPruneImages(req types.PruneAllRequest, usage client.Disk
 	for _, item := range usage.Images.Items {
 		if item.Containers > int64(imageRefs[item.ID]) || slices.Contains(item.RepoTags, rustic.DefaultImage) ||
 			slices.Contains(item.RepoTags, volumehelper.ToolsImage("")) ||
+			slices.Contains(item.RepoTags, volumehelper.ToolsImage(registry.DefaultRegistryDomain)) ||
 			slices.Contains(item.RepoTags, strings.TrimPrefix(volumehelper.ToolsImage(registry.DefaultRegistryDomain), registry.DefaultRegistryDomain+"/")) ||
 			(req.Images.Mode == types.PruneImageModeDangling && len(item.RepoTags) > 0) ||
 			(!until.IsZero() && !time.Unix(item.Created, 0).Before(until)) {
