@@ -62,6 +62,8 @@ type (
 const (
 	apiEnvironmentsPrefix  = "/api/agents/"
 	environmentsPathMarker = "/agents/"
+
+	proxyForbiddenMessage = "You don't have permission to perform this action on this environment"
 )
 
 var managementEndpointSet = map[string]struct{}{
@@ -146,8 +148,9 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusBadRequest, "Environment is disabled")
 	}
 
-	if !m.proxyPermitted(c, perms, envID, suffix) {
-		return writeProxyError(c, http.StatusForbidden, "You don't have permission to perform this action on this environment")
+	allowed, status, message := m.proxyPermitted(c, perms, envID, suffix)
+	if !allowed {
+		return writeProxyError(c, status, message)
 	}
 
 	var lost *agent.AgentTunnel
@@ -272,9 +275,12 @@ func (m *EnvironmentMiddleware) forward(c *echo.Context, tunnel *agent.AgentTunn
 	return false, nil
 }
 
-func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.PermissionSet, envID, suffix string) bool {
+// proxyPermitted reports whether the request may be proxied, with the status and
+// message to refuse it. It never writes, so Handle answers exactly once and a
+// malformed action (400) cannot be followed by a second 403.
+func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.PermissionSet, envID, suffix string) (bool, int, string) {
 	if kit.FromPtr(ps).Sudo {
-		return true
+		return true, 0, ""
 	}
 
 	req := c.Request()
@@ -288,7 +294,7 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 			len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete) ||
 			len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks" {
 			if len(segments) == 3 && method == http.MethodDelete && segments[1] == types.UploadKindProjectArchive && ps.AllowsRoute(authz.PermProjectsExport, envID) {
-				return true
+				return true, 0, ""
 			}
 			perms := authz.UploadKindConditions.Required("kind", segments[1])
 			denied := len(perms) == 0 || slices.ContainsFunc(perms, func(perm string) bool {
@@ -297,24 +303,30 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 			if denied {
 				slog.DebugContext(ctx, "Denying proxied upload session request: permission denied",
 					"method", method, "path", strings.ReplaceAll(strings.ReplaceAll(suffix, "\n", ""), "\r", ""), "environmentId", envID)
+				return false, http.StatusForbidden, proxyForbiddenMessage
 			}
-			return !denied
+			return true, 0, ""
 		}
 	}
 
 	perm, ok := m.matcher.Lookup(method, suffix, req.URL.Query()).Get()
 	if !ok {
+		// The route matched but its action value did not: that is a malformed
+		// request (the local environment answers 400), not a permission denial.
+		if param := m.matcher.ActionParam(method, suffix); param != "" {
+			return false, http.StatusBadRequest, "invalid " + param + ": " + req.URL.Query().Get(param)
+		}
 		slog.WarnContext(ctx, "Denying proxied request with no known permission mapping", "method", method, "path", suffix, "environmentId", envID)
-		return false
+		return false, http.StatusForbidden, proxyForbiddenMessage
 	}
 	if perm == "" {
-		return true
+		return true, 0, ""
 	}
 	if !ps.AllowsRoute(perm, kit.Ternary(authz.IsEnvScoped(perm), envID, "")) {
 		slog.DebugContext(ctx, "Denying proxied request: permission denied", "method", method, "path", suffix, "permission", perm, "environmentId", envID)
-		return false
+		return false, http.StatusForbidden, proxyForbiddenMessage
 	}
-	return true
+	return true, 0, ""
 }
 
 func IsManagerLocalPath(method, suffix string) bool {
