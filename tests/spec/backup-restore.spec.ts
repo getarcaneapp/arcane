@@ -589,6 +589,7 @@ test.describe.skipIf(!SYSTEM_BACKUPS_SUPPORTED)('System backup and restore', () 
 				const fixture = { volume, subpath: FIXTURE };
 				let kept: string | undefined;
 				let dropped: string | undefined;
+				let snapshotId: string | undefined;
 				try {
 					await ensureRecoveryKey(page);
 					const original = seedReadableFixture(fixture);
@@ -598,6 +599,7 @@ test.describe.skipIf(!SYSTEM_BACKUPS_SUPPORTED)('System backup and restore', () 
 						page,
 						destination === 'local' ? { destination } : { destination, s3DestinationId: kept }
 					);
+					snapshotId = snapshot.id;
 					dropped = (await createDestinationViaApi(page, { name: `e2e-dropped-${Date.now()}` })).id;
 					mutate(fixture);
 
@@ -617,6 +619,9 @@ test.describe.skipIf(!SYSTEM_BACKUPS_SUPPORTED)('System backup and restore', () 
 					expect(readManifest(fixture)).toEqual(ownedByArcane(original));
 				} finally {
 					removeFixture(volume);
+					if (snapshotId) {
+						await removeApiResource(page, `/api/agents/0/backups/${snapshotId}`, { data: {} });
+					}
 					if (kept) await deleteDestinationViaApi(page, kept);
 					if (dropped) await deleteDestinationViaApi(page, dropped);
 				}
