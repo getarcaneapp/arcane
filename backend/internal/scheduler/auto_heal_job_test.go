@@ -204,6 +204,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	})
 	require.NoError(t, err)
 	job.getDockerClientFn = func(context.Context) (*mobyClient.Client, error) { return nil, nil }
+	job.updatingContainers = func() []string { return []string{"c4"} }
 	job.listContainers = func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyContainer.Summary, error) {
 		return []mobyContainer.Summary{
 			{ID: "c1", Names: []string{"/one"}},
@@ -251,5 +252,6 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 
 	require.Greater(t, maxConcurrent.Load(), int32(1))
 	require.LessOrEqual(t, maxConcurrent.Load(), int32(autoHealInspectConcurrency))
-	require.Equal(t, int32(4), restarts.Load())
+	// c4 is unhealthy but mid-update, so it is left to the updater.
+	require.Equal(t, int32(3), restarts.Load())
 }
