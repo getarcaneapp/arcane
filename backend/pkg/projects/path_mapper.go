@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
@@ -493,6 +494,9 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 		}
 		mounts = append(mounts, HostMount{Destination: m.Destination, Source: m.Source})
 	}
+	slices.SortFunc(mounts, func(a, b HostMount) int {
+		return strings.Compare(a.Destination, b.Destination)
+	})
 	return mounts, nil
 }
 
