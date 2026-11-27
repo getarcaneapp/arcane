@@ -4901,5 +4901,7 @@
   "oidc_ldap_group_claim_placeholder": "e.g. platform-eng or cn=platform,ou=groups",
   "add_claim_mapping": "Add Mapping",
   "no_oidc_ldap_group_mappings": "No OIDC or LDAP group claim mappings configured.",
-  "group_details": "Group details"
+  "group_details": "Group details",
+  "rules_checked_against_project_volumes": "Rules are checked against each selected project's volumes at every run.",
+  "all_project_volumes_description": "Include every volume of each project, including volumes added later."
 }

@@ -269,6 +269,8 @@ func (s *Service) UpdateConfig(ctx context.Context, updates []types.UpdateSystem
 					Volumes:         nil,
 					SelectionMode:   normalized.SelectionMode,
 					ProjectIDs:      nil,
+					VolumeSelection: "",
+					ProjectVolumes:  nil,
 					VolumeNames:     normalized.VolumeNames,
 					IgnoreAnonymous: normalized.IgnoreAnonymous,
 				},

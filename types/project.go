@@ -163,6 +163,8 @@ type (
 		S3DestinationName string                    `json:"s3DestinationName,omitempty"`
 		SelectionMode     SystemVolumeSelectionMode `json:"selectionMode"`
 		ProjectIDs        []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; empty for all"`
+		VolumeSelection   SystemVolumeSelectionMode `json:"volumeSelectionMode" doc:"Which volumes of each project the backup includes; all includes every volume, including ones added later"`
+		Volumes           []GlobalProjectVolume     `json:"volumes" doc:"Volumes the volume allowlist includes or the volume blocklist excludes; empty for all"`
 		RetentionCount    int                       `json:"retentionCount" doc:"Backups kept per project; 0 keeps all"`
 		Enabled           bool                      `json:"enabled"`
 		StopContainers    bool                      `json:"stopContainers"`
@@ -175,9 +177,11 @@ type (
 	}
 
 	UpdateGlobalProjectBackupPolicy struct {
-		StopContainers *bool                     `json:"stopContainers,omitempty" doc:"Stop each project's running containers during its snapshot; defaults to true"`
-		SelectionMode  SystemVolumeSelectionMode `json:"selectionMode" enum:"all,allowlist,blocklist"`
-		ProjectIDs     []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; an empty allowlist backs up nothing"`
+		StopContainers  *bool                     `json:"stopContainers,omitempty" doc:"Stop each project's running containers during its snapshot; defaults to true"`
+		SelectionMode   SystemVolumeSelectionMode `json:"selectionMode" enum:"all,allowlist,blocklist"`
+		ProjectIDs      []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; an empty allowlist backs up nothing"`
+		VolumeSelection SystemVolumeSelectionMode `json:"volumeSelectionMode,omitempty" enum:"all,allowlist,blocklist" doc:"Volumes of each project to include; defaults to all, even ones added later"`
+		Volumes         []GlobalProjectVolume     `json:"volumes,omitzero" doc:"Volumes the allowlist includes or the blocklist excludes; an empty allowlist keeps only files"`
 		UpdateBackupPolicy
 	}
 
@@ -190,9 +194,15 @@ type (
 	}
 
 	GlobalProjectBackupOption struct {
-		ID        string `json:"id"`
-		Name      string `json:"name"`
-		Available bool   `json:"available"`
+		ID        string          `json:"id"`
+		Name      string          `json:"name"`
+		Volumes   []ProjectVolume `json:"volumes" doc:"Volumes a backup of the project can include, with ones not created yet marked missing"`
+		Available bool            `json:"available"`
+	}
+
+	GlobalProjectVolume struct {
+		ProjectID string `json:"projectId" minLength:"1"`
+		Key       string `json:"key" minLength:"1" doc:"Volume key in the project's compose file"`
 	}
 
 	RestoreProjectBackupRequest struct {
