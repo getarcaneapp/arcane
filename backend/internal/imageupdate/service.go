@@ -67,7 +67,6 @@ type (
 		activityService     *activity.ActivityService
 		engine              *flow.Engine
 		checkWorkflow       *flow.Workflow
-		credentials         *cache.Cache[string, []types.ContainerRegistryCredential]
 		// requestCredentials keeps caller credentials out of the workflow journal; they expire with the check's timeout.
 		requestCredentials *cache.Cache[string, []types.ContainerRegistryCredential]
 		composeBuildRefs   *cache.Cache[string, map[string]struct{}]
@@ -192,12 +191,6 @@ func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 		tags:                tags.NewService(p.RegistryService, p.DockerService, p.SettingsService, registryLimiter),
 		releaseNotes:        releasenotes.NewService(p.DockerService, p.SettingsService, p.RegistryService.ImageConfig),
 		activityService:     p.ActivityService,
-		// They outlive the longest check: its slot wait plus its workflow timeout. The stored credentials are resolved
-		// once per scan, so an ECR registry asks AWS for one authorization token per scan rather than one per minute.
-		credentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
-			Capacity: 8,
-			TTL:      timeouts.DefaultActivitySlotWait + timeouts.DefaultImageUpdateScan,
-		},
 		// They outlive the longest check: its slot wait plus its workflow timeout.
 		requestCredentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
 			Capacity: 64,
@@ -1510,48 +1503,15 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	}, snapshot, nil
 }
 
-// resolveBatchCredentials caches the stored credentials per scan and merges the caller's over them; a caller credential
-// replaces the stored one for the registry host it names, and the registries it leaves uncovered keep theirs.
-func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow.Task, input imageCheckInput) []types.ContainerRegistryCredential {
-	credentials, _, err := s.credentials.GetOrLoad(t.ActivityID(), func(string) ([]types.ContainerRegistryCredential, bool, error) {
-		// ECR rows carry no stored username or token, so the registry service resolves them through the ECR token flow.
-		loaded, loadErr := s.registryService.GetEnabledRegistryCredentials(ctx)
-		if loadErr != nil {
-			return nil, false, loadErr
-		}
-		return loaded, true, nil
-	})
-	if err != nil {
-		slog.DebugContext(ctx, "failed to load enabled registries for batch check", "error", err.Error())
-		credentials = nil
+func (s *ImageUpdateService) resolveBatchCredentials(input imageCheckInput) []types.ContainerRegistryCredential {
+	if input.CredentialsKey == "" {
+		return nil
 	}
-
 	supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey)
-	if !ok || input.CredentialsKey == "" {
-		return credentials
+	if !ok {
+		return nil
 	}
-	return mergeBatchCredentials(credentials, supplied)
-}
-
-// mergeBatchCredentials puts the caller's credentials first and drops the stored ones for the registries they cover.
-// A caller credential that cannot authenticate covers nothing, so the stored credential of its registry stays in the batch.
-func mergeBatchCredentials(stored, supplied []types.ContainerRegistryCredential) []types.ContainerRegistryCredential {
-	covered := make(map[string]bool, len(supplied))
-	for _, credential := range supplied {
-		if strings.TrimSpace(credential.Username) == "" || strings.TrimSpace(credential.Token) == "" {
-			continue
-		}
-		covered[registry.NormalizeRegistryURL(credential.URL)] = true
-	}
-	merged := make([]types.ContainerRegistryCredential, 0, len(supplied)+len(stored))
-	merged = append(merged, supplied...)
-	for _, credential := range stored {
-		if covered[registry.NormalizeRegistryURL(credential.URL)] {
-			continue
-		}
-		merged = append(merged, credential)
-	}
-	return merged
+	return supplied
 }
 
 func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activityID, imageRef string, result *types.ImageUpdateResponse, progress *int) {
@@ -1618,7 +1578,6 @@ func (s *ImageUpdateService) RunImageCheck(ctx context.Context, request types.Im
 	return s.engine.Run(ctx, s.checkWorkflow, request, activitylib.StartRequest{}, nil)
 }
 
-// CheckImages returns each ref's result; the caller's credentials replace the stored ones for the registries they cover.
 func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.ImageUpdateCheckRequest, credentials []types.ContainerRegistryCredential) (types.ImageUpdateBatchResponse, error) {
 	if !request.All && len(request.ImageRefs) == 0 {
 		return types.ImageUpdateBatchResponse{}, nil
@@ -1780,7 +1739,7 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	if err != nil {
 		return nil, err
 	}
-	res, snapshot, checkErr := s.checkSingleImageInBatch(ctx, s.resolveBatchCredentials(ctx, t, input), parts, composeBuildRefs, t.ActivityID(), time.Now())
+	res, snapshot, checkErr := s.checkSingleImageInBatch(ctx, s.resolveBatchCredentials(input), parts, composeBuildRefs, t.ActivityID(), time.Now())
 	// Shutdown hands the task back for redelivery rather than recording it as a failed check.
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -1847,7 +1806,7 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 	if input.Report && t.Recovered() {
 		return tagCheckOutput{Failures: []types.TargetOutcome{}}, nil
 	}
-	containerUpdates, err := s.checkContainerTagUpdates(context.WithValue(ctx, batchChangeCoalesceKey{}, true), tagRefs, s.resolveBatchCredentials(ctx, t, input), seedDigests)
+	containerUpdates, err := s.checkContainerTagUpdates(context.WithValue(ctx, batchChangeCoalesceKey{}, true), tagRefs, s.resolveBatchCredentials(input), seedDigests)
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
@@ -1878,7 +1837,6 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 	s.requestCredentials.Delete(request.CredentialsKey)
 	if t.ActivityID() != "" {
 		s.composeBuildRefs.Delete(t.ActivityID())
-		s.credentials.Delete(t.ActivityID())
 	}
 	groups, results, err := imageCheckResults(t)
 	if err != nil {

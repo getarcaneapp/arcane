@@ -537,10 +537,6 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			DB:            db,
 			DockerService: newUnreachableDockerService(t),
 		})
-		projectSvc.RegistryCredentialsProvider = registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
-			DB:        db,
-			KVService: kv.NewKVService(db),
-		}).GetEnabledRegistryCredentials
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 			DB:              db,
 			EventService:    event.NewEventService(db, &config.Config{}, nil),
@@ -605,10 +601,6 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			DB:            db,
 			DockerService: newUnreachableDockerService(t),
 		})
-		projectSvc.RegistryCredentialsProvider = registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
-			DB:        db,
-			KVService: kv.NewKVService(db),
-		}).GetEnabledRegistryCredentials
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 			DB:              db,
 			EventService:    event.NewEventService(db, &config.Config{}, nil),
@@ -2405,10 +2397,6 @@ func newGateTestUpdater(t *testing.T, db *database.DB, server *httptest.Server, 
 		DB:            db,
 		DockerService: newUnreachableDockerService(t),
 	})
-	projectSvc.RegistryCredentialsProvider = registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
-		DB:        db,
-		KVService: kv.NewKVService(db),
-	}).GetEnabledRegistryCredentials
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:                   db,
 		EventService:         eventSvc,

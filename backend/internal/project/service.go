@@ -87,24 +87,23 @@ type (
 		// composeIdentities lets a sync re-parse only projects whose compose or env files changed.
 		composeIdentities types.ComposeCache[types.ComposeIdentity]
 
-		db                          *database.DB
-		settingsService             *settings.SettingsService
-		eventService                *event.EventService
-		imageService                *image.ImageService
-		dockerService               *dockerInternal.DockerClientService
-		lifecycleService            *LifecycleService
-		workspace                   *workspace.Service
-		details                     *projectdetails.Service
-		listing                     *listing.Service
-		statuses                    *projectstatus.Service
-		deployment                  *deployment.Service
-		updates                     *update.Service
-		containerRegistryService    *registryInternal.ContainerRegistryService
-		uploads                     *upload.UploadService
-		config                      *config.Config
-		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
-		FilesChanged                *concurrency.Signal[string]
-		Deleted                     *concurrency.Signal[string]
+		db                       *database.DB
+		settingsService          *settings.SettingsService
+		eventService             *event.EventService
+		imageService             *image.ImageService
+		dockerService            *dockerInternal.DockerClientService
+		lifecycleService         *LifecycleService
+		workspace                *workspace.Service
+		details                  *projectdetails.Service
+		listing                  *listing.Service
+		statuses                 *projectstatus.Service
+		deployment               *deployment.Service
+		updates                  *update.Service
+		containerRegistryService *registryInternal.ContainerRegistryService
+		uploads                  *upload.UploadService
+		config                   *config.Config
+		FilesChanged             *concurrency.Signal[string]
+		Deleted                  *concurrency.Signal[string]
 
 		opLock concurrency.KeyedMutex
 
@@ -149,18 +148,17 @@ type (
 	}
 
 	ProjectServiceParams struct {
-		DB                          *database.DB
-		SettingsService             *settings.SettingsService
-		EventService                *event.EventService
-		ImageService                *image.ImageService
-		DockerService               *dockerInternal.DockerClientService
-		BuildService                builder
-		LifecycleService            *LifecycleService
-		ContainerRegistryService    *registryInternal.ContainerRegistryService
-		Uploads                     *upload.UploadService
-		Config                      *config.Config
-		KVService                   *kv.KVService
-		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
+		DB                       *database.DB
+		SettingsService          *settings.SettingsService
+		EventService             *event.EventService
+		ImageService             *image.ImageService
+		DockerService            *dockerInternal.DockerClientService
+		BuildService             builder
+		LifecycleService         *LifecycleService
+		ContainerRegistryService *registryInternal.ContainerRegistryService
+		Uploads                  *upload.UploadService
+		Config                   *config.Config
+		KVService                *kv.KVService
 	}
 
 	// The pre-deploy script is trusted like the repo's compose.yaml; configuring its path is the trust event.
@@ -430,9 +428,6 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 			KVService:       p.KVService,
 			DockerService:   p.DockerService,
 			RegistryService: p.ContainerRegistryService,
-			Credentials: func(ctx context.Context) ([]types.ContainerRegistryCredential, error) {
-				return s.ResolveRegistryCredentials(ctx)
-			},
 			ProjectState: func(ctx context.Context, projectID string) (string, string, bool, error) {
 				proj, found, err := s.FindProjectByID(ctx, projectID)
 				if err != nil || !found {
@@ -452,16 +447,15 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 				return s.persistServiceImageEnv(ctx, projectPath, content)
 			},
 		}),
-		containerRegistryService:    p.ContainerRegistryService,
-		uploads:                     p.Uploads,
-		config:                      p.Config,
-		RegistryCredentialsProvider: p.RegistryCredentialsProvider,
-		parsedCompose:               projects.NewComposeCache(2048, projects.CloneComposeProject),
-		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
-		composeIdentities:           projects.NewComposeCache[types.ComposeIdentity](2048, nil),
-		composeNames:                composeNameCache{byName: make(map[string]string)},
-		FilesChanged:                concurrency.NewSignal[string](),
-		Deleted:                     concurrency.NewSignal[string](),
+		containerRegistryService: p.ContainerRegistryService,
+		uploads:                  p.Uploads,
+		config:                   p.Config,
+		parsedCompose:            projects.NewComposeCache(2048, projects.CloneComposeProject),
+		metaCache:                projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
+		composeIdentities:        projects.NewComposeCache[types.ComposeIdentity](2048, nil),
+		composeNames:             composeNameCache{byName: make(map[string]string)},
+		FilesChanged:             concurrency.NewSignal[string](),
+		Deleted:                  concurrency.NewSignal[string](),
 	}
 	return s
 }
@@ -531,15 +525,6 @@ func (s *ProjectService) RecoverStuckProjectStatuses(ctx context.Context) error 
 		slog.InfoContext(ctx, "Recovered interrupted project statuses", "found", len(stuck), "recovered", recovered)
 	}
 	return firstErr
-}
-
-func (s *ProjectService) ResolveRegistryCredentials(ctx context.Context) ([]types.ContainerRegistryCredential, error) {
-	credentials, err := s.RegistryCredentialsProvider(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get enabled registry credentials: %w", err)
-	}
-
-	return credentials, nil
 }
 
 func (s *ProjectService) GetProjectsDirectory(ctx context.Context) (string, error) {
@@ -1366,14 +1351,6 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 		return updateProjectStatusErr
 	}
 
-	credentials, err := s.ResolveRegistryCredentials(ctx)
-	if err != nil {
-		if statusErr := s.updateProjectStatus(context.WithoutCancel(ctx), projectID, previousStatus); statusErr != nil {
-			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after credential lookup failure", "projectId", projectID, "error", statusErr)
-		}
-		return fmt.Errorf("resolve registry credentials: %w", err)
-	}
-
 	authConfigs, authErr := s.containerRegistryService.GetAllRegistryAuthConfigs(ctx)
 	if authErr != nil {
 		slog.WarnContext(ctx, "failed to load registry auth for compose pulls", "error", authErr)
@@ -1381,7 +1358,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	if updateServicesErr := s.composeCoordinator.UpdateServices(ctx, types.ComposeServiceUpdate{
 		Project: compProj, DockerHost: dockerHost, Services: options.Services, Dependents: dependents, StoppedDependents: stoppedDependents,
-		Images: s.deployment.ImageOperations(&options.User, credentials, options.PinnedImages), Progress: progressWriter,
+		Images: s.deployment.ImageOperations(&options.User, nil, options.PinnedImages), Progress: progressWriter,
 		AuthConfigs: authConfigs, WaitTimeout: timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		RestoreBeforeMutation: func(ctx context.Context) {
 			if statusErr := s.updateProjectStatus(ctx, projectID, previousStatus); statusErr != nil {
@@ -1547,16 +1524,15 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 			return model, loadComposeProjectForProjectErr
 		},
 		ResolveImages: func(ctx context.Context) (types.ComposeImageOperations, error) {
-			credentials, resolveRegistryCredentialsErr := s.ResolveRegistryCredentials(ctx)
-			operations := s.deployment.ImageOperations(&user, credentials, nil)
+			operations := s.deployment.ImageOperations(&user, nil, nil)
 			return types.ComposeImageOperations{
 				Exists:     operations.Exists,
 				LastTagged: operations.LastTagged,
 				// Deployment pulls are recorded as system actions; builds retain the requesting actor.
-				Pull:          s.deployment.ImageOperations(nil, credentials, nil).Pull,
+				Pull:          s.deployment.ImageOperations(nil, nil, nil).Pull,
 				Build:         operations.Build,
 				BuildProvider: operations.BuildProvider,
-			}, resolveRegistryCredentialsErr
+			}, nil
 		},
 		Recover: func(ctx context.Context) {
 			s.restoreRuntimeProjectStatus(ctx, projectID)
@@ -2168,11 +2144,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	}
 
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
-	credentials, cerr := s.ResolveRegistryCredentials(ctx)
-	if cerr != nil {
-		slog.WarnContext(ctx, "failed to resolve registry credentials for redeploy pull", "error", cerr)
-	}
-	if pullProjectImagesErr := s.PullProjectImages(ctx, projectID, kit.Ternary(progressWriter == nil, io.Discard, progressWriter), user, credentials); pullProjectImagesErr != nil {
+	if pullProjectImagesErr := s.PullProjectImages(ctx, projectID, kit.Ternary(progressWriter == nil, io.Discard, progressWriter), user, nil); pullProjectImagesErr != nil {
 		slog.WarnContext(ctx, "failed to pull project images", "error", pullProjectImagesErr)
 		logWriter := docker.NewLogLineWriter(progressWriter)
 		_, _ = io.WriteString(logWriter, "WARNING: failed to pull project images; deploying with local images:\n"+pullProjectImagesErr.Error()+"\n")
