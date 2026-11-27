@@ -226,22 +226,25 @@ func LegacyMultipartMiddleware(api huma.API, service *UploadService, kind string
 		}
 
 		request := humaecho.Unwrap(ctx).Request()
-		if err := request.ParseMultipartForm(32 << 10); err != nil {
+		// Streamed, never spooled to disk: the size limit applies while the file part is written.
+		parts, err := request.MultipartReader()
+		if err != nil {
 			writeErr(http.StatusBadRequest, "Invalid multipart form: "+err.Error())
 			return
 		}
-		defer func() { _ = request.MultipartForm.RemoveAll() }()
-		file, header, err := request.FormFile("file")
+		file, err := parts.NextPart()
+		for err == nil && file.FormName() != "file" {
+			file, err = parts.NextPart()
+		}
 		if err != nil {
 			writeErr(http.StatusBadRequest, "No file uploaded")
 			return
 		}
-		defer func() { _ = file.Close() }()
 
 		slog.WarnContext(ctx.Context(), "Deprecated multipart upload used; migrate to chunked upload sessions",
-			"kind", kind, "path", ctx.URL().Path, "filename", header.Filename, "size", header.Size)
+			"kind", kind, "path", ctx.URL().Path, "filename", file.FileName())
 
-		session, err := service.IngestSession(ctx.Context(), kind, header.Filename, header.Size, file)
+		session, err := service.IngestStream(ctx.Context(), kind, file.FileName(), file)
 		if err != nil {
 			if httpErr := SessionHTTPError(err); httpErr != nil {
 				if statusErr, ok := errors.AsType[huma.StatusError](httpErr); ok {
@@ -249,7 +252,12 @@ func LegacyMultipartMiddleware(api huma.API, service *UploadService, kind string
 					return
 				}
 			}
-			writeErr(http.StatusInternalServerError, err.Error())
+			status := http.StatusInternalServerError
+			// The stream has no declared size, so the free-space rejection surfaces mid-write; keep the legacy 422.
+			if errors.Is(err, common.ErrInsufficientStorage) {
+				status = http.StatusUnprocessableEntity
+			}
+			writeErr(status, err.Error())
 			return
 		}
 
