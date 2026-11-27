@@ -41,8 +41,9 @@ type (
 )
 
 const (
-	toolsRepoPath  = "getarcaneapp/tools"
-	ContainerLabel = "com.getarcaneapp.volume-helper"
+	toolsRepoPath   = "getarcaneapp/tools"
+	ToolsImageLabel = "org.opencontainers.image.source=https://github.com/getarcaneapp/tools"
+	ContainerLabel  = "com.getarcaneapp.volume-helper"
 )
 
 func ToolsImage(registrySetting string) string {

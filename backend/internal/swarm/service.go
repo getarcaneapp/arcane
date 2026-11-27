@@ -525,26 +525,36 @@ func decodeSwarmSpec(raw jsontext.Value) (swarm.Spec, error) {
 }
 
 func (s *SwarmService) ensureSwarmManager(ctx context.Context) error {
-	info, err := s.ensureSwarmActive(ctx)
+	status, err := s.ensureSwarmActive(ctx)
 	if err != nil {
 		return err
 	}
-	if !info.Swarm.ControlAvailable {
+	if !status.ControlAvailable {
 		return common.Classify(common.ErrSwarmManagerRequired, errors.New("Swarm manager access required")) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	return nil
 }
 
-func (s *SwarmService) ensureSwarmActive(ctx context.Context) (system.Info, error) {
-	info, err := s.getDockerInfo(ctx)
-	if err != nil {
-		return system.Info{}, err
+func (s *SwarmService) ensureSwarmActive(ctx context.Context) (client.SwarmStatus, error) {
+	ping, pingErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.PingResult, error) {
+		return dockerClient.Ping(ctx, client.PingOptions{})
+	})
+	status := ping.SwarmStatus
+	if pingErr != nil || status == nil {
+		info, err := s.getDockerInfo(ctx)
+		if err != nil {
+			return client.SwarmStatus{}, err
+		}
+		status = &client.SwarmStatus{
+			NodeState:        info.Swarm.LocalNodeState,
+			ControlAvailable: info.Swarm.ControlAvailable,
+		}
 	}
-	if info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return system.Info{}, common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled")) //nolint:staticcheck // Preserve the existing error message.
+	if status.NodeState != swarm.LocalNodeStateActive {
+		return client.SwarmStatus{}, common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled")) //nolint:staticcheck // Preserve the existing error message.
 	}
-	return info, nil
+	return *status, nil
 }
 
 func (s *SwarmService) ensureSwarmInactive(ctx context.Context) error {

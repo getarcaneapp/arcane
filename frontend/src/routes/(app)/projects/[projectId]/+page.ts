@@ -21,18 +21,16 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	const { queryClient, user } = await parent();
 	const envId = await resolveDetailEnvironmentId(url);
 
-	const projectLoad = await tryCatch(queryClient.query(projectDetailQuery(envId, params.projectId)));
+	const [projectLoad, { globalVariables, globalVariablesError }] = await Promise.all([
+		tryCatch(queryClient.query(projectDetailQuery(envId, params.projectId))),
+		loadGlobalVariables(queryClient, userHasPermission(user, 'variables:list'))
+	]);
 	if (projectLoad.error !== null) {
 		throwPageLoadError(projectLoad.error, 'Failed to load project');
 	}
 	const project = projectLoad.data;
 
 	void queryClient.prefetchQuery(projectWorkspaceFolderQuery(envId, params.projectId, ''));
-
-	const { globalVariables, globalVariablesError } = await loadGlobalVariables(
-		queryClient,
-		userHasPermission(user, 'variables:list')
-	);
 
 	const editorState = {
 		name: project.name || '',

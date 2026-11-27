@@ -28,9 +28,11 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 
 	"kit.getarcane.app"
 	"kit.getarcane.app/acfs"
+	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -692,6 +694,7 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 	reportImageIDs := s.db.Model(&vulnerability.VulnerabilityReportRecord{}).Select("image_id")
 	q := s.db.WithContext(ctx).
 		Model(&vulnerability.VulnerabilityScanRecord{}).
+		Omit("vulnerabilities").
 		Where("status = ?", vulnerability.ScanStatusCompleted).
 		Where("id IN (?)", reportImageIDs).
 		Where("(fixable_count > 0 OR id IN (?))", patchedImageIDs).
@@ -722,13 +725,21 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 	// Best-effort: mark images without a registry source so the UI can explain
 	// why they cannot be patched. An image that can no longer be inspected is
 	// left unmarked.
-	localOnlyByID := make(map[string]bool, len(scans))
+	localOnly := make([]bool, len(scans))
+	var inspectGroup errgroup.Group
+	inspectGroup.SetLimit(8)
 	for i := range scans {
-		inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
-			return dockerClient.ImageInspect(ctx, scans[i].ID)
+		inspectGroup.Go(func() (workerErr error) {
+			defer concurrency.RecoverToError(&workerErr, "patch target inspect worker")
+
+			inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+				return dockerClient.ImageInspect(ctx, scans[i].ID)
+			})
+			localOnly[i] = inspectErr == nil && imageref.IsLocalImage(inspect.InspectResponse)
+			return nil
 		})
-		localOnlyByID[scans[i].ID] = inspectErr == nil && imageref.IsLocalImage(inspect.InspectResponse)
 	}
+	_ = inspectGroup.Wait()
 
 	imageIDs := make([]string, 0, len(scans))
 	for i := range scans {
@@ -748,7 +759,7 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 			FixableCount: kit.FromPtr(scan.FixableCount),
 			TotalCount:   scan.TotalCount,
 			ScanTime:     scan.ScanTime,
-			LocalOnly:    localOnlyByID[scan.ID],
+			LocalOnly:    localOnly[i],
 			LastPatch: func() *types.PatchRecord {
 				lastPatch, ok := lastPatchByImageID[scan.ID]
 				if !ok {

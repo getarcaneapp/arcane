@@ -809,8 +809,8 @@ kit.getarcane.app/sys/cgroup v0.3.5 h1:D4+lUZXrkuw5O9M0G3OFNFAss13JS7hZN8tx307On
 kit.getarcane.app/sys/cgroup v0.3.5/go.mod h1:+z1OCIaq+JsWlxBa2JNSIstQNdd8Q+xpi26sgn6bw08=
 kit.getarcane.app/tripwire v0.2.2 h1:PBfIMAsz5ShdCseQfsNbhuhXBFadctpXApnwHd5ySrg=
 kit.getarcane.app/tripwire v0.2.2/go.mod h1:8+Ki0VgRULSqUwfiqRgRKBQOX5IdfHz6OMZdbDP9BFM=
-kit.getarcane.app/updater v0.14.1 h1:qInOEfRN+jIpvz6JV0lTHmRQbPZGzpzG/rsa0LY8UPk=
-kit.getarcane.app/updater v0.14.1/go.mod h1:RFhbUSlXih2Yu+iC5MV9XP2fYnplw4vYIoOkIpAQ24A=
+kit.getarcane.app/updater v0.14.2 h1:bao1BIZR9Dcg1khSyWk0AVSGMXmslRNxdFofCvU5eU0=
+kit.getarcane.app/updater v0.14.2/go.mod h1:RFhbUSlXih2Yu+iC5MV9XP2fYnplw4vYIoOkIpAQ24A=
 mellium.im/reader v0.1.0 h1:UUEMev16gdvaxxZC7fC08j7IzuDKh310nB6BlwnxTww=
 mellium.im/reader v0.1.0/go.mod h1:F+X5HXpkIfJ9EE1zHQG9lM/hO946iYAmU7xjg5dsQHI=
 mellium.im/sasl v0.3.2 h1:PT6Xp7ccn9XaXAnJ03FcEjmAn7kK1x7aoXV6F+Vmrl0=

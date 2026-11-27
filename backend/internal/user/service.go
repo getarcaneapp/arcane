@@ -34,6 +34,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/sqlite"
 	"getarcane.dev/arcane/v3/pkg/validation"
@@ -230,6 +231,9 @@ func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*
 }
 
 func (s *UserService) GetUserByID(ctx context.Context, id string) (*User, error) {
+	if parent, ok := ctx.Value(httpx.EnvironmentParentUserKey{}).(*User); ok && parent.ID == id {
+		return new(*parent), nil
+	}
 	return sqlite.FirstWhere[User](ctx, s.db.DB, common.ErrUserNotFound, "id = ?", id)
 }
 
