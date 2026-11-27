@@ -71,7 +71,7 @@ func TestDecodeOidcStateRejectsUnsignedAndEmptyNonce(t *testing.T) {
 	require.NoError(t, err)
 
 	encode := func(nonce string) (string, string) {
-		stateJSON, marshalErr := json.Marshal(OidcState{CreatedAt: time.Now(), State: "s", Nonce: nonce, CodeVerifier: "v", RedirectTo: "/"})
+		stateJSON, marshalErr := json.Marshal(OidcState{CreatedAt: time.Now(), State: "s", Nonce: nonce, CodeVerifier: "v"})
 		require.NoError(t, marshalErr)
 		payload := base64.RawURLEncoding.EncodeToString(stateJSON)
 		return payload, payload + "." + base64.RawURLEncoding.EncodeToString(oidcStateMAC(key, payload))
