@@ -298,11 +298,15 @@ func (s *EnvironmentService) ResolveAgentEnvironmentByToken(ctx context.Context,
 		if err != nil {
 			return "", fmt.Errorf("failed to resolve cached agent environment: %w", err)
 		}
-		if cached.Enabled {
-			return envID, nil
+		if subtle.ConstantTimeCompare([]byte(kit.FromPtr(cached.AccessToken)), []byte(token)) == 1 {
+			if cached.Enabled {
+				return envID, nil
+			}
+			s.agentTokens.sync(envID, "")
+			return "", errors.New("invalid agent token")
 		}
-		s.agentTokens.sync(envID, "")
-		return "", errors.New("invalid agent token")
+		// A resolve racing a rotation can re-cache the old token; drop it and ask the database.
+		s.agentTokens.byToken.Delete(token)
 	}
 	if wasCached {
 		s.agentTokens.mu.Lock()
