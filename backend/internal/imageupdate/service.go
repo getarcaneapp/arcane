@@ -30,7 +30,6 @@ import (
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	kitregistry "kit.getarcane.app/registry"
-	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/digest"
 	"kit.getarcane.app/updater/refs"
 
@@ -1509,45 +1508,48 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	}, snapshot, nil
 }
 
-// resolveBatchCredentials prefers caller credentials, else caches stored ones per scan; a resumed check uses stored ones.
+// resolveBatchCredentials caches the stored credentials per scan and merges the caller's over them; a caller credential
+// replaces the stored one for the registry host it names, and the registries it leaves uncovered keep theirs.
 func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow.Task, input imageCheckInput) []types.ContainerRegistryCredential {
-	if supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey); ok && input.CredentialsKey != "" {
-		return supplied
-	}
 	credentials, _, err := s.credentials.GetOrLoad(t.ActivityID(), func(string) ([]types.ContainerRegistryCredential, bool, error) {
-		registries, loadErr := s.registryService.GetEnabledRegistries(ctx)
+		// ECR rows carry no stored username or token, so the registry service resolves them through the ECR token flow.
+		loaded, loadErr := s.registryService.GetEnabledRegistryCredentials(ctx)
 		if loadErr != nil {
 			return nil, false, loadErr
-		}
-		loaded := make([]types.ContainerRegistryCredential, 0, len(registries))
-		for _, reg := range registries {
-			if strings.TrimSpace(reg.URL) == "" || strings.TrimSpace(reg.Username) == "" || reg.Token == "" {
-				continue
-			}
-
-			token, decryptErr := crypto.Decrypt(reg.Token)
-			if decryptErr != nil {
-				slog.DebugContext(ctx, "failed to decrypt registry token for batch check", "registryUrl", reg.URL, "error", decryptErr.Error())
-				continue
-			}
-			if strings.TrimSpace(token) == "" {
-				continue
-			}
-
-			loaded = append(loaded, types.ContainerRegistryCredential{
-				URL:      reg.URL,
-				Username: reg.Username,
-				Token:    strings.TrimSpace(token),
-				Enabled:  reg.Enabled,
-			})
 		}
 		return loaded, true, nil
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "failed to load enabled registries for batch check", "error", err.Error())
-		return nil
+		credentials = nil
 	}
-	return credentials
+
+	supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey)
+	if !ok || input.CredentialsKey == "" {
+		return credentials
+	}
+	return mergeBatchCredentials(credentials, supplied)
+}
+
+// mergeBatchCredentials puts the caller's credentials first and drops the stored ones for the registry hosts they cover.
+// A caller credential that cannot authenticate covers nothing, so the stored credential of its host stays in the batch.
+func mergeBatchCredentials(stored, supplied []types.ContainerRegistryCredential) []types.ContainerRegistryCredential {
+	covered := make(map[string]bool, len(supplied))
+	for _, credential := range supplied {
+		if strings.TrimSpace(credential.Username) == "" || strings.TrimSpace(credential.Token) == "" {
+			continue
+		}
+		covered[kitregistry.Normalize(credential.URL)] = true
+	}
+	merged := make([]types.ContainerRegistryCredential, 0, len(supplied)+len(stored))
+	merged = append(merged, supplied...)
+	for _, credential := range stored {
+		if covered[kitregistry.Normalize(credential.URL)] {
+			continue
+		}
+		merged = append(merged, credential)
+	}
+	return merged
 }
 
 func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activityID, imageRef string, result *types.ImageUpdateResponse, progress *int) {
@@ -1614,7 +1616,7 @@ func (s *ImageUpdateService) RunImageCheck(ctx context.Context, request types.Im
 	return s.engine.Run(ctx, s.checkWorkflow, request, activitylib.StartRequest{}, nil)
 }
 
-// CheckImages returns each ref's result; usable credentials replace the stored registries for this check.
+// CheckImages returns each ref's result; the caller's credentials replace the stored ones for the registries they cover.
 func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.ImageUpdateCheckRequest, credentials []types.ContainerRegistryCredential) (types.ImageUpdateBatchResponse, error) {
 	if !request.All && len(request.ImageRefs) == 0 {
 		return types.ImageUpdateBatchResponse{}, nil

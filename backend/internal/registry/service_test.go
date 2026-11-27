@@ -34,6 +34,7 @@ import (
 	"gorm.io/gorm"
 
 	kit "kit.getarcane.app"
+	kitregistry "kit.getarcane.app/registry"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -85,6 +86,25 @@ func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, t
 		Token:        encryptedToken,
 		Enabled:      true,
 		RegistryType: RegistryTypeGeneric,
+	}
+	require.NoError(t, db.WithContext(t.Context()).Create(record).Error)
+}
+
+// createTestECRRegistry stores an ECR registry the way Arcane does: no username, no token, and the authorization token
+// that the ECR token flow would have fetched.
+func createTestECRRegistry(t *testing.T, db *database.DB, localUrl, ecrPassword string) {
+	t.Helper()
+
+	encryptedToken, err := crypto.Encrypt(ecrPassword)
+	require.NoError(t, err)
+
+	record := &ContainerRegistry{
+		URL:                 localUrl,
+		RegistryType:        RegistryTypeECR,
+		AWSRegion:           "us-east-1",
+		ECRToken:            encryptedToken,
+		ECRTokenGeneratedAt: new(time.Now().UTC()),
+		Enabled:             true,
 	}
 	require.NoError(t, db.WithContext(t.Context()).Create(record).Error)
 }
@@ -1482,6 +1502,62 @@ func TestContainerRegistryService_UpdateRegistry_RepositoryNamesPointerSemantics
 	assert.Empty(t, fetchRegistry(t, db, registryRecord.ID).RepositoryNames)
 }
 
+// An ECR registry stores no username or token, so a credential batch that also carries another registry's credential
+// must still resolve the ECR one instead of dropping it.
+func TestContainerRegistryService_GetEnabledRegistryCredentials_ResolvesECRAlongsideOtherRegistries(t *testing.T) {
+	db := setupContainerRegistryTestDB(t)
+	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
+	createTestECRRegistry(t, db, "123456789012.dkr.ecr.us-east-1.amazonaws.com", "ecr-password")
+	wantDigest := digest.FromString("ecr-with-other-credential").String()
+
+	var inspectCalls int
+	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+				inspectCalls++
+				authCfg := decodeRegistryAuth(t, options.EncodedRegistryAuth)
+				assert.Equal(t, "AWS", authCfg.Username)
+				assert.Equal(t, "ecr-password", authCfg.Password)
+
+				return mobyClient.DistributionInspectResult{
+					Descriptor: ocispec.Descriptor{
+						Digest: digest.Digest(wantDigest),
+					},
+				}, nil
+			},
+		}, nil
+	})
+
+	credentials, err := svc.GetEnabledRegistryCredentials(t.Context())
+	require.NoError(t, err)
+	require.Len(t, credentials, 2)
+
+	byHost := map[string]types.ContainerRegistryCredential{}
+	for _, credential := range credentials {
+		byHost[kitregistry.Normalize(credential.URL)] = credential
+	}
+
+	dockerCredential, ok := byHost["docker.io"]
+	require.True(t, ok, "the docker.io credential must resolve")
+	assert.Equal(t, "docker-user", dockerCredential.Username)
+	assert.Equal(t, "docker-token", dockerCredential.Token)
+
+	ecrCredential, ok := byHost["123456789012.dkr.ecr.us-east-1.amazonaws.com"]
+	require.True(t, ok, "the ECR credential must resolve")
+	assert.Equal(t, "AWS", ecrCredential.Username)
+	assert.Equal(t, "ecr-password", ecrCredential.Token)
+
+	// A batch that carries the docker.io credential must not keep the ECR registry from authenticating.
+	result, err := svc.InspectImageDigest(t.Context(), "123456789012.dkr.ecr.us-east-1.amazonaws.com/team/app:latest", []types.ContainerRegistryCredential{
+		{URL: "https://index.docker.io/v1/", Username: "docker-user", Token: "docker-token", Enabled: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, inspectCalls)
+	assert.Equal(t, wantDigest, result.Digest)
+	assert.Equal(t, "credential", result.AuthMethod)
+	assert.True(t, result.UsedCredential)
+}
+
 func TestListImageTagsCredentials(t *testing.T) {
 	for _, tt := range []struct {
 		name         string
@@ -1501,8 +1577,18 @@ func TestListImageTagsCredentials(t *testing.T) {
 			wantUser:     "external-user",
 			wantPassword: "external-token",
 		},
-		{name: "external excludes unrelated stored", external: []types.ContainerRegistryCredential{{URL: "other.test", Username: "external-user", Token: "external-token", Enabled: true}}},
-		{name: "disabled external ignored", external: []types.ContainerRegistryCredential{{URL: "docker.io", Username: "external-user", Token: "external-token", Enabled: false}}},
+		{
+			name:         "external for another registry keeps stored",
+			wantUser:     "stored-user",
+			wantPassword: "stored-token",
+			external:     []types.ContainerRegistryCredential{{URL: "other.test", Username: "external-user", Token: "external-token", Enabled: true}},
+		},
+		{
+			name:         "disabled external ignored",
+			wantUser:     "stored-user",
+			wantPassword: "stored-token",
+			external:     []types.ContainerRegistryCredential{{URL: "docker.io", Username: "external-user", Token: "external-token", Enabled: false}},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			db := setupContainerRegistryTestDB(t)

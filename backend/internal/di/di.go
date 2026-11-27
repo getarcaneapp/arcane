@@ -142,7 +142,6 @@ var (
 				lifecycleService *project.LifecycleService,
 				localKv *kv.KVService,
 				localRegistry *registryInternal.ContainerRegistryService,
-				localEnvironment *environment.EnvironmentService,
 				localUploads *upload.UploadService,
 				cfg *config.Config,
 			) *project.ProjectService {
@@ -158,7 +157,7 @@ var (
 					Uploads:                     localUploads,
 					Config:                      cfg,
 					KVService:                   localKv,
-					RegistryCredentialsProvider: localEnvironment.GetEnabledRegistryCredentials,
+					RegistryCredentialsProvider: localRegistry.GetEnabledRegistryCredentials,
 				})
 			},
 			provideBackupEngine,
