@@ -8,12 +8,12 @@
 		DiagnosticSummary,
 		EditorContext
 	} from '#lib/components/code-editor/analysis/types.js';
+	import { getEditorStatusHost, hasEditorStatusHost } from '#lib/components/code-editor/status-context.js';
 	import MarkdownContent from '#lib/components/markdown-content.svelte';
-	import SegmentToggle from '#lib/components/segment-toggle.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
-	import { AlertIcon, CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
+	import { AlertIcon, CodeIcon, EyeOnIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	let {
@@ -88,10 +88,16 @@
 	const showMarkdownPreview = $derived(
 		isMarkdown && markdownView === 'preview' && !outlineOpen && !diffOpen && !commandPaletteOpen
 	);
-	const markdownViewOptions = $derived([
-		{ value: 'preview', label: m.preview() },
-		{ value: 'raw', label: m.common_raw() }
-	]);
+	const statusHost = hasEditorStatusHost() ? getEditorStatusHost() : null;
+	const hostedToggle = $derived(variant === 'plain' && isMarkdown && statusHost !== null);
+
+	$effect(() => {
+		if (!hostedToggle || !statusHost) return;
+		statusHost.actions = markdownPreviewToggle;
+		return () => {
+			if (statusHost.actions === markdownPreviewToggle) statusHost.actions = null;
+		};
+	});
 
 	function selectMarkdownView(view: string) {
 		markdownChoice = { file: title, view };
@@ -127,13 +133,22 @@
 	}
 </script>
 
-{#snippet markdownViewToggle()}
-	<SegmentToggle
-		label={m.markdown_view()}
-		options={markdownViewOptions}
-		current={showMarkdownPreview ? 'preview' : 'raw'}
-		onSelect={selectMarkdownView}
+{#snippet markdownViewToggle(className?: string)}
+	<ArcaneButton
+		action="base"
+		tone={showMarkdownPreview ? 'outline-primary' : 'ghost'}
+		size="icon"
+		class={className}
+		showLabel={false}
+		icon={EyeOnIcon}
+		customLabel={m.preview()}
+		aria-pressed={showMarkdownPreview}
+		onclick={() => selectMarkdownView(showMarkdownPreview ? 'raw' : 'preview')}
 	/>
+{/snippet}
+
+{#snippet markdownPreviewToggle()}
+	{@render markdownViewToggle('size-6')}
 {/snippet}
 
 {#snippet markdownPreview()}
@@ -224,9 +239,9 @@
 
 {#if variant === 'plain'}
 	<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
-		{#if isMarkdown}
-			<div class="flex shrink-0 justify-end px-2 pb-1.5">
-				{@render markdownViewToggle()}
+		{#if isMarkdown && !hostedToggle}
+			<div class="flex shrink-0 justify-end px-2 pb-1">
+				{@render markdownPreviewToggle()}
 			</div>
 		{/if}
 		{@render panelBody()}
