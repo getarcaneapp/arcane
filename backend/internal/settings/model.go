@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/samber/mo"
 
 	kit "kit.getarcane.app"
@@ -372,6 +373,10 @@ func validateValue(meta settingFieldMeta, value string) error {
 	number, numberErr := strconv.ParseFloat(value, 64)
 	_, integerErr := strconv.Atoi(value)
 	_, cronErr := schedule.Normalize(value, meta.key)
+	if cronErr == nil {
+		// The value is stored and parsed as typed, so it must also parse unnormalized ("@daily " does not).
+		_, cronErr = cron.ParseStandard(value)
+	}
 
 	if meta.key == "projectsDirectories" {
 		if _, err := projectsDirectoryContainerPaths(value); err != nil {

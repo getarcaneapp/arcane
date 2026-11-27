@@ -659,6 +659,7 @@ func TestSettingsService_UpdateSettingRejectsInvalidCronBeforePersistence(t *tes
 	require.Error(t, svc.UpdateSetting(ctx, "pollingInterval", "0 */5 * * * *"))
 	// The scheduler prepends CRON_TZ=, so a TZ= prefix becomes six fields and fails to install.
 	require.Error(t, svc.UpdateSetting(ctx, "pollingInterval", "TZ=Europe/Berlin 0 3 * * *"))
+	require.Error(t, svc.UpdateSetting(ctx, "pollingInterval", "@daily "))
 
 	var setting SettingVariable
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pollingInterval").First(&setting).Error)
