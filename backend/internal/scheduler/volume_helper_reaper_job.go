@@ -58,7 +58,3 @@ func (j *PruningVolumeHelperJob) Run(ctx context.Context) (types.SchedulerOutcom
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
-
-func (j *PruningVolumeHelperJob) Reschedule(ctx context.Context) error {
-	return nil
-}

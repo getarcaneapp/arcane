@@ -51,7 +51,3 @@ func (j *GitCloneCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, e
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
-
-func (j *GitCloneCleanupJob) Reschedule(_ context.Context) error {
-	return nil
-}
