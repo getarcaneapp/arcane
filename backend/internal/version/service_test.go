@@ -19,9 +19,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,11 +32,11 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 )
 
@@ -60,10 +60,10 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
 				{
 					ID:    containerID,
-					State: container.StateRunning,
+					State: mobyContainer.StateRunning,
 					Labels: map[string]string{
 						labels.LabelArcane: "true",
 					},
@@ -73,10 +73,10 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 			}
 		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID:    containerID,
 				Image: imageID,
-				Config: &container.Config{
+				Config: &mobyContainer.Config{
 					Image: imageRef,
 					Labels: map[string]string{
 						labels.LabelArcane: "true",
@@ -93,7 +93,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:          imageID,
 				RepoTags:    []string{imageRef},
 				RepoDigests: []string{"ghcr.io/getarcaneapp/arcane@" + currentDigest},
@@ -210,7 +210,7 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &event.Event{}, &project.Project{}, &registry.ContainerRegistry{}))
+	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &event.Event{}, &project.Project{}, &registryInternal.ContainerRegistry{}))
 	return &database.DB{DB: db}
 }
 
@@ -218,14 +218,14 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
 
 	httpClient := server.Client()
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(httpClient),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(httpClient),
 	)
 	require.NoError(t, err)
 
@@ -236,9 +236,9 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	return cli
 }
 
-func newVersionDockerService(t *testing.T, settingsService *settings.SettingsService, server *httptest.Server) *docker.DockerClientService {
+func newVersionDockerService(t *testing.T, settingsService *settings.SettingsService, server *httptest.Server) *dockerInternal.DockerClientService {
 	t.Helper()
-	return docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newTestDockerClient(t, server))
+	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(newTestDockerClient(t, server))
 }
 
 func TestVersionService_IsChannelBuild(t *testing.T) {
@@ -283,22 +283,22 @@ func newNextChannelDockerServer(t *testing.T, containerID, imageID, repo, tag, c
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
-				{ID: containerID, State: container.StateRunning, Labels: map[string]string{labels.LabelArcane: "true"}},
+			assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
+				{ID: containerID, State: mobyContainer.StateRunning, Labels: map[string]string{labels.LabelArcane: "true"}},
 			}))
 		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+			assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID:    containerID,
 				Image: imageID,
-				Config: &container.Config{
+				Config: &mobyContainer.Config{
 					Image:  imageRef,
 					Labels: map[string]string{labels.LabelArcane: "true"},
 				},
 			}))
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+			assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:          imageID,
 				RepoTags:    []string{imageRef},
 				RepoDigests: []string{repo + "@" + currentDigest},
@@ -368,7 +368,7 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabel(t *testing.T)
 		ActivityService: activity.NewActivityService(db, settingsService),
 		DockerService:   dockerService,
 	})
-	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{DB: db})
+	registrySvc := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{DB: db})
 	svc := NewVersionService(VersionServiceParams{
 		HTTPClient:               httpClient,
 		AppVersion:               "2.8.0-next.65",
@@ -424,7 +424,7 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 		ActivityService: activity.NewActivityService(db, settingsService),
 		DockerService:   dockerService,
 	})
-	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{DB: db})
+	registrySvc := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{DB: db})
 	svc := NewVersionService(VersionServiceParams{
 		AppVersion:               "2.8.0-next.65",
 		Revision:                 "revision",
@@ -530,8 +530,8 @@ func TestVersionService_GetAppVersionInfoChannelCommitNotes(t *testing.T) {
 			require.NoError(t, err)
 			cfg = cfg.DeepCopy()
 			cfg.Config.Labels = map[string]string{
-				registry.OCIImageVersionLabel:  "v3.0.0-beta.45",
-				registry.OCIImageRevisionLabel: tt.imageRevision,
+				registryInternal.OCIImageVersionLabel:  "v3.0.0-beta.45",
+				registryInternal.OCIImageRevisionLabel: tt.imageRevision,
 			}
 			img, err = mutate.ConfigFile(img, cfg)
 			require.NoError(t, err)
@@ -578,7 +578,7 @@ func TestVersionService_GetAppVersionInfoChannelCommitNotes(t *testing.T) {
 				ActivityService: activity.NewActivityService(db, settingsService),
 				DockerService:   dockerService,
 			})
-			registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{DB: db})
+			registrySvc := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{DB: db})
 			svc := NewVersionService(VersionServiceParams{
 				HTTPClient:               httpClient,
 				AppVersion:               "3.0.0-beta.44",

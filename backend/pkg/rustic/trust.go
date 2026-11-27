@@ -9,9 +9,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
@@ -94,7 +94,7 @@ func trustBundle(ctx context.Context) []byte {
 	return bundle.Bytes()
 }
 
-func TrustMounts(ctx context.Context, dockerClient *client.Client, directory string, arcaneMounts []container.MountPoint) ([]mount.Mount, error) {
+func TrustMounts(ctx context.Context, dockerClient *mobyClient.Client, directory string, arcaneMounts []mobyContainer.MountPoint) ([]mobyMount.Mount, error) {
 	bundle := trustBundle(ctx)
 	if len(bundle) == 0 {
 		return nil, nil
@@ -112,8 +112,8 @@ func TrustMounts(ctx context.Context, dockerClient *client.Client, directory str
 		}
 	}
 	if !selfcontainer.RunningInContainer() {
-		return []mount.Mount{{
-			Type:     mount.TypeBind,
+		return []mobyMount.Mount{{
+			Type:     mobyMount.TypeBind,
 			Source:   bundlePath,
 			Target:   TrustBundlePath,
 			ReadOnly: true,
@@ -124,7 +124,7 @@ func TrustMounts(ctx context.Context, dockerClient *client.Client, directory str
 		slog.WarnContext(ctx, "Arcane's data directory is not a bind or named volume mount; Rustic runs without Arcane's CA certificates", "path", bundlePath)
 		return nil, nil
 	}
-	mounts, err := volumes.BindSubpaths(ctx, dockerClient, []mount.Mount{{
+	mounts, err := volumes.BindSubpaths(ctx, dockerClient, []mobyMount.Mount{{
 		Type:          resolved.Type,
 		Source:        resolved.Source,
 		Target:        resolved.Target,

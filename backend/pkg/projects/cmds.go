@@ -11,10 +11,10 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/pkg/activity"
@@ -231,7 +231,7 @@ func ComposeLogs(ctx context.Context, dockerHost, projectName string, out io.Wri
 	})
 }
 
-func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APIClient, dockerHost string) ([]container.Summary, error) {
+func ListGlobalComposeContainers(ctx context.Context, dockerClient mobyClient.APIClient, dockerHost string) ([]mobyContainer.Summary, error) {
 	cli := dockerClient
 	if cli == nil {
 		c, err := plainComposeClient(dockerHost)
@@ -241,10 +241,10 @@ func ListGlobalComposeContainers(ctx context.Context, dockerClient client.APICli
 		cli = c.dockerCli.Client()
 	}
 
-	filter := make(client.Filters)
+	filter := make(mobyClient.Filters)
 	filter = filter.Add("label", "com.docker.compose.project")
 
-	listResult, err := cli.ContainerList(ctx, client.ContainerListOptions{
+	listResult, err := cli.ContainerList(ctx, mobyClient.ContainerListOptions{
 		All:     true,
 		Filters: filter,
 	})
@@ -278,11 +278,11 @@ func FindComposeServiceContainerID(ctx context.Context, dockerHost, projectName,
 	return firstMatch, nil
 }
 
-func FindComposeReplica(containers []container.Summary, labels map[string]string) (container.Summary, bool) {
+func FindComposeReplica(containers []mobyContainer.Summary, labels map[string]string) (mobyContainer.Summary, bool) {
 	projectName := docker.ComposeProjectLabel(labels)
 	serviceName := docker.ComposeServiceLabel(labels)
 	if projectName == "" || serviceName == "" {
-		return container.Summary{}, false
+		return mobyContainer.Summary{}, false
 	}
 	number := strings.TrimSpace(labels[api.ContainerNumberLabel])
 	for _, candidate := range containers {
@@ -294,7 +294,7 @@ func FindComposeReplica(containers []container.Summary, labels map[string]string
 		}
 		return candidate, true
 	}
-	return container.Summary{}, false
+	return mobyContainer.Summary{}, false
 }
 
 func FormatPorts(publishers []api.PortPublisher) []string {
@@ -309,7 +309,7 @@ func FormatPorts(publishers []api.PortPublisher) []string {
 	return ports
 }
 
-func FormatDockerPorts(ports []container.PortSummary) []string {
+func FormatDockerPorts(ports []mobyContainer.PortSummary) []string {
 	var res []string
 	for _, p := range ports {
 		if p.PublicPort == 0 {

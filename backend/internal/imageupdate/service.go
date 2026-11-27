@@ -18,26 +18,25 @@ import (
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	kitregistry "kit.getarcane.app/registry"
-	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/digest"
 	"kit.getarcane.app/updater/refs"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/imageupdate/children/releasenotes"
 	"getarcane.dev/arcane/v3/internal/imageupdate/children/tags"
@@ -60,7 +59,7 @@ type (
 		db                  *database.DB
 		settingsService     *settings.SettingsService
 		registryService     *registryInternal.ContainerRegistryService
-		dockerService       *docker.DockerClientService
+		dockerService       *dockerInternal.DockerClientService
 		eventService        *event.EventService
 		notificationService *notification.NotificationService
 		registryLimiter     *registry.RegistryRateLimiter
@@ -69,7 +68,6 @@ type (
 		activityService     *activity.ActivityService
 		engine              *flow.Engine
 		checkWorkflow       *flow.Workflow
-		credentials         *cache.Cache[string, []types.ContainerRegistryCredential]
 		// requestCredentials keeps caller credentials out of the workflow journal; they expire with the check's timeout.
 		requestCredentials *cache.Cache[string, []types.ContainerRegistryCredential]
 		composeBuildRefs   *cache.Cache[string, map[string]struct{}]
@@ -154,7 +152,7 @@ type (
 		DB                  *database.DB
 		SettingsService     *settings.SettingsService
 		RegistryService     *registryInternal.ContainerRegistryService
-		DockerService       *docker.DockerClientService
+		DockerService       *dockerInternal.DockerClientService
 		EventService        *event.EventService
 		NotificationService *notification.NotificationService
 		ActivityService     *activity.ActivityService
@@ -194,10 +192,6 @@ func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 		tags:                tags.NewService(p.RegistryService, p.DockerService, p.SettingsService, registryLimiter),
 		releaseNotes:        releasenotes.NewService(p.DockerService, p.SettingsService, p.RegistryService.ImageConfig),
 		activityService:     p.ActivityService,
-		credentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
-			Capacity: 8,
-			TTL:      time.Minute,
-		},
 		// They outlive the longest check: its slot wait plus its workflow timeout.
 		requestCredentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
 			Capacity: 64,
@@ -673,7 +667,7 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 	imageID = strings.TrimPrefix(imageID, "sha256:")
 
 	if imageRef, ok := func() (string, bool) {
-		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, imageID)
 		})
 		if inspectErr != nil {
@@ -730,7 +724,7 @@ func (s *ImageUpdateService) getAllImageRefs(ctx context.Context, limit int) ([]
 	return filterImageSummariesByContainerOptOut(images, containers, limit), nil
 }
 
-func newMonitoringEligibility(containers []container.Summary) monitoringEligibility {
+func newMonitoringEligibility(containers []mobyContainer.Summary) monitoringEligibility {
 	eligibility := monitoringEligibility{
 		byImageID:   map[string]bool{},
 		byRef:       map[string]bool{},
@@ -756,7 +750,7 @@ func (e monitoringEligibility) imageEligible(imageID, normalizedRef string) bool
 	return (!usedByID && !usedByRef) || eligibleByID || eligibleRef
 }
 
-func filterImageSummariesByContainerOptOut(images []image.Summary, containers []container.Summary, limit int) []string {
+func filterImageSummariesByContainerOptOut(images []mobyImage.Summary, containers []mobyContainer.Summary, limit int) []string {
 	eligibility := newMonitoringEligibility(containers)
 
 	seen := make(map[string]struct{})
@@ -804,7 +798,7 @@ func filterImageSummariesByContainerOptOut(images []image.Summary, containers []
 }
 
 func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imageRef string, composeBuildRefs map[string]struct{}) (*localImageSnapshot, error) {
-	inspectResponse, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	inspectResponse, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageRef)
 	})
 	if err != nil {
@@ -877,7 +871,7 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 	}
 	if len(result.ContainerUpdates) == 0 {
 		saveErr := func() error {
-			dockerImage, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			dockerImage, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 				return dockerClient.ImageInspect(ctx, imageID)
 			})
 			if inspectErr != nil {
@@ -914,7 +908,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 		if kit.FromPtr(snapshot).ImageID != "" {
 			return snapshot, nil
 		}
-		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, imageRef)
 		})
 		if inspectErr != nil {
@@ -980,7 +974,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 }
 
 // extractRepoAndTagFromImage reads the image's first usable tag; an untagged image uses fallback's tag when set.
-func extractRepoAndTagFromImage(dockerImage image.InspectResponse, fallback *ImageParts) (repo, tag string) {
+func extractRepoAndTagFromImage(dockerImage mobyImage.InspectResponse, fallback *ImageParts) (repo, tag string) {
 	untagged := cmp.Or(strings.TrimSpace(kit.FromPtr(fallback).Tag), "<none>")
 	primary := max(slices.IndexFunc(dockerImage.RepoTags, func(repoTag string) bool {
 		return repoTag != "<none>:<none>" && !refs.IsDigestPinnedReference(repoTag)
@@ -1524,45 +1518,15 @@ func (s *ImageUpdateService) checkSingleImageInBatch(
 	}, snapshot, nil
 }
 
-// resolveBatchCredentials prefers caller credentials, else caches stored ones per scan; a resumed check uses stored ones.
-func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow.Task, input imageCheckInput) []types.ContainerRegistryCredential {
-	if supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey); ok && input.CredentialsKey != "" {
-		return supplied
-	}
-	credentials, _, err := s.credentials.GetOrLoad(t.ActivityID(), func(string) ([]types.ContainerRegistryCredential, bool, error) {
-		registries, loadErr := s.registryService.GetEnabledRegistries(ctx)
-		if loadErr != nil {
-			return nil, false, loadErr
-		}
-		loaded := make([]types.ContainerRegistryCredential, 0, len(registries))
-		for _, reg := range registries {
-			if strings.TrimSpace(reg.URL) == "" || strings.TrimSpace(reg.Username) == "" || reg.Token == "" {
-				continue
-			}
-
-			token, decryptErr := crypto.Decrypt(reg.Token)
-			if decryptErr != nil {
-				slog.DebugContext(ctx, "failed to decrypt registry token for batch check", "registryUrl", reg.URL, "error", decryptErr.Error())
-				continue
-			}
-			if strings.TrimSpace(token) == "" {
-				continue
-			}
-
-			loaded = append(loaded, types.ContainerRegistryCredential{
-				URL:      reg.URL,
-				Username: reg.Username,
-				Token:    strings.TrimSpace(token),
-				Enabled:  reg.Enabled,
-			})
-		}
-		return loaded, true, nil
-	})
-	if err != nil {
-		slog.DebugContext(ctx, "failed to load enabled registries for batch check", "error", err.Error())
+func (s *ImageUpdateService) resolveBatchCredentials(input imageCheckInput) []types.ContainerRegistryCredential {
+	if input.CredentialsKey == "" {
 		return nil
 	}
-	return credentials
+	supplied, ok, _ := s.requestCredentials.Get(input.CredentialsKey)
+	if !ok {
+		return nil
+	}
+	return supplied
 }
 
 func (s *ImageUpdateService) recordDigestPinnedSkip(ctx context.Context, activityID, imageRef string, result *types.ImageUpdateResponse, progress *int) {
@@ -1629,7 +1593,6 @@ func (s *ImageUpdateService) RunImageCheck(ctx context.Context, request types.Im
 	return s.engine.Run(ctx, s.checkWorkflow, request, activitylib.StartRequest{}, nil)
 }
 
-// CheckImages returns each ref's result; usable credentials replace the stored registries for this check.
 func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.ImageUpdateCheckRequest, credentials []types.ContainerRegistryCredential) (types.ImageUpdateBatchResponse, error) {
 	if !request.All && len(request.ImageRefs) == 0 {
 		return types.ImageUpdateBatchResponse{}, nil
@@ -1791,7 +1754,7 @@ func (s *ImageUpdateService) checkImage(ctx context.Context, t flow.Task) (any, 
 	if err != nil {
 		return nil, err
 	}
-	res, snapshot, checkErr := s.checkSingleImageInBatch(ctx, s.resolveBatchCredentials(ctx, t, input), parts, composeBuildRefs, t.ActivityID(), time.Now())
+	res, snapshot, checkErr := s.checkSingleImageInBatch(ctx, s.resolveBatchCredentials(input), parts, composeBuildRefs, t.ActivityID(), time.Now())
 	// Shutdown hands the task back for redelivery rather than recording it as a failed check.
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -1858,7 +1821,7 @@ func (s *ImageUpdateService) checkTagPolicies(ctx context.Context, t flow.Task) 
 	if input.Report && t.Recovered() {
 		return tagCheckOutput{Failures: []types.TargetOutcome{}}, nil
 	}
-	containerUpdates, err := s.checkContainerTagUpdates(context.WithValue(ctx, batchChangeCoalesceKey{}, true), tagRefs, s.resolveBatchCredentials(ctx, t, input), seedDigests)
+	containerUpdates, err := s.checkContainerTagUpdates(context.WithValue(ctx, batchChangeCoalesceKey{}, true), tagRefs, s.resolveBatchCredentials(input), seedDigests)
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
@@ -1889,7 +1852,6 @@ func (s *ImageUpdateService) finalizeImageCheck(ctx context.Context, t flow.Task
 	s.requestCredentials.Delete(request.CredentialsKey)
 	if t.ActivityID() != "" {
 		s.composeBuildRefs.Delete(t.ActivityID())
-		s.credentials.Delete(t.ActivityID())
 	}
 	groups, results, err := imageCheckResults(t)
 	if err != nil {
@@ -2282,7 +2244,7 @@ func (s *ImageUpdateService) checkContainerTagUpdates(
 	})
 }
 
-func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt container.Summary, result *types.ImageUpdateResponse) error {
+func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt mobyContainer.Summary, result *types.ImageUpdateResponse) error {
 	parsed, err := refs.NormalizeReference(cnt.Image)
 	if err != nil {
 		return err

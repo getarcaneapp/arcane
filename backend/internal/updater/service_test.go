@@ -20,16 +20,16 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/pkg/authconfig"
-	"github.com/moby/moby/api/types/container"
-	dockertypesimage "github.com/moby/moby/api/types/image"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	mobyAuthConfig "github.com/moby/moby/api/pkg/authconfig"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/labels"
@@ -41,7 +41,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
@@ -49,7 +49,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/notification"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -114,17 +114,17 @@ type (
 	}
 )
 
-func newUnreachableDockerService(t *testing.T) *docker.DockerClientService {
+func newUnreachableDockerService(t *testing.T) *dockerInternal.DockerClientService {
 	t.Helper()
 
-	return newSettingsDockerService(t, func() *client.Client {
-		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
+	return newSettingsDockerService(t, func() *mobyClient.Client {
+		cli, _ := mobyClient.New(mobyClient.WithHost("tcp://127.0.0.1:1"), mobyClient.WithAPIVersion("1.41"))
 		return cli
 	}())
 }
 
-func (f fakeDockerClientProvider) DockerClient(context.Context) (*client.Client, error) {
-	cli, _ := f.client.(*client.Client)
+func (f fakeDockerClientProvider) DockerClient(context.Context) (*mobyClient.Client, error) {
+	cli, _ := f.client.(*mobyClient.Client)
 	if cli == nil {
 		return nil, errors.New("docker client unavailable")
 	}
@@ -179,10 +179,10 @@ func (f *fakeProjectUpdater) UpdateServiceImages(_ context.Context, projectID st
 
 func newUpdaterApplyPendingDockerServer(
 	t *testing.T,
-	containers []container.Summary,
-	verificationByService map[string][]container.Summary,
-	inspectByID map[string]container.InspectResponse,
-	imageInspectByRef map[string]dockertypesimage.InspectResponse,
+	containers []mobyContainer.Summary,
+	verificationByService map[string][]mobyContainer.Summary,
+	inspectByID map[string]mobyContainer.InspectResponse,
+	imageInspectByRef map[string]mobyImage.InspectResponse,
 ) *httptest.Server {
 	t.Helper()
 
@@ -199,7 +199,7 @@ func newUpdaterApplyPendingDockerServer(
 			})
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, []dockertypesimage.Summary{})
+			_ = json.MarshalWrite(w, []mobyImage.Summary{})
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			encodedRef := strings.TrimSuffix(r.URL.Path[strings.LastIndex(r.URL.Path, "/images/")+len("/images/"):], "/json")
 			imageRef, err := url.PathUnescape(encodedRef)
@@ -502,7 +502,7 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 
 	t.Run("delegates to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}))
+		require.NoError(t, db.AutoMigrate(&registryInternal.ContainerRegistry{}, &kv.KVEntry{}))
 		settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 			Ctx:    ctx,
 			DB:     db,
@@ -516,9 +516,9 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 		imageSvc := image.NewImageService(image.ImageServiceParams{
 			DB:            db,
 			DockerService: dockerSvc,
-			RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+			RegistryService: registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 				DB: db,
-				DockerClient: func(ctx context.Context) (registry.RegistryDaemonClient, error) {
+				DockerClient: func(ctx context.Context) (registryInternal.RegistryDaemonClient, error) {
 					return dockerSvc.GetClient(ctx)
 				},
 				KVService:       kv.NewKVService(db),
@@ -537,9 +537,6 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			DB:            db,
 			DockerService: newUnreachableDockerService(t),
 		})
-		projectSvc.RegistryCredentialsProvider = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-			DB: db,
-		}).GetEnabledRegistryCredentials
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 			DB:              db,
 			EventService:    event.NewEventService(db, &config.Config{}, nil),
@@ -560,7 +557,7 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 
 	t.Run("passes database registry credentials to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}))
+		require.NoError(t, db.AutoMigrate(&registryInternal.ContainerRegistry{}, &kv.KVEntry{}))
 		crypto.InitEncryption(crypto.Config{
 			Environment:   string(config.AppEnvironmentTest),
 			EncryptionKey: "test-encryption-key-for-testing-32bytes-min",
@@ -583,7 +580,7 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 		dockerSvc := newSettingsDockerService(t, newTestDockerClient(t, server))
-		registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		registrySvc := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 			DB:        db,
 			KVService: kv.NewKVService(db),
 		})
@@ -600,14 +597,10 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			EventService:    event.NewEventService(db, &config.Config{}, nil),
 			SettingsService: settingsService,
 		})
-		envSvc := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-			DB: db,
-		})
 		projectSvc := project.NewProjectService(project.ProjectServiceParams{
 			DB:            db,
 			DockerService: newUnreachableDockerService(t),
 		})
-		projectSvc.RegistryCredentialsProvider = envSvc.GetEnabledRegistryCredentials
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 			DB:              db,
 			EventService:    event.NewEventService(db, &config.Config{}, nil),
@@ -693,12 +686,12 @@ func TestUpdaterService_PendingImageUpdatesAdapter(t *testing.T) {
 	assert.Equal(t, &lastError, records[0].LastError)
 }
 
-func newEmptyContainerListDockerService(t *testing.T) *docker.DockerClientService {
+func newEmptyContainerListDockerService(t *testing.T) *dockerInternal.DockerClientService {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 			return
@@ -1192,7 +1185,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjects(t *
 		labels.LabelUpdateStrategy:   "auto",
 	}
 
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "container-fail",
 			Names:   []string{"/proj-fail-app-1"},
@@ -1211,7 +1204,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjects(t *
 		},
 	}
 
-	verificationByService := map[string][]container.Summary{
+	verificationByService := map[string][]mobyContainer.Summary{
 		"proj-success/app": {
 			{
 				ID:      "container-success-new",
@@ -1224,20 +1217,20 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjects(t *
 		},
 	}
 
-	inspectByID := map[string]container.InspectResponse{
+	inspectByID := map[string]mobyContainer.InspectResponse{
 		"container-success-new": {
 			ID:    "container-success-new",
 			Image: newImageIDUpdated,
-			Config: &container.Config{
+			Config: &mobyContainer.Config{
 				Image:  newRefUpdated,
 				Labels: updatedLabels,
 			},
-			State: &container.State{Running: true},
+			State: &mobyContainer.State{Running: true},
 		},
 		"container-fail": {
 			ID:    "container-fail",
 			Image: oldImageIDFailed,
-			Config: &container.Config{
+			Config: &mobyContainer.Config{
 				Image:  oldRefFailed,
 				Labels: failedLabels,
 			},
@@ -1245,14 +1238,14 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjects(t *
 		"container-success": {
 			ID:    "container-success",
 			Image: oldImageIDUpdated,
-			Config: &container.Config{
+			Config: &mobyContainer.Config{
 				Image:  oldRefUpdated,
 				Labels: updatedLabels,
 			},
 		},
 	}
 
-	imageInspectByRef := map[string]dockertypesimage.InspectResponse{
+	imageInspectByRef := map[string]mobyImage.InspectResponse{
 		newRefFailed: {
 			ID:       newImageIDFailed,
 			RepoTags: []string{newRefFailed},
@@ -1375,7 +1368,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 		labels.LabelUpdateStrategy:     "auto",
 	}
 
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "arcane-container",
 			Names:   []string{"/arcane"},
@@ -1385,7 +1378,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 			State:   "running",
 		},
 	}
-	verificationByService := map[string][]container.Summary{
+	verificationByService := map[string][]mobyContainer.Summary{
 		"arcane/server": {
 			{
 				ID:      "arcane-container-new",
@@ -1397,18 +1390,18 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 			},
 		},
 	}
-	inspectByID := map[string]container.InspectResponse{
+	inspectByID := map[string]mobyContainer.InspectResponse{
 		"arcane-container": {
 			ID:    "arcane-container",
 			Name:  "/arcane",
 			Image: oldImageID,
-			Config: &container.Config{
+			Config: &mobyContainer.Config{
 				Image:  oldRef,
 				Labels: arcaneLabels,
 			},
 		},
 	}
-	imageInspectByRef := map[string]dockertypesimage.InspectResponse{
+	imageInspectByRef := map[string]mobyImage.InspectResponse{
 		newRef: {
 			ID:       newImageID,
 			RepoTags: []string{newRef},
@@ -1514,32 +1507,32 @@ func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, t
 	encryptedToken, err := crypto.Encrypt(token)
 	require.NoError(t, err)
 
-	reg := &registry.ContainerRegistry{
+	reg := &registryInternal.ContainerRegistry{
 		URL:          localUrl,
 		Username:     username,
 		Token:        encryptedToken,
 		Enabled:      true,
-		RegistryType: registry.RegistryTypeGeneric,
+		RegistryType: registryInternal.RegistryTypeGeneric,
 	}
 	require.NoError(t, db.WithContext(t.Context()).Create(reg).Error)
 }
 
-func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
+func decodeRegistryAuth(t *testing.T, encoded string) mobyRegistry.AuthConfig {
 	t.Helper()
 
-	cfg, err := authconfig.Decode(encoded)
+	cfg, err := mobyAuthConfig.Decode(encoded)
 	require.NoError(t, err)
 	return *cfg
 }
 
-func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
 
 	httpClient := server.Client()
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(httpClient),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(httpClient),
 	)
 	require.NoError(t, err)
 
@@ -1550,7 +1543,7 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	return cli
 }
 
-func newImagePullServerWithObserver(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef, authHeader string)) *httptest.Server {
+func newImagePullServerWithObserver(t *testing.T, inspectByRef map[string]mobyImage.InspectResponse, onPull func(fullRef, authHeader string)) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1646,34 +1639,34 @@ func TestUpdaterService_ScopedPendingRecordsIsolation(t *testing.T) {
 		},
 	}
 	require.NoError(t, db.Create(&stored).Error)
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "tag-a",
 			Image:   imageRef,
 			ImageID: "shared-image",
 			Labels:  map[string]string{labels.LabelUpdateStrategy: "tag"},
-			State:   container.StateRunning,
+			State:   mobyContainer.StateRunning,
 		},
 		{
 			ID:      "tag-b",
 			Image:   imageRef,
 			ImageID: "shared-image",
 			Labels:  map[string]string{labels.LabelUpdateStrategy: "tag"},
-			State:   container.StateRunning,
+			State:   mobyContainer.StateRunning,
 		},
 		{
 			ID:      "digest-a",
 			Image:   imageRef,
 			ImageID: "shared-image",
 			Labels:  map[string]string{labels.LabelUpdateStrategy: "digest"},
-			State:   container.StateRunning,
+			State:   mobyContainer.StateRunning,
 		},
 		{
 			ID:      "digest-b",
 			Image:   imageRef,
 			ImageID: "shared-image",
 			Labels:  map[string]string{labels.LabelUpdateStrategy: "digest"},
-			State:   container.StateRunning,
+			State:   mobyContainer.StateRunning,
 		},
 	}
 	server := newUpdaterApplyPendingDockerServer(t, containers, nil, nil, nil)
@@ -1745,30 +1738,30 @@ func TestUpdaterService_SharedDigestRecordClearing(t *testing.T) {
 				UpdateType: imageupdate.UpdateTypeDigest,
 			}
 			require.NoError(t, db.Create(&record).Error)
-			containers := []container.Summary{
+			containers := []mobyContainer.Summary{
 				{
 					ID:      "updated",
 					Image:   imageRef,
 					ImageID: "new-image",
 					Labels:  map[string]string{labels.LabelUpdateStrategy: "digest"},
-					State:   container.StateRunning,
+					State:   mobyContainer.StateRunning,
 				},
 				{
 					ID:      "remaining",
 					Image:   imageRef,
 					ImageID: tt.remainingImage,
 					Labels:  map[string]string{labels.LabelUpdateStrategy: "digest"},
-					State:   container.StateRunning,
+					State:   mobyContainer.StateRunning,
 				},
 				{
 					ID:      "separate-tag-policy",
 					Image:   imageRef,
 					ImageID: "old-image",
 					Labels:  map[string]string{labels.LabelUpdateStrategy: "tag"},
-					State:   container.StateRunning,
+					State:   mobyContainer.StateRunning,
 				},
 			}
-			server := newUpdaterApplyPendingDockerServer(t, containers, nil, nil, map[string]dockertypesimage.InspectResponse{imageRef: {ID: "new-image"}})
+			server := newUpdaterApplyPendingDockerServer(t, containers, nil, nil, map[string]mobyImage.InspectResponse{imageRef: {ID: "new-image"}})
 			dockerSvc := newSettingsDockerService(t, newTestDockerClient(t, server))
 			svc, err := NewUpdaterService(UpdaterServiceParams{
 				DB:              db,
@@ -1807,7 +1800,7 @@ func TestUpdaterProjectChecksWithoutContainers(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		digest := "sha256:" + strings.Repeat("a", 64)
-		if !assert.NoError(t, json.MarshalWrite(w, dockertypesimage.InspectResponse{ID: digest, RepoDigests: []string{"alpine@" + digest}})) {
+		if !assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{ID: digest, RepoDigests: []string{"alpine@" + digest}})) {
 			return
 		}
 	}))
@@ -1881,7 +1874,7 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{{
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{{
 				ID:    "app",
 				Names: []string{"/app"},
 				Image: immutableRef,
@@ -1890,12 +1883,12 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 				return
 			}
 		case strings.HasSuffix(r.URL.Path, "/containers/app/json"):
-			inspect := container.InspectResponse{
+			inspect := mobyContainer.InspectResponse{
 				ID:     "app",
 				Name:   "/app",
 				Image:  "sha256:baseline",
-				Config: &container.Config{Image: immutableRef},
-				State:  &container.State{StartedAt: "baseline", Running: true},
+				Config: &mobyContainer.Config{Image: immutableRef},
+				State:  &mobyContainer.State{StartedAt: "baseline", Running: true},
 			}
 			if !assert.NoError(t, json.MarshalWrite(w, inspect)) {
 				return
@@ -2024,7 +2017,7 @@ func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, deferred(updater.ImageUpdateRecord{ID: tt.id}, container.Summary{Labels: tt.labels}))
+			require.Equal(t, tt.want, deferred(updater.ImageUpdateRecord{ID: tt.id}, mobyContainer.Summary{Labels: tt.labels}))
 		})
 	}
 }
@@ -2081,14 +2074,14 @@ func TestUpdaterService_AutoUpdateDeferral_VulnerabilityGateBlock(t *testing.T) 
 
 	deferred, err := svc.autoUpdateDeferral(ctx, time.Now())
 	require.NoError(t, err)
-	assert.True(t, deferred(updater.ImageUpdateRecord{ID: "blocked"}, container.Summary{}))
-	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "blocked-old-policy"}, container.Summary{}))
-	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "pending"}, container.Summary{}))
+	assert.True(t, deferred(updater.ImageUpdateRecord{ID: "blocked"}, mobyContainer.Summary{}))
+	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "blocked-old-policy"}, mobyContainer.Summary{}))
+	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "pending"}, mobyContainer.Summary{}))
 
 	require.NoError(t, settingsService.SetBoolSetting(ctx, "vulnerabilityUpdateGateEnabled", false))
 	deferred, err = svc.autoUpdateDeferral(ctx, time.Now())
 	require.NoError(t, err)
-	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "blocked"}, container.Summary{}))
+	assert.False(t, deferred(updater.ImageUpdateRecord{ID: "blocked"}, mobyContainer.Summary{}))
 }
 
 func updaterScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
@@ -2313,7 +2306,7 @@ func newGateDockerServer(t *testing.T, digest string) (*httptest.Server, *gateDo
 			calls.removed = append(calls.removed, ref)
 			delete(calls.present, ref)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, []dockertypesimage.DeleteResponse{{Deleted: "sha256:scanned-image"}})
+			_ = json.MarshalWrite(w, []mobyImage.DeleteResponse{{Deleted: "sha256:scanned-image"}})
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/distribution/"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.MarshalWrite(w, map[string]any{
@@ -2332,7 +2325,7 @@ func newGateDockerServer(t *testing.T, digest string) (*httptest.Server, *gateDo
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, dockertypesimage.InspectResponse{ID: "sha256:scanned-image"})
+			_ = json.MarshalWrite(w, mobyImage.InspectResponse{ID: "sha256:scanned-image"})
 		default:
 			http.NotFound(w, r)
 		}
@@ -2344,7 +2337,7 @@ func newGateDockerServer(t *testing.T, digest string) (*httptest.Server, *gateDo
 func newGateTestUpdater(t *testing.T, db *database.DB, server *httptest.Server, scanner VulnerabilityScanner) *UpdaterService {
 	t.Helper()
 	ctx := t.Context()
-	require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}))
+	require.NoError(t, db.AutoMigrate(&registryInternal.ContainerRegistry{}, &kv.KVEntry{}))
 	settingsService, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    ctx,
 		DB:     db,
@@ -2363,9 +2356,9 @@ func newGateTestUpdater(t *testing.T, db *database.DB, server *httptest.Server, 
 	cfg := &config.Config{}
 	eventSvc := event.NewEventService(db, cfg, nil)
 	activitySvc := activity.NewActivityService(db, settingsService)
-	registrySvc := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registrySvc := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(ctx context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(ctx context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return dockerSvc.GetClient(ctx)
 		},
 		KVService:       kv.NewKVService(db),
@@ -2404,9 +2397,6 @@ func newGateTestUpdater(t *testing.T, db *database.DB, server *httptest.Server, 
 		DB:            db,
 		DockerService: newUnreachableDockerService(t),
 	})
-	projectSvc.RegistryCredentialsProvider = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-		DB: db,
-	}).GetEnabledRegistryCredentials
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:                   db,
 		EventService:         eventSvc,

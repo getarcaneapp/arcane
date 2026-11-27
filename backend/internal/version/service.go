@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/streams/agg"
@@ -26,10 +26,10 @@ import (
 	"getarcane.dev/arcane/v3/buildables"
 	"getarcane.dev/arcane/v3/internal/apns"
 	"getarcane.dev/arcane/v3/internal/config"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	arcaneregistry "getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
@@ -60,8 +60,8 @@ type (
 		httpClient               *http.Client
 		cache                    *cache.Cache[struct{}, latestRelease]
 		commitNotesCache         *cache.Cache[string, string]
-		containerRegistryService *registry.ContainerRegistryService
-		dockerService            *docker.DockerClientService
+		containerRegistryService *registryInternal.ContainerRegistryService
+		dockerService            *dockerInternal.DockerClientService
 		eventService             *event.EventService
 		imageUpdateService       *imageupdate.ImageUpdateService
 		settingsService          *settings.SettingsService
@@ -73,8 +73,8 @@ type (
 
 	VersionServiceParams struct {
 		HTTPClient               *http.Client
-		ContainerRegistryService *registry.ContainerRegistryService
-		DockerService            *docker.DockerClientService
+		ContainerRegistryService *registryInternal.ContainerRegistryService
+		DockerService            *dockerInternal.DockerClientService
 		EventService             *event.EventService
 		ImageUpdateService       *imageupdate.ImageUpdateService
 		SettingsService          *settings.SettingsService
@@ -284,23 +284,23 @@ func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, ne
 
 	lookupRef := kit.Ternary(newestDigest != "", imageRef+"@"+newestDigest, imageRef+":"+tag)
 
-	cfg, err := s.containerRegistryService.ImageConfig(ctx, lookupRef, registry.ImageConfigOptions{})
+	cfg, err := s.containerRegistryService.ImageConfig(ctx, lookupRef, registryInternal.ImageConfigOptions{})
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to resolve next-channel image config", "imageRef", lookupRef, "error", err)
 		return nextImage{}
 	}
-	if strings.TrimSpace(cfg.Config.Labels[registry.OCIImageVersionLabel]) == "" {
+	if strings.TrimSpace(cfg.Config.Labels[registryInternal.OCIImageVersionLabel]) == "" {
 		slog.WarnContext(ctx, "Next-channel image has no version label", "imageRef", lookupRef)
 		return nextImage{}
 	}
 
-	normalized := s.normalizeVersion(cfg.Config.Labels[registry.OCIImageVersionLabel])
+	normalized := s.normalizeVersion(cfg.Config.Labels[registryInternal.OCIImageVersionLabel])
 	if !semver.IsValid(normalized) {
-		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", cfg.Config.Labels[registry.OCIImageVersionLabel])
+		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", cfg.Config.Labels[registryInternal.OCIImageVersionLabel])
 	}
 	return nextImage{
 		Version:  kit.Ternary(semver.IsValid(normalized), normalized, ""),
-		Revision: strings.TrimSpace(cfg.Config.Labels[registry.OCIImageRevisionLabel]),
+		Revision: strings.TrimSpace(cfg.Config.Labels[registryInternal.OCIImageRevisionLabel]),
 	}
 }
 
@@ -487,8 +487,8 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (detected c
 	}
 	slog.DebugContext(ctx, "detectCurrentImageInfo: detected container", "containerId", containerId)
 
-	inspectResult, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, cli, containerId, client.ContainerInspectOptions{})
+	inspectResult, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, cli, containerId, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
 		slog.DebugContext(ctx, "detectCurrentImageInfo: failed to inspect container", "containerId", containerId, "error", err)
@@ -516,7 +516,7 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (detected c
 	if base.ImageID == "" {
 		return base
 	}
-	imageInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+	imageInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return cli.ImageInspect(ctx, base.ImageID)
 	})
 	if err != nil {

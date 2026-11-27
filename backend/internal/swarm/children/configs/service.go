@@ -7,17 +7,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	Service struct {
-		docker        *docker.DockerClientService
+		docker        *dockerInternal.DockerClientService
 		ensureManager func(ctx context.Context) error
 	}
 )
@@ -44,7 +44,7 @@ var configPagination = pagination.Config[types.SwarmConfig]{
 	},
 }
 
-func NewService(dockerService *docker.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
+func NewService(dockerService *dockerInternal.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
 	return &Service{docker: dockerService, ensureManager: ensureManager}
 }
 
@@ -53,8 +53,8 @@ func (s *Service) ListConfigs(ctx context.Context, params pagination.QueryParams
 		return nil, pagination.Response{}, err
 	}
 
-	listResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigListResult, error) {
-		return dockerClient.ConfigList(ctx, client.ConfigListOptions{})
+	listResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ConfigListResult, error) {
+		return dockerClient.ConfigList(ctx, mobyClient.ConfigListOptions{})
 	})
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm configs: %w", err)
@@ -73,8 +73,8 @@ func (s *Service) GetConfig(ctx context.Context, configID string) (*types.SwarmC
 		return nil, err
 	}
 
-	cfgResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigInspectResult, error) {
-		return dockerClient.ConfigInspect(ctx, configID, client.ConfigInspectOptions{})
+	cfgResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ConfigInspectResult, error) {
+		return dockerClient.ConfigInspect(ctx, configID, mobyClient.ConfigInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm config: %w", err)
@@ -92,8 +92,8 @@ func (s *Service) CreateConfig(ctx context.Context, config types.SwarmConfig) (*
 		return nil, errors.New("config spec name is required")
 	}
 
-	createResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigCreateResult, error) {
-		return dockerClient.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: config.Spec})
+	createResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ConfigCreateResult, error) {
+		return dockerClient.ConfigCreate(ctx, mobyClient.ConfigCreateOptions{Spec: config.Spec})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create swarm config: %w", err)
@@ -108,11 +108,11 @@ func (s *Service) UpdateConfig(ctx context.Context, configID string, req types.S
 		return nil, err
 	}
 
-	if _, updateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigUpdateResult, error) {
-		return dockerClient.ConfigUpdate(ctx, current.ID, client.ConfigUpdateOptions{
-			Version: swarm.Version{Index: cmp.Or(req.Version, current.Version.Index)},
-			Spec: swarm.ConfigSpec{
-				Annotations: swarm.Annotations{
+	if _, updateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ConfigUpdateResult, error) {
+		return dockerClient.ConfigUpdate(ctx, current.ID, mobyClient.ConfigUpdateOptions{
+			Version: mobySwarm.Version{Index: cmp.Or(req.Version, current.Version.Index)},
+			Spec: mobySwarm.ConfigSpec{
+				Annotations: mobySwarm.Annotations{
 					Name:   current.Spec.Name,
 					Labels: req.Labels,
 				},
@@ -132,8 +132,8 @@ func (s *Service) RemoveConfig(ctx context.Context, configID string) error {
 		return err
 	}
 
-	if _, configRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigRemoveResult, error) {
-		return dockerClient.ConfigRemove(ctx, configID, client.ConfigRemoveOptions{})
+	if _, configRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ConfigRemoveResult, error) {
+		return dockerClient.ConfigRemove(ctx, configID, mobyClient.ConfigRemoveOptions{})
 	}); configRemoveErr != nil {
 		return fmt.Errorf("failed to remove swarm config: %w", configRemoveErr)
 	}

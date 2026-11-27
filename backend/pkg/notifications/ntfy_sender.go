@@ -10,7 +10,7 @@ import (
 
 	"github.com/nicholas-fedor/shoutrrr/pkg/types"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func BuildNtfyURL(config NtfyConfig) (string, error) {

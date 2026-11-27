@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +22,7 @@ func TestPullAsTag(t *testing.T) {
 		require.ErrorContains(t, err, "does not belong to repository")
 	})
 
-	newClient := func(t *testing.T, selectedID string, tagStatus int) *client.Client {
+	newClient := func(t *testing.T, selectedID string, tagStatus int) *mobyClient.Client {
 		t.Helper()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
@@ -43,9 +43,9 @@ func TestPullAsTag(t *testing.T) {
 			}
 		}))
 		t.Cleanup(server.Close)
-		dockerClient, err := client.New(
-			client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
-			client.WithAPIVersion("1.41"),
+		dockerClient, err := mobyClient.New(
+			mobyClient.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
+			mobyClient.WithAPIVersion("1.41"),
 		)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = dockerClient.Close() })

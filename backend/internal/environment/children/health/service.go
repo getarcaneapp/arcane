@@ -8,18 +8,18 @@ import (
 	"strings"
 	"time"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/agent"
 )
 
 type (
 	Service struct {
-		dockerService *docker.DockerClientService
+		dockerService *dockerInternal.DockerClientService
 		tunnels       *agent.TunnelRegistry
 	}
 )
 
-func New(dockerService *docker.DockerClientService, tunnels *agent.TunnelRegistry) *Service {
+func New(dockerService *dockerInternal.DockerClientService, tunnels *agent.TunnelRegistry) *Service {
 	return &Service{
 		dockerService: dockerService,
 		tunnels:       tunnels,

@@ -7,7 +7,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -17,6 +19,7 @@ type (
 	ImagePatchHandler struct {
 		imagePatchService *Service
 		appCtx            context.Context
+		checkImageAccess  func(ctx context.Context, envID, perm, imageRef string) error
 	}
 
 	PatchImageInput struct {
@@ -47,6 +50,11 @@ type (
 )
 
 func (h *ImagePatchHandler) PatchImage(ctx context.Context, input *PatchImageInput) (*handlerutil.Out[types.PatchRecord], error) {
+	if h.checkImageAccess != nil {
+		if err := h.checkImageAccess(ctx, input.EnvironmentID, authz.PermImagesPatch, input.ImageID); err != nil {
+			return nil, err
+		}
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -98,6 +106,9 @@ func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPat
 }
 
 func (h *ImagePatchHandler) ListImagePatches(ctx context.Context, input *ListImagePatchesInput) (*handlerutil.Page[types.PatchRecord], error) {
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermImagesList, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermImagesList)
+	}
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	params.SkipCount = !input.IncludeTotal
 	if input.Status != "" {

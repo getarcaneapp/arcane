@@ -20,7 +20,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 
@@ -310,15 +310,15 @@ func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync,
 		slog.ErrorContext(ctx, "Failed to mark git backup running", "error", markBackupRunningErr, "syncId", localSync.ID)
 	}
 
-	lock := s.branchLock(localSync.RepositoryID, localSync.Branch)
-	lock.Lock()
-	defer lock.Unlock()
-
 	baseline := kit.Ternary(opts.Baseline != nil, opts.Baseline, localSync.BackupSnapshot())
 	snapshot, err := s.snapshotLiveProject(ctx, localSync, project, slices.Collect(maps.Keys(baseline)))
 	if err != nil {
 		return result, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to snapshot project files", err, false)
 	}
+
+	lock := s.branchLock(localSync.RepositoryID, localSync.Branch)
+	lock.Lock()
+	defer lock.Unlock()
 
 	for attempt := 1; attempt <= BackupPushAttempts; attempt++ {
 		retry, commitBackupErr := s.commitBackup(ctx, localSync, project, actor, result, authConfig, identity, snapshot, baseline, opts, startedAt)
@@ -346,6 +346,9 @@ func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync,
 
 func (s *Service) snapshotLiveProject(ctx context.Context, localSync *projectpkg.GitOpsSync, project *projectpkg.Project, tracked []string) (*backupSnapshot, error) {
 	unlock, err := s.projectService.LockProject(ctx, "snapshot project for git push", project.ID)
+	for errors.Is(err, common.ErrProjectLocked) {
+		unlock, err = s.projectService.LockProject(ctx, "snapshot project for git push", project.ID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -778,10 +781,12 @@ func (
 		"backup_conflict":       needsAttention,
 		"backup_failure_reason": reason,
 	}
-	if err := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", localSync.ID).Updates(updates).Error; err != nil {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := s.db.WithContext(writeCtx).Model(&projectpkg.GitOpsSync{}).Where("id = ?", localSync.ID).Updates(updates).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to record git backup failure", "error", err, "syncId", localSync.ID)
 	}
-	s.logError(ctx, localSync, actor, errMsg)
+	s.logError(writeCtx, localSync, actor, errMsg)
 	if needsAttention {
 		return common.Classify(common.ErrConflict, fmt.Errorf("%s: %w", message, failure))
 	}

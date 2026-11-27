@@ -22,15 +22,15 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/klauspost/compress/zstd"
-	"github.com/moby/buildkit/util/attestation"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	mobyBuildkitAttestation "github.com/moby/buildkit/util/attestation"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyClient "github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
@@ -39,7 +39,7 @@ import (
 
 type (
 	Service struct {
-		dockerService *docker.DockerClientService
+		dockerService *dockerInternal.DockerClientService
 		registryAuth  func(ctx context.Context, imageRef string) (string, error)
 	}
 
@@ -96,7 +96,7 @@ var (
 )
 
 func NewService(
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	registryAuth func(ctx context.Context, imageRef string) (string, error),
 ) *Service {
 	return &Service{dockerService: dockerService, registryAuth: registryAuth}
@@ -193,9 +193,9 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 		}
 
 		for _, descriptor := range indexManifest.Manifests {
-			referenceDigest := strings.TrimSpace(descriptor.Annotations[attestation.DockerAnnotationReferenceDigest])
+			referenceDigest := strings.TrimSpace(descriptor.Annotations[mobyBuildkitAttestation.DockerAnnotationReferenceDigest])
 			target, ok := subjectByDigest[referenceDigest]
-			if (descriptor.Annotations[attestation.DockerAnnotationReferenceType] != attestation.DockerAnnotationReferenceTypeDefault &&
+			if (descriptor.Annotations[mobyBuildkitAttestation.DockerAnnotationReferenceType] != mobyBuildkitAttestation.DockerAnnotationReferenceTypeDefault &&
 				descriptor.ArtifactType != dockerAttestationManifestArtifactType) || (referenceDigest != "" && !ok) {
 				continue
 			}
@@ -248,7 +248,7 @@ func (s *Service) resolveImageAttestationReference(ctx context.Context, imageNam
 		return reference{}, common.Classify(common.ErrBadRequest, errors.New("image name is required"))
 	}
 
-	if inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	if inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageName)
 	}); inspectErr == nil {
 		imageRef := func() string {
@@ -309,15 +309,15 @@ func (s *Service) readDaemonAttestations(
 	hasPlatform bool,
 	query Query,
 ) ([]types.ImageAttestation, error) {
-	options := make([]client.ImageAttestationsOption, 0, 3)
+	options := make([]mobyClient.ImageAttestationsOption, 0, 3)
 	if hasPlatform {
-		options = append(options, client.ImageAttestationsWithPlatform(platform))
+		options = append(options, mobyClient.ImageAttestationsWithPlatform(platform))
 	}
 	if query.PredicateType != "" {
-		options = append(options, client.ImageAttestationsWithPredicateTypes(query.PredicateType))
+		options = append(options, mobyClient.ImageAttestationsWithPredicateTypes(query.PredicateType))
 	}
 
-	summary, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageAttestationsResult, error) {
+	summary, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageAttestationsResult, error) {
 		return dockerClient.ImageAttestations(ctx, imageName, options...)
 	})
 	if err != nil {
@@ -332,8 +332,8 @@ func (s *Service) readDaemonAttestations(
 		}
 	}
 
-	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageAttestationsResult, error) {
-		return dockerClient.ImageAttestations(ctx, imageName, append(options, client.ImageAttestationsWithStatement())...)
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageAttestationsResult, error) {
+		return dockerClient.ImageAttestations(ctx, imageName, append(options, mobyClient.ImageAttestationsWithStatement())...)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read daemon attestations for %q: %w", imageName, err)
@@ -341,7 +341,7 @@ func (s *Service) readDaemonAttestations(
 	return daemonStatementsToAttestations(result.Items, kit.Ternary(hasPlatform, platforms.Format(platform), resolution.Platform), query)
 }
 
-func daemonStatementsToAttestations(items []image.AttestationStatement, platform string, query Query) ([]types.ImageAttestation, error) {
+func daemonStatementsToAttestations(items []mobyImage.AttestationStatement, platform string, query Query) ([]types.ImageAttestation, error) {
 	attestations := make([]types.ImageAttestation, 0, len(items))
 	for _, item := range items {
 		rawStatement := []byte(kit.FromPtr(item.Statement))
@@ -456,7 +456,7 @@ func subjects(descriptor *remote.Descriptor, platform ocispec.Platform, hasPlatf
 			OSFeatures:   kit.FromPtr(child.Platform).OSFeatures,
 			Variant:      kit.FromPtr(child.Platform).Variant,
 		}
-		if child.Annotations[attestation.DockerAnnotationReferenceType] == attestation.DockerAnnotationReferenceTypeDefault ||
+		if child.Annotations[mobyBuildkitAttestation.DockerAnnotationReferenceType] == mobyBuildkitAttestation.DockerAnnotationReferenceTypeDefault ||
 			child.ArtifactType == dockerAttestationManifestArtifactType ||
 			(hasPlatform && (child.Platform == nil || !platforms.Only(platform).Match(childPlatform))) {
 			continue

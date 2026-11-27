@@ -16,12 +16,12 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyStdCopy "github.com/moby/moby/api/pkg/stdcopy"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/capture"
@@ -137,7 +137,7 @@ func (s *Service) RunScript(
 	actor types.Actor,
 ) (stdoutContent, stderrContent string, exitCode int64, err error) {
 	// Pull a missing runner image through the image service so credentials and the pull timeout apply.
-	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, runnerImage)
 	}); inspectErr != nil {
 		if pullErr := s.imageService.Pull(ctx, image.PullRequest{
@@ -156,13 +156,13 @@ func (s *Service) RunScript(
 		slog.WarnContext(ctx, "failed to derive workspace mount; falling back to bind on project path", "projectPath", projectPath, "error", inspectErr)
 	}
 	// The workspace is read-write so scripts can write artifacts the deploy consumes.
-	mounts := []mount.Mount{*cmp.Or(
+	mounts := []mobyMount.Mount{*cmp.Or(
 		docker.MountForSubpath(kit.FromPtr(inspect).Mounts, projectPath, lifecycleWorkspaceMount),
-		&mount.Mount{Type: mount.TypeBind, Source: projectPath, Target: lifecycleWorkspaceMount},
+		&mobyMount.Mount{Type: mobyMount.TypeBind, Source: projectPath, Target: lifecycleWorkspaceMount},
 	)}
 	for _, m := range extraMounts {
-		mounts = append(mounts, mount.Mount{
-			Type:     mount.TypeBind,
+		mounts = append(mounts, mobyMount.Mount{
+			Type:     mobyMount.TypeBind,
 			Source:   m.Source,
 			Target:   m.Target,
 			ReadOnly: m.Readonly,
@@ -173,10 +173,10 @@ func (s *Service) RunScript(
 		env = append(env, k+"="+v)
 	}
 
-	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
 			// Cmd is the script alone so its shebang picks the interpreter; Entrypoint is cleared for images like getsops/sops.
-			Config: &container.Config{
+			Config: &mobyContainer.Config{
 				Image:        runnerImage,
 				Entrypoint:   []string{},
 				Cmd:          []string{filepath.ToSlash(filepath.Join(lifecycleWorkspaceMount, scriptPath))},
@@ -189,9 +189,9 @@ func (s *Service) RunScript(
 				},
 			},
 			// no-new-privileges and CapDrop ALL strip setuid and root capabilities from the script and its children.
-			HostConfig: &container.HostConfig{
+			HostConfig: &mobyContainer.HostConfig{
 				Mounts:      mounts,
-				NetworkMode: container.NetworkMode(cmp.Or(strings.TrimSpace(networkMode), "none")),
+				NetworkMode: mobyContainer.NetworkMode(cmp.Or(strings.TrimSpace(networkMode), "none")),
 				SecurityOpt: []string{"no-new-privileges:true"},
 				CapDrop:     []string{"ALL"},
 			},
@@ -203,15 +203,15 @@ func (s *Service) RunScript(
 	defer func() {
 		// Cleanup outlives cancellation so a cancelled run never leaks its container.
 		cleanupCtx := context.WithoutCancel(ctx)
-		if _, removeErr := s.dockerService.Call(cleanupCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
+		if _, removeErr := s.dockerService.Call(cleanupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, resp.ID, mobyClient.ContainerRemoveOptions{Force: true})
 		}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
 			slog.WarnContext(cleanupCtx, "failed to remove lifecycle container", "containerId", resp.ID, "error", removeErr)
 		}
 	}()
 
-	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, mobyClient.ContainerStartOptions{})
 	}); containerStartErr != nil {
 		return "", "", 0, fmt.Errorf("start lifecycle container: %w", containerStartErr)
 	}
@@ -223,7 +223,7 @@ func (s *Service) RunScript(
 
 	logsCtx, logsCancel := context.WithCancel(ctx)
 	defer logsCancel()
-	logs, err := dockerClient.ContainerLogs(logsCtx, resp.ID, client.ContainerLogsOptions{
+	logs, err := dockerClient.ContainerLogs(logsCtx, resp.ID, mobyClient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
@@ -236,14 +236,14 @@ func (s *Service) RunScript(
 	stderrBuf := capture.New(lifecycleMaxOutputBytes)
 	logDone := make(chan error, 1)
 	go func() {
-		_, copyErr := stdcopy.StdCopy(stdoutBuf, stderrBuf, logs)
+		_, copyErr := mobyStdCopy.StdCopy(stdoutBuf, stderrBuf, logs)
 		logDone <- copyErr
 	}()
 
 	waitCtx, waitCancel := context.WithTimeout(ctx, timeout)
 	defer waitCancel()
-	waitResp := dockerClient.ContainerWait(waitCtx, resp.ID, client.ContainerWaitOptions{
-		Condition: container.WaitConditionNotRunning,
+	waitResp := dockerClient.ContainerWait(waitCtx, resp.ID, mobyClient.ContainerWaitOptions{
+		Condition: mobyContainer.WaitConditionNotRunning,
 	})
 
 	select {
@@ -255,8 +255,8 @@ func (s *Service) RunScript(
 		}
 	case waitErr := <-waitResp.Error:
 		if waitErr != nil {
-			if _, killErr := s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerKillResult, error) {
-				return dockerClient.ContainerKill(ctx, resp.ID, client.ContainerKillOptions{})
+			if _, killErr := s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerKillResult, error) {
+				return dockerClient.ContainerKill(ctx, resp.ID, mobyClient.ContainerKillOptions{})
 			}); killErr != nil && !errdefs.IsNotFound(killErr) {
 				slog.WarnContext(ctx, "failed to kill lifecycle container", "containerId", resp.ID, "error", killErr)
 			}

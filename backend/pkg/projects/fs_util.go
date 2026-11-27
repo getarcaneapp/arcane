@@ -16,7 +16,7 @@ import (
 	"github.com/samber/mo"
 	"go.yaml.in/yaml/v4"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/acfs/types"
 	kitfs "kit.getarcane.app/fs"

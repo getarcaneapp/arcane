@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"go.uber.org/fx"
 
 	"kit.getarcane.app/concurrency"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/pkg/envcontext"
@@ -25,7 +25,7 @@ type (
 	// reached in-process rather than through an agent, so the manager's own event stream never sees
 	// them; without this their events and activity would be missing from the log.
 	dockerHostEventWatcher struct {
-		docker       *docker.DockerClientService
+		docker       *dockerInternal.DockerClientService
 		environments *environment.EnvironmentService
 		events       *event.EventService
 		streams      map[string]*dockerHostStream
@@ -42,7 +42,7 @@ type (
 		fx.In
 
 		AppCtx       context.Context
-		Docker       *docker.DockerClientService
+		Docker       *dockerInternal.DockerClientService
 		Environments *environment.EnvironmentService
 		Events       *event.EventService
 	}
@@ -165,7 +165,7 @@ func (w *dockerHostEventWatcher) streamOnce(ctx context.Context, environmentID s
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	result := dockerClient.Events(ctx, client.EventsListOptions{})
+	result := dockerClient.Events(ctx, mobyClient.EventsListOptions{})
 	var streamErr error
 	for {
 		select {

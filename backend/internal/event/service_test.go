@@ -16,12 +16,12 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/events"
+	mobyEvents "github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker/streams/bus"
 
 	"getarcane.dev/arcane/v3/internal/config"
@@ -323,10 +323,10 @@ func TestIngestAgentEventAuthenticatedEnvironment(t *testing.T) {
 		t.Run("payload environment "+supplied, func(t *testing.T) {
 			db := setupEventServiceTestDB(t)
 			svc := NewEventService(db, &config.Config{}, nil)
-			req, ok := mapDaemonEvent(events.Message{
-				Type:   events.ContainerEventType,
-				Action: events.ActionStart,
-				Actor: events.Actor{
+			req, ok := mapDaemonEvent(mobyEvents.Message{
+				Type:   mobyEvents.ContainerEventType,
+				Action: mobyEvents.ActionStart,
+				Actor: mobyEvents.Actor{
 					ID: "container-id",
 					Attributes: map[string]string{
 						"name":                       "web",
@@ -387,11 +387,11 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 	defer server.Close()
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, &config.Config{AgentEnabled: true, AgentToken: "agent-token", ManagerApiUrl: server.URL}, server.Client())
-	message := events.Message{
-		Type:     events.ContainerEventType,
-		Action:   events.ActionDie,
+	message := mobyEvents.Message{
+		Type:     mobyEvents.ContainerEventType,
+		Action:   mobyEvents.ActionDie,
 		TimeNano: 123,
-		Actor: events.Actor{
+		Actor: mobyEvents.Actor{
 			ID: "container-id",
 			Attributes: map[string]string{
 				"name":     "web",
@@ -513,44 +513,44 @@ func TestMapDaemonEvent(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name   string
-		kind   events.Type
-		action events.Action
+		kind   mobyEvents.Type
+		action mobyEvents.Action
 		want   EventType
 	}{
-		{"container create", events.ContainerEventType, events.ActionCreate, EventTypeContainerCreate},
-		{"container start", events.ContainerEventType, events.ActionStart, EventTypeContainerStart},
-		{"container stop", events.ContainerEventType, events.ActionStop, EventTypeContainerStop},
-		{"container restart", events.ContainerEventType, events.ActionRestart, EventTypeContainerRestart},
-		{"container die", events.ContainerEventType, events.ActionDie, EventTypeContainerDie},
-		{"container oom", events.ContainerEventType, events.ActionOOM, EventTypeContainerOOM},
-		{"container kill", events.ContainerEventType, events.ActionKill, EventTypeContainerKill},
-		{"container destroy", events.ContainerEventType, events.ActionDestroy, EventTypeContainerDelete},
-		{"container pause", events.ContainerEventType, events.ActionPause, EventTypeContainerPause},
-		{"container unpause", events.ContainerEventType, events.ActionUnPause, EventTypeContainerUnpause},
-		{"container rename", events.ContainerEventType, events.ActionRename, EventTypeContainerRename},
-		{"container update", events.ContainerEventType, events.ActionUpdate, EventTypeContainerUpdate},
-		{"container unhealthy", events.ContainerEventType, events.ActionHealthStatusUnhealthy, EventTypeContainerUnhealthy},
-		{"image pull", events.ImageEventType, events.ActionPull, EventTypeImagePull},
-		{"image delete", events.ImageEventType, events.ActionDelete, EventTypeImageDelete},
-		{"image tag", events.ImageEventType, events.ActionTag, EventTypeImageTag},
-		{"image untag", events.ImageEventType, events.ActionUnTag, EventTypeImageUntag},
-		{"image load", events.ImageEventType, events.ActionLoad, EventTypeImageLoad},
-		{"image import", events.ImageEventType, events.ActionImport, EventTypeImageImport},
-		{"image prune", events.ImageEventType, events.ActionPrune, EventTypeImagePrune},
-		{"volume create", events.VolumeEventType, events.ActionCreate, EventTypeVolumeCreate},
-		{"volume destroy", events.VolumeEventType, events.ActionDestroy, EventTypeVolumeDelete},
-		{"volume prune", events.VolumeEventType, events.ActionPrune, EventTypeVolumePrune},
-		{"network create", events.NetworkEventType, events.ActionCreate, EventTypeNetworkCreate},
-		{"network destroy", events.NetworkEventType, events.ActionDestroy, EventTypeNetworkDelete},
-		{"network prune", events.NetworkEventType, events.ActionPrune, EventTypeNetworkPrune},
+		{"container create", mobyEvents.ContainerEventType, mobyEvents.ActionCreate, EventTypeContainerCreate},
+		{"container start", mobyEvents.ContainerEventType, mobyEvents.ActionStart, EventTypeContainerStart},
+		{"container stop", mobyEvents.ContainerEventType, mobyEvents.ActionStop, EventTypeContainerStop},
+		{"container restart", mobyEvents.ContainerEventType, mobyEvents.ActionRestart, EventTypeContainerRestart},
+		{"container die", mobyEvents.ContainerEventType, mobyEvents.ActionDie, EventTypeContainerDie},
+		{"container oom", mobyEvents.ContainerEventType, mobyEvents.ActionOOM, EventTypeContainerOOM},
+		{"container kill", mobyEvents.ContainerEventType, mobyEvents.ActionKill, EventTypeContainerKill},
+		{"container destroy", mobyEvents.ContainerEventType, mobyEvents.ActionDestroy, EventTypeContainerDelete},
+		{"container pause", mobyEvents.ContainerEventType, mobyEvents.ActionPause, EventTypeContainerPause},
+		{"container unpause", mobyEvents.ContainerEventType, mobyEvents.ActionUnPause, EventTypeContainerUnpause},
+		{"container rename", mobyEvents.ContainerEventType, mobyEvents.ActionRename, EventTypeContainerRename},
+		{"container update", mobyEvents.ContainerEventType, mobyEvents.ActionUpdate, EventTypeContainerUpdate},
+		{"container unhealthy", mobyEvents.ContainerEventType, mobyEvents.ActionHealthStatusUnhealthy, EventTypeContainerUnhealthy},
+		{"image pull", mobyEvents.ImageEventType, mobyEvents.ActionPull, EventTypeImagePull},
+		{"image delete", mobyEvents.ImageEventType, mobyEvents.ActionDelete, EventTypeImageDelete},
+		{"image tag", mobyEvents.ImageEventType, mobyEvents.ActionTag, EventTypeImageTag},
+		{"image untag", mobyEvents.ImageEventType, mobyEvents.ActionUnTag, EventTypeImageUntag},
+		{"image load", mobyEvents.ImageEventType, mobyEvents.ActionLoad, EventTypeImageLoad},
+		{"image import", mobyEvents.ImageEventType, mobyEvents.ActionImport, EventTypeImageImport},
+		{"image prune", mobyEvents.ImageEventType, mobyEvents.ActionPrune, EventTypeImagePrune},
+		{"volume create", mobyEvents.VolumeEventType, mobyEvents.ActionCreate, EventTypeVolumeCreate},
+		{"volume destroy", mobyEvents.VolumeEventType, mobyEvents.ActionDestroy, EventTypeVolumeDelete},
+		{"volume prune", mobyEvents.VolumeEventType, mobyEvents.ActionPrune, EventTypeVolumePrune},
+		{"network create", mobyEvents.NetworkEventType, mobyEvents.ActionCreate, EventTypeNetworkCreate},
+		{"network destroy", mobyEvents.NetworkEventType, mobyEvents.ActionDestroy, EventTypeNetworkDelete},
+		{"network prune", mobyEvents.NetworkEventType, mobyEvents.ActionPrune, EventTypeNetworkPrune},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req, ok := mapDaemonEvent(events.Message{
+			req, ok := mapDaemonEvent(mobyEvents.Message{
 				Type:   tc.kind,
 				Action: tc.action,
 				Scope:  "local",
-				Actor: events.Actor{
+				Actor: mobyEvents.Actor{
 					ID: "resource-id",
 					Attributes: map[string]string{
 						"name":                       "web",
@@ -584,8 +584,8 @@ func TestMapDaemonEvent(t *testing.T) {
 				},
 				req.Metadata,
 			)
-			severity := kit.Ternary(tc.action == events.ActionOOM, EventSeverityError, EventSeverityInfo)
-			if tc.action == events.ActionHealthStatusUnhealthy {
+			severity := kit.Ternary(tc.action == mobyEvents.ActionOOM, EventSeverityError, EventSeverityInfo)
+			if tc.action == mobyEvents.ActionHealthStatusUnhealthy {
 				severity = EventSeverityWarning
 			}
 			require.Equal(t, severity, req.Severity)
@@ -593,10 +593,10 @@ func TestMapDaemonEvent(t *testing.T) {
 	}
 	for _, exitCode := range []string{"1", "137", ""} {
 		t.Run("die exit "+exitCode, func(t *testing.T) {
-			req, ok := mapDaemonEvent(events.Message{
-				Type:   events.ContainerEventType,
-				Action: events.ActionDie,
-				Actor: events.Actor{
+			req, ok := mapDaemonEvent(mobyEvents.Message{
+				Type:   mobyEvents.ContainerEventType,
+				Action: mobyEvents.ActionDie,
+				Actor: mobyEvents.Actor{
 					ID:         "id",
 					Attributes: map[string]string{"exitCode": exitCode},
 				},
@@ -606,68 +606,68 @@ func TestMapDaemonEvent(t *testing.T) {
 			require.Equal(t, "id", *req.ResourceName)
 		})
 	}
-	for _, kind := range []events.Type{events.ImageEventType, events.VolumeEventType, events.NetworkEventType} {
+	for _, kind := range []mobyEvents.Type{mobyEvents.ImageEventType, mobyEvents.VolumeEventType, mobyEvents.NetworkEventType} {
 		t.Run(string(kind)+" empty prune", func(t *testing.T) {
-			req, ok := mapDaemonEvent(events.Message{Type: kind, Action: events.ActionPrune})
+			req, ok := mapDaemonEvent(mobyEvents.Message{Type: kind, Action: mobyEvents.ActionPrune})
 			require.True(t, ok)
 			require.Equal(t, "prune", *req.ResourceName)
 		})
 	}
 	for _, tc := range []struct {
 		name   string
-		kind   events.Type
-		action events.Action
+		kind   mobyEvents.Type
+		action mobyEvents.Action
 		id     string
 	}{
 		{
 			"exec",
-			events.ContainerEventType,
+			mobyEvents.ContainerEventType,
 			"exec_create",
 			"id",
 		}, {
 			"attach",
-			events.ContainerEventType,
+			mobyEvents.ContainerEventType,
 			"attach",
 			"id",
 		}, {
 			"resize",
-			events.ContainerEventType,
+			mobyEvents.ContainerEventType,
 			"resize",
 			"id",
 		}, {
 			"healthy",
-			events.ContainerEventType,
+			mobyEvents.ContainerEventType,
 			"health_status: healthy",
 			"id",
 		}, {
 			"mount",
-			events.VolumeEventType,
+			mobyEvents.VolumeEventType,
 			"mount",
 			"id",
 		}, {
 			"connect",
-			events.NetworkEventType,
+			mobyEvents.NetworkEventType,
 			"connect",
 			"id",
 		}, {
 			"disconnect",
-			events.NetworkEventType,
+			mobyEvents.NetworkEventType,
 			"disconnect",
 			"id",
 		}, {
 			"unknown action",
-			events.ImageEventType,
+			mobyEvents.ImageEventType,
 			"unknown-image-action",
 			"image-id",
 		}, {
 			"empty create",
-			events.ContainerEventType,
-			events.ActionCreate,
+			mobyEvents.ContainerEventType,
+			mobyEvents.ActionCreate,
 			"",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, ok := mapDaemonEvent(events.Message{Type: tc.kind, Action: tc.action, Actor: events.Actor{ID: tc.id}})
+			_, ok := mapDaemonEvent(mobyEvents.Message{Type: tc.kind, Action: tc.action, Actor: mobyEvents.Actor{ID: tc.id}})
 			require.False(t, ok)
 		})
 	}
@@ -676,10 +676,10 @@ func TestMapDaemonEvent(t *testing.T) {
 func TestDaemonEventsPersistEveryOccurrence(t *testing.T) {
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, &config.Config{}, nil)
-	die := events.Message{Type: events.ContainerEventType, Action: events.ActionDie, Actor: events.Actor{ID: "web", Attributes: map[string]string{"exitCode": "0"}}}
+	die := mobyEvents.Message{Type: mobyEvents.ContainerEventType, Action: mobyEvents.ActionDie, Actor: mobyEvents.Actor{ID: "web", Attributes: map[string]string{"exitCode": "0"}}}
 	stop := die
-	stop.Action = events.ActionStop
-	for index, msg := range []events.Message{die, stop, die, stop} {
+	stop.Action = mobyEvents.ActionStop
+	for index, msg := range []mobyEvents.Message{die, stop, die, stop} {
 		msg.TimeNano = int64(index + 1)
 		svc.RecordDockerEvent(t.Context(), msg)
 	}
@@ -702,7 +702,7 @@ func TestDaemonSuppressionAndFailureAllowLaterObservations(t *testing.T) {
 			svc := NewEventService(db, &config.Config{}, nil)
 			now := time.Now()
 			svc.correlation = correlation.NewService(func() time.Time { return now })
-			msg := events.Message{Type: events.ContainerEventType, Action: events.ActionStart, TimeNano: 123, Actor: events.Actor{ID: "web"}}
+			msg := mobyEvents.Message{Type: mobyEvents.ContainerEventType, Action: mobyEvents.ActionStart, TimeNano: 123, Actor: mobyEvents.Actor{ID: "web"}}
 			if failure {
 				require.NoError(t, db.Callback().Create().Before("gorm:create").Register("daemon_failure", func(tx *gorm.DB) {
 					failureErr := errors.New("unavailable")
@@ -739,7 +739,7 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				var recovered, published atomic.Int64
 				stopChanges := svc.Changes.Subscribe(func(types.EnvironmentChanges) { published.Add(1) })
 				defer stopChanges()
-				eventBus := bus.NewDockerEventBus(bus.Config{OnDrop: func(message events.Message) {
+				eventBus := bus.NewDockerEventBus(bus.Config{OnDrop: func(message mobyEvents.Message) {
 					recovered.Add(1)
 					svc.RecordDockerEvent(t.Context(), message)
 				}})
@@ -747,14 +747,14 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				run, cleanup := svc.SubscribeDockerEvents(eventBus)
 				defer cleanup()
 				// A stalled unrelated subscriber also invokes the global overflow callback.
-				_, stopStalled := eventBus.Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(1)})
+				_, stopStalled := eventBus.Subscribe(mobyEvents.ImageEventType, bus.SubscribeOptions{Buffer: new(1)})
 				defer stopStalled()
 				const occurrences = daemonEventChanBuffer + 64
 				publishBurst := func(offset int64) {
 					for occurrence := range occurrences {
-						for _, kind := range []events.Type{events.ContainerEventType, events.ImageEventType, events.VolumeEventType, events.NetworkEventType} {
-							action := kit.Ternary(kind == events.ImageEventType, events.ActionPull, events.ActionCreate)
-							eventBus.Publish(events.Message{Type: kind, Action: action, TimeNano: offset + int64(occurrence+1), Actor: events.Actor{ID: "resource"}})
+						for _, kind := range []mobyEvents.Type{mobyEvents.ContainerEventType, mobyEvents.ImageEventType, mobyEvents.VolumeEventType, mobyEvents.NetworkEventType} {
+							action := kit.Ternary(kind == mobyEvents.ImageEventType, mobyEvents.ActionPull, mobyEvents.ActionCreate)
+							eventBus.Publish(mobyEvents.Message{Type: kind, Action: action, TimeNano: offset + int64(occurrence+1), Actor: mobyEvents.Actor{ID: "resource"}})
 						}
 					}
 				}
@@ -804,7 +804,7 @@ func TestDaemonEventWriterBatchesAndFlushesOnStop(t *testing.T) {
 		stopChanges := svc.Changes.Subscribe(func(types.EnvironmentChanges) { published.Add(1) })
 		defer stopChanges()
 		record := func(timeNano int64) {
-			svc.RecordDockerEvent(t.Context(), events.Message{Type: events.ContainerEventType, Action: events.ActionStart, TimeNano: timeNano, Actor: events.Actor{ID: "web"}})
+			svc.RecordDockerEvent(t.Context(), mobyEvents.Message{Type: mobyEvents.ContainerEventType, Action: mobyEvents.ActionStart, TimeNano: timeNano, Actor: mobyEvents.Actor{ID: "web"}})
 		}
 
 		const occurrences = DaemonEventBatchSize*3 + 5
@@ -886,11 +886,11 @@ func TestRecordDockerEventPublishesSuppressedChange(t *testing.T) {
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, &config.Config{}, nil)
 	svc.MarkDockerExpectation("container", "web", "")
-	svc.RecordDockerEvent(t.Context(), events.Message{
-		Type:     events.ContainerEventType,
-		Action:   events.ActionStart,
+	svc.RecordDockerEvent(t.Context(), mobyEvents.Message{
+		Type:     mobyEvents.ContainerEventType,
+		Action:   mobyEvents.ActionStart,
 		TimeNano: 123,
-		Actor:    events.Actor{ID: "web"},
+		Actor:    mobyEvents.Actor{ID: "web"},
 	})
 	require.NoError(t, svc.Stop(t.Context()))
 	requireDaemonCount(t, db, 0)

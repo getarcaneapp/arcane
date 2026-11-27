@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -36,7 +36,7 @@ func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
 	job := newTestAutoHealJob()
 
 	selfFullID := "407163929c492b5c4b01a3981f5de4774c37aa8300bd214b4d62412a3dc56468"
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{ID: selfFullID, Names: []string{"/arcane"}},
 		{ID: "aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999", Names: []string{"/other"}},
 	}
@@ -59,17 +59,17 @@ func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
 func TestAutoHeal_ProcessCandidate_SkipsQuadletContainers(t *testing.T) {
 	job := &AutoHealJob{
 		restarts: make(map[string]*restartRecord),
-		inspectContainerFn: func(context.Context, *client.Client, string) (container.InspectResponse, error) {
+		inspectContainerFn: func(context.Context, *mobyClient.Client, string) (mobyContainer.InspectResponse, error) {
 			t.Fatal("quadlet-managed containers must not be inspected")
-			return container.InspectResponse{}, nil
+			return mobyContainer.InspectResponse{}, nil
 		},
-		restartContainerFn: func(context.Context, *client.Client, string) error {
+		restartContainerFn: func(context.Context, *mobyClient.Client, string) error {
 			t.Fatal("quadlet-managed containers must not be restarted")
 			return nil
 		},
 	}
 
-	target, err := job.processCandidate(t.Context(), nil, container.Summary{
+	target, err := job.processCandidate(t.Context(), nil, mobyContainer.Summary{
 		ID:     "quadlet-id",
 		Names:  []string{"/web"},
 		Labels: map[string]string{types.PodmanSystemdUnitLabel: "web.service"},
@@ -203,9 +203,9 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 		AdmissionGate: gate,
 	})
 	require.NoError(t, err)
-	job.getDockerClientFn = func(context.Context) (*client.Client, error) { return nil, nil }
-	job.listContainers = func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
-		return []container.Summary{
+	job.getDockerClientFn = func(context.Context) (*mobyClient.Client, error) { return nil, nil }
+	job.listContainers = func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyContainer.Summary, error) {
+		return []mobyContainer.Summary{
 			{ID: "c1", Names: []string{"/one"}},
 			{ID: "c2", Names: []string{"/two"}},
 			{ID: "c3", Names: []string{"/three"}},
@@ -220,7 +220,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	var maxConcurrent atomic.Int32
 	var restarts atomic.Int32
 
-	job.inspectContainerFn = func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
+	job.inspectContainerFn = func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) (mobyContainer.InspectResponse, error) {
 		active := current.Add(1)
 		for {
 			maxSeen := maxConcurrent.Load()
@@ -234,14 +234,14 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 
 		switch containerID {
 		case "c5":
-			return container.InspectResponse{State: &container.State{}}, nil
+			return mobyContainer.InspectResponse{State: &mobyContainer.State{}}, nil
 		case "c6":
-			return container.InspectResponse{State: &container.State{Health: &container.Health{Status: container.Healthy}}}, nil
+			return mobyContainer.InspectResponse{State: &mobyContainer.State{Health: &mobyContainer.Health{Status: mobyContainer.Healthy}}}, nil
 		default:
-			return container.InspectResponse{State: &container.State{Health: &container.Health{Status: container.Unhealthy}}}, nil
+			return mobyContainer.InspectResponse{State: &mobyContainer.State{Health: &mobyContainer.Health{Status: mobyContainer.Unhealthy}}}, nil
 		}
 	}
-	job.restartContainerFn = func(ctx context.Context, dockerClient *client.Client, containerID string) error {
+	job.restartContainerFn = func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) error {
 		restarts.Add(1)
 		return nil
 	}

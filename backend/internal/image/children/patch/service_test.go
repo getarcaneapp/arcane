@@ -13,17 +13,17 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -76,7 +76,7 @@ func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 
 	svc := NewService(ServiceParams{
 		DB:              db,
-		DockerService:   docker.NewDockerClientService(ctx, nil, settingsSvc, docker.ClientServiceOptions{}),
+		DockerService:   dockerInternal.NewDockerClientService(ctx, nil, settingsSvc, dockerInternal.ClientServiceOptions{}),
 		SettingsService: settingsSvc,
 	})
 
@@ -139,7 +139,7 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 	require.NoError(t, settingsSvc.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-feature-test.sock"}))
 	svc := NewService(ServiceParams{
 		DB:              db,
-		DockerService:   docker.NewDockerClientService(t.Context(), nil, settingsSvc, docker.ClientServiceOptions{}),
+		DockerService:   dockerInternal.NewDockerClientService(t.Context(), nil, settingsSvc, dockerInternal.ClientServiceOptions{}),
 		SettingsService: settingsSvc,
 	})
 	_, err := svc.PatchImage(t.Context(), "0", "test-image", types.PatchOptions{ScanID: "test-image"}, types.Actor{})
@@ -201,11 +201,11 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 		_, _ = w.Write([]byte(`{"Id":"patched-image"}`))
 	}))
 	defer server.Close()
-	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
+	dockerClient, err := mobyClient.New(mobyClient.WithHost(server.URL), mobyClient.WithAPIVersion("1.41"))
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, dockerClient.Close()) }()
 	svc := NewService(ServiceParams{
-		DockerService:        docker.NewDockerClientService(t.Context(), nil, settingsSvc, docker.ClientServiceOptions{}).WithClient(dockerClient),
+		DockerService:        dockerInternal.NewDockerClientService(t.Context(), nil, settingsSvc, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient),
 		SettingsService:      settingsSvc,
 		VulnerabilityService: &vulnerability.VulnerabilityService{},
 	})

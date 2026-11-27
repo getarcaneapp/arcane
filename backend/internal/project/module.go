@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -79,7 +79,7 @@ func New(p ModuleParams) *Module {
 			}
 			return p.Service.runsArcane(ctx, proj), nil
 		},
-		ProjectContainers: func(ctx context.Context, projectID string) ([]container.Summary, error) {
+		ProjectContainers: func(ctx context.Context, projectID string) ([]mobyContainer.Summary, error) {
 			proj, err := p.Service.GetProjectFromDatabaseByID(ctx, projectID)
 			if err != nil {
 				return nil, err

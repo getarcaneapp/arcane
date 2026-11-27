@@ -11,15 +11,15 @@ import (
 	"sync"
 	"time"
 
-	mobycontainer "github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
@@ -40,7 +40,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -87,7 +87,7 @@ type (
 		VersionService     *version.VersionService
 		EventService       *event.EventService
 		ProjectService     *project.ProjectService
-		RegistryService    *registry.ContainerRegistryService
+		RegistryService    *registryInternal.ContainerRegistryService
 		BackupEngine       *backup.Engine
 		BackupRepository   *backup.VolumeRepository
 		S3Destinations     *s3.S3DestinationService
@@ -102,7 +102,7 @@ type (
 	}
 
 	startMatchingContainersOptions struct {
-		ShouldStart    func(mobycontainer.Summary) bool
+		ShouldStart    func(mobyContainer.Summary) bool
 		Action         func(context.Context, string) error
 		ActivityType   types.ActivityType
 		ActionName     string
@@ -242,8 +242,8 @@ func (s *SystemService) StartAllContainers(ctx context.Context, environmentID st
 		ResourceName:   "All containers",
 		StartMessage:   "Starting all containers",
 		SuccessMessage: "Started all containers",
-		ShouldStart: func(c mobycontainer.Summary) bool {
-			return (c.State == mobycontainer.StateExited || c.State == mobycontainer.StateCreated) &&
+		ShouldStart: func(c mobyContainer.Summary) bool {
+			return (c.State == mobyContainer.StateExited || c.State == mobyContainer.StateCreated) &&
 				!strings.EqualFold(c.Labels[selfcontainer.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
@@ -259,8 +259,8 @@ func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environme
 		ResourceName:   "Stopped containers",
 		StartMessage:   "Starting stopped containers",
 		SuccessMessage: "Started stopped containers",
-		ShouldStart: func(c mobycontainer.Summary) bool {
-			return c.State == mobycontainer.StateExited && !strings.EqualFold(c.Labels[selfcontainer.InternalResourceLabel], "true")
+		ShouldStart: func(c mobyContainer.Summary) bool {
+			return c.State == mobyContainer.StateExited && !strings.EqualFold(c.Labels[selfcontainer.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
 			return s.containerService.StartContainer(ctx, id, types.SystemUser)
@@ -275,7 +275,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 		ResourceName:   "All containers",
 		StartMessage:   "Stopping all containers",
 		SuccessMessage: "Stopped all containers",
-		ShouldStart: func(c mobycontainer.Summary) bool {
+		ShouldStart: func(c mobyContainer.Summary) bool {
 			return !labels.IsArcaneContainer(c.Labels) && !strings.EqualFold(c.Labels[selfcontainer.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
@@ -353,8 +353,8 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, environ
 }
 
 func (s *SystemService) PingDocker(ctx context.Context) error {
-	_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.PingResult, error) {
-		return cli.Ping(ctx, client.PingOptions{})
+	_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.PingResult, error) {
+		return cli.Ping(ctx, mobyClient.PingOptions{})
 	})
 	return err
 }
@@ -372,15 +372,15 @@ func (s *SystemService) GetDockerObjectsDiskUsage(ctx context.Context) (uint64, 
 }
 
 func (s *SystemService) GetDockerInfo(ctx context.Context) (types.DockerInfo, error) {
-	serverVersion, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ServerVersionResult, error) {
-		return cli.ServerVersion(ctx, client.ServerVersionOptions{})
+	serverVersion, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ServerVersionResult, error) {
+		return cli.ServerVersion(ctx, mobyClient.ServerVersionOptions{})
 	})
 	if err != nil {
 		return types.DockerInfo{}, fmt.Errorf("failed to get Docker version: %w", err)
 	}
 
-	infoResult, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.SystemInfoResult, error) {
-		return cli.Info(ctx, client.InfoOptions{})
+	infoResult, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+		return cli.Info(ctx, mobyClient.InfoOptions{})
 	})
 	if err != nil {
 		return types.DockerInfo{}, err
@@ -457,8 +457,8 @@ func (s *SystemService) loadDockerHostMemory(ctx context.Context) (dockerHostMem
 	if err != nil {
 		return dockerHostMemoryInfo{}, err
 	}
-	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, cli, containerID, client.ContainerInspectOptions{})
+	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, cli, containerID, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
 		return dockerHostMemoryInfo{}, err
@@ -472,8 +472,8 @@ func (s *SystemService) loadDockerHostMemory(ctx context.Context) (dockerHostMem
 		return dockerHostMemoryInfo{}, err
 	}
 
-	info, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.SystemInfoResult, error) {
-		return cli.Info(ctx, client.InfoOptions{})
+	info, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+		return cli.Info(ctx, mobyClient.InfoOptions{})
 	})
 	if err != nil {
 		return dockerHostMemoryInfo{}, err
@@ -487,11 +487,11 @@ func (s *SystemService) loadDockerHostMemory(ctx context.Context) (dockerHostMem
 func resolveUpgraderRuntimeOptions(
 	ctx context.Context,
 	dockerHost string,
-	currentContainer *mobycontainer.InspectResponse,
+	currentContainer *mobyContainer.InspectResponse,
 	discoverHostPath func(context.Context, string) (string, error),
 	isRunningInDocker func() bool,
-	selectReachableNetwork func(context.Context, *mobycontainer.InspectResponse, string) string,
-) ([]string, []mount.Mount, mobycontainer.NetworkMode, error) {
+	selectReachableNetwork func(context.Context, *mobyContainer.InspectResponse, string) string,
+) ([]string, []mobyMount.Mount, mobyContainer.NetworkMode, error) {
 	scheme, socketPath, err := vuln.ParseDockerHost(dockerHost)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("resolve docker host %q: %w", dockerHost, err)
@@ -500,10 +500,10 @@ func resolveUpgraderRuntimeOptions(
 	// The upgrader must reach the tcp DOCKER_HOST, so prefer a network the
 	// daemon proxy is actually on over the plain auto heuristic (#3533).
 	if scheme != "unix" && selectReachableNetwork != nil {
-		return vuln.BuildDockerHostEnv(dockerHost), nil, mobycontainer.NetworkMode(selectReachableNetwork(ctx, currentContainer, dockerHost)), nil
+		return vuln.BuildDockerHostEnv(dockerHost), nil, mobyContainer.NetworkMode(selectReachableNetwork(ctx, currentContainer, dockerHost)), nil
 	}
 	if scheme != "unix" {
-		return vuln.BuildDockerHostEnv(dockerHost), nil, mobycontainer.NetworkMode(docker.SelectAutoNetworkMode(currentContainer)), nil
+		return vuln.BuildDockerHostEnv(dockerHost), nil, mobyContainer.NetworkMode(docker.SelectAutoNetworkMode(currentContainer)), nil
 	}
 
 	socketSource, err := vuln.ResolveUnixSocketSource(
@@ -516,8 +516,8 @@ func resolveUpgraderRuntimeOptions(
 		return nil, nil, "", fmt.Errorf("resolve unix socket source: %w", err)
 	}
 
-	return vuln.BuildDockerHostEnv(dockerHost), []mount.Mount{{
-		Type:   mount.TypeBind,
+	return vuln.BuildDockerHostEnv(dockerHost), []mobyMount.Mount{{
+		Type:   mobyMount.TypeBind,
 		Source: socketSource,
 		Target: socketPath,
 	}}, "", nil

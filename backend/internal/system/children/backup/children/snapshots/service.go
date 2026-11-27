@@ -16,12 +16,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
@@ -46,7 +46,7 @@ type (
 		engine              *backup.Engine
 		sqlDB               func() (*sql.DB, error)
 		actorStore          func() (*gorm.DB, error)
-		localRepository     func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
+		localRepository     func(ctx context.Context, dockerClient *mobyClient.Client, readOnly bool) (backup.Repository, error)
 		remoteRepository    func(ctx context.Context, destinationID string) (backup.Repository, error)
 		databaseFile        func() (string, error)
 		projectRoots        func(ctx context.Context) ([]string, error)
@@ -58,7 +58,7 @@ type (
 		Engine              *backup.Engine
 		SqlDB               func() (*sql.DB, error)
 		ActorStore          func() (*gorm.DB, error)
-		LocalRepository     func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error)
+		LocalRepository     func(ctx context.Context, dockerClient *mobyClient.Client, readOnly bool) (backup.Repository, error)
 		RemoteRepository    func(ctx context.Context, destinationID string) (backup.Repository, error)
 		DatabaseFile        func() (string, error)
 		ProjectRoots        func(ctx context.Context) ([]string, error)
@@ -96,7 +96,7 @@ type (
 
 	systemBackupSnapshotSession struct {
 		service      *Service
-		dockerClient *client.Client
+		dockerClient *mobyClient.Client
 		recoveryKey  string
 	}
 
@@ -108,7 +108,7 @@ type (
 
 	RestoreTarget struct {
 		DataDirectory string
-		Mounts        []container.MountPoint
+		Mounts        []mobyContainer.MountPoint
 	}
 
 	backupSourceLayout struct {
@@ -117,7 +117,7 @@ type (
 		databaseName      string
 		projectsPath      string
 		nestedDataPath    string // data directory inside /projects when the projects bind contains it on the host
-		mounts            []mount.Mount
+		mounts            []mobyMount.Mount
 		sources           []string
 		excludes          []string
 		excludedRoots     []string // data-relative project roots a backup without projects leaves out
@@ -171,7 +171,7 @@ func NewService(p ServiceParams) *Service {
 	}
 }
 
-func (s *Service) backupSnapshotLocations(ctx context.Context, dockerClient *client.Client, run types.SystemBackupRun) ([]systemBackupSnapshotLocation, error) {
+func (s *Service) backupSnapshotLocations(ctx context.Context, dockerClient *mobyClient.Client, run types.SystemBackupRun) ([]systemBackupSnapshotLocation, error) {
 	locations := make([]systemBackupSnapshotLocation, 0, 2)
 	var setupErr error
 	if run.LocalSnapshotID != "" {
@@ -350,7 +350,7 @@ func projectEntriesFromSnapshot(files []string, layout snapshotLayout, browsePat
 
 func (s *Service) Browse(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	key string,
 	run types.SystemBackupRun,
 	listPath string,
@@ -525,7 +525,7 @@ func (session systemBackupSnapshotSession) restoreSelected(
 
 func (s *Service) RestoreFiles(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	key string,
 	run types.SystemBackupRun,
 	selection types.BackupRestoreSelection,
@@ -579,7 +579,7 @@ func (s *Service) RestoreFiles(
 
 func (s *Service) PlanRestore(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	key string,
 	run types.SystemBackupRun,
 	target RestoreTarget,
@@ -612,7 +612,7 @@ func (s *Service) PlanRestore(
 
 func (s *Service) PlanRollback(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	key, localSnapshotID string,
 	target RestoreTarget,
 ) ([]types.RecoveryRestoreStage, error) {
@@ -665,7 +665,7 @@ func projectsSnapshotPath(dataDirectory, projectsDirectory string) (projectsPath
 	}
 }
 
-func nestedDataPath(mounts []container.MountPoint, dataDirectory, projectsDirectory string) (relative string, nested bool, err error) {
+func nestedDataPath(mounts []mobyContainer.MountPoint, dataDirectory, projectsDirectory string) (relative string, nested bool, err error) {
 	// Projects kept at the data root share one mount by design; projectsSnapshotPath owns that layout.
 	if path.Clean(filepath.ToSlash(dataDirectory)) == path.Clean(filepath.ToSlash(projectsDirectory)) {
 		return "", false, nil
@@ -684,19 +684,19 @@ func nestedDataPath(mounts []container.MountPoint, dataDirectory, projectsDirect
 	return strings.TrimPrefix(dataSource, projectsSource+"/"), true, nil
 }
 
-func hostSource(mounts []container.MountPoint, directory string) (string, bool) {
+func hostSource(mounts []mobyContainer.MountPoint, directory string) (string, bool) {
 	resolved := docker.MountForSubpath(mounts, directory, "")
 	if resolved == nil {
 		return "", false
 	}
 	return kit.Ternary(
-		resolved.Type == mount.TypeVolume,
+		resolved.Type == mobyMount.TypeVolume,
 		path.Join("volume:"+resolved.Source, kit.FromPtr(resolved.VolumeOptions).Subpath),
 		path.Clean(filepath.ToSlash(resolved.Source)),
 	), true
 }
 
-func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roots []string) ([]string, error) {
+func projectRootsInData(mounts []mobyContainer.MountPoint, dataDirectory string, roots []string) ([]string, error) {
 	data := path.Clean(filepath.ToSlash(dataDirectory))
 	dataSource, dataMounted := hostSource(mounts, data)
 	resolvedData := data
@@ -764,11 +764,11 @@ func projectRootsInData(mounts []container.MountPoint, dataDirectory string, roo
 	return slices.Compact(relatives), nil
 }
 
-func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, roots []string) (backupSourceLayout, error) {
+func withoutProjects(layout backupSourceLayout, mounts []mobyContainer.MountPoint, roots []string) (backupSourceLayout, error) {
 	data := path.Clean(filepath.ToSlash(layout.dataDirectory))
 	for index, first := range mounts {
 		for _, second := range mounts[index+1:] {
-			if first.Type != mount.TypeVolume || second.Type != mount.TypeVolume || first.Name != second.Name {
+			if first.Type != mobyMount.TypeVolume || second.Type != mobyMount.TypeVolume || first.Name != second.Name {
 				continue
 			}
 			if slices.ContainsFunc([]string{first.Destination, second.Destination}, func(destination string) bool {
@@ -802,7 +802,7 @@ func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, r
 	return backupSourceLayout{
 		dataDirectory: layout.dataDirectory,
 		databaseName:  layout.databaseName,
-		mounts: slices.DeleteFunc(slices.Clone(layout.mounts), func(source mount.Mount) bool {
+		mounts: slices.DeleteFunc(slices.Clone(layout.mounts), func(source mobyMount.Mount) bool {
 			return slices.ContainsFunc(excluded, func(relative string) bool {
 				return kit.FilePathMatches(source.Target, path.Join(snapshotDataPath, relative))
 			})
@@ -813,7 +813,7 @@ func withoutProjects(layout backupSourceLayout, mounts []container.MountPoint, r
 	}, nil
 }
 
-func dataMountsOutsideProjects(mounts []container.MountPoint, dataDirectory string, projectRoots []string) ([]string, error) {
+func dataMountsOutsideProjects(mounts []mobyContainer.MountPoint, dataDirectory string, projectRoots []string) ([]string, error) {
 	data := path.Clean(filepath.ToSlash(dataDirectory))
 	var nested []string
 	for _, candidate := range mounts {
@@ -833,7 +833,7 @@ func dataMountsOutsideProjects(mounts []container.MountPoint, dataDirectory stri
 	return nested, nil
 }
 
-func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.Client, opts CreateOptions) (backupSourceLayout, error) {
+func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *mobyClient.Client, opts CreateOptions) (backupSourceLayout, error) {
 	databaseFile, err := s.databaseFile()
 	if err != nil {
 		return backupSourceLayout{}, err
@@ -1085,7 +1085,7 @@ func projectsRelativePathFromManifest(manifest types.RecoveryManifest) (string, 
 	return strings.TrimPrefix(projectsPath, dataPath+"/"), nil
 }
 
-func restoreTarget(mounts []container.MountPoint, containerPath, target, exclude string) (types.RecoveryRestoreTarget, error) {
+func restoreTarget(mounts []mobyContainer.MountPoint, containerPath, target, exclude string) (types.RecoveryRestoreTarget, error) {
 	enclosing, relative := docker.MountForEnclosingPath(mounts, containerPath, target)
 	if enclosing == nil {
 		return types.RecoveryRestoreTarget{}, fmt.Errorf("%s must be mounted into the Arcane container from a bind or named volume to restore into it", containerPath)
@@ -1094,16 +1094,16 @@ func restoreTarget(mounts []container.MountPoint, containerPath, target, exclude
 		return types.RecoveryRestoreTarget{}, fmt.Errorf("%s is mounted read-only into the Arcane container", containerPath)
 	}
 	destination := path.Join(target, relative)
-	candidates := slices.DeleteFunc(slices.Clone(mounts), func(m container.MountPoint) bool {
+	candidates := slices.DeleteFunc(slices.Clone(mounts), func(m mobyContainer.MountPoint) bool {
 		return exclude != "" && kit.FilePathMatches(m.Destination, exclude)
 	})
 	return types.RecoveryRestoreTarget{
-		Mounts: append([]mount.Mount{*enclosing}, docker.NestedMounts(candidates, containerPath, destination)...),
+		Mounts: append([]mobyMount.Mount{*enclosing}, docker.NestedMounts(candidates, containerPath, destination)...),
 		Path:   destination,
 	}, nil
 }
 
-func (s *Service) projectsRestoreDestination(ctx context.Context, dockerClient *client.Client) (projectsRestoreDestination, error) {
+func (s *Service) projectsRestoreDestination(ctx context.Context, dockerClient *mobyClient.Client) (projectsRestoreDestination, error) {
 	roots, err := s.projectRoots(ctx)
 	if err != nil {
 		return projectsRestoreDestination{}, err
@@ -1117,8 +1117,8 @@ func (s *Service) projectsRestoreDestination(ctx context.Context, dockerClient *
 		return projectsRestoreDestination{
 			directory: directory,
 			target: types.RecoveryRestoreTarget{
-				Mounts: []mount.Mount{{
-					Type:   mount.TypeBind,
+				Mounts: []mobyMount.Mount{{
+					Type:   mobyMount.TypeBind,
 					Source: directory,
 					Target: selectiveProjectsRestoreTarget,
 				}},
@@ -1267,7 +1267,7 @@ func stagedRestoreStages(
 		stages = append(stages, types.RecoveryRestoreStage{
 			Swap: nil,
 			Target: types.RecoveryRestoreTarget{
-				Mounts: slices.DeleteFunc(slices.Clone(mountTarget.Mounts), func(candidate mount.Mount) bool { return candidate.ReadOnly }),
+				Mounts: slices.DeleteFunc(slices.Clone(mountTarget.Mounts), func(candidate mobyMount.Mount) bool { return candidate.ReadOnly }),
 				Path:   mountTarget.Path,
 			},
 			SnapshotID: snapshotID,
@@ -1302,7 +1302,7 @@ func withoutMissingMountStages(stages []types.RecoveryRestoreStage, list func(fo
 
 func (s *Service) Create(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	repository backup.Repository,
 	opts CreateOptions,
 ) (
@@ -1403,7 +1403,7 @@ func (s *Service) Create(
 		Rejected: func(ctx context.Context, _ error) error { return forget(ctx) },
 		Mounts:   snapshotMounts,
 	}
-	if captureErr := backup.Capture(ctx, capture, func(ctx context.Context, mounts []mount.Mount) error {
+	if captureErr := backup.Capture(ctx, capture, func(ctx context.Context, mounts []mobyMount.Mount) error {
 		var createErr error
 		snapshot, createErr = s.engine.CreateSnapshot(ctx, dockerClient, repository, recoveryKey, "arcane-system-recovery", backup.CreateSnapshotInput{
 			Mounts:  mounts,

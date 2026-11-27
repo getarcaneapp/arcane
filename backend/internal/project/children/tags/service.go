@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"

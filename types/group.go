@@ -29,6 +29,8 @@ type (
 	GroupRoleAssignment struct {
 		CreatedAt     time.Time `json:"createdAt" doc:"Creation timestamp"`
 		EnvironmentID *string   `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
+		ResourceType  *string   `json:"resourceType,omitempty" enum:"project,container,volume,network,image,gitops" doc:"Optional resource kind scope; requires environmentId and resourceId"`
+		ResourceID    *string   `json:"resourceId,omitempty" doc:"Optional resource identifier this assignment is scoped to; requires environmentId and resourceType"`
 		ID            string    `json:"id" doc:"Unique identifier of the assignment"`
 		GroupID       string    `json:"groupId" doc:"ID of the group holding this assignment"`
 		RoleID        string    `json:"roleId" doc:"ID of the granted role"`
@@ -41,5 +43,14 @@ type (
 
 	SetGroupRoleAssignments struct {
 		Assignments []UserRoleAssignmentInput `json:"assignments" doc:"Desired manual role assignments for the group"`
+	}
+
+	GroupIdpMapping struct {
+		CreatedAt  time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
+		UpdatedAt  *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
+		ID         string     `json:"id" readOnly:"true" doc:"Unique identifier of the mapping"`
+		ClaimValue string     `json:"claimValue" required:"false" minLength:"1" maxLength:"255" doc:"OIDC or LDAP group claim value that triggers this mapping" example:"platform-eng"`
+		GroupID    string     `json:"groupId" required:"false" doc:"ID of the Arcane group to sync matching users into"`
+		Source     string     `json:"source" readOnly:"true" enum:"manual,env" doc:"Origin of the mapping"`
 	}
 )

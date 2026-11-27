@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/types/v3"
 )

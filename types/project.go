@@ -13,8 +13,8 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/go-units"
-	"github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 
 	buildtypes "kit.getarcane.app/builds/types"
 )
@@ -163,6 +163,8 @@ type (
 		S3DestinationName string                    `json:"s3DestinationName,omitempty"`
 		SelectionMode     SystemVolumeSelectionMode `json:"selectionMode"`
 		ProjectIDs        []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; empty for all"`
+		VolumeSelection   SystemVolumeSelectionMode `json:"volumeSelectionMode" doc:"Which volumes of each project the backup includes; all includes every volume, including ones added later"`
+		Volumes           []GlobalProjectVolume     `json:"volumes" doc:"Volumes the volume allowlist includes or the volume blocklist excludes; empty for all"`
 		RetentionCount    int                       `json:"retentionCount" doc:"Backups kept per project; 0 keeps all"`
 		Enabled           bool                      `json:"enabled"`
 		StopContainers    bool                      `json:"stopContainers"`
@@ -175,9 +177,11 @@ type (
 	}
 
 	UpdateGlobalProjectBackupPolicy struct {
-		StopContainers *bool                     `json:"stopContainers,omitempty" doc:"Stop each project's running containers during its snapshot; defaults to true"`
-		SelectionMode  SystemVolumeSelectionMode `json:"selectionMode" enum:"all,allowlist,blocklist"`
-		ProjectIDs     []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; an empty allowlist backs up nothing"`
+		StopContainers  *bool                     `json:"stopContainers,omitempty" doc:"Stop each project's running containers during its snapshot; defaults to true"`
+		SelectionMode   SystemVolumeSelectionMode `json:"selectionMode" enum:"all,allowlist,blocklist"`
+		ProjectIDs      []string                  `json:"projectIds" doc:"Projects the allowlist includes or the blocklist excludes; an empty allowlist backs up nothing"`
+		VolumeSelection SystemVolumeSelectionMode `json:"volumeSelectionMode,omitempty" enum:"all,allowlist,blocklist" doc:"Volumes of each project to include; defaults to all, even ones added later"`
+		Volumes         []GlobalProjectVolume     `json:"volumes,omitzero" doc:"Volumes the allowlist includes or the blocklist excludes; an empty allowlist keeps only files"`
 		UpdateBackupPolicy
 	}
 
@@ -190,9 +194,15 @@ type (
 	}
 
 	GlobalProjectBackupOption struct {
-		ID        string `json:"id"`
-		Name      string `json:"name"`
-		Available bool   `json:"available"`
+		ID        string          `json:"id"`
+		Name      string          `json:"name"`
+		Volumes   []ProjectVolume `json:"volumes" doc:"Volumes a backup of the project can include, with ones not created yet marked missing"`
+		Available bool            `json:"available"`
+	}
+
+	GlobalProjectVolume struct {
+		ProjectID string `json:"projectId" minLength:"1"`
+		Key       string `json:"key" minLength:"1" doc:"Volume key in the project's compose file"`
 	}
 
 	RestoreProjectBackupRequest struct {
@@ -537,7 +547,7 @@ type (
 	ComposeDeployment struct {
 		Progress          io.Writer
 		Options           *ProjectDeployOptions
-		AuthConfigs       map[string]registry.AuthConfig
+		AuthConfigs       map[string]mobyRegistry.AuthConfig
 		PreDeploy         func(context.Context) error
 		Load              func(context.Context) (*composeTypes.Project, error)
 		ResolveImages     func(context.Context) (ComposeImageOperations, error)
@@ -553,7 +563,7 @@ type (
 	ComposeServiceUpdate struct {
 		Progress              io.Writer
 		Project               *composeTypes.Project
-		AuthConfigs           map[string]registry.AuthConfig
+		AuthConfigs           map[string]mobyRegistry.AuthConfig
 		RestoreBeforeMutation func(context.Context)
 		Recover               func(context.Context)
 		Images                ComposeImageOperations
@@ -572,7 +582,7 @@ type (
 	}
 
 	ComposeUpOptions struct {
-		AuthConfigs map[string]registry.AuthConfig
+		AuthConfigs map[string]mobyRegistry.AuthConfig
 		ComposeTarget
 		WaitTimeout     time.Duration
 		RemoveOrphans   bool
@@ -581,7 +591,7 @@ type (
 	}
 
 	ComposeCreateOptions struct {
-		AuthConfigs map[string]registry.AuthConfig
+		AuthConfigs map[string]mobyRegistry.AuthConfig
 		ComposeTarget
 	}
 
@@ -596,7 +606,7 @@ type (
 	}
 
 	ComposeRunJobOptions struct {
-		AuthConfigs map[string]registry.AuthConfig
+		AuthConfigs map[string]mobyRegistry.AuthConfig
 		Project     *composeTypes.Project
 		DockerHost  string
 		Job         string
@@ -647,10 +657,13 @@ type (
 	}
 
 	ComposeIdentity struct {
-		ComposeProjectName  *string
-		ResolvedProjectName string
-		ServiceCount        int
-		ExplicitProjectName bool
+		ComposeProjectName       *string
+		ResolvedProjectName      string
+		ComposeFile              string
+		ProjectTags              []ProjectTagOption
+		ServiceCount             int
+		ExplicitProjectName      bool
+		ProjectTagsAuthoritative bool
 	}
 
 	ProjectRenameJournal struct {
@@ -677,8 +690,8 @@ type (
 	}
 
 	ProjectRenameRecoveryOperations struct {
-		Docker                func(context.Context, bool) (*client.Client, error)
-		InvalidateVolumeUsage func(*client.Client)
+		Docker                func(context.Context, bool) (*mobyClient.Client, error)
+		InvalidateVolumeUsage func(*mobyClient.Client)
 		WriteJournal          func(context.Context, *ProjectRenameJournal, string) error
 		ClearJournal          func(context.Context, string) error
 		ClearRollbackCleanup  func(context.Context, string) error

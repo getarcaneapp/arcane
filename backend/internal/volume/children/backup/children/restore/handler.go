@@ -7,7 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -22,10 +22,11 @@ import (
 
 type (
 	Handler struct {
-		service         *Service
-		activityService *activity.ActivityService
-		uploadService   *upload.UploadService
-		appCtx          context.Context
+		service           *Service
+		activityService   *activity.ActivityService
+		uploadService     *upload.UploadService
+		appCtx            context.Context
+		checkVolumeAccess func(ctx context.Context, envID, perm, volumeName string) error
 	}
 
 	RestoreBackupInput struct {
@@ -43,11 +44,22 @@ type (
 	}
 )
 
-func NewHandler(service *Service, activityService *activity.ActivityService, uploadService *upload.UploadService, appCtx context.Context) *Handler {
-	return &Handler{service: service, activityService: activityService, uploadService: uploadService, appCtx: appCtx}
+func NewHandler(
+	service *Service,
+	activityService *activity.ActivityService,
+	uploadService *upload.UploadService,
+	appCtx context.Context,
+	checkVolumeAccess func(ctx context.Context, envID, perm, volumeName string) error,
+) *Handler {
+	return &Handler{service: service, activityService: activityService, uploadService: uploadService, appCtx: appCtx, checkVolumeAccess: checkVolumeAccess}
 }
 
 func (h *Handler) RestoreAction(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesBackup, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	if input.Action == "restorefiles" {
 		return h.restoreBackupFiles(ctx, input)
 	}
@@ -126,6 +138,11 @@ func (h *Handler) restoreBackupFiles(ctx context.Context, input *RestoreBackupIn
 }
 
 func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if h.checkVolumeAccess != nil {
+		if err := h.checkVolumeAccess(ctx, input.EnvironmentID, authz.PermVolumesUpload, input.VolumeName); err != nil {
+			return nil, err
+		}
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -133,6 +150,12 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 
 	ps, _ := middleware.PermissionsFromContext(ctx)
 	for _, perm := range authz.VolumeUploadRestoreConditions.Required("composeVolume", strconv.FormatBool(input.Body.ComposeVolume != nil)) {
+		if h.checkVolumeAccess != nil {
+			if accessErr := h.checkVolumeAccess(ctx, input.EnvironmentID, perm, input.VolumeName); accessErr != nil {
+				return nil, huma.Error403Forbidden("permission denied: " + perm)
+			}
+			continue
+		}
 		if !ps.Allows(perm, input.EnvironmentID) {
 			return nil, huma.Error403Forbidden("permission denied: " + perm)
 		}
@@ -147,6 +170,9 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 	}
 	if !session.Complete {
 		return nil, upload.SessionHTTPError(common.ErrUploadSessionIncomplete)
+	}
+	if session.Target != "" && session.Target != input.VolumeName {
+		return nil, huma.Error403Forbidden("permission denied: upload session targets volume " + session.Target)
 	}
 
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)

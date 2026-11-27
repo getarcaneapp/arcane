@@ -13,7 +13,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"golang.org/x/time/rate"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

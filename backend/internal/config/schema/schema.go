@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/normalization"

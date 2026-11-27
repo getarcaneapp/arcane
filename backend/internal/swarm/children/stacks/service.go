@@ -15,16 +15,16 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	kitfs "kit.getarcane.app/fs"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -36,19 +36,19 @@ import (
 
 type (
 	Service struct {
-		docker           *docker.DockerClientService
+		docker           *dockerInternal.DockerClientService
 		ensureManager    func(ctx context.Context) error
-		listTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
-		paginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
+		listTasks        func(ctx context.Context, filters mobyClient.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		paginateServices func(ctx context.Context, services []mobySwarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
 		registryAuth     func(ctx context.Context, imageRef string) (string, error)
 		settingsService  *settings.SettingsService
 	}
 
 	ServiceParams struct {
-		DockerService    *docker.DockerClientService
+		DockerService    *dockerInternal.DockerClientService
 		EnsureManager    func(ctx context.Context) error
-		ListTasks        func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
-		PaginateServices func(ctx context.Context, services []swarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
+		ListTasks        func(ctx context.Context, filters mobyClient.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		PaginateServices func(ctx context.Context, services []mobySwarm.Service, params pagination.QueryParams) ([]types.SwarmServiceSummary, pagination.Response, error)
 		RegistryAuth     func(ctx context.Context, imageRef string) (string, error)
 		SettingsService  *settings.SettingsService
 	}
@@ -99,16 +99,16 @@ func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string,
 		return nil, pagination.Response{}, err
 	}
 
-	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceListResult, error) {
-		return dockerClient.ServiceList(ctx, client.ServiceListOptions{})
+	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceListResult, error) {
+		return dockerClient.ServiceList(ctx, mobyClient.ServiceListOptions{})
 	})
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 	services := servicesResult.Items
 
-	infoResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-		return dockerClient.Info(ctx, client.InfoOptions{})
+	infoResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, mobyClient.InfoOptions{})
 	})
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to get Docker info: %w", err)
@@ -620,12 +620,12 @@ func (s *Service) removeStackRuntime(ctx context.Context, environmentID, stackNa
 	return nil
 }
 
-func (s *Service) removeStackServices(ctx context.Context, stackName string, services []swarm.Service) error {
+func (s *Service) removeStackServices(ctx context.Context, stackName string, services []mobySwarm.Service) error {
 	serviceIDs := make(map[string]struct{}, len(services))
 	for _, service := range services {
 		serviceIDs[service.ID] = struct{}{}
-		if _, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceRemoveResult, error) {
-			return dockerClient.ServiceRemove(ctx, service.ID, client.ServiceRemoveOptions{})
+		if _, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceRemoveResult, error) {
+			return dockerClient.ServiceRemove(ctx, service.ID, mobyClient.ServiceRemoveOptions{})
 		}); err != nil && !errdefs.IsNotFound(err) {
 			return fmt.Errorf("failed to remove swarm service %s: %w", service.Spec.Name, err)
 		}
@@ -673,7 +673,7 @@ func (s *Service) ListStackTasksPaginated(ctx context.Context, environmentID, st
 		return []types.SwarmTaskSummary{}, pagination.BuildResponse(0, 0, params), nil
 	}
 
-	filters := make(client.Filters)
+	filters := make(mobyClient.Filters)
 	for _, service := range services {
 		filters.Add("service", service.ID)
 	}
@@ -724,15 +724,15 @@ func (s *Service) RenderStackConfig(ctx context.Context, environmentID string, r
 	}, nil
 }
 
-func (s *Service) listStackServicesRaw(ctx context.Context, stackName string) ([]swarm.Service, error) {
+func (s *Service) listStackServicesRaw(ctx context.Context, stackName string) ([]mobySwarm.Service, error) {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return nil, errors.New("stack name is required")
 	}
 
-	stackFilter := make(client.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
-	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceListResult, error) {
-		return dockerClient.ServiceList(ctx, client.ServiceListOptions{
+	stackFilter := make(mobyClient.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
+	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceListResult, error) {
+		return dockerClient.ServiceList(ctx, mobyClient.ServiceListOptions{
 			Filters: stackFilter,
 			Status:  true,
 		})
@@ -756,27 +756,27 @@ func (s *Service) waitForRemovedServiceTasks(ctx context.Context, stackName stri
 	defer ticker.Stop()
 
 	// Docker rejects a service filter naming a removed service, so filter by stack label.
-	taskFilters := make(client.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
+	taskFilters := make(mobyClient.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
 
 	for {
-		tasksResult, err := s.docker.Call(waitCtx, func(ctx context.Context, dockerClient *client.Client) (client.TaskListResult, error) {
-			return dockerClient.TaskList(ctx, client.TaskListOptions{Filters: taskFilters})
+		tasksResult, err := s.docker.Call(waitCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.TaskListResult, error) {
+			return dockerClient.TaskList(ctx, mobyClient.TaskListOptions{Filters: taskFilters})
 		})
 		if err != nil {
 			return fmt.Errorf("failed to list tasks while waiting for stack removal: %w", err)
 		}
 
-		hasActiveTasks := slices.ContainsFunc(tasksResult.Items, func(task swarm.Task) bool {
+		hasActiveTasks := slices.ContainsFunc(tasksResult.Items, func(task mobySwarm.Task) bool {
 			if _, removed := serviceIDs[task.ServiceID]; !removed {
 				return false
 			}
-			return !slices.Contains([]swarm.TaskState{
-				swarm.TaskStateComplete,
-				swarm.TaskStateShutdown,
-				swarm.TaskStateFailed,
-				swarm.TaskStateRejected,
-				swarm.TaskStateRemove,
-				swarm.TaskStateOrphaned,
+			return !slices.Contains([]mobySwarm.TaskState{
+				mobySwarm.TaskStateComplete,
+				mobySwarm.TaskStateShutdown,
+				mobySwarm.TaskStateFailed,
+				mobySwarm.TaskStateRejected,
+				mobySwarm.TaskStateRemove,
+				mobySwarm.TaskStateOrphaned,
 			}, task.Status.State)
 		})
 		if !hasActiveTasks {

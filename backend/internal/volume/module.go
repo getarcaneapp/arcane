@@ -7,7 +7,7 @@ import (
 	"go.uber.org/fx"
 
 	"getarcane.dev/arcane/v3/internal/activity"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/upload"
@@ -20,7 +20,7 @@ import (
 type (
 	Module struct {
 		service            *VolumeService
-		dockerService      *docker.DockerClientService
+		dockerService      *dockerInternal.DockerClientService
 		activityService    *activity.ActivityService
 		environmentService *environment.EnvironmentService
 		uploadService      *upload.UploadService
@@ -30,7 +30,7 @@ type (
 		fx.In
 
 		Service            *VolumeService
-		DockerService      *docker.DockerClientService
+		DockerService      *dockerInternal.DockerClientService
 		ActivityService    *activity.ActivityService
 		EnvironmentService *environment.EnvironmentService
 		UploadService      *upload.UploadService
@@ -58,19 +58,20 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 	}
 
 	RegisterVolumes(api, m.dockerService, m.service, m.activityService, m.environmentService, appCtx)
-	workspace.RegisterRoutes(api, workspace.NewHandler(service.workspace, m.activityService, appCtx.Context()))
+	workspace.RegisterRoutes(api, workspace.NewHandler(service.workspace, m.activityService, appCtx.Context(), service.CheckVolumeAccess))
 	backup.RegisterRoutes(api, backup.NewHandler(backup.HandlerParams{
 		Service:            service.backup,
 		ActivityService:    m.activityService,
 		EnvironmentService: m.environmentService,
 		UploadService:      m.uploadService,
+		CheckVolumeAccess:  service.CheckVolumeAccess,
 		AppCtx:             appCtx.Context(),
 	}))
 }
 
 func RegisterVolumes(
 	api huma.API,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	volumeService *VolumeService,
 	activityService *activity.ActivityService,
 	environmentService *environment.EnvironmentService,

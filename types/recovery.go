@@ -3,7 +3,7 @@ package types
 import (
 	"time"
 
-	"github.com/moby/moby/api/types/mount"
+	mobyMount "github.com/moby/moby/api/types/mount"
 )
 
 type (
@@ -21,13 +21,13 @@ type (
 	}
 
 	RecoveryRestoreTarget struct {
-		Path   string        `json:"path"`
-		Mounts []mount.Mount `json:"mounts"`
+		Path   string            `json:"path"`
+		Mounts []mobyMount.Mount `json:"mounts"`
 	}
 
 	RecoveryRestoreRepository struct {
-		Environment []string      `json:"environment"`
-		Mounts      []mount.Mount `json:"mounts"`
+		Environment []string          `json:"environment"`
+		Mounts      []mobyMount.Mount `json:"mounts"`
 	}
 
 	RecoveryRestoreStage struct {

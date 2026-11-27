@@ -5,7 +5,7 @@ import (
 	"encoding/json/v2"
 	"testing"
 
-	dockerregistry "github.com/moby/moby/api/types/registry"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +17,7 @@ func TestParseVersion(t *testing.T) {
 
 func TestBuildDockerConfigJSON(t *testing.T) {
 	tests := []struct {
-		auths     map[string]dockerregistry.AuthConfig
+		auths     map[string]mobyRegistry.AuthConfig
 		wantAuths map[string]string
 		name      string
 	}{
@@ -26,11 +26,11 @@ func TestBuildDockerConfigJSON(t *testing.T) {
 		},
 		{
 			name:  "empty map",
-			auths: map[string]dockerregistry.AuthConfig{},
+			auths: map[string]mobyRegistry.AuthConfig{},
 		},
 		{
 			name: "one registry",
-			auths: map[string]dockerregistry.AuthConfig{
+			auths: map[string]mobyRegistry.AuthConfig{
 				"registry.example.com": {Username: "user", Password: "pass"},
 			},
 			wantAuths: map[string]string{
@@ -39,7 +39,7 @@ func TestBuildDockerConfigJSON(t *testing.T) {
 		},
 		{
 			name: "skips blank credentials",
-			auths: map[string]dockerregistry.AuthConfig{
+			auths: map[string]mobyRegistry.AuthConfig{
 				"registry.example.com": {Username: "user", Password: "pass"},
 				"blank-user.example":   {Username: "", Password: "pass"},
 				"blank-pass.example":   {Username: "user", Password: ""},
@@ -51,7 +51,7 @@ func TestBuildDockerConfigJSON(t *testing.T) {
 		},
 		{
 			name: "two registries",
-			auths: map[string]dockerregistry.AuthConfig{
+			auths: map[string]mobyRegistry.AuthConfig{
 				"registry-a.example.com": {Username: "user-a", Password: "pass-a"},
 				"registry-b.example.com": {Username: "user-b", Password: "pass-b"},
 			},

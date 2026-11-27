@@ -3,6 +3,7 @@ package gitops
 import (
 	"cmp"
 	"context"
+	"slices"
 	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -120,13 +121,24 @@ func requireConditionPermissions(ctx context.Context, environmentID string, cond
 	return nil
 }
 
-func (h *GitOpsSyncHandler) requireBackupSyncPermission(ctx context.Context, environmentID, syncID string, conditions authz.PermissionConditions) error {
+func (h *GitOpsSyncHandler) requireBackupSyncPermission(ctx context.Context, environmentID, syncID string, conditions authz.PermissionConditions, extra ...string) error {
 	sync, err := h.syncService.GetSyncByID(ctx, environmentID, syncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve GitOps sync")
 	}
-	return requireConditionPermissions(ctx, environmentID, conditions, "mode", sync.Mode)
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	for _, perm := range slices.Concat(conditions.Required("mode", sync.Mode), extra) {
+		if !middleware.GitOpsSyncPermitted(ps, middleware.GitOpsSyncAccessInput{
+			EnvID:      environmentID,
+			Permission: perm,
+			SyncID:     sync.ID,
+			ProjectID:  sync.ProjectID,
+		}) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
+	}
+	return nil
 }
 
 func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSyncsInput) (*ListGitOpsSyncsOutput, error) {
@@ -214,7 +226,27 @@ func (h *GitOpsSyncHandler) ImportSyncs(ctx context.Context, input *ImportGitOps
 	}, nil
 }
 
+func (h *GitOpsSyncHandler) requireSyncAccess(ctx context.Context, environmentID, perm, syncID string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, environmentID) {
+		return nil
+	}
+	sync, err := h.syncService.GetSyncByID(ctx, environmentID, syncID)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireGitOpsSyncPermission(ctx, middleware.GitOpsSyncAccessInput{
+		EnvID:      environmentID,
+		Permission: perm,
+		SyncID:     sync.ID,
+		ProjectID:  sync.ProjectID,
+	})
+}
+
 func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInput) (*handlerutil.Out[types.GitOpsSync], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsRead, input.SyncID); err != nil {
+		return nil, err
+	}
 	sync, err := h.syncService.GetSyncByID(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -234,14 +266,20 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 }
 
 func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*handlerutil.Out[types.GitOpsSync], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsUpdate, input.SyncID); err != nil {
+		return nil, err
+	}
 	submitted, err := input.SubmittedFields()
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid request body", err)
 	}
-	if lifecycleErr := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsPreDeployConditions, "preDeploy", strconv.FormatBool(hasPreDeployConfig(submitted))); lifecycleErr != nil {
-		return nil, lifecycleErr
-	}
-	if backupErr := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID, authz.GitOpsSyncModeConditions); backupErr != nil {
+	if backupErr := h.requireBackupSyncPermission(
+		ctx,
+		input.EnvironmentID,
+		input.SyncID,
+		authz.GitOpsSyncModeConditions,
+		authz.GitOpsPreDeployConditions.Required("preDeploy", strconv.FormatBool(hasPreDeployConfig(submitted)))...,
+	); backupErr != nil {
 		return nil, backupErr
 	}
 
@@ -268,10 +306,16 @@ func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsS
 }
 
 func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsSyncInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := requireConditionPermissions(ctx, input.EnvironmentID, authz.GitOpsRemoveStackConditions, "removeStack", strconv.FormatBool(input.RemoveStack)); err != nil {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsDelete, input.SyncID); err != nil {
 		return nil, err
 	}
-	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID, authz.GitOpsSyncModeConditions); err != nil {
+	if err := h.requireBackupSyncPermission(
+		ctx,
+		input.EnvironmentID,
+		input.SyncID,
+		authz.GitOpsSyncModeConditions,
+		authz.GitOpsRemoveStackConditions.Required("removeStack", strconv.FormatBool(input.RemoveStack))...,
+	); err != nil {
 		return nil, err
 	}
 	actor := handlerutil.CurrentActor(ctx)
@@ -285,6 +329,9 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 }
 
 func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *GitOpsSyncActionInput) (*handlerutil.Out[types.GitOpsSyncResult], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsSync, input.SyncID); err != nil {
+		return nil, err
+	}
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID, authz.GitOpsSyncModeConditions); err != nil {
 		return nil, err
 	}
@@ -309,6 +356,9 @@ func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *GitOpsSyncAc
 }
 
 func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusInput) (*handlerutil.Out[types.GitOpsSyncStatus], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsRead, input.SyncID); err != nil {
+		return nil, err
+	}
 	status, err := h.syncService.GetSyncStatus(ctx, input.EnvironmentID, input.SyncID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -324,6 +374,9 @@ func (h *GitOpsSyncHandler) GetStatus(ctx context.Context, input *GetSyncStatusI
 }
 
 func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFilesInput) (*handlerutil.Out[types.GitOpsBrowseResponse], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsRead, input.SyncID); err != nil {
+		return nil, err
+	}
 	response, err := h.syncService.BrowseFiles(ctx, input.EnvironmentID, input.SyncID, input.Path)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -339,6 +392,9 @@ func (h *GitOpsSyncHandler) BrowseFiles(ctx context.Context, input *BrowseSyncFi
 }
 
 func (h *GitOpsSyncHandler) PreviewBackup(ctx context.Context, input *BackupPreviewInput) (*handlerutil.Out[types.GitOpsBackupPreview], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsRead, input.SyncID); err != nil {
+		return nil, err
+	}
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID, authz.GitOpsSyncModeConditions); err != nil {
 		return nil, err
 	}
@@ -357,6 +413,9 @@ func (h *GitOpsSyncHandler) PreviewBackup(ctx context.Context, input *BackupPrev
 }
 
 func (h *GitOpsSyncHandler) BackupHistory(ctx context.Context, input *BackupHistoryInput) (*handlerutil.Out[types.GitOpsBackupHistoryResponse], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsRead, input.SyncID); err != nil {
+		return nil, err
+	}
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID, authz.GitOpsSyncModeConditions); err != nil {
 		return nil, err
 	}
@@ -375,6 +434,9 @@ func (h *GitOpsSyncHandler) BackupHistory(ctx context.Context, input *BackupHist
 }
 
 func (h *GitOpsSyncHandler) BackupRevision(ctx context.Context, input *BackupRevisionInput) (*handlerutil.Out[types.GitOpsBackupRevision], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsRead, input.SyncID); err != nil {
+		return nil, err
+	}
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID, authz.GitOpsSyncModeConditions); err != nil {
 		return nil, err
 	}
@@ -393,6 +455,9 @@ func (h *GitOpsSyncHandler) BackupRevision(ctx context.Context, input *BackupRev
 }
 
 func (h *GitOpsSyncHandler) ResolveBackupConflict(ctx context.Context, input *ResolveBackupConflictInput) (*handlerutil.Out[types.GitOpsSyncResult], error) {
+	if err := h.requireSyncAccess(ctx, input.EnvironmentID, authz.PermGitOpsSync, input.SyncID); err != nil {
+		return nil, err
+	}
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID, authz.GitOpsBackupResolveConditions); err != nil {
 		return nil, err
 	}

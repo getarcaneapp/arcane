@@ -13,14 +13,14 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -404,12 +404,12 @@ func newDownStackTestService(t *testing.T, removed *[]string) *Service {
 	}))
 	t.Cleanup(server.Close)
 
-	cli, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"), client.WithHTTPClient(server.Client()))
+	cli, err := mobyClient.New(mobyClient.WithHost(server.URL), mobyClient.WithAPIVersion("1.41"), mobyClient.WithHTTPClient(server.Client()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
 
 	return NewService(ServiceParams{
-		DockerService:   docker.NewDockerClientService(ctx, db, settingsSvc, docker.ClientServiceOptions{}).WithClient(cli),
+		DockerService:   dockerInternal.NewDockerClientService(ctx, db, settingsSvc, dockerInternal.ClientServiceOptions{}).WithClient(cli),
 		EnsureManager:   func(context.Context) error { return nil },
 		SettingsService: settingsSvc,
 	})

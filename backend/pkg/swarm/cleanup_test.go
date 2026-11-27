@@ -6,7 +6,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	dockerclient "github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 
 	"kit.getarcane.app/concurrency"
@@ -21,7 +21,7 @@ func TestCleanupStaleManagedResourcesMatchesCurrentAndLegacyLabels(t *testing.T)
 	removedIDs := make([]string, 0, 2)
 	adapter := fileResourceAdapter{
 		ResourceType: "config",
-		List: func(_ context.Context, filters dockerclient.Filters) ([]staleManagedResource, error) {
+		List: func(_ context.Context, filters mobyClient.Filters) ([]staleManagedResource, error) {
 			listCalls++
 			labels := filters["label"]
 			require.True(t, labels[types.SwarmStackNamespaceLabel+"=stack"])
@@ -69,7 +69,7 @@ func TestCleanupStaleManagedResourcesFailsWhenResourceStaysInUse(t *testing.T) {
 	removeCalls := 0
 	adapter := fileResourceAdapter{
 		ResourceType: "config",
-		List: func(_ context.Context, _ dockerclient.Filters) ([]staleManagedResource, error) {
+		List: func(_ context.Context, _ mobyClient.Filters) ([]staleManagedResource, error) {
 			return []staleManagedResource{{ID: "stale", Name: "stale"}}, nil
 		},
 		Remove: func(_ context.Context, _ string) error {

@@ -19,14 +19,14 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/moby/moby/api/types/events"
+	mobyEvents "github.com/moby/moby/api/types/events"
 	"golang.org/x/sync/semaphore"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker/streams/agg"
 	"kit.getarcane.app/docker/streams/bus"
@@ -187,47 +187,47 @@ var (
 		EventTypeFederatedExchange: {"Federated credential exchange: %s", "Federated credential exchange for '%s'", EventSeverityInfo},
 	}
 
-	swarmDaemonEventTypes = []events.Type{
-		events.ServiceEventType,
-		events.NodeEventType,
-		events.SecretEventType,
-		events.ConfigEventType,
+	swarmDaemonEventTypes = []mobyEvents.Type{
+		mobyEvents.ServiceEventType,
+		mobyEvents.NodeEventType,
+		mobyEvents.SecretEventType,
+		mobyEvents.ConfigEventType,
 	}
 
-	daemonEventTypes = map[events.Type]map[events.Action]EventType{
-		events.ContainerEventType: {
-			events.ActionCreate:                EventTypeContainerCreate,
-			events.ActionStart:                 EventTypeContainerStart,
-			events.ActionStop:                  EventTypeContainerStop,
-			events.ActionRestart:               EventTypeContainerRestart,
-			events.ActionDie:                   EventTypeContainerDie,
-			events.ActionOOM:                   EventTypeContainerOOM,
-			events.ActionKill:                  EventTypeContainerKill,
-			events.ActionDestroy:               EventTypeContainerDelete,
-			events.ActionPause:                 EventTypeContainerPause,
-			events.ActionUnPause:               EventTypeContainerUnpause,
-			events.ActionRename:                EventTypeContainerRename,
-			events.ActionUpdate:                EventTypeContainerUpdate,
-			events.ActionHealthStatusUnhealthy: EventTypeContainerUnhealthy,
+	daemonEventTypes = map[mobyEvents.Type]map[mobyEvents.Action]EventType{
+		mobyEvents.ContainerEventType: {
+			mobyEvents.ActionCreate:                EventTypeContainerCreate,
+			mobyEvents.ActionStart:                 EventTypeContainerStart,
+			mobyEvents.ActionStop:                  EventTypeContainerStop,
+			mobyEvents.ActionRestart:               EventTypeContainerRestart,
+			mobyEvents.ActionDie:                   EventTypeContainerDie,
+			mobyEvents.ActionOOM:                   EventTypeContainerOOM,
+			mobyEvents.ActionKill:                  EventTypeContainerKill,
+			mobyEvents.ActionDestroy:               EventTypeContainerDelete,
+			mobyEvents.ActionPause:                 EventTypeContainerPause,
+			mobyEvents.ActionUnPause:               EventTypeContainerUnpause,
+			mobyEvents.ActionRename:                EventTypeContainerRename,
+			mobyEvents.ActionUpdate:                EventTypeContainerUpdate,
+			mobyEvents.ActionHealthStatusUnhealthy: EventTypeContainerUnhealthy,
 		},
-		events.ImageEventType: {
-			events.ActionPull:   EventTypeImagePull,
-			events.ActionDelete: EventTypeImageDelete,
-			events.ActionTag:    EventTypeImageTag,
-			events.ActionUnTag:  EventTypeImageUntag,
-			events.ActionImport: EventTypeImageImport,
-			events.ActionLoad:   EventTypeImageLoad,
-			events.ActionPrune:  EventTypeImagePrune,
+		mobyEvents.ImageEventType: {
+			mobyEvents.ActionPull:   EventTypeImagePull,
+			mobyEvents.ActionDelete: EventTypeImageDelete,
+			mobyEvents.ActionTag:    EventTypeImageTag,
+			mobyEvents.ActionUnTag:  EventTypeImageUntag,
+			mobyEvents.ActionImport: EventTypeImageImport,
+			mobyEvents.ActionLoad:   EventTypeImageLoad,
+			mobyEvents.ActionPrune:  EventTypeImagePrune,
 		},
-		events.VolumeEventType: {
-			events.ActionCreate:  EventTypeVolumeCreate,
-			events.ActionDestroy: EventTypeVolumeDelete,
-			events.ActionPrune:   EventTypeVolumePrune,
+		mobyEvents.VolumeEventType: {
+			mobyEvents.ActionCreate:  EventTypeVolumeCreate,
+			mobyEvents.ActionDestroy: EventTypeVolumeDelete,
+			mobyEvents.ActionPrune:   EventTypeVolumePrune,
 		},
-		events.NetworkEventType: {
-			events.ActionCreate:  EventTypeNetworkCreate,
-			events.ActionDestroy: EventTypeNetworkDelete,
-			events.ActionPrune:   EventTypeNetworkPrune,
+		mobyEvents.NetworkEventType: {
+			mobyEvents.ActionCreate:  EventTypeNetworkCreate,
+			mobyEvents.ActionDestroy: EventTypeNetworkDelete,
+			mobyEvents.ActionPrune:   EventTypeNetworkPrune,
 		},
 	}
 )
@@ -849,11 +849,11 @@ func (s *EventService) SubscribeDockerEvents(eventBus *bus.DockerEventBus) (run 
 // SubscribeDockerEventsForEnvironment subscribes to a daemon bus and tags every recorded event with
 // the environment that daemon belongs to. An empty environmentID records local daemon events.
 func (s *EventService) SubscribeDockerEventsForEnvironment(eventBus *bus.DockerEventBus, environmentID string) (run func(context.Context) error, cleanup func()) {
-	containers, unsubscribeContainers := eventBus.Subscribe(events.ContainerEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
-	images, unsubscribeImages := eventBus.Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
-	volumes, unsubscribeVolumes := eventBus.Subscribe(events.VolumeEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
-	networks, unsubscribeNetworks := eventBus.Subscribe(events.NetworkEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
-	swarmChannels := make([]<-chan events.Message, 0, len(swarmDaemonEventTypes))
+	containers, unsubscribeContainers := eventBus.Subscribe(mobyEvents.ContainerEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
+	images, unsubscribeImages := eventBus.Subscribe(mobyEvents.ImageEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
+	volumes, unsubscribeVolumes := eventBus.Subscribe(mobyEvents.VolumeEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
+	networks, unsubscribeNetworks := eventBus.Subscribe(mobyEvents.NetworkEventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
+	swarmChannels := make([]<-chan mobyEvents.Message, 0, len(swarmDaemonEventTypes))
 	swarmUnsubscribes := make([]func(), 0, len(swarmDaemonEventTypes))
 	for _, eventType := range swarmDaemonEventTypes {
 		channel, unsubscribe := eventBus.Subscribe(eventType, bus.SubscribeOptions{Buffer: new(daemonEventChanBuffer)})
@@ -870,7 +870,7 @@ func (s *EventService) SubscribeDockerEventsForEnvironment(eventBus *bus.DockerE
 		}
 	})
 	return func(ctx context.Context) error {
-		swarmEvents := make(chan events.Message, daemonEventChanBuffer)
+		swarmEvents := make(chan mobyEvents.Message, daemonEventChanBuffer)
 		var forwarders sync.WaitGroup
 		for _, channel := range swarmChannels {
 			forwarders.Go(func() {
@@ -891,11 +891,11 @@ func (s *EventService) SubscribeDockerEventsForEnvironment(eventBus *bus.DockerE
 	}, cleanup
 }
 
-func (s *EventService) runDockerEvents(ctx context.Context, environmentID string, containers, images, volumes, networks, swarmEvents <-chan events.Message) error {
+func (s *EventService) runDockerEvents(ctx context.Context, environmentID string, containers, images, volumes, networks, swarmEvents <-chan mobyEvents.Message) error {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for containers != nil || images != nil || volumes != nil || networks != nil || swarmEvents != nil {
-		var msg events.Message
+		var msg mobyEvents.Message
 		var ok bool
 		select {
 		case <-ctx.Done():
@@ -939,13 +939,13 @@ func (s *EventService) runDockerEvents(ctx context.Context, environmentID string
 }
 
 // RecordDockerEvent records an event from the manager's own daemon.
-func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message) {
+func (s *EventService) RecordDockerEvent(ctx context.Context, msg mobyEvents.Message) {
 	s.recordDockerEventForEnvironment(ctx, "", msg)
 }
 
 // RecordDockerHostEvent records an event from a docker-host environment's daemon, tagged with that
 // environment so the event log and the activity feed stay scoped to the daemon that reported it.
-func (s *EventService) RecordDockerHostEvent(ctx context.Context, environmentID string, msg events.Message) {
+func (s *EventService) RecordDockerHostEvent(ctx context.Context, environmentID string, msg mobyEvents.Message) {
 	if strings.TrimSpace(environmentID) == "" {
 		s.RecordDockerEvent(ctx, msg)
 		return
@@ -953,7 +953,7 @@ func (s *EventService) RecordDockerHostEvent(ctx context.Context, environmentID 
 	s.recordDockerEventForEnvironment(ctx, strings.TrimSpace(environmentID), msg)
 }
 
-func (s *EventService) recordDockerEventForEnvironment(ctx context.Context, environmentID string, msg events.Message) {
+func (s *EventService) recordDockerEventForEnvironment(ctx context.Context, environmentID string, msg mobyEvents.Message) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -965,8 +965,8 @@ func (s *EventService) recordDockerEventForEnvironment(ctx context.Context, envi
 		switch {
 		case slices.Contains(swarmDaemonEventTypes, msg.Type):
 			s.PublishChange(cmp.Or(environmentID, "0"), "swarm")
-		case msg.Type == events.NetworkEventType:
-			s.PublishChange(cmp.Or(environmentID, "0"), string(events.NetworkEventType))
+		case msg.Type == mobyEvents.NetworkEventType:
+			s.PublishChange(cmp.Or(environmentID, "0"), string(mobyEvents.NetworkEventType))
 		}
 		return
 	}
@@ -1052,9 +1052,9 @@ func (s *EventService) Stop(ctx context.Context) error {
 	}
 }
 
-func mapDaemonEvent(msg events.Message) (CreateEventRequest, bool) {
+func mapDaemonEvent(msg mobyEvents.Message) (CreateEventRequest, bool) {
 	eventType := daemonEventTypes[msg.Type][msg.Action]
-	if eventType == "" || (msg.Actor.ID == "" && msg.Action != events.ActionPrune) {
+	if eventType == "" || (msg.Actor.ID == "" && msg.Action != mobyEvents.ActionPrune) {
 		return CreateEventRequest{}, false
 	}
 	abnormalExit := eventType == EventTypeContainerDie && msg.Actor.Attributes["exitCode"] != "0"

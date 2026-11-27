@@ -131,9 +131,8 @@ linters:
       min-complexity: 45
 
     importas:
+      no-unaliased: true
       alias:
-        - pkg: kit.getarcane.app/docker
-          alias: docker
         - pkg: kit.getarcane.app
           alias: kit
         - pkg: getarcane.dev/arcane/v3/internal/docker
@@ -144,6 +143,34 @@ linters:
           alias: charmLog
         - pkg: github.com/compose-spec/compose-go/v2/types
           alias: composeTypes
+        - pkg: github.com/moby/moby/api/types/container
+          alias: mobyContainer
+        - pkg: github.com/moby/moby/api/types/mount
+          alias: mobyMount
+        - pkg: github.com/moby/moby/api/types/network
+          alias: mobyNetwork
+        - pkg: github.com/moby/moby/api/types/registry
+          alias: mobyRegistry
+        - pkg: github.com/moby/moby/api/types/swarm
+          alias: mobySwarm
+        - pkg: github.com/moby/moby/api/types/events
+          alias: mobyEvents
+        - pkg: github.com/moby/moby/api/types/image
+          alias: mobyImage
+        - pkg: github.com/moby/moby/api/types/volume
+          alias: mobyVolume
+        - pkg: github.com/moby/moby/api/pkg/authconfig
+          alias: mobyAuthConfig
+        - pkg: github.com/moby/moby/api/types/system
+          alias: mobySystem
+        - pkg: github.com/moby/moby/api/pkg/stdcopy
+          alias: mobyStdCopy
+        - pkg: github.com/moby/buildkit/util/attestation
+          alias: mobyBuildkitAttestation
+        - pkg: github.com/moby/buildkit/util/progress/progressui
+          alias: mobyBuildkitProgressUI
+        - pkg: github.com/moby/moby/client
+          alias: mobyClient
 
     lll:
       line-length: 200

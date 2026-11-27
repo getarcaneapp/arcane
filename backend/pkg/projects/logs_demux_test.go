@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/client"
+	mobyStdCopy "github.com/moby/moby/api/pkg/stdcopy"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,13 +21,13 @@ type (
 	}
 
 	stubLogAPIClient struct {
-		client.APIClient
+		mobyClient.APIClient
 
 		resp io.ReadCloser
 	}
 )
 
-func frameLogEntry(fd stdcopy.StdType, payload []byte) []byte {
+func frameLogEntry(fd mobyStdCopy.StdType, payload []byte) []byte {
 	header := make([]byte, 8)
 	header[0] = byte(fd)
 	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)))
@@ -38,7 +38,7 @@ func decodeDemuxedStream(t *testing.T, stream io.Reader) string {
 	t.Helper()
 	decoded := &bytes.Buffer{}
 	sinkErr := &bytes.Buffer{}
-	_, err := stdcopy.StdCopy(decoded, sinkErr, stream)
+	_, err := mobyStdCopy.StdCopy(decoded, sinkErr, stream)
 	require.NoError(t, err)
 	require.Empty(t, sinkErr.String(), "every entry must be re-framed as stdout")
 	return decoded.String()
@@ -47,11 +47,11 @@ func decodeDemuxedStream(t *testing.T, stream io.Reader) string {
 func TestDemultiplexedLogStreamWithStderrMarking(t *testing.T) {
 	longRun := strings.Repeat("x", maxLogEntryBytes+100)
 	source := bytes.Join([][]byte{
-		frameLogEntry(stdcopy.Stdout, []byte("line-one\npar")),
-		frameLogEntry(stdcopy.Stderr, []byte("boom\n")),
-		frameLogEntry(stdcopy.Stdout, []byte("tial\n")),
-		frameLogEntry(stdcopy.Stderr, []byte(longRun)),
-		frameLogEntry(stdcopy.Stderr, []byte("\nfinal")),
+		frameLogEntry(mobyStdCopy.Stdout, []byte("line-one\npar")),
+		frameLogEntry(mobyStdCopy.Stderr, []byte("boom\n")),
+		frameLogEntry(mobyStdCopy.Stdout, []byte("tial\n")),
+		frameLogEntry(mobyStdCopy.Stderr, []byte(longRun)),
+		frameLogEntry(mobyStdCopy.Stderr, []byte("\nfinal")),
 	}, nil)
 
 	resp := io.NopCloser(bytes.NewReader(source))
@@ -68,14 +68,14 @@ func (b *fakeResponseBody) Close() error {
 	return nil
 }
 
-func (s *stubLogAPIClient) ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error) {
+func (s *stubLogAPIClient) ContainerLogs(ctx context.Context, containerID string, options mobyClient.ContainerLogsOptions) (mobyClient.ContainerLogsResult, error) {
 	return s.resp, nil
 }
 
 func TestLogsDemuxClientContainerLogsDecision(t *testing.T) {
 	muxed := bytes.Join([][]byte{
-		frameLogEntry(stdcopy.Stdout, []byte("out\n")),
-		frameLogEntry(stdcopy.Stderr, []byte("err\n")),
+		frameLogEntry(mobyStdCopy.Stdout, []byte("out\n")),
+		frameLogEntry(mobyStdCopy.Stderr, []byte("err\n")),
 	}, nil)
 
 	tests := []struct {
@@ -103,7 +103,7 @@ func TestLogsDemuxClientContainerLogsDecision(t *testing.T) {
 				inner.recordContainerTTY(" CTR-1 ", tt.ttyRecorded)
 			}
 
-			got, err := inner.ContainerLogs(t.Context(), "ctr-1", client.ContainerLogsOptions{ShowStdout: tt.showStdout, ShowStderr: tt.showStderr})
+			got, err := inner.ContainerLogs(t.Context(), "ctr-1", mobyClient.ContainerLogsOptions{ShowStdout: tt.showStdout, ShowStderr: tt.showStderr})
 			require.NoError(t, err)
 
 			if !tt.wantWrapped {

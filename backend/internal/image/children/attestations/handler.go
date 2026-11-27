@@ -12,13 +12,15 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/common"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	Handler struct {
-		service *Service
+		service          *Service
+		checkImageAccess func(ctx context.Context, envID, perm, imageRef string) error
 	}
 
 	GetImageAttestationsInput struct {
@@ -34,14 +36,19 @@ const (
 	statusClientClosedRequest = 499
 )
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, checkImageAccess func(ctx context.Context, envID, perm, imageRef string) error) *Handler {
+	return &Handler{service: service, checkImageAccess: checkImageAccess}
 }
 
 func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*handlerutil.Out[types.ImageAttestationList], error) {
 	imageName := strings.TrimSpace(input.ImageName)
 	if imageName == "" {
 		return nil, huma.Error400BadRequest("image name is required")
+	}
+	if h.checkImageAccess != nil {
+		if err := h.checkImageAccess(ctx, input.EnvironmentID, authz.PermImagesRead, imageName); err != nil {
+			return nil, err
+		}
 	}
 
 	if input.Platform != "" {

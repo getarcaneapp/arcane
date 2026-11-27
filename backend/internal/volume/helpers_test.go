@@ -10,23 +10,23 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 )
 
-func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
@@ -36,8 +36,8 @@ func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *cl
 func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	var createCalls, startCalls, removeCalls int
 	var createRequest struct {
-		HostConfig      *container.HostConfig `json:"HostConfig"`
-		NetworkDisabled bool                  `json:"NetworkDisabled"`
+		HostConfig      *mobyContainer.HostConfig `json:"HostConfig"`
+		NetworkDisabled bool                      `json:"NetworkDisabled"`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -61,9 +61,9 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper-1/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.MarshalWrite(w, container.InspectResponse{
+			if err := json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID:    "helper-1",
-				State: &container.State{Running: true},
+				State: &mobyContainer.State{Running: true},
 			}); err != nil {
 				t.Errorf("encode container inspect response: %v", err)
 			}
@@ -200,8 +200,8 @@ func newVolumeTestSettingsService(t *testing.T) *settings.SettingsService {
 	return settingsService
 }
 
-func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newVolumeTestDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
-	return docker.NewDockerClientService(t.Context(), nil, newVolumeTestSettingsService(t), docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), nil, newVolumeTestSettingsService(t), dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

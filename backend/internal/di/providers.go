@@ -10,7 +10,8 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/moby/moby/api/types/events"
+	mobyEvents "github.com/moby/moby/api/types/events"
+	mobyClient "github.com/moby/moby/client"
 	"go.uber.org/fx"
 
 	"kit.getarcane.app/concurrency"
@@ -23,12 +24,13 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/network"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/role"
@@ -43,6 +45,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/volume"
 	"getarcane.dev/arcane/v3/internal/webhook"
 	"getarcane.dev/arcane/v3/pkg/agent"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/types/v3"
 )
@@ -56,13 +59,15 @@ type (
 		ImageService *image.ImageService
 		Roles        *role.RoleService
 		Config       *config.Config
+		Docker       *dockerInternal.DockerClientService
+		DB           *database.DB
 	}
 
 	volumeRepositoryParams struct {
 		fx.In
 
 		Config         *config.Config
-		Docker         *docker.DockerClientService
+		Docker         *dockerInternal.DockerClientService
 		Engine         *backup.Engine
 		Settings       *settings.SettingsService
 		S3Destinations *s3.S3DestinationService
@@ -160,13 +165,41 @@ func provideBackupEngine(p backupEngineParams) *backup.Engine {
 		if err != nil {
 			return err
 		}
-		if !permissions.Allows(requester.Permission, requester.EnvironmentID) {
+		var allowed bool
+		if requester.ResourceType != "" && requester.ResourceID != "" {
+			allowed = permissions.AllowsResource(requester.Permission, requester.EnvironmentID, requester.ResourceType, requester.ResourceID)
+		} else {
+			allowed = permissions.Allows(requester.Permission, requester.EnvironmentID)
+		}
+		if !allowed && requester.ResourceType == authz.ResourceTypeVolume {
+			allowed = projectGrantsVolume(ctx, p, permissions, requester)
+		}
+		if !allowed {
 			return errors.New("requesting user no longer has permission for this backup")
 		}
 		return nil
 	}, p.Config.BackupsDisabled)
 	p.Lifecycle.Append(fx.Hook{OnStop: engine.Stop})
 	return engine
+}
+
+func projectGrantsVolume(ctx context.Context, p backupEngineParams, permissions *authz.PermissionSet, requester types.BackupRequester) bool {
+	dockerClient, err := p.Docker.GetClient(ctx)
+	if err != nil {
+		return false
+	}
+	inspected, err := dockerClient.VolumeInspect(ctx, requester.ResourceID, mobyClient.VolumeInspectOptions{})
+	if err != nil {
+		return false
+	}
+	return middleware.RequireComposeResourcePermission(context.WithValue(ctx, middleware.ContextKeyUserPermissions, permissions), p.DB, middleware.ComposeResourceAccessInput{
+		Labels:       inspected.Volume.Labels,
+		EnvID:        requester.EnvironmentID,
+		Permission:   requester.Permission,
+		ResourceType: authz.ResourceTypeVolume,
+		ResourceID:   requester.ResourceID,
+		ResourceName: requester.ResourceID,
+	}) == nil
 }
 
 func provideVolumeRepository(p volumeRepositoryParams) *backup.VolumeRepository {
@@ -181,7 +214,7 @@ func provideVolumeRepository(p volumeRepositoryParams) *backup.VolumeRepository 
 	})
 }
 
-func provideBackupContainers(dockerService *docker.DockerClientService, containers *container.ContainerService) *backup.Containers {
+func provideBackupContainers(dockerService *dockerInternal.DockerClientService, containers *container.ContainerService) *backup.Containers {
 	return &backup.Containers{Docker: dockerService, Stop: containers.StopContainer, Start: containers.StartContainer}
 }
 
@@ -281,9 +314,9 @@ func provideTunnelRegistry(lc fx.Lifecycle) *agent.TunnelRegistry {
 	return registry
 }
 
-func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClientService {
-	service := docker.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, docker.ClientServiceOptions{
-		EventBus: bus.Config{OnDrop: func(message events.Message) {
+func provideDockerClientService(p dockerClientServiceParams) *dockerInternal.DockerClientService {
+	service := dockerInternal.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, dockerInternal.ClientServiceOptions{
+		EventBus: bus.Config{OnDrop: func(message mobyEvents.Message) {
 			// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
 			p.EventService.RecordDockerEvent(p.Ctx, message)
 		}},

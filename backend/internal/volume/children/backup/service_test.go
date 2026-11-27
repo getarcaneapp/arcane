@@ -11,13 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/rustic"
@@ -121,7 +121,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 		Policies:       backup.NewPolicies(db),
 		Engine:         engine,
 		AlreadyRunning: errors.New("a backup is already running for this volume"),
-		Docker:         &docker.DockerClientService{},
+		Docker:         &dockerInternal.DockerClientService{},
 		Ctx:            t.Context(),
 		Scheduler:      jobScheduler,
 		Admission:      gate,

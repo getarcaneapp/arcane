@@ -20,17 +20,18 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyStdCopy "github.com/moby/moby/api/pkg/stdcopy"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
@@ -48,9 +49,11 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/containerlabel"
 	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -103,16 +106,16 @@ type (
 	}
 
 	ExecSession struct {
-		hijackedResp client.HijackedResponse
-		dockerClient *client.Client
+		hijackedResp mobyClient.HijackedResponse
+		dockerClient *mobyClient.Client
 		execID       string
 		containerID  string
 		closeOnce    sync.Once
 	}
 
 	recreateHostConfigs struct {
-		restore   *container.HostConfig
-		create    *container.HostConfig
+		restore   *mobyContainer.HostConfig
+		create    *mobyContainer.HostConfig
 		engine    compat.EngineCompatibilityInfo
 		sanitized bool
 	}
@@ -198,19 +201,19 @@ func NewContainerService(p ContainerServiceParams) *ContainerService {
 	}
 }
 
-func buildCleanNetworkingConfig(containerInspect container.InspectResponse, apiVersion string) *network.NetworkingConfig {
+func buildCleanNetworkingConfig(containerInspect mobyContainer.InspectResponse, apiVersion string) *mobyNetwork.NetworkingConfig {
 	if len(kit.FromPtr(containerInspect.NetworkSettings).Networks) == 0 {
 		return nil
 	}
 
-	endpointsConfig := map[string]*network.EndpointSettings{}
+	endpointsConfig := map[string]*mobyNetwork.EndpointSettings{}
 	for networkName, endpoint := range compat.SanitizeContainerCreateEndpointSettingsForDockerAPI(containerInspect.NetworkSettings.Networks, apiVersion) {
 		if endpoint == nil {
 			endpointsConfig[networkName] = nil
 			continue
 		}
 
-		endpointsConfig[networkName] = &network.EndpointSettings{ //exhaustruct:enforce
+		endpointsConfig[networkName] = &mobyNetwork.EndpointSettings{ //exhaustruct:enforce
 			IPAMConfig:          nil,
 			Links:               endpoint.Links,
 			Aliases:             endpoint.Aliases,
@@ -233,7 +236,7 @@ func buildCleanNetworkingConfig(containerInspect container.InspectResponse, apiV
 		return nil
 	}
 
-	return &network.NetworkingConfig{
+	return &mobyNetwork.NetworkingConfig{
 		EndpointsConfig: endpointsConfig,
 	}
 }
@@ -279,14 +282,14 @@ func (s *ContainerService) RecoverInterruptedRedeploys(ctx context.Context) erro
 		return nil
 	}
 
-	list, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	list, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{All: true})
 	})
 	if err != nil {
 		return fmt.Errorf("list containers for redeploy recovery: %w", err)
 	}
 
-	byName := make(map[string]container.Summary, len(list.Items))
+	byName := make(map[string]mobyContainer.Summary, len(list.Items))
 	for _, c := range list.Items {
 		for _, name := range c.Names {
 			byName[strings.TrimPrefix(name, "/")] = c
@@ -316,9 +319,9 @@ func (s *ContainerService) RecoverInterruptedRedeploys(ctx context.Context) erro
 
 		replacement, exists := byName[cmp.Or(journal.NewName, journal.OriginalName)]
 		switch {
-		case exists && replacement.State == container.StateRunning:
-			if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-				return dockerClient.ContainerRemove(ctx, backup.ID, client.ContainerRemoveOptions{Force: true})
+		case exists && replacement.State == mobyContainer.StateRunning:
+			if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+				return dockerClient.ContainerRemove(ctx, backup.ID, mobyClient.ContainerRemoveOptions{Force: true})
 			}); removeErr != nil {
 				slog.WarnContext(ctx, "Failed to remove leftover redeploy backup", "container", journal.BackupName, "error", removeErr)
 				firstErr = cmp.Or(firstErr, fmt.Errorf("remove redeploy backup %s: %w", journal.BackupName, removeErr))
@@ -333,8 +336,8 @@ func (s *ContainerService) RecoverInterruptedRedeploys(ctx context.Context) erro
 				"state", replacement.State)
 			skipped++
 		default:
-			if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRenameResult, error) {
-				return dockerClient.ContainerRename(ctx, backup.ID, client.ContainerRenameOptions{NewName: journal.OriginalName})
+			if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRenameResult, error) {
+				return dockerClient.ContainerRename(ctx, backup.ID, mobyClient.ContainerRenameOptions{NewName: journal.OriginalName})
 			}); renameErr != nil {
 				slog.WarnContext(ctx, "Failed to restore leftover redeploy backup", "container", journal.BackupName, "error", renameErr)
 				firstErr = cmp.Or(firstErr, fmt.Errorf("restore redeploy backup %s: %w", journal.BackupName, renameErr))
@@ -370,8 +373,8 @@ func (s *ContainerService) restoreContainerAfterRedeployFailure(
 
 	s.eventService.MarkDockerExpectation("container", containerID, containerName)
 	if wasRunning {
-		if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-			return dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+		if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+			return dockerClient.ContainerStart(ctx, containerID, mobyClient.ContainerStartOptions{})
 		}); startErr != nil {
 			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 				Type:          event.EventTypeContainerError,
@@ -394,8 +397,8 @@ func (s *ContainerService) restoreContainerAfterRedeployFailure(
 		return
 	}
 
-	if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRenameResult, error) {
-		return dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: containerName})
+	if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRenameResult, error) {
+		return dockerClient.ContainerRename(ctx, containerID, mobyClient.ContainerRenameOptions{NewName: containerName})
 	}); renameErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 			Type:          event.EventTypeContainerError,
@@ -431,8 +434,8 @@ func (s *ContainerService) renameToRedeployBackup(ctx context.Context, container
 		return fmt.Errorf("write redeploy journal: %w", setErr)
 	}
 
-	if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRenameResult, error) {
-		return dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: backupName})
+	if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRenameResult, error) {
+		return dockerClient.ContainerRename(ctx, containerID, mobyClient.ContainerRenameOptions{NewName: backupName})
 	}); renameErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 			Type:          event.EventTypeContainerError,
@@ -459,7 +462,7 @@ func (s *ContainerService) stopContainer(ctx context.Context, containerID string
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{})
+	_, err = dockerClient.ContainerStop(ctx, containerID, mobyClient.ContainerStopOptions{})
 	return err
 }
 
@@ -524,8 +527,8 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 			if handled, unitErr := s.podmanService.ContainerUnitAction(ctx, containerID, libpodman.Systemd.Start); handled {
 				return unitErr
 			}
-			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-				return dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+				return dockerClient.ContainerStart(ctx, containerID, mobyClient.ContainerStartOptions{})
 			})
 			return err
 		},
@@ -557,7 +560,7 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 			if err != nil {
 				return fmt.Errorf("failed to connect to Docker: %w", err)
 			}
-			_, err = dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
+			_, err = dockerClient.ContainerRestart(ctx, containerID, mobyClient.ContainerRestartOptions{})
 			return err
 		},
 	})
@@ -569,8 +572,8 @@ func (s *ContainerService) KillContainer(ctx context.Context, containerID, signa
 		eventType: event.EventTypeContainerKill,
 		metadata:  database.JSON{"signal": signal},
 		runContainerAction: func(ctx context.Context) error {
-			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerKillResult, error) {
-				return dockerClient.ContainerKill(ctx, containerID, client.ContainerKillOptions{Signal: signal})
+			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerKillResult, error) {
+				return dockerClient.ContainerKill(ctx, containerID, mobyClient.ContainerKillOptions{Signal: signal})
 			})
 			return err
 		},
@@ -582,8 +585,8 @@ func (s *ContainerService) PauseContainer(ctx context.Context, containerID strin
 		action:    "pause",
 		eventType: event.EventTypeContainerPause,
 		runContainerAction: func(ctx context.Context) error {
-			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerPauseResult, error) {
-				return dockerClient.ContainerPause(ctx, containerID, client.ContainerPauseOptions{})
+			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerPauseResult, error) {
+				return dockerClient.ContainerPause(ctx, containerID, mobyClient.ContainerPauseOptions{})
 			})
 			return err
 		},
@@ -595,8 +598,8 @@ func (s *ContainerService) UnpauseContainer(ctx context.Context, containerID str
 		action:    "unpause",
 		eventType: event.EventTypeContainerUnpause,
 		runContainerAction: func(ctx context.Context) error {
-			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerUnpauseResult, error) {
-				return dockerClient.ContainerUnpause(ctx, containerID, client.ContainerUnpauseOptions{})
+			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerUnpauseResult, error) {
+				return dockerClient.ContainerUnpause(ctx, containerID, mobyClient.ContainerUnpauseOptions{})
 			})
 			return err
 		},
@@ -627,7 +630,7 @@ func (s *ContainerService) CommitContainer(ctx context.Context, containerID stri
 	tag := strings.TrimSpace(req.Tag)
 	reference := kit.Ternary(repository != "" && tag != "", repository+":"+tag, repository)
 
-	result, err := dockerClient.ContainerCommit(ctx, containerID, client.ContainerCommitOptions{
+	result, err := dockerClient.ContainerCommit(ctx, containerID, mobyClient.ContainerCommitOptions{
 		Reference: reference,
 		Comment:   strings.TrimSpace(req.Comment),
 		Author:    strings.TrimSpace(req.Author),
@@ -679,8 +682,8 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 	defer unlock()
 
-	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
@@ -723,7 +726,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
-	apiVersion, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+	apiVersion, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (string, error) {
 		return compat.DetectDockerAPIVersion(ctx, dockerClient), nil
 	})
 
@@ -849,7 +852,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	)
 }
 
-func prepareRecreateHostConfigs(ctx context.Context, dockerClient *client.Client, containerID string, restoreHostConfig, createHostConfig *container.HostConfig) (recreateHostConfigs, error) {
+func prepareRecreateHostConfigs(ctx context.Context, dockerClient *mobyClient.Client, containerID string, restoreHostConfig, createHostConfig *mobyContainer.HostConfig) (recreateHostConfigs, error) {
 	restore, _, _, err := compat.PrepareRecreateHostConfigForEngine(ctx, dockerClient, containerID, restoreHostConfig)
 	if err != nil {
 		return recreateHostConfigs{}, err
@@ -865,11 +868,11 @@ func prepareRecreateHostConfigs(ctx context.Context, dockerClient *client.Client
 
 func (s *ContainerService) recreateContainer(
 	ctx context.Context,
-	containerInfo container.InspectResponse,
+	containerInfo mobyContainer.InspectResponse,
 	action, newName string,
-	newConfig *container.Config,
-	newHostConfig *container.HostConfig,
-	networkingConfig *network.NetworkingConfig,
+	newConfig *mobyContainer.Config,
+	newHostConfig *mobyContainer.HostConfig,
+	networkingConfig *mobyNetwork.NetworkingConfig,
 	apiVersion string,
 	eventType event.EventType,
 	user types.Actor,
@@ -897,7 +900,7 @@ func (s *ContainerService) recreateContainer(
 	if err != nil {
 		return "", fmt.Errorf("preserve volumes of container %s: %w", containerName, err)
 	}
-	prepared, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (recreateHostConfigs, error) {
+	prepared, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (recreateHostConfigs, error) {
 		return prepareRecreateHostConfigs(ctx, dockerClient, containerInfo.ID, &restoreHostConfig, &createHostConfig)
 	})
 	if err != nil {
@@ -925,9 +928,9 @@ func (s *ContainerService) recreateContainer(
 		}
 
 		defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
-		restoreResp, restoreCreateErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+		restoreResp, restoreCreateErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
 			return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
-				Options: client.ContainerCreateOptions{
+				Options: mobyClient.ContainerCreateOptions{
 					Config:           &originalConfig,
 					HostConfig:       prepared.restore,
 					NetworkingConfig: buildCleanNetworkingConfig(containerInfo, apiVersion),
@@ -954,8 +957,8 @@ func (s *ContainerService) recreateContainer(
 		}
 
 		defer s.eventService.BeginDockerResourceSuppressionWindow("container", restoreResp.ID, containerName)()
-		if _, restoreStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-			return dockerClient.ContainerStart(ctx, restoreResp.ID, client.ContainerStartOptions{})
+		if _, restoreStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+			return dockerClient.ContainerStart(ctx, restoreResp.ID, mobyClient.ContainerStartOptions{})
 		}); restoreStartErr != nil {
 			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 				Type:          event.EventTypeContainerError,
@@ -1013,9 +1016,9 @@ func (s *ContainerService) recreateContainer(
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", newName)()
-	createResp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+	createResp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
 		return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
-			Options: client.ContainerCreateOptions{
+			Options: mobyClient.ContainerCreateOptions{
 				Config:           newConfig,
 				HostConfig:       prepared.create,
 				NetworkingConfig: networkingConfig,
@@ -1047,8 +1050,8 @@ func (s *ContainerService) recreateContainer(
 
 	if stopAfterCreate {
 		if containerStopErr := s.stopContainer(ctx, containerInfo.ID); containerStopErr != nil {
-			if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-				return dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
+			if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+				return dockerClient.ContainerRemove(ctx, createResp.ID, mobyClient.ContainerRemoveOptions{Force: true})
 			}); removeErr != nil {
 				s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 					Type:          event.EventTypeContainerError,
@@ -1083,16 +1086,16 @@ func (s *ContainerService) recreateContainer(
 	}
 
 	if wasRunning {
-		if _, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-			return dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
+		if _, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+			return dockerClient.ContainerStart(ctx, createResp.ID, mobyClient.ContainerStartOptions{})
 		}); err != nil {
 			// Remove the replacement and roll back to the original. A deferred-stop auto-remove original
 			// is rebuilt from its inspected config; a failed restore joins the start error.
 			rollbackCtx, cancelRollback := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 			defer cancelRollback()
 			s.eventService.MarkDockerExpectation("container", createResp.ID, containerName)
-			_, removeErr := s.dockerService.Call(rollbackCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-				return dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
+			_, removeErr := s.dockerService.Call(rollbackCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+				return dockerClient.ContainerRemove(ctx, createResp.ID, mobyClient.ContainerRemoveOptions{Force: true})
 			})
 			if removeErr != nil {
 				s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
@@ -1148,8 +1151,8 @@ func (s *ContainerService) recreateContainer(
 	// keeps the journal so startup recovery removes the backup.
 	if stopAfterCreate {
 		s.clearRedeployJournal(ctx, containerInfo.ID)
-	} else if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-		return dockerClient.ContainerRemove(ctx, containerInfo.ID, client.ContainerRemoveOptions{
+	} else if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+		return dockerClient.ContainerRemove(ctx, containerInfo.ID, mobyClient.ContainerRemoveOptions{
 			Force:         true,
 			RemoveVolumes: false,
 			RemoveLinks:   false,
@@ -1186,12 +1189,12 @@ func (s *ContainerService) recreateContainer(
 	return createResp.ID, nil
 }
 
-func healthConfigFromCreate(hc *types.ContainerHealthcheckCreate) *container.HealthConfig {
+func healthConfigFromCreate(hc *types.ContainerHealthcheckCreate) *mobyContainer.HealthConfig {
 	if hc == nil {
 		return nil
 	}
 
-	return &container.HealthConfig{
+	return &mobyContainer.HealthConfig{
 		Test:          append([]string{}, hc.Test...),
 		Interval:      time.Duration(hc.Interval) * time.Second,
 		Timeout:       time.Duration(hc.Timeout) * time.Second,
@@ -1201,10 +1204,10 @@ func healthConfigFromCreate(hc *types.ContainerHealthcheckCreate) *container.Hea
 	}
 }
 
-func retainedVolumeMountPoints(original, updated container.HostConfig, mountPoints []container.MountPoint) []container.MountPoint {
-	specAt := func(hc container.HostConfig, destination string) (bool, bool) {
-		if i := slices.IndexFunc(hc.Mounts, func(m mount.Mount) bool { return path.Clean(m.Target) == destination }); i >= 0 {
-			return true, hc.Mounts[i].Type == mount.TypeVolume && hc.Mounts[i].Source == ""
+func retainedVolumeMountPoints(original, updated mobyContainer.HostConfig, mountPoints []mobyContainer.MountPoint) []mobyContainer.MountPoint {
+	specAt := func(hc mobyContainer.HostConfig, destination string) (bool, bool) {
+		if i := slices.IndexFunc(hc.Mounts, func(m mobyMount.Mount) bool { return path.Clean(m.Target) == destination }); i >= 0 {
+			return true, hc.Mounts[i].Type == mobyMount.TypeVolume && hc.Mounts[i].Source == ""
 		}
 		for _, bind := range hc.Binds {
 			parts := strings.SplitN(bind, ":", 3)
@@ -1215,26 +1218,26 @@ func retainedVolumeMountPoints(original, updated container.HostConfig, mountPoin
 		return false, false
 	}
 
-	return slices.DeleteFunc(slices.Clone(mountPoints), func(mp container.MountPoint) bool {
+	return slices.DeleteFunc(slices.Clone(mountPoints), func(mp mobyContainer.MountPoint) bool {
 		inOriginal, _ := specAt(original, path.Clean(mp.Destination))
 		inUpdated, anonymous := specAt(updated, path.Clean(mp.Destination))
 		return kit.Ternary(inUpdated, !anonymous, inOriginal)
 	})
 }
 
-func mergeEditMounts(existing []mount.Mount, requested []types.ContainerMountCreate) []mount.Mount {
-	priorByKey := make(map[string]mount.Mount, len(existing))
+func mergeEditMounts(existing []mobyMount.Mount, requested []types.ContainerMountCreate) []mobyMount.Mount {
+	priorByKey := make(map[string]mobyMount.Mount, len(existing))
 	for _, prior := range existing {
 		if _, seen := priorByKey[string(prior.Type)+"\x00"+prior.Target]; !seen {
 			priorByKey[string(prior.Type)+"\x00"+prior.Target] = prior
 		}
 	}
 
-	out := make([]mount.Mount, 0, len(requested))
+	out := make([]mobyMount.Mount, 0, len(requested))
 	for _, req := range requested {
 		prior := priorByKey[req.Type+"\x00"+req.Target]
-		out = append(out, mount.Mount{ //exhaustruct:enforce
-			Type:           mount.Type(req.Type),
+		out = append(out, mobyMount.Mount{ //exhaustruct:enforce
+			Type:           mobyMount.Type(req.Type),
 			Source:         req.Source,
 			Target:         req.Target,
 			ReadOnly:       req.ReadOnly,
@@ -1249,27 +1252,27 @@ func mergeEditMounts(existing []mount.Mount, requested []types.ContainerMountCre
 	return out
 }
 
-func portMapFromCreate(bindings map[string][]types.ContainerPortBindingCreate) (network.PortMap, error) {
-	out := network.PortMap{}
+func portMapFromCreate(bindings map[string][]types.ContainerPortBindingCreate) (mobyNetwork.PortMap, error) {
+	out := mobyNetwork.PortMap{}
 	for portSpec, bindingList := range bindings {
-		port, err := network.ParsePort(kit.Ternary(strings.Contains(portSpec, "/"), portSpec, portSpec+"/tcp"))
+		port, err := mobyNetwork.ParsePort(kit.Ternary(strings.Contains(portSpec, "/"), portSpec, portSpec+"/tcp"))
 		if err != nil {
 			return nil, fmt.Errorf("invalid port %s: %w", portSpec, err)
 		}
-		mapped := make([]network.PortBinding, 0, len(bindingList))
+		mapped := make([]mobyNetwork.PortBinding, 0, len(bindingList))
 		for _, binding := range bindingList {
 			hostIP, parseAddrErr := netip.ParseAddr(strings.TrimSpace(binding.HostIP))
 			if parseAddrErr != nil && strings.TrimSpace(binding.HostIP) != "" {
 				return nil, fmt.Errorf("invalid host IP %s: %w", strings.TrimSpace(binding.HostIP), parseAddrErr)
 			}
-			mapped = append(mapped, network.PortBinding{HostIP: hostIP, HostPort: binding.HostPort})
+			mapped = append(mapped, mobyNetwork.PortBinding{HostIP: hostIP, HostPort: binding.HostPort})
 		}
 		out[port] = mapped
 	}
 	return out, nil
 }
 
-func endpointIPAMFromCreate(ep types.ContainerEndpointSettingsCreate) (*network.EndpointIPAMConfig, error) {
+func endpointIPAMFromCreate(ep types.ContainerEndpointSettingsCreate) (*mobyNetwork.EndpointIPAMConfig, error) {
 	if strings.TrimSpace(ep.IPv4Address) == "" && strings.TrimSpace(ep.IPv6Address) == "" {
 		return nil, nil
 	}
@@ -1282,20 +1285,20 @@ func endpointIPAMFromCreate(ep types.ContainerEndpointSettingsCreate) (*network.
 	if ipv6Err != nil && strings.TrimSpace(ep.IPv6Address) != "" {
 		return nil, fmt.Errorf("invalid IPv6 address %s: %w", strings.TrimSpace(ep.IPv6Address), ipv6Err)
 	}
-	return &network.EndpointIPAMConfig{IPv4Address: ipv4, IPv6Address: ipv6}, nil
+	return &mobyNetwork.EndpointIPAMConfig{IPv4Address: ipv4, IPv6Address: ipv6}, nil
 }
 
-func applyEditToContainerConfig(cfg container.Config, previousBindings network.PortMap, req types.ContainerEdit) (container.Config, error) {
+func applyEditToContainerConfig(cfg mobyContainer.Config, previousBindings mobyNetwork.PortMap, req types.ContainerEdit) (mobyContainer.Config, error) {
 	if hostname := strings.TrimSpace(kit.FromPtr(req.Hostname)); req.Hostname != nil && hostname != cfg.Hostname {
 		if err := validateContainerHostname(hostname); err != nil {
-			return container.Config{}, err
+			return mobyContainer.Config{}, err
 		}
 	}
 	newBindings, err := portMapFromCreate(kit.FromPtr(kit.FromPtr(req.HostConfig).PortBindings))
 	if err != nil {
-		return container.Config{}, err
+		return mobyContainer.Config{}, err
 	}
-	exposed := network.PortSet{}
+	exposed := mobyNetwork.PortSet{}
 	for port := range newBindings {
 		exposed[port] = struct{}{}
 	}
@@ -1305,7 +1308,7 @@ func applyEditToContainerConfig(cfg container.Config, previousBindings network.P
 		}
 	}
 
-	return container.Config{ //exhaustruct:enforce
+	return mobyContainer.Config{ //exhaustruct:enforce
 		Hostname:        kit.Ternary(req.Hostname != nil, strings.TrimSpace(kit.FromPtr(req.Hostname)), cfg.Hostname),
 		Domainname:      cfg.Domainname,
 		User:            mo.PointerToOption(req.User).OrElse(cfg.User),
@@ -1333,7 +1336,7 @@ func applyEditToContainerConfig(cfg container.Config, previousBindings network.P
 	}, nil
 }
 
-func applyEditToHostConfig(hc *container.HostConfig, req types.ContainerEdit) error {
+func applyEditToHostConfig(hc *mobyContainer.HostConfig, req types.ContainerEdit) error {
 	if req.HostConfig == nil {
 		return nil
 	}
@@ -1344,8 +1347,8 @@ func applyEditToHostConfig(hc *container.HostConfig, req types.ContainerEdit) er
 	}
 
 	if req.HostConfig.RestartPolicy != nil {
-		hc.RestartPolicy = container.RestartPolicy{ // keep: Docker's ~70-field container.HostConfig is unreadable as a literal
-			Name:              container.RestartPolicyMode(req.HostConfig.RestartPolicy.Name),
+		hc.RestartPolicy = mobyContainer.RestartPolicy{ // keep: Docker's ~70-field container.HostConfig is unreadable as a literal
+			Name:              mobyContainer.RestartPolicyMode(req.HostConfig.RestartPolicy.Name),
 			MaximumRetryCount: req.HostConfig.RestartPolicy.MaximumRetryCount,
 		}
 	}
@@ -1365,7 +1368,7 @@ func applyEditToHostConfig(hc *container.HostConfig, req types.ContainerEdit) er
 	return nil
 }
 
-func buildEditNetworkingConfig(containerInspect container.InspectResponse, req *types.ContainerNetworkingConfigCreate, apiVersion string) (*network.NetworkingConfig, error) {
+func buildEditNetworkingConfig(containerInspect mobyContainer.InspectResponse, req *types.ContainerNetworkingConfigCreate, apiVersion string) (*mobyNetwork.NetworkingConfig, error) {
 	if mode := kit.FromPtr(containerInspect.HostConfig).NetworkMode; mode.IsHost() || mode.IsNone() || mode.IsContainer() {
 		return nil, nil
 	}
@@ -1375,14 +1378,14 @@ func buildEditNetworkingConfig(containerInspect container.InspectResponse, req *
 	}
 
 	existing := kit.FromPtr(buildCleanNetworkingConfig(containerInspect, apiVersion)).EndpointsConfig
-	endpoints := make(map[string]*network.EndpointSettings, len(req.EndpointsConfig))
+	endpoints := make(map[string]*mobyNetwork.EndpointSettings, len(req.EndpointsConfig))
 	for name, epReq := range req.EndpointsConfig {
 		ipam, err := endpointIPAMFromCreate(epReq)
 		if err != nil {
 			return nil, err
 		}
 		prior := kit.FromPtr(existing[name])
-		endpoints[name] = &network.EndpointSettings{ //exhaustruct:enforce
+		endpoints[name] = &mobyNetwork.EndpointSettings{ //exhaustruct:enforce
 			IPAMConfig:          ipam,
 			Links:               prior.Links,
 			Aliases:             append([]string{}, epReq.Aliases...),
@@ -1404,12 +1407,12 @@ func buildEditNetworkingConfig(containerInspect container.InspectResponse, req *
 	if len(endpoints) == 0 {
 		return nil, nil
 	}
-	return &network.NetworkingConfig{EndpointsConfig: endpoints}, nil
+	return &mobyNetwork.NetworkingConfig{EndpointsConfig: endpoints}, nil
 }
 
 func (s *ContainerService) GetContainerEditConfig(ctx context.Context, containerID string) (types.ContainerEditConfig, error) {
-	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
 		return types.ContainerEditConfig{}, fmt.Errorf("failed to inspect container: %w", err)
@@ -1435,8 +1438,8 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 	}
 	defer unlock()
 
-	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
@@ -1494,14 +1497,14 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 
 	newName := cmp.Or(strings.TrimPrefix(strings.TrimSpace(kit.FromPtr(req.Name)), "/"), containerName)
 	if newName != containerName {
-		if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, newName, client.ContainerInspectOptions{})
+		if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, newName, mobyClient.ContainerInspectOptions{})
 		}); inspectErr == nil {
 			return "", fmt.Errorf("container name %s: %w", newName, common.ErrContainerNameTaken)
 		}
 	}
 
-	apiVersion, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+	apiVersion, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (string, error) {
 		return compat.DetectDockerAPIVersion(ctx, dockerClient), nil
 	})
 
@@ -1521,7 +1524,7 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 	// Unlike redeploy, edit only pulls when the effective image is missing
 	// locally so an unrelated config change never surprise-upgrades the image.
 	if newConfig.Image != "" {
-		if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, newConfig.Image)
 		}); inspectErr != nil {
 			if pullRedeployImageErr := s.pullRedeployImage(ctx, newConfig.Image, containerID, containerName, "edit", req.Credentials, user); pullRedeployImageErr != nil {
@@ -1533,9 +1536,9 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 	return s.recreateContainer(ctx, containerInfo, "edit", newName, &newConfig, &newHostConfig, networkingConfig, apiVersion, event.EventTypeContainerUpdate, user)
 }
 
-func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*container.InspectResponse, error) {
-	containerInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
+func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*mobyContainer.InspectResponse, error) {
+	containerInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, ref, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("container not found: %w", err)
@@ -1555,8 +1558,8 @@ func (s *ContainerService) GetSwarmTaskHostnames(ctx context.Context, ids []stri
 	group, groupCtx := errgroup.WithContext(batchCtx)
 	group.SetLimit(8)
 	engineHostname := sync.OnceValue(func() string {
-		info, err := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-			return dockerClient.Info(ctx, client.InfoOptions{})
+		info, err := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+			return dockerClient.Info(ctx, mobyClient.InfoOptions{})
 		})
 		if err != nil {
 			return ""
@@ -1585,8 +1588,8 @@ func (s *ContainerService) GetSwarmTaskHostnames(ctx context.Context, ids []stri
 				hostname = ""
 			}
 			if hostname != "" && kit.FromPtr(inspected.HostConfig).NetworkMode.IsHost() && hostname == engineHostname() {
-				task, taskErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.TaskInspectResult, error) {
-					return dockerClient.TaskInspect(ctx, config.Labels["com.docker.swarm.task.id"], client.TaskInspectOptions{})
+				task, taskErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.TaskInspectResult, error) {
+					return dockerClient.TaskInspect(ctx, config.Labels["com.docker.swarm.task.id"], mobyClient.TaskInspectOptions{})
 				})
 				if taskErr != nil {
 					return groupCtx.Err()
@@ -1616,7 +1619,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 
 	details := types.NewContainerDetails(containerInspect)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	updates, err := s.imageService.GetUpdateInfoByContainers(ctx, []container.Summary{{
+	updates, err := s.imageService.GetUpdateInfoByContainers(ctx, []mobyContainer.Summary{{
 		ID:      details.ID,
 		Image:   details.Image,
 		ImageID: details.ImageID,
@@ -1625,7 +1628,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to fetch container update info", "error", err)
 	}
-	imageInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	imageInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, details.ImageID)
 	})
 	if err != nil {
@@ -1665,11 +1668,11 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 }
 
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (types.ContainerProcesses, error) {
-	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerTopResult, error) {
-		var result client.ContainerTopResult
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerTopResult, error) {
+		var result mobyClient.ContainerTopResult
 		var err error
 		for _, args := range containerProcessesPsArgs {
-			result, err = dockerClient.ContainerTop(ctx, containerID, client.ContainerTopOptions{Arguments: args})
+			result, err = dockerClient.ContainerTop(ctx, containerID, mobyClient.ContainerTopOptions{Arguments: args})
 			if err == nil || errdefs.IsNotFound(err) || errdefs.IsConflict(err) || ctx.Err() != nil {
 				break
 			}
@@ -1730,8 +1733,8 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	}
 	defer unlock()
 
-	containerJSON, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, mobyClient.ContainerInspectOptions{})
 	})
 	if inspectErr != nil {
 		return fmt.Errorf("failed to inspect container before removal: %w", inspectErr)
@@ -1759,8 +1762,8 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	for _, volumeName := range volumesToRemove {
 		volumeReleases = append(volumeReleases, s.eventService.BeginDockerResourceSuppressionWindow("volume", volumeName, volumeName))
 	}
-	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-		return dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
+	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+		return dockerClient.ContainerRemove(ctx, containerID, mobyClient.ContainerRemoveOptions{
 			Force:         opts.Force,
 			RemoveVolumes: opts.RemoveVolumes,
 			RemoveLinks:   false,
@@ -1784,8 +1787,8 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	}
 
 	for _, volumeName := range volumesToRemove {
-		if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
-			return dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{Force: false})
+		if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeRemoveResult, error) {
+			return dockerClient.VolumeRemove(ctx, volumeName, mobyClient.VolumeRemoveOptions{Force: false})
 		}); removeErr != nil {
 			// Log but don't fail if volume removal fails (might be in use by another container)
 			s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
@@ -1843,14 +1846,14 @@ func validateContainerHostname(hostname string) error {
 
 func (s *ContainerService) CreateContainer(
 	ctx context.Context,
-	config *container.Config,
-	hostConfig *container.HostConfig,
-	networkingConfig *network.NetworkingConfig,
+	config *mobyContainer.Config,
+	hostConfig *mobyContainer.HostConfig,
+	networkingConfig *mobyNetwork.NetworkingConfig,
 	containerName string,
 	user types.Actor,
 	credentials []types.ContainerRegistryCredential,
 ) (
-	*container.InspectResponse,
+	*mobyContainer.InspectResponse,
 	error,
 ) {
 	if strings.TrimSpace(containerName) == "" {
@@ -1862,7 +1865,7 @@ func (s *ContainerService) CreateContainer(
 	if err := validateContainerHostname(config.Hostname); err != nil {
 		return nil, err
 	}
-	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, config.Image)
 	}); inspectErr != nil {
 		if pullErr := s.pullRedeployImage(ctx, config.Image, "", containerName, "create", credentials, user); pullErr != nil {
@@ -1871,8 +1874,8 @@ func (s *ContainerService) CreateContainer(
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
-	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{Options: client.ContainerCreateOptions{
+	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
+		return compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{Options: mobyClient.ContainerCreateOptions{
 			Config:           config,
 			HostConfig:       hostConfig,
 			NetworkingConfig: networkingConfig,
@@ -1913,11 +1916,11 @@ func (s *ContainerService) CreateContainer(
 		slog.WarnContext(ctx, "could not log container stop action", "error", logErr)
 	}
 
-	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, mobyClient.ContainerStartOptions{})
 	}); containerStartErr != nil {
-		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, resp.ID, mobyClient.ContainerRemoveOptions{Force: true})
 		})
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 			Type:          event.EventTypeContainerError,
@@ -1936,8 +1939,8 @@ func (s *ContainerService) CreateContainer(
 		return nil, fmt.Errorf("failed to start container: %w", containerStartErr)
 	}
 
-	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
+	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
@@ -1981,7 +1984,7 @@ func (s *ContainerService) SampleResources(ctx context.Context, ids []string, ma
 	}
 	matched := make([]types.ContainerSummary, 0, len(requested))
 	for _, dc := range dockerContainers {
-		if _, wanted := requested[dc.ID]; wanted && dc.State == container.StateRunning {
+		if _, wanted := requested[dc.ID]; wanted && dc.State == mobyContainer.StateRunning {
 			matched = append(matched, types.ContainerSummary{ID: dc.ID, State: string(dc.State)})
 		}
 	}
@@ -2000,7 +2003,7 @@ func (s *ContainerService) TotalContainerResources(ctx context.Context) (cpuPerc
 
 	matched := make([]types.ContainerSummary, 0, len(dockerContainers))
 	for _, dc := range dockerContainers {
-		if dc.State == container.StateRunning {
+		if dc.State == mobyContainer.StateRunning {
 			matched = append(matched, types.ContainerSummary{ID: dc.ID, State: string(dc.State)})
 		}
 	}
@@ -2022,6 +2025,56 @@ func (s *ContainerService) TotalContainerResources(ctx context.Context) (cpuPerc
 	return cpuPercent, memoryUsed, nil
 }
 
+func (s *ContainerService) allowedComposeProjects(ctx context.Context, envID, perm string) (map[string]struct{}, bool) {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil, true
+	}
+	projectIDs := ps.ResourceIDs(perm, envID, authz.ResourceTypeProject)
+	allowed := make(map[string]struct{}, len(projectIDs))
+	if s.projectService == nil {
+		return allowed, false
+	}
+	for _, projectID := range projectIDs {
+		proj, err := s.projectService.GetProjectFromDatabaseByID(ctx, projectID)
+		if err != nil || proj == nil {
+			continue
+		}
+		canonical := cmp.Or(
+			strings.TrimSpace(kit.FromPtr(proj.ComposeProjectName)),
+			projects.NormalizeProjectName(strings.TrimSpace(kit.FromPtr(proj.DirName))),
+			strings.TrimSpace(proj.Name),
+		)
+		if name := strings.ToLower(canonical); name != "" {
+			allowed[name] = struct{}{}
+		}
+	}
+	return allowed, false
+}
+
+func (s *ContainerService) CheckContainerAccess(ctx context.Context, envID, perm, containerID string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil
+	}
+	details, err := s.GetContainerDetails(ctx, containerID)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	allowedCompose, _ := s.allowedComposeProjects(ctx, envID, perm)
+	if !middleware.ContainerPermitted(ps, middleware.ContainerAccessInput{
+		EnvID:          envID,
+		Permission:     perm,
+		ContainerID:    details.ID,
+		Names:          []string{details.Name},
+		Labels:         details.Labels,
+		AllowedCompose: allowedCompose,
+	}) {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return nil
+}
+
 func (s *ContainerService) ListContainersPaginated(
 	ctx context.Context,
 	params pagination.QueryParams,
@@ -2035,9 +2088,9 @@ func (s *ContainerService) ListContainersPaginated(
 		return ContainerListResult{}, err
 	}
 	if !includeAll {
-		running := make([]container.Summary, 0, len(dockerContainers))
+		running := make([]mobyContainer.Summary, 0, len(dockerContainers))
 		for _, dc := range dockerContainers {
-			if dc.State == container.StateRunning || dc.State == container.StatePaused || dc.State == container.StateRestarting {
+			if dc.State == mobyContainer.StateRunning || dc.State == mobyContainer.StatePaused || dc.State == mobyContainer.StateRestarting {
 				running = append(running, dc)
 			}
 		}
@@ -2045,6 +2098,19 @@ func (s *ContainerService) ListContainersPaginated(
 	}
 
 	dockerContainers = FilterExcludedContainers(dockerContainers, includeInternal, includeHidden)
+	if allowedCompose, unrestricted := s.allowedComposeProjects(ctx, types.LocalDockerEnvironmentID, authz.PermContainersList); !unrestricted {
+		ps, _ := middleware.PermissionsFromContext(ctx)
+		dockerContainers = slices.DeleteFunc(slices.Clone(dockerContainers), func(dc mobyContainer.Summary) bool {
+			return !middleware.ContainerPermitted(ps, middleware.ContainerAccessInput{
+				EnvID:          types.LocalDockerEnvironmentID,
+				Permission:     authz.PermContainersList,
+				ContainerID:    dc.ID,
+				Names:          dc.Names,
+				Labels:         dc.Labels,
+				AllowedCompose: allowedCompose,
+			})
+		})
+	}
 	// Update lookup failures degrade to missing status rather than a failed list.
 	updateInfoMap, err := s.imageService.GetUpdateInfoByContainers(ctx, dockerContainers)
 	if err != nil {
@@ -2149,7 +2215,7 @@ func (s *ContainerService) GetContainerStatusCounts(ctx context.Context, opts St
 	}
 	containers = FilterExcludedContainers(containers, opts.IncludeInternal, opts.IncludeHidden)
 	running, unhealthy := 0, 0
-	standalone := make([]container.Summary, 0, len(containers))
+	standalone := make([]mobyContainer.Summary, 0, len(containers))
 	for _, c := range containers {
 		if c.State == "running" {
 			running++
@@ -2174,7 +2240,7 @@ func (s *ContainerService) GetContainerStatusCounts(ctx context.Context, opts St
 	}, nil
 }
 
-func (s *ContainerService) CountPendingUpdates(ctx context.Context, containers []container.Summary) (int, error) {
+func (s *ContainerService) CountPendingUpdates(ctx context.Context, containers []mobyContainer.Summary) (int, error) {
 	if len(containers) == 0 {
 		return 0, nil
 	}
@@ -2356,12 +2422,12 @@ func flattenContainerProjectGroups(groups []types.ContainerSummaryGroup) []types
 	return flattened
 }
 
-func FilterExcludedContainers(containers []container.Summary, includeInternal, includeHidden bool) []container.Summary {
+func FilterExcludedContainers(containers []mobyContainer.Summary, includeInternal, includeHidden bool) []mobyContainer.Summary {
 	if includeInternal && includeHidden {
 		return containers
 	}
 
-	filtered := make([]container.Summary, 0, len(containers))
+	filtered := make([]mobyContainer.Summary, 0, len(containers))
 	for _, dc := range containers {
 		internal, _ := kit.ParseBool(dc.Labels[selfcontainer.InternalResourceLabel])
 		hidden, _ := kit.ParseBool(dc.Labels[selfcontainer.HiddenResourceLabel])
@@ -2375,7 +2441,7 @@ func FilterExcludedContainers(containers []container.Summary, includeInternal, i
 
 func (s *ContainerService) BuildSummaries(
 	ctx context.Context,
-	containers []container.Summary,
+	containers []mobyContainer.Summary,
 	updateInfoMap map[string]*types.ImageUpdateInfo,
 	currentContainerID string,
 	currentContainerErr error,
@@ -2631,13 +2697,13 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, o
 		cmd = []string{"/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"}
 	}
 
-	execResp, err := dockerClient.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+	execResp, err := dockerClient.ExecCreate(ctx, containerID, mobyClient.ExecCreateOptions{
 		User:         opts.User,
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		TTY:          true,
-		ConsoleSize: client.ConsoleSize{
+		ConsoleSize: mobyClient.ConsoleSize{
 			Height: opts.Rows,
 			Width:  opts.Cols,
 		},
@@ -2651,8 +2717,8 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, o
 }
 
 func (s *ContainerService) ResizeExec(ctx context.Context, execID string, cols, rows uint) error {
-	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ExecResizeResult, error) {
-		return dockerClient.ExecResize(ctx, execID, client.ExecResizeOptions{Height: rows, Width: cols})
+	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ExecResizeResult, error) {
+		return dockerClient.ExecResize(ctx, execID, mobyClient.ExecResizeOptions{Height: rows, Width: cols})
 	})
 	if err != nil {
 		return fmt.Errorf("failed to resize exec %s: %w", execID, err)
@@ -2680,7 +2746,7 @@ func (e *ExecSession) Close(ctx context.Context) error {
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			inspect, err := e.dockerClient.ExecInspect(pollCtx, e.execID, client.ExecInspectOptions{})
+			inspect, err := e.dockerClient.ExecInspect(pollCtx, e.execID, mobyClient.ExecInspectOptions{})
 			if err != nil {
 				closeErr = fmt.Errorf("inspect exec %s: %w", e.execID, err)
 				return
@@ -2706,7 +2772,7 @@ func (s *ContainerService) AttachExec(ctx context.Context, containerID, execID s
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	execAttach, err := dockerClient.ExecAttach(ctx, execID, client.ExecAttachOptions{
+	execAttach, err := dockerClient.ExecAttach(ctx, execID, mobyClient.ExecAttachOptions{
 		TTY: true,
 	})
 	if err != nil {
@@ -2725,28 +2791,28 @@ func (d *demuxedLogs) Close() error {
 	return errors.Join(d.logs.Close(), d.pipe.Close())
 }
 
-func (s *ContainerService) openLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (io.ReadCloser, client.ContainerInspectResult, error) {
-	containerInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+func (s *ContainerService) openLogs(ctx context.Context, containerID string, options mobyClient.ContainerLogsOptions) (io.ReadCloser, mobyClient.ContainerInspectResult, error) {
+	containerInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to inspect container for logs: %w", err)
+		return nil, mobyClient.ContainerInspectResult{}, fmt.Errorf("failed to inspect container for logs: %w", err)
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, mobyClient.ContainerInspectResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	logs, err := dockerClient.ContainerLogs(ctx, containerID, options)
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to get container logs: %w", err)
+		return nil, mobyClient.ContainerInspectResult{}, fmt.Errorf("failed to get container logs: %w", err)
 	}
 	return logs, containerInspect, nil
 }
 
 func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, logsChan chan<- string, opts types.LogStreamOptions) error {
-	logs, containerInspect, err := s.openLogs(ctx, containerID, client.ContainerLogsOptions{
+	logs, containerInspect, err := s.openLogs(ctx, containerID, mobyClient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     opts.Follow,
@@ -2763,7 +2829,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 }
 
 func (s *ContainerService) DownloadLogs(ctx context.Context, containerID string) (io.ReadCloser, string, error) {
-	logs, containerInspect, err := s.openLogs(ctx, containerID, client.ContainerLogsOptions{
+	logs, containerInspect, err := s.openLogs(ctx, containerID, mobyClient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       "all",
@@ -2780,7 +2846,7 @@ func (s *ContainerService) DownloadLogs(ctx context.Context, containerID string)
 
 	pr, pw := io.Pipe()
 	go func() {
-		_, copyErr := stdcopy.StdCopy(pw, pw, logs)
+		_, copyErr := mobyStdCopy.StdCopy(pw, pw, logs)
 		if docker.IsExpectedStreamEndError(copyErr) {
 			copyErr = nil
 		}

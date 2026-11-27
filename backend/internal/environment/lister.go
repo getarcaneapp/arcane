@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/mapping"
 
 	"getarcane.dev/arcane/v3/internal/config"

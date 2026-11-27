@@ -17,7 +17,7 @@ import (
 	charmLog "charm.land/log/v2"
 	"github.com/spf13/cobra"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/cli/v3/internal/client"
 	"getarcane.dev/cli/v3/internal/cmdutil"
@@ -428,7 +428,11 @@ func newUploadCmd() *cobra.Command {
 			output.Info("Uploading image: %s", filePath)
 
 			jsonOutput := cmdutil.JSONOutputEnabled(cmd)
-			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, types.UploadKindImage, filePath, !jsonOutput)
+			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, cmdutil.UploadOptions{
+				Kind:         types.UploadKindImage,
+				FilePath:     filePath,
+				ShowProgress: !jsonOutput,
+			})
 			if err != nil {
 				return err
 			}

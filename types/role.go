@@ -19,10 +19,12 @@ type (
 	RoleAssignment struct {
 		CreatedAt     time.Time `json:"createdAt" doc:"Creation timestamp"`
 		EnvironmentID *string   `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
+		ResourceType  *string   `json:"resourceType,omitempty" enum:"project,container,volume,network,image,gitops" doc:"Optional resource kind scope; requires environmentId and resourceId"`
+		ResourceID    *string   `json:"resourceId,omitempty" doc:"Optional resource identifier this assignment is scoped to; requires environmentId and resourceType"`
 		ID            string    `json:"id" doc:"Unique identifier of the assignment"`
 		UserID        string    `json:"userId" doc:"ID of the user holding this assignment"`
 		RoleID        string    `json:"roleId" doc:"ID of the granted role"`
-		Source        string    `json:"source" doc:"How the assignment was created" enum:"manual,oidc"`
+		Source        string    `json:"source" doc:"How the assignment was created" enum:"manual,oidc,ldap"`
 	}
 
 	SetUserRoleAssignments struct {
@@ -31,6 +33,8 @@ type (
 
 	UserRoleAssignmentInput struct {
 		EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
+		ResourceType  *string `json:"resourceType,omitempty" enum:"project,container,volume,network,image,gitops" doc:"Optional resource kind scope; requires environmentId and resourceId"`
+		ResourceID    *string `json:"resourceId,omitempty" doc:"Optional resource identifier to scope the assignment to; requires environmentId and resourceType"`
 		RoleID        string  `json:"roleId" doc:"ID of the role to grant"`
 	}
 

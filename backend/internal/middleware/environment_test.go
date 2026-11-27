@@ -631,8 +631,8 @@ func TestProxyPermissionDeniedBlocksWriteForReadOnlyUser(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")
 
-	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
-		"expected restart to be denied for a read-only user")
+	allowed, _, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart")
+	require.False(t, allowed, "expected restart to be denied for a read-only user")
 }
 
 func TestProxyPermissionDeniedAllowsWriteForPermittedUser(t *testing.T) {
@@ -642,8 +642,8 @@ func TestProxyPermissionDeniedAllowsWriteForPermittedUser(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")
 
-	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
-		"expected restart to be allowed for a user with containers:restart")
+	allowed, _, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart")
+	require.True(t, allowed, "expected restart to be allowed for a user with containers:restart")
 }
 
 func TestProxyPermissionDeniedAllowsRead(t *testing.T) {
@@ -653,8 +653,8 @@ func TestProxyPermissionDeniedAllowsRead(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodGet, "/api/agents/"+proxyTestEnvID+"/containers")
 
-	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers"),
-		"expected list to be allowed for a user with containers:list")
+	allowed, _, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/containers")
+	require.True(t, allowed, "expected list to be allowed for a user with containers:list")
 }
 
 func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
@@ -665,16 +665,16 @@ func TestProxyPermissionDeniedDeniesPermissionFromDifferentEnv(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")
 
-	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart"),
-		"expected denial: permission is scoped to a different environment")
+	allowed, _, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/containers/abc/restart")
+	require.False(t, allowed, "expected denial: permission is scoped to a different environment")
 }
 
 func TestProxyPermissionDeniedSudoBypasses(t *testing.T) {
 	m := newProxyAuthzMiddleware(containerMatcher())
 	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/containers/abc/restart")
 
-	require.True(t, m.proxyPermitted(c, authz.SudoPermissionSet(), proxyTestEnvID, "/containers/abc/restart"),
-		"expected sudo permission set to bypass the permission check")
+	allowed, _, _ := m.proxyPermitted(c, authz.SudoPermissionSet(), proxyTestEnvID, "/containers/abc/restart")
+	require.True(t, allowed, "expected sudo permission set to bypass the permission check")
 }
 
 func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
@@ -684,8 +684,55 @@ func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/unknown/resource")
 
-	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/unknown/resource"),
-		"expected an unmapped proxied route to be denied by default")
+	allowed, _, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/unknown/resource")
+	require.False(t, allowed, "expected an unmapped proxied route to be denied by default")
+}
+
+func TestEnvironmentMiddleware_AnswersInvalidActionWithOneError(t *testing.T) {
+	matcher := authz.NewPermissionMatcher()
+	matcher.AddActions(http.MethodPost, "/images/updates/check", "action",
+		map[string]string{"all": authz.PermImageUpdatesCheck, "batch": authz.PermImageUpdatesCheck})
+	ps := authz.NewPermissionSet()
+	ps.AddEnv(proxyTestEnvID, authz.PermImageUpdatesCheck)
+
+	mw := &EnvironmentMiddleware{
+		localID:   "0",
+		paramName: "id",
+		resolver: func(context.Context, string) (ResolvedEnvironment, error) {
+			return ResolvedEnvironment{Enabled: true}, nil
+		},
+		authValidator: func(context.Context, *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
+			return ps, nil, true
+		},
+		registry: agent.NewTunnelRegistry(),
+		matcher:  matcher,
+	}
+
+	for _, tc := range []struct{ name, query, want string }{
+		{name: "missing", query: "", want: "invalid action: "},
+		{name: "unknown", query: "?action=explode", want: "invalid action: explode"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			router := echo.New()
+			api := attachMiddleware(router, mw)
+			api.POST("/agents/:id/images/updates/check", func(c *echo.Context) error {
+				return c.NoContent(http.StatusTeapot)
+			})
+
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost,
+				"/api/agents/"+proxyTestEnvID+"/images/updates/check"+tc.query, http.NoBody))
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code,
+				"the local environment answers 400 for an invalid action, so the proxy must too")
+			var body struct{ Success bool }
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body),
+				"the reply must hold exactly one JSON object: a second write makes it undecodable")
+			assert.False(t, body.Success)
+			assert.Contains(t, recorder.Body.String(), tc.want)
+			assert.NotContains(t, recorder.Body.String(), "don't have permission")
+		})
+	}
 }
 
 func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
@@ -694,8 +741,8 @@ func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodGet, "/api/agents/"+proxyTestEnvID+"/settings/public")
 
-	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/settings/public"),
-		"expected an explicitly public route to be allowed for any authenticated caller")
+	allowed, _, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/settings/public")
+	require.True(t, allowed, "expected an explicitly public route to be allowed for any authenticated caller")
 }
 
 func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
@@ -710,13 +757,13 @@ func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodGet, "/api/agents/"+proxyTestEnvID+"/ws/containers/abc/terminal")
 
-	require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),
-		"expected WS terminal to be denied without containers:exec")
+	allowed, _, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal")
+	require.False(t, allowed, "expected WS terminal to be denied without containers:exec")
 
 	ps.AddEnv(proxyTestEnvID, authz.PermContainersExec)
 
-	require.True(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal"),
-		"expected WS terminal to be allowed with containers:exec")
+	allowed, _, _ = m.proxyPermitted(c, ps, proxyTestEnvID, "/ws/containers/abc/terminal")
+	require.True(t, allowed, "expected WS terminal to be allowed with containers:exec")
 }
 
 func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) {

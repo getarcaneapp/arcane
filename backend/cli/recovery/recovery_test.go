@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/mount"
+	mobyMount "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -135,8 +135,11 @@ func countingArcane(restarts *int) arcaneContainer {
 func stagedRestoreRequest(data string) types.RecoveryRestoreRequest {
 	stage := func(snapshotID string) types.RecoveryRestoreStage {
 		return types.RecoveryRestoreStage{
-			Swap:       &types.RecoveryRestoreSwap{Directory: data, ID: snapshotID, Preserve: []string{"projects"}},
-			Target:     types.RecoveryRestoreTarget{Path: "/restore/" + backup.SwapStagingPrefix + snapshotID, Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: "arcane-data", Target: "/restore"}}},
+			Swap: &types.RecoveryRestoreSwap{Directory: data, ID: snapshotID, Preserve: []string{"projects"}},
+			Target: types.RecoveryRestoreTarget{
+				Path:   "/restore/" + backup.SwapStagingPrefix + snapshotID,
+				Mounts: []mobyMount.Mount{{Type: mobyMount.TypeVolume, Source: "arcane-data", Target: "/restore"}},
+			},
 			SnapshotID: snapshotID,
 			SourcePath: "/data",
 			Globs:      []string{"!/projects", "!/projects/**"},

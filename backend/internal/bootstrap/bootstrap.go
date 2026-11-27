@@ -12,15 +12,15 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-	mobyswarm "github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/sys/crypto"
 
@@ -30,7 +30,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/di"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops"
@@ -71,7 +71,7 @@ type (
 		Container   *container.ContainerService
 		Image       *image.ImageService
 		KV          *kv.KVService
-		Docker      *docker.DockerClientService
+		Docker      *dockerInternal.DockerClientService
 	}
 )
 
@@ -240,7 +240,7 @@ func applicationOptions(
 			startJobScheduler,
 			startDockerHostEventWatcher,
 			registerJobs,
-			func(lc fx.Lifecycle, router *echo.Echo, dockerService *docker.DockerClientService, settingsService *settings.SettingsService, systemService *system.SystemService, _ *http.Server) {
+			func(lc fx.Lifecycle, router *echo.Echo, dockerService *dockerInternal.DockerClientService, settingsService *settings.SettingsService, systemService *system.SystemService, _ *http.Server) {
 				if !cfg.AgentEnabled {
 					return
 				}
@@ -280,7 +280,7 @@ func applicationOptions(
 					return nil
 				}})
 			},
-			func(lc fx.Lifecycle, dockerService *docker.DockerClientService, swarmService *swarm.SwarmService, _ *http.Server) {
+			func(lc fx.Lifecycle, dockerService *dockerInternal.DockerClientService, swarmService *swarm.SwarmService, _ *http.Server) {
 				if !dockerService.LocalDockerEnabled() {
 					slog.InfoContext(appCtx, "Local Docker is disabled; skipping the Docker connection test and swarm sync")
 					return
@@ -290,8 +290,8 @@ func applicationOptions(
 						dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
 						defer cancelDocker()
 						startup.TestDockerConnection(dockerCtx, func(ctx context.Context) error {
-							_, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
-								version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
+							_, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (struct{}, error) {
+								version, err := dockerClient.ServerVersion(ctx, mobyClient.ServerVersionOptions{})
 								if err != nil {
 									return struct{}{}, err
 								}
@@ -303,7 +303,7 @@ func applicationOptions(
 							return err
 						})
 						startup.WarnDeprecatedImage(dockerCtx, func(ctx context.Context) (string, error) {
-							return dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+							return dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (string, error) {
 								self, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 								if err != nil {
 									return "", err
@@ -318,7 +318,7 @@ func applicationOptions(
 					return nil
 				}})
 			},
-			func(lc fx.Lifecycle, projectService *project.ProjectService, dockerService *docker.DockerClientService, _ *http.Server) {
+			func(lc fx.Lifecycle, projectService *project.ProjectService, dockerService *dockerInternal.DockerClientService, _ *http.Server) {
 				if !dockerService.LocalDockerEnabled() {
 					return
 				}
@@ -403,16 +403,16 @@ func initializeStartupState(p initializeStartupStateParams) error {
 			slog.WarnContext(p.AppCtx, "ARCANE_AGENT_MODE is ignored", "guidance", config.ErrDirectAgentRemoved.Error())
 		}
 		describeHost := func(ctx context.Context) (types.AgentEnrollRequest, error) {
-			result, err := p.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-				return dockerClient.Info(ctx, client.InfoOptions{})
+			result, err := p.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+				return dockerClient.Info(ctx, mobyClient.InfoOptions{})
 			})
 			if err != nil {
 				return types.AgentEnrollRequest{}, fmt.Errorf("failed to read Docker info: %w", err)
 			}
 			return types.AgentEnrollRequest{
 				Hostname:       result.Info.Name,
-				SwarmNodeID:    kit.Ternary(result.Info.Swarm.LocalNodeState == mobyswarm.LocalNodeStateActive, result.Info.Swarm.NodeID, ""),
-				SwarmClusterID: kit.Ternary(result.Info.Swarm.LocalNodeState == mobyswarm.LocalNodeStateActive, kit.FromPtr(result.Info.Swarm.Cluster).ID, ""),
+				SwarmNodeID:    kit.Ternary(result.Info.Swarm.LocalNodeState == mobySwarm.LocalNodeStateActive, result.Info.Swarm.NodeID, ""),
+				SwarmClusterID: kit.Ternary(result.Info.Swarm.LocalNodeState == mobySwarm.LocalNodeStateActive, kit.FromPtr(result.Info.Swarm.Cluster).ID, ""),
 			}, nil
 		}
 		agentToken, err := startup.EnrollAgent(p.AppCtx, startup.EnrollAgentOptions{

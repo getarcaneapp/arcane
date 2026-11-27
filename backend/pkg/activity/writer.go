@@ -14,7 +14,7 @@ import (
 
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/types/v3"

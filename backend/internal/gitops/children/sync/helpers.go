@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/projects"
 )

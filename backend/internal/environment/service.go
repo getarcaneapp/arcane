@@ -20,30 +20,28 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/mapping"
 	"kit.getarcane.app/normalization"
-	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/apikey"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment/children/enrollment"
 	"getarcane.dev/arcane/v3/internal/environment/children/health"
 	"getarcane.dev/arcane/v3/internal/environment/children/proxy"
 	"getarcane.dev/arcane/v3/internal/environment/children/snippets"
 	"getarcane.dev/arcane/v3/internal/environment/children/swarm"
 	"getarcane.dev/arcane/v3/internal/event"
-	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -64,7 +62,7 @@ type (
 
 		variableSyncer   VariableSyncer
 		db               *database.DB
-		dockerService    *docker.DockerClientService
+		dockerService    *dockerInternal.DockerClientService
 		tunnels          *agent.TunnelRegistry
 		eventService     *event.EventService
 		settingsService  *settings.SettingsService
@@ -161,7 +159,7 @@ type (
 		fx.In
 
 		DB              *database.DB
-		DockerService   *docker.DockerClientService
+		DockerService   *dockerInternal.DockerClientService
 		EventService    *event.EventService
 		SettingsService *settings.SettingsService
 		APIKeyService   *apikey.ApiKeyService
@@ -368,8 +366,8 @@ func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environ
 
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
 	hostName := func() string {
-		info, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-			return dockerClient.Info(ctx, client.InfoOptions{})
+		info, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+			return dockerClient.Info(ctx, mobyClient.InfoOptions{})
 		})
 		osHostName, _ := os.Hostname()
 		return cmp.Or(strings.TrimSpace(info.Info.Name), strings.TrimSpace(osHostName), localEnvironmentFallbackName)
@@ -849,35 +847,6 @@ func (s *EnvironmentService) IsKnownAccessToken(token string) bool {
 	defer s.accessTokenIndex.mu.RUnlock()
 	_, ok := s.accessTokenIndex.byHashed[hashed]
 	return ok
-}
-
-func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]types.ContainerRegistryCredential, error) {
-	var registries []registry.ContainerRegistry
-	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
-		return nil, fmt.Errorf("failed to get enabled container registries: %w", err)
-	}
-
-	var creds []types.ContainerRegistryCredential
-	for _, reg := range registries {
-		if !reg.Enabled || reg.Username == "" || reg.Token == "" {
-			continue
-		}
-
-		decryptedToken, err := crypto.Decrypt(reg.Token)
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to decrypt registry token", "registryUrl", reg.URL, "error", err.Error())
-			continue
-		}
-
-		creds = append(creds, types.ContainerRegistryCredential{
-			URL:      reg.URL,
-			Username: reg.Username,
-			Token:    decryptedToken,
-			Enabled:  reg.Enabled,
-		})
-	}
-
-	return creds, nil
 }
 
 func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, environmentID string, user *types.Actor, activityService activity.Service) (string, error) {

@@ -4,7 +4,7 @@ package containerlabel
 import (
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 // AutoHealLabel opts a container in to auto-heal, which the auto-heal opt-in

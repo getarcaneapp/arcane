@@ -15,7 +15,7 @@ import (
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/types/v3"
 )
@@ -209,6 +209,11 @@ func NamespaceDependents(model *composeTypes.Project, services []string) []strin
 			}
 			name, _, _ := strings.Cut(vol, ":")
 			if _, member := members[name]; member {
+				return true
+			}
+		}
+		for name, dep := range svc.DependsOn {
+			if _, member := members[name]; member && dep.Restart {
 				return true
 			}
 		}

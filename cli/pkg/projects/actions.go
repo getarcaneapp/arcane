@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/cli/v3/internal/client"
@@ -540,7 +540,11 @@ func newImportCmd() *cobra.Command {
 			}
 			name = cmp.Or(opts.name, name)
 
-			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, types.UploadKindProjectArchive, args[0], !cmdutil.JSONOutputEnabled(cmd))
+			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, cmdutil.UploadOptions{
+				Kind:         types.UploadKindProjectArchive,
+				FilePath:     args[0],
+				ShowProgress: !cmdutil.JSONOutputEnabled(cmd),
+			})
 			if err != nil {
 				return err
 			}

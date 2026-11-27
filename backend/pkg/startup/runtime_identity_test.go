@@ -11,7 +11,7 @@ import (
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func TestLoadRuntimeIdentityRequest(t *testing.T) {

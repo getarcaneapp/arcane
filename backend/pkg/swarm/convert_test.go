@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/swarm"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/require"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -35,7 +35,7 @@ func TestConvertServiceMountsResolvesComposeResourceNames(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, mounts, 4)
-	require.Equal(t, mount.TypeVolume, mounts[0].Type)
+	require.Equal(t, mobyMount.TypeVolume, mounts[0].Type)
 	require.Equal(t, "stack_plain", mounts[0].Source)
 	require.NotNil(t, mounts[0].VolumeOptions)
 	require.NotNil(t, mounts[0].VolumeOptions.DriverConfig)
@@ -48,7 +48,7 @@ func TestConvertServiceMountsResolvesComposeResourceNames(t *testing.T) {
 }
 
 func TestApplyDeployConfigConvertsCPUFractionToNanoCPUs(t *testing.T) {
-	spec := &swarm.ServiceSpec{}
+	spec := &mobySwarm.ServiceSpec{}
 	deploy := &composeTypes.DeployConfig{
 		Resources: composeTypes.Resources{
 			Limits: &composeTypes.Resource{
@@ -97,7 +97,7 @@ configs:
 func TestBuildServiceSpecConformance(t *testing.T) {
 	type testCase struct {
 		configure func(*composeTypes.ServiceConfig)
-		check     func(*testing.T, swarm.ServiceSpec, error)
+		check     func(*testing.T, mobySwarm.ServiceSpec, error)
 		name      string
 	}
 
@@ -107,7 +107,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 			configure: func(service *composeTypes.ServiceConfig) {
 				service.ExtraHosts = composeTypes.HostsList{"api.local": {"127.0.0.1"}}
 			},
-			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
+			check: func(t *testing.T, spec mobySwarm.ServiceSpec, err error) {
 				require.NoError(t, err)
 				require.Equal(t, []string{"127.0.0.1 api.local"}, spec.TaskTemplate.ContainerSpec.Hosts)
 			},
@@ -117,7 +117,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 			configure: func(service *composeTypes.ServiceConfig) {
 				service.Networks = map[string]*composeTypes.ServiceNetworkConfig{"default": nil}
 			},
-			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
+			check: func(t *testing.T, spec mobySwarm.ServiceSpec, err error) {
 				require.NoError(t, err)
 				require.Equal(t, []string{"web"}, spec.TaskTemplate.Networks[0].Aliases)
 			},
@@ -127,7 +127,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 			configure: func(service *composeTypes.ServiceConfig) {
 				service.Deploy = &composeTypes.DeployConfig{UpdateConfig: &composeTypes.UpdateConfig{}}
 			},
-			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
+			check: func(t *testing.T, spec mobySwarm.ServiceSpec, err error) {
 				require.NoError(t, err)
 				require.Equal(t, uint64(1), spec.UpdateConfig.Parallelism)
 			},
@@ -137,9 +137,9 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 			configure: func(service *composeTypes.ServiceConfig) {
 				service.Restart = "on-failure:3"
 			},
-			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
+			check: func(t *testing.T, spec mobySwarm.ServiceSpec, err error) {
 				require.NoError(t, err)
-				require.Equal(t, swarm.RestartPolicyConditionOnFailure, spec.TaskTemplate.RestartPolicy.Condition)
+				require.Equal(t, mobySwarm.RestartPolicyConditionOnFailure, spec.TaskTemplate.RestartPolicy.Condition)
 				require.Equal(t, uint64(3), *spec.TaskTemplate.RestartPolicy.MaxAttempts)
 			},
 		},
@@ -148,7 +148,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 			configure: func(service *composeTypes.ServiceConfig) {
 				service.HealthCheck = &composeTypes.HealthCheckConfig{Disable: true}
 			},
-			check: func(t *testing.T, spec swarm.ServiceSpec, err error) {
+			check: func(t *testing.T, spec mobySwarm.ServiceSpec, err error) {
 				require.NoError(t, err)
 				require.Equal(t, []string{"NONE"}, spec.TaskTemplate.ContainerSpec.Healthcheck.Test)
 			},
@@ -159,7 +159,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 				retries := uint64(1)
 				service.HealthCheck = &composeTypes.HealthCheckConfig{Disable: true, Retries: &retries}
 			},
-			check: func(t *testing.T, _ swarm.ServiceSpec, err error) {
+			check: func(t *testing.T, _ mobySwarm.ServiceSpec, err error) {
 				require.ErrorContains(t, err, "cannot be combined")
 			},
 		},
@@ -169,7 +169,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 				replicas := 2
 				service.Deploy = &composeTypes.DeployConfig{Mode: "global", Replicas: &replicas}
 			},
-			check: func(t *testing.T, _ swarm.ServiceSpec, err error) {
+			check: func(t *testing.T, _ mobySwarm.ServiceSpec, err error) {
 				require.ErrorContains(t, err, "replicas can only be used")
 			},
 		},
@@ -178,7 +178,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 			configure: func(service *composeTypes.ServiceConfig) {
 				service.Ports = []composeTypes.ServicePortConfig{{Target: 80, Published: "invalid"}}
 			},
-			check: func(t *testing.T, _ swarm.ServiceSpec, err error) {
+			check: func(t *testing.T, _ mobySwarm.ServiceSpec, err error) {
 				require.ErrorContains(t, err, "invalid published port")
 			},
 		},
@@ -261,7 +261,7 @@ secrets:
 	}
 	stackLabels := map[string]string{types.SwarmStackNamespaceLabel: "stack"}
 
-	build := func() swarm.ServiceSpec {
+	build := func() mobySwarm.ServiceSpec {
 		spec, buildErr := buildServiceSpec(
 			project.Services["web"],
 			ns,

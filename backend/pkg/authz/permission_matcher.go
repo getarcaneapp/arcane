@@ -6,7 +6,7 @@ import (
 
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (
@@ -48,9 +48,34 @@ func (m *PermissionMatcher) AddActions(method, pathTemplate, param string, perms
 }
 
 func (m *PermissionMatcher) Lookup(method, suffixPath string, query url.Values) mo.Option[string] {
-	reqSegs := pathSegments(suffixPath)
 	method = strings.ToUpper(method)
 
+	best, found := m.best(method, pathSegments(suffixPath))
+	if !found {
+		return mo.None[string]()
+	}
+	if best.actionParam == "" {
+		return mo.Some(best.perm)
+	}
+	perm, ok := best.actionPerms[query.Get(best.actionParam)]
+	if !ok {
+		return mo.None[string]()
+	}
+	return mo.Some(perm)
+}
+
+// ActionParam reports the query parameter that selects the permission of the
+// best matching route, so callers can tell "this route takes an action, and the
+// value is unknown" apart from "this route is unmapped".
+func (m *PermissionMatcher) ActionParam(method, suffixPath string) string {
+	best, found := m.best(strings.ToUpper(method), pathSegments(suffixPath))
+	if !found {
+		return ""
+	}
+	return best.actionParam
+}
+
+func (m *PermissionMatcher) best(method string, reqSegs []string) (permRoute, bool) {
 	bestScore := -1
 	var best permRoute
 	found := false
@@ -77,17 +102,7 @@ func (m *PermissionMatcher) Lookup(method, suffixPath string, query url.Values) 
 			found = true
 		}
 	}
-	if !found {
-		return mo.None[string]()
-	}
-	if best.actionParam == "" {
-		return mo.Some(best.perm)
-	}
-	perm, ok := best.actionPerms[query.Get(best.actionParam)]
-	if !ok {
-		return mo.None[string]()
-	}
-	return mo.Some(perm)
+	return best, found
 }
 
 func (m *PermissionMatcher) SupportsEnvironmentAggregation(method, suffix string) bool {

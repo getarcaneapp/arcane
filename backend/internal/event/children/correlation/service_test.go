@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func TestDockerExpectationIdentityAndExpiry(t *testing.T) {

@@ -1,5 +1,6 @@
 import type { Locale } from '#lib/paraglide/runtime.js';
 
+import type { ResourceScopeType } from './role';
 import type { DashboardWidgetType } from './ui/user';
 
 export type TimeFormat = 'auto' | '12h' | '24h';
@@ -118,7 +119,15 @@ export type RoleAssignmentSource = 'manual' | 'oidc' | 'ldap';
 export type RoleAssignmentSummary = {
 	roleId: string;
 	environmentId?: string;
+	resourceType?: ResourceScopeType;
+	resourceId?: string;
 	source: RoleAssignmentSource;
+};
+
+export type ResourcePermissionGrant = {
+	type: ResourceScopeType;
+	id: string;
+	permissions: string[];
 };
 
 export type UserGroupSummary = {
@@ -138,6 +147,7 @@ export type User = {
 	roleAssignments: RoleAssignmentSummary[];
 	groups?: UserGroupSummary[];
 	permissionsByEnv: Record<string, string[]>;
+	resourcePermissionsByEnv?: Record<string, ResourcePermissionGrant[]>;
 	isGlobalAdmin: boolean;
 	canDelete: boolean;
 	createdAt?: string;

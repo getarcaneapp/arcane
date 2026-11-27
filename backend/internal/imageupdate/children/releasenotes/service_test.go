@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -23,8 +23,8 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
-	"getarcane.dev/arcane/v3/internal/registry"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 )
 
@@ -46,7 +46,7 @@ const (
 	testDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 )
 
-func newTestDockerService(t *testing.T, labels map[string]string) (*docker.DockerClientService, *settings.SettingsService) {
+func newTestDockerService(t *testing.T, labels map[string]string) (*dockerInternal.DockerClientService, *settings.SettingsService) {
 	t.Helper()
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -62,10 +62,10 @@ func newTestDockerService(t *testing.T, labels map[string]string) (*docker.Docke
 	}))
 	t.Cleanup(server.Close)
 
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
@@ -75,7 +75,7 @@ func newTestDockerService(t *testing.T, labels map[string]string) (*docker.Docke
 func newTestService(
 	t *testing.T,
 	labels map[string]string,
-	remoteConfig func(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error),
+	remoteConfig func(context.Context, string, registryInternal.ImageConfigOptions) (*v1.ConfigFile, error),
 	github testGitHub,
 ) (*Service, *testRecorder) {
 	t.Helper()
@@ -154,7 +154,7 @@ func TestService_ReleaseNotesSourceParsing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc, hits := newTestService(t, map[string]string{registry.OCIImageSourceLabel: tt.source}, noRemoteConfig, testGitHub{status: http.StatusOK})
+			svc, hits := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: tt.source}, noRemoteConfig, testGitHub{status: http.StatusOK})
 
 			notes, err := svc.ReleaseNotes(t.Context(), Request{ImageRef: "nginx:latest"})
 			require.NoError(t, err)
@@ -179,7 +179,7 @@ func TestService_ReleaseNotesVersionMatching(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc, _ := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
+			svc, _ := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
 				status: http.StatusOK,
 				releases: map[string][]githubRelease{"o/r": {{
 					TagName:     tt.tag,
@@ -208,15 +208,15 @@ func TestService_ReleaseNotesVersionMatching(t *testing.T) {
 }
 
 func TestService_ReleaseNotesDigestResolvesVersion(t *testing.T) {
-	svc, _ := newTestService(t, nil, func(_ context.Context, ref string, _ registry.ImageConfigOptions) (*v1.ConfigFile, error) {
+	svc, _ := newTestService(t, nil, func(_ context.Context, ref string, _ registryInternal.ImageConfigOptions) (*v1.ConfigFile, error) {
 		if ref != "docker.io/library/nginx@"+testDigest {
 			return nil, errors.New("unexpected reference " + ref)
 		}
 		return &v1.ConfigFile{
 			Config: v1.Config{
 				Labels: map[string]string{
-					registry.OCIImageVersionLabel: "1.2.3",
-					registry.OCIImageSourceLabel:  "https://github.com/o/r",
+					registryInternal.OCIImageVersionLabel: "1.2.3",
+					registryInternal.OCIImageSourceLabel:  "https://github.com/o/r",
 				},
 			},
 		}, nil
@@ -245,7 +245,7 @@ func TestService_ReleaseNotesRejectsInvalidDigest(t *testing.T) {
 }
 
 func TestService_ReleaseNotesGitHubNotFoundIsCached(t *testing.T) {
-	svc, hits := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/orgs/foo"}, noRemoteConfig, testGitHub{status: http.StatusNotFound})
+	svc, hits := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/orgs/foo"}, noRemoteConfig, testGitHub{status: http.StatusNotFound})
 
 	for range 2 {
 		notes, err := svc.ReleaseNotes(t.Context(), Request{
@@ -260,7 +260,7 @@ func TestService_ReleaseNotesGitHubNotFoundIsCached(t *testing.T) {
 }
 
 func TestService_ReleaseNotesKeepsPrereleaseSuffix(t *testing.T) {
-	svc, _ := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
+	svc, _ := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
 		status:   http.StatusOK,
 		releases: map[string][]githubRelease{"o/r": {{TagName: "v2.0.0", HTMLURL: "https://github.com/o/r/releases/tag/v2.0.0"}}},
 	})
@@ -285,7 +285,7 @@ func TestService_ReleaseNotesWithoutLabels(t *testing.T) {
 }
 
 func TestService_ReleaseNotesUnavailableNotCached(t *testing.T) {
-	svc, hits := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{status: http.StatusForbidden})
+	svc, hits := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{status: http.StatusForbidden})
 
 	for range 2 {
 		notes, err := svc.ReleaseNotes(t.Context(), Request{
@@ -300,7 +300,7 @@ func TestService_ReleaseNotesUnavailableNotCached(t *testing.T) {
 }
 
 func TestService_ReleaseNotesCached(t *testing.T) {
-	svc, hits := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
+	svc, hits := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
 		status:   http.StatusOK,
 		releases: map[string][]githubRelease{"o/r": {{TagName: "v1.2.3"}}},
 	})
@@ -317,7 +317,7 @@ func TestService_ReleaseNotesCached(t *testing.T) {
 }
 
 func TestService_ReleaseLink(t *testing.T) {
-	svc, hits := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "git+https://github.com/o/r.git"}, noRemoteConfig, testGitHub{status: http.StatusOK})
+	svc, hits := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "git+https://github.com/o/r.git"}, noRemoteConfig, testGitHub{status: http.StatusOK})
 
 	assert.Equal(t, "https://github.com/o/r/releases", svc.ReleaseLink(t.Context(), "nginx:1.2.2"))
 	assert.Zero(t, hits.hits.Load())
@@ -341,7 +341,7 @@ func TestService_ReleaseNotesPrefixedTags(t *testing.T) {
 			for _, tag := range tt.tags {
 				releases = append(releases, githubRelease{TagName: tag, HTMLURL: "https://github.com/o/r/releases/tag/" + tag})
 			}
-			svc, _ := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
+			svc, _ := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
 				status:   http.StatusOK,
 				releases: map[string][]githubRelease{"o/r": releases},
 			})
@@ -371,7 +371,7 @@ func TestService_ReleaseNotesTagLookupBeyondFirstPage(t *testing.T) {
 		Name:    "Old release",
 		HTMLURL: "https://github.com/o/r/releases/tag/v1.2.3",
 	})
-	svc, hits := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
+	svc, hits := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
 		status:   http.StatusOK,
 		releases: map[string][]githubRelease{"o/r": releases},
 	})
@@ -389,7 +389,7 @@ func TestService_ReleaseNotesTagLookupBeyondFirstPage(t *testing.T) {
 }
 
 func TestService_ReleaseNotesDiscoversUpstreamRepo(t *testing.T) {
-	svc, _ := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/hotio/qbittorrent"}, noRemoteConfig, testGitHub{
+	svc, _ := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/hotio/qbittorrent"}, noRemoteConfig, testGitHub{
 		status: http.StatusOK,
 		search: []string{"hotio/qbittorrent", "qbittorrent/qBittorrent"},
 		releases: map[string][]githubRelease{
@@ -433,7 +433,7 @@ func TestService_ReleaseNotesDiscoversRepoWithoutLabels(t *testing.T) {
 }
 
 func TestService_ReleaseNotesRejectsUnverifiedUpstream(t *testing.T) {
-	svc, _ := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/hotio/qbittorrent"}, noRemoteConfig, testGitHub{
+	svc, _ := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/hotio/qbittorrent"}, noRemoteConfig, testGitHub{
 		status: http.StatusOK,
 		search: []string{"lookalike/qbittorrent", "qbittorrent/qBittorrent"},
 		releases: map[string][]githubRelease{
@@ -463,7 +463,7 @@ func TestService_ReleaseNotesSendsGitHubToken(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc, recorder := newTestService(t, map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
+			svc, recorder := newTestService(t, map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"}, noRemoteConfig, testGitHub{
 				status:   http.StatusOK,
 				releases: map[string][]githubRelease{"o/r": {{TagName: "v1.2.3"}}},
 			})
@@ -492,21 +492,21 @@ func TestService_ReleaseNotesRunningVersion(t *testing.T) {
 	}{
 		{
 			name:        "local version label",
-			labels:      map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r", registry.OCIImageVersionLabel: "1.2.3"},
+			labels:      map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r", registryInternal.OCIImageVersionLabel: "1.2.3"},
 			imageRef:    "ghcr.io/o/r:release",
 			wantStatus:  statusFound,
 			wantVersion: "1.2.3",
 		},
 		{
 			name:        "numeric tag",
-			labels:      map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"},
+			labels:      map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"},
 			imageRef:    "ghcr.io/o/r:1.2.3",
 			wantStatus:  statusFound,
 			wantVersion: "1.2.3",
 		},
 		{
 			name:       "non version tag",
-			labels:     map[string]string{registry.OCIImageSourceLabel: "https://github.com/o/r"},
+			labels:     map[string]string{registryInternal.OCIImageSourceLabel: "https://github.com/o/r"},
 			imageRef:   "ghcr.io/o/r:latest",
 			wantStatus: statusNotFound,
 		},
@@ -526,11 +526,11 @@ func TestService_ReleaseNotesRunningVersion(t *testing.T) {
 	}
 }
 
-func noRemoteConfig(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error) {
+func noRemoteConfig(context.Context, string, registryInternal.ImageConfigOptions) (*v1.ConfigFile, error) {
 	return nil, nil
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) (*docker.DockerClientService, *settings.SettingsService) {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) (*dockerInternal.DockerClientService, *settings.SettingsService) {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -545,5 +545,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) (*docke
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient), settingsService
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient), settingsService
 }

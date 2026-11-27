@@ -7,15 +7,15 @@ import (
 	"github.com/docker/cli/cli/command"
 	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/cli/cli/flags"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	mobyclient "github.com/moby/moby/client"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWrapDockerCLIWithInspectCompatibility(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://example.com:2375")
 
-	apiClient, err := mobyclient.New(mobyclient.WithHost("tcp://example.com:2375"))
+	apiClient, err := mobyClient.New(mobyClient.WithHost("tcp://example.com:2375"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = apiClient.Close()
@@ -28,7 +28,7 @@ func TestWrapDockerCLIWithInspectCompatibility(t *testing.T) {
 	wrapped := wrapDockerCLIWithInspectCompatibility(baseCLI)
 	require.NotNil(t, wrapped)
 	require.NotSame(t, baseCLI, wrapped)
-	require.NotEqual(t, reflect.TypeFor[*mobyclient.Client](), reflect.TypeOf(wrapped.Client()))
+	require.NotEqual(t, reflect.TypeFor[*mobyClient.Client](), reflect.TypeOf(wrapped.Client()))
 }
 
 func TestPlainComposeClientCachedPerDockerHost(t *testing.T) {
@@ -52,7 +52,7 @@ func TestPlainComposeClientCachedPerDockerHost(t *testing.T) {
 }
 
 func TestBuildComposeAuthConfigs(t *testing.T) {
-	authConfigs := buildComposeAuthConfigs(map[string]dockerregistry.AuthConfig{
+	authConfigs := buildComposeAuthConfigs(map[string]mobyRegistry.AuthConfig{
 		"docker.io": {
 			Username:      "docker-user",
 			Password:      "docker-token",

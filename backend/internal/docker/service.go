@@ -15,14 +15,14 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -45,16 +45,16 @@ type (
 		imageListFlight     singleflight.Group
 		containerListFlight singleflight.Group
 		diskUsageFlight     singleflight.Group
-		*client.Client
+		*mobyClient.Client
 
 		db              *database.DB
 		settingsService *settings.SettingsService
-		engineClient    *client.Client
+		engineClient    *mobyClient.Client
 		eventBus        *bus.DockerEventBus
 		VolumeUsage     *docker.VolumeUsageCache
 		streamConnected *concurrency.Signal[struct{}]
 		inventory       atomic.Pointer[dockerInventory]
-		hostClients     map[string]*client.Client
+		hostClients     map[string]*mobyClient.Client
 
 		engine        compat.EngineCompatibilityInfo
 		clientVersion string
@@ -63,7 +63,8 @@ type (
 		mu            sync.Mutex
 		// hostMu guards hostClients. Clients are keyed by endpoint because two docker-host
 		// environments may point at different daemons.
-		hostMu sync.Mutex
+		hostMu      sync.Mutex
+		diskUsageMu sync.Mutex
 
 		localDockerDisabled bool
 	}
@@ -74,14 +75,21 @@ type (
 	}
 
 	dockerInventory struct {
-		containers atomic.Pointer[[]container.Summary]
-		images     atomic.Pointer[[]image.Summary]
+		containers atomic.Pointer[[]mobyContainer.Summary]
+		images     atomic.Pointer[[]mobyImage.Summary]
+		diskUsage  atomic.Pointer[diskUsageSnapshot]
+	}
+
+	diskUsageSnapshot struct {
+		fetchedAt time.Time
+		usage     mobyClient.DiskUsageResult
 	}
 )
 
 const (
 	dockerClientNegotiationTimeout = 5 * time.Second
 	dockerEventStreamHealthyAfter  = 30 * time.Second
+	dockerDiskUsageMaxAge          = 10 * time.Second
 )
 
 func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, opts ClientServiceOptions) *DockerClientService {
@@ -99,7 +107,7 @@ func NewDockerClientService(ctx context.Context, db *database.DB, settingsServic
 	return service
 }
 
-func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerClientService {
+func (s *DockerClientService) WithClient(dockerClient *mobyClient.Client) *DockerClientService {
 	return &DockerClientService{
 		db:                  s.db,
 		settingsService:     s.settingsService,
@@ -112,7 +120,7 @@ func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerCli
 	}
 }
 
-func closeDockerClient(ctx context.Context, cli *client.Client, purpose string) {
+func closeDockerClient(ctx context.Context, cli *mobyClient.Client, purpose string) {
 	if cli == nil {
 		return
 	}
@@ -122,11 +130,10 @@ func closeDockerClient(ctx context.Context, cli *client.Client, purpose string) 
 	}
 }
 
-func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, error) {
+func (s *DockerClientService) GetClient(ctx context.Context) (*mobyClient.Client, error) {
 	if host := s.HostForContext(ctx); host != "" {
 		return s.GetHostClient(ctx, host)
 	}
-
 	s.mu.Lock()
 	cli := s.Client
 	s.mu.Unlock()
@@ -150,12 +157,12 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	probeClient, err := client.New(client.WithHost(host))
+	probeClient, err := mobyClient.New(mobyClient.WithHost(host))
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: failed to create Docker probe client: %w", err)
 	}
 	pingCtx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
-	pingResult, err := probeClient.Ping(pingCtx, client.PingOptions{})
+	pingResult, err := probeClient.Ping(pingCtx, mobyClient.PingOptions{})
 	cancel()
 	closeDockerClient(ctx, probeClient, "probe")
 	if err != nil {
@@ -164,8 +171,8 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 
 	apiVersion := strings.TrimSpace(pingResult.APIVersion)
 	if apiVersion == "" {
-		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "apiVersion", client.MinAPIVersion)
-		apiVersion = client.MinAPIVersion
+		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "apiVersion", mobyClient.MinAPIVersion)
+		apiVersion = mobyClient.MinAPIVersion
 	}
 
 	s.mu.Lock()
@@ -181,14 +188,14 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 			s.inventory.CompareAndSwap(inventory, &dockerInventory{})
 		}
 	}
-	cli, err := client.New(
-		client.WithHost(host),
-		client.WithAPIVersion(apiVersion),
-		client.WithHTTPRequestHook(func(req *http.Request) error {
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(host),
+		mobyClient.WithAPIVersion(apiVersion),
+		mobyClient.WithHTTPRequestHook(func(req *http.Request) error {
 			dropInventoryOnWrite(req.Method)
 			return nil
 		}),
-		client.WithHTTPResponseHook(func(resp *http.Response) {
+		mobyClient.WithHTTPResponseHook(func(resp *http.Response) {
 			dropInventoryOnWrite(kit.FromPtr(resp.Request).Method)
 		}),
 	)
@@ -232,12 +239,12 @@ func (s *DockerClientService) Engine(ctx context.Context) (compat.EngineCompatib
 	}
 	s.mu.Unlock()
 
-	return s.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (compat.EngineCompatibilityInfo, error) {
-		version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
+	return s.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (compat.EngineCompatibilityInfo, error) {
+		version, err := dockerClient.ServerVersion(ctx, mobyClient.ServerVersionOptions{})
 		if err != nil {
 			return compat.EngineCompatibilityInfo{}, fmt.Errorf("failed to get Docker server version: %w", err)
 		}
-		info, err := dockerClient.Info(ctx, client.InfoOptions{})
+		info, err := dockerClient.Info(ctx, mobyClient.InfoOptions{})
 		if err != nil {
 			return compat.EngineCompatibilityInfo{}, fmt.Errorf("failed to get Docker info: %w", err)
 		}
@@ -313,7 +320,7 @@ func (s *DockerClientService) ResolveHostForContext(ctx context.Context) (string
 // GetHostClient returns a cached Docker client for an explicit endpoint. A docker-host environment
 // is served in-process against its own daemon, so its client is cached per endpoint instead of
 // replacing the manager's own client.
-func (s *DockerClientService) GetHostClient(ctx context.Context, host string) (*client.Client, error) {
+func (s *DockerClientService) GetHostClient(ctx context.Context, host string) (*mobyClient.Client, error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return s.GetClient(context.WithoutCancel(ctx))
@@ -336,7 +343,7 @@ func (s *DockerClientService) GetHostClient(ctx context.Context, host string) (*
 
 	s.hostMu.Lock()
 	if s.hostClients == nil {
-		s.hostClients = make(map[string]*client.Client)
+		s.hostClients = make(map[string]*mobyClient.Client)
 	}
 	if existing, ok := s.hostClients[host]; ok {
 		s.hostMu.Unlock()
@@ -359,7 +366,7 @@ func (s *DockerClientService) PingHost(ctx context.Context, host string) error {
 	pingCtx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
 	defer cancel()
 
-	if _, pingErr := cli.Ping(pingCtx, client.PingOptions{}); pingErr != nil {
+	if _, pingErr := cli.Ping(pingCtx, mobyClient.PingOptions{}); pingErr != nil {
 		return fmt.Errorf("failed to reach Docker host %s: %w", host, pingErr)
 	}
 	return nil
@@ -384,14 +391,14 @@ func (s *DockerClientService) CloseHostClient(ctx context.Context, host string) 
 }
 
 // newHostDockerClientInternal negotiates the daemon's API version and builds a client for it.
-func newHostDockerClientInternal(ctx context.Context, host string) (*client.Client, error) {
-	probeClient, err := client.New(client.WithHost(host))
+func newHostDockerClientInternal(ctx context.Context, host string) (*mobyClient.Client, error) {
+	probeClient, err := mobyClient.New(mobyClient.WithHost(host))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker probe client for %s: %w", host, err)
 	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
-	pingResult, err := probeClient.Ping(pingCtx, client.PingOptions{})
+	pingResult, err := probeClient.Ping(pingCtx, mobyClient.PingOptions{})
 	cancel()
 	closeDockerClient(ctx, probeClient, "probe")
 	if err != nil {
@@ -400,10 +407,10 @@ func newHostDockerClientInternal(ctx context.Context, host string) (*client.Clie
 
 	apiVersion := strings.TrimSpace(pingResult.APIVersion)
 	if apiVersion == "" {
-		apiVersion = client.MinAPIVersion
+		apiVersion = mobyClient.MinAPIVersion
 	}
 
-	cli, err := client.New(client.WithHost(host), client.WithAPIVersion(apiVersion))
+	cli, err := mobyClient.New(mobyClient.WithHost(host), mobyClient.WithAPIVersion(apiVersion))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client for %s: %w", host, err)
 	}
@@ -429,7 +436,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 		if dockerClient, err := s.GetClient(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to connect to Docker event stream", "error", err)
 		} else {
-			result := dockerClient.Events(ctx, client.EventsListOptions{
+			result := dockerClient.Events(ctx, mobyClient.EventsListOptions{
 				Since: kit.Ternary(lastEventNano == 0, "", fmt.Sprintf("%d.%09d", (lastEventNano+1)/int64(time.Second), (lastEventNano+1)%int64(time.Second))),
 			})
 			streamStart := time.Now()
@@ -483,7 +490,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 	}
 }
 
-func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *singleflight.Group, key string, op func(context.Context, *client.Client) (T, error)) (T, error) {
+func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *singleflight.Group, key string, op func(context.Context, *mobyClient.Client) (T, error)) (T, error) {
 	var zero T
 	// Never coalesce requests aimed at different daemons: a docker-host environment
 	// and the manager's own daemon can list at the same time during fan-out.
@@ -508,7 +515,7 @@ func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *s
 	}
 }
 
-func (s *DockerClientService) Call[T any](ctx context.Context, op func(context.Context, *client.Client) (T, error)) (T, error) {
+func (s *DockerClientService) Call[T any](ctx context.Context, op func(context.Context, *mobyClient.Client) (T, error)) (T, error) {
 	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
 		var zero T
@@ -529,15 +536,15 @@ func (s *DockerClientService) inventoryForContext(ctx context.Context) *dockerIn
 	return s.inventory.Load()
 }
 
-func (s *DockerClientService) ListContainers(ctx context.Context, live bool) ([]container.Summary, error) {
+func (s *DockerClientService) ListContainers(ctx context.Context, live bool) ([]mobyContainer.Summary, error) {
 	inventory := s.inventoryForContext(ctx)
 	if inventory != nil && !live {
 		if cached := inventory.containers.Load(); cached != nil {
 			return *cached, nil
 		}
 	}
-	return s.ListCoalesced(ctx, &s.containerListFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
-		containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	return s.ListCoalesced(ctx, &s.containerListFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyContainer.Summary, error) {
+		containerList, err := dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{All: true})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker containers: %w", err)
 		}
@@ -548,15 +555,15 @@ func (s *DockerClientService) ListContainers(ctx context.Context, live bool) ([]
 	})
 }
 
-func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, error) {
+func (s *DockerClientService) ListImages(ctx context.Context) ([]mobyImage.Summary, error) {
 	inventory := s.inventoryForContext(ctx)
 	if inventory != nil {
 		if cached := inventory.images.Load(); cached != nil {
 			return *cached, nil
 		}
 	}
-	return s.ListCoalesced(ctx, &s.imageListFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *client.Client) ([]image.Summary, error) {
-		imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{All: true})
+	return s.ListCoalesced(ctx, &s.imageListFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyImage.Summary, error) {
+		imageList, err := dockerClient.ImageList(ctx, mobyClient.ImageListOptions{All: true})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker images: %w", err)
 		}
@@ -567,31 +574,59 @@ func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, 
 	})
 }
 
-func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsageResult, error) {
-	return s.ListCoalesced(ctx, &s.diskUsageFlight, "", func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
+func (s *DockerClientService) GetDiskUsage(ctx context.Context) (mobyClient.DiskUsageResult, error) {
+	inventory := s.inventoryForContext(ctx)
+	if inventory != nil {
+		if cached := inventory.diskUsage.Load(); cached != nil && time.Since(cached.fetchedAt) < dockerDiskUsageMaxAge {
+			return cached.usage, nil
+		}
+	}
+	return s.ListCoalesced(ctx, &s.diskUsageFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.DiskUsageResult, error) {
+		s.diskUsageMu.Lock()
+		defer s.diskUsageMu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return mobyClient.DiskUsageResult{}, err
+		}
+		current := s.inventoryForContext(ctx)
+		if current != nil {
+			if cached := current.diskUsage.Load(); cached != nil && time.Since(cached.fetchedAt) < dockerDiskUsageMaxAge {
+				return cached.usage, nil
+			}
+		}
 		usageCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerDiskUsage)
 		defer cancel()
-		return FetchDiskUsage(usageCtx, dockerClient, client.DiskUsageOptions{
+		fetchedAt := time.Now()
+		usage, err := FetchDiskUsage(usageCtx, dockerClient, mobyClient.DiskUsageOptions{
 			Containers: true,
 			Images:     true,
 			Volumes:    true,
 			BuildCache: true,
 			Verbose:    true,
 		})
+		if err != nil {
+			return mobyClient.DiskUsageResult{}, err
+		}
+		if current != nil {
+			current.diskUsage.Store(&diskUsageSnapshot{
+				fetchedAt: fetchedAt,
+				usage:     usage,
+			})
+		}
+		return usage, nil
 	})
 }
 
 // FetchDiskUsage queries Docker disk usage without computing sizes for running containers.
-func FetchDiskUsage(ctx context.Context, dockerClient *client.Client, options client.DiskUsageOptions) (client.DiskUsageResult, error) {
-	dfOptions := client.DiskUsageOptions{
+func FetchDiskUsage(ctx context.Context, dockerClient *mobyClient.Client, options mobyClient.DiskUsageOptions) (mobyClient.DiskUsageResult, error) {
+	dfOptions := mobyClient.DiskUsageOptions{
 		Images:     options.Images,
 		Volumes:    options.Volumes,
 		BuildCache: options.BuildCache,
 		Verbose:    options.Verbose,
 	}
 
-	var usage client.DiskUsageResult
-	var containers client.ContainerListResult
+	var usage mobyClient.DiskUsageResult
+	var containers mobyClient.ContainerListResult
 	g, groupCtx := errgroup.WithContext(ctx)
 	if dfOptions.Images || dfOptions.Volumes || dfOptions.BuildCache {
 		g.Go(func() (workerErr error) {
@@ -607,26 +642,26 @@ func FetchDiskUsage(ctx context.Context, dockerClient *client.Client, options cl
 			defer concurrency.RecoverToError(&workerErr, "docker stopped container size worker")
 
 			var err error
-			containers, err = dockerClient.ContainerList(groupCtx, client.ContainerListOptions{
+			containers, err = dockerClient.ContainerList(groupCtx, mobyClient.ContainerListOptions{
 				All:  true,
 				Size: true,
-				Filters: make(client.Filters).Add(
+				Filters: make(mobyClient.Filters).Add(
 					"status",
-					string(container.StateCreated),
-					string(container.StateRemoving),
-					string(container.StateExited),
-					string(container.StateDead),
+					string(mobyContainer.StateCreated),
+					string(mobyContainer.StateRemoving),
+					string(mobyContainer.StateExited),
+					string(mobyContainer.StateDead),
 				),
 			})
 			return err
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return client.DiskUsageResult{}, err
+		return mobyClient.DiskUsageResult{}, err
 	}
 
-	return client.DiskUsageResult{
-		Containers: kit.Ternary(options.Containers, client.ContainersDiskUsage{Items: containers.Items}, usage.Containers),
+	return mobyClient.DiskUsageResult{
+		Containers: kit.Ternary(options.Containers, mobyClient.ContainersDiskUsage{Items: containers.Items}, usage.Containers),
 		Images:     usage.Images,
 		BuildCache: usage.BuildCache,
 		Volumes:    usage.Volumes,
@@ -636,10 +671,10 @@ func FetchDiskUsage(ctx context.Context, dockerClient *client.Client, options cl
 func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*types.DashboardDockerSnapshot, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
 
-	var containers []container.Summary
-	var images []image.Summary
-	var networks []network.Summary
-	var volumes *client.VolumeListResult
+	var containers []mobyContainer.Summary
+	var images []mobyImage.Summary
+	var networks []mobyNetwork.Summary
+	var volumes *mobyClient.VolumeListResult
 
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
@@ -659,8 +694,8 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*t
 		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
-		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
-			networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyNetwork.Summary, error) {
+			networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, mobyClient.NetworkListOptions{})
 			if listErr != nil {
 				return nil, fmt.Errorf("failed to list Docker networks: %w", listErr)
 			}
@@ -675,8 +710,8 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*t
 		defer concurrency.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
-		volumes, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (*client.VolumeListResult, error) {
-			volResp, listErr := dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+		volumes, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (*mobyClient.VolumeListResult, error) {
+			volResp, listErr := dockerClient.VolumeList(ctx, mobyClient.VolumeListOptions{})
 			if listErr != nil {
 				return nil, fmt.Errorf("failed to list Docker volumes: %w", listErr)
 			}
@@ -699,7 +734,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*t
 	}, nil
 }
 
-func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container.Summary, int, int, int, error) {
+func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]mobyContainer.Summary, int, int, int, error) {
 	containers, err := s.ListContainers(ctx, false)
 	if err != nil {
 		return nil, 0, 0, 0, err
@@ -718,11 +753,11 @@ func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container
 	return containers, running, stopped, total, nil
 }
 
-func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, types.ImageUsageCounts, error) {
+func (s *DockerClientService) GetAllImages(ctx context.Context) ([]mobyImage.Summary, types.ImageUsageCounts, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
 
-	var images []image.Summary
-	var containers []container.Summary
+	var images []mobyImage.Summary
+	var containers []mobyContainer.Summary
 
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "docker image list worker")
@@ -745,7 +780,7 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 	return images, CountImageUsage(images, containers, time.Now()), nil
 }
 
-func CountImageUsage(images []image.Summary, containers []container.Summary, now time.Time) types.ImageUsageCounts {
+func CountImageUsage(images []mobyImage.Summary, containers []mobyContainer.Summary, now time.Time) types.ImageUsageCounts {
 	inUseImageIDs := make(map[string]struct{}, len(containers))
 	for _, c := range containers {
 		if c.ImageID == "" {
@@ -774,10 +809,10 @@ func CountImageUsage(images []image.Summary, containers []container.Summary, now
 	return counts
 }
 
-func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Summary, int, int, int, error) {
+func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]mobyNetwork.Summary, int, int, int, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
-	var containers []container.Summary
-	var networks []network.Summary
+	var containers []mobyContainer.Summary
+	var networks []mobyNetwork.Summary
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "network container list worker")
 		var err error
@@ -787,8 +822,8 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "network list worker")
 		var err error
-		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
-			networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyNetwork.Summary, error) {
+			networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, mobyClient.NetworkListOptions{})
 			if listErr != nil {
 				return nil, fmt.Errorf("failed to list Docker networks: %w", listErr)
 			}
@@ -804,7 +839,7 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	return networks, total - unused, unused, total, nil
 }
 
-func CountNetworkUsage(networks []network.Summary, containers []container.Summary) (inuse, unused, total int) {
+func CountNetworkUsage(networks []mobyNetwork.Summary, containers []mobyContainer.Summary) (inuse, unused, total int) {
 	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
 	for _, n := range networks {
 		total++

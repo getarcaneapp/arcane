@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func TestMuxConnCountsBytes(t *testing.T) {

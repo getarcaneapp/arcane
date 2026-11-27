@@ -1,3 +1,89 @@
+## v3.2.0
+
+### New features
+
+- support labeled project URLs in x-arcane.urls ([\#4931](https://github.com/getarcaneapp/arcane/pull/4931) by @kmendell)
+- add container terminal user and auto shell selection ([\#4936](https://github.com/getarcaneapp/arcane/pull/4936) by @kmendell)
+- pretty-print well-known container and service labels ([\#4941](https://github.com/getarcaneapp/arcane/pull/4941) by @kmendell)
+- export and import projects with their volumes ([\#4888](https://github.com/getarcaneapp/arcane/pull/4888) by @neurekadev)
+- add opt-in mode for auto-update and auto-heal ([\#4947](https://github.com/getarcaneapp/arcane/pull/4947) by @Tim-Sc)
+- let the manager run without its own Docker (ARCANE_LOCAL_DOCKER_ENABLED) ([\#4993](https://github.com/getarcaneapp/arcane/pull/4993) by @DominikZublasing)
+- back up and restore projects with their volumes ([\#4995](https://github.com/getarcaneapp/arcane/pull/4995) by @neurekadev)
+- schedule project backups per project or globally ([\#4996](https://github.com/getarcaneapp/arcane/pull/4996) by @neurekadev)
+- add a build history shortcut to build image page ([\#5014](https://github.com/getarcaneapp/arcane/pull/5014) by @huzky-v)
+- render markdown files in workspace views ([\#5011](https://github.com/getarcaneapp/arcane/pull/5011) by @neurekadev)
+- show Swarm task hostnames in the container list ([\#5012](https://github.com/getarcaneapp/arcane/pull/5012) by @martincortina)
+- back up Arcane only in system backups ([a1572a7](https://github.com/getarcaneapp/arcane/commit/a1572a7d41bcf81440350a1f76d324b10447107c) by @neurekadev)
+- add user groups and group role assignments ([\#5028](https://github.com/getarcaneapp/arcane/pull/5028) by @kmendell)
+- add resource-level permissions and edge forwarding ([\#5029](https://github.com/getarcaneapp/arcane/pull/5029) by @kmendell)
+- add OIDC/LDAP group claim mappings and project picker ([\#5030](https://github.com/getarcaneapp/arcane/pull/5030) by @kmendell)
+
+### Bug fixes
+
+- harden webhook pagination, volume restores, and sync errors ([\#4912](https://github.com/getarcaneapp/arcane/pull/4912) by @kmendell)
+- add missing bulk image pull and project destroy actions ([\#4914](https://github.com/getarcaneapp/arcane/pull/4914) by @kmendell)
+- bump copacetic to v0.3.0 ([\#4934](https://github.com/getarcaneapp/arcane/pull/4934) by @kmendell)
+- move update banner click handler to tooltip trigger ([\#4935](https://github.com/getarcaneapp/arcane/pull/4935) by @kmendell)
+- show one summary toast for batched update results ([\#4937](https://github.com/getarcaneapp/arcane/pull/4937) by @kmendell)
+- send Slack notifications through shoutrrr service ([\#4938](https://github.com/getarcaneapp/arcane/pull/4938) by @kmendell)
+- stop project and container pages reading stale route data ([\#4939](https://github.com/getarcaneapp/arcane/pull/4939) by @kmendell)
+- clone build git refs including tags, custom refs, and SHAs ([\#4950](https://github.com/getarcaneapp/arcane/pull/4950) by @kmendell)
+- skip pulling images that compose builds produce ([\#4953](https://github.com/getarcaneapp/arcane/pull/4953) by @kmendell)
+- restore container-backed used-by display ([\#4951](https://github.com/getarcaneapp/arcane/pull/4951) by @ahlner)
+- create .env and override files from the file dialog ([\#4956](https://github.com/getarcaneapp/arcane/pull/4956) by @kmendell)
+- skip running container sizes when loading disk usage ([\#4957](https://github.com/getarcaneapp/arcane/pull/4957) by @kmendell)
+- keep code editor text selection usable on touch devices ([\#4958](https://github.com/getarcaneapp/arcane/pull/4958) by @kmendell)
+- detect Arcane container on TrueNAS via mountinfo ([\#4959](https://github.com/getarcaneapp/arcane/pull/4959) by @kmendell)
+- harden postgres schema timestamps and api key uniqueness ([\#4960](https://github.com/getarcaneapp/arcane/pull/4960) by @kmendell)
+- upgrade copacetic to v0.3.1 ([\#4961](https://github.com/getarcaneapp/arcane/pull/4961) by @kmendell)
+- discover local backups after Arcane's data volume is lost ([\#4966](https://github.com/getarcaneapp/arcane/pull/4966) by @neurekadev)
+- report rejected registry credentials as bad request ([\#4968](https://github.com/getarcaneapp/arcane/pull/4968) by @kmendell)
+- skip gitops sync runs when the remote branch is unchanged ([\#4969](https://github.com/getarcaneapp/arcane/pull/4969) by @kmendell)
+- disambiguate duplicate PIDs in process table rows ([\#4976](https://github.com/getarcaneapp/arcane/pull/4976) by @kralonur)
+- check upgrade permission in every environment an upgrade job targets ([\#4979](https://github.com/getarcaneapp/arcane/pull/4979) by @kmendell)
+- require permission in every environment for multi-environment actions ([\#4980](https://github.com/getarcaneapp/arcane/pull/4980) by @kmendell)
+- show processes on podman when ps is missing ([\#4986](https://github.com/getarcaneapp/arcane/pull/4986) by @kralonur)
+- allow bidirectional gitops sync without an existing project ([\#4987](https://github.com/getarcaneapp/arcane/pull/4987) by @kmendell)
+- skip image update tags without a matching platform ([\#4991](https://github.com/getarcaneapp/arcane/pull/4991) by @kmendell)
+- update projects from webhooks only when a new image exists ([\#4982](https://github.com/getarcaneapp/arcane/pull/4982) by @neurekadev)
+- only send changed project files on save ([\#5008](https://github.com/getarcaneapp/arcane/pull/5008) by @TRPostma)
+- update image tag variables in .env instead of rewriting compose.yaml ([\#5009](https://github.com/getarcaneapp/arcane/pull/5009) by @neurekadev)
+- update follower services when an image variable changes ([e93232a](https://github.com/getarcaneapp/arcane/commit/e93232a24b553969a3aead0b8eb40fc1e34b6ce5) by @kmendell)
+- stop blocking compose updates on schema validation errors ([\#5019](https://github.com/getarcaneapp/arcane/pull/5019) by @kmendell)
+- show first error in bulk action toasts ([\#5022](https://github.com/getarcaneapp/arcane/pull/5022) by @kmendell)
+- cap daemon digest fallback to half the remaining deadline ([\#5023](https://github.com/getarcaneapp/arcane/pull/5023) by @kmendell)
+- size environments widget for cards board view ([\#5027](https://github.com/getarcaneapp/arcane/pull/5027) by @kmendell)
+- explain permission errors when project files are not writable ([\#5043](https://github.com/getarcaneapp/arcane/pull/5043) by @kmendell)
+- retry locked project snapshots during gitops backup ([\#5044](https://github.com/getarcaneapp/arcane/pull/5044) by @kmendell)
+- include restart dependents when namespacing compose projects ([\#5046](https://github.com/getarcaneapp/arcane/pull/5046) by @kmendell)
+
+### CLI - Bug fixes
+
+- update projects only when a new image exists ([\#4985](https://github.com/getarcaneapp/arcane/pull/4985) by @neurekadev)
+
+### Performance improvements
+
+- speed up image update scanning across registries ([\#4970](https://github.com/getarcaneapp/arcane/pull/4970) by @kmendell)
+- reuse digests and cache registry auth during image update checks ([\#4972](https://github.com/getarcaneapp/arcane/pull/4972) by @kmendell)
+- lazy load editor language packs and split frontend chunks ([\#4973](https://github.com/getarcaneapp/arcane/pull/4973) by @kmendell)
+- batch image update activity messages and release links ([\#4978](https://github.com/getarcaneapp/arcane/pull/4978) by @kmendell)
+- skip manager-only middleware, routes, and services on agents ([\#4992](https://github.com/getarcaneapp/arcane/pull/4992) by @kmendell)
+- reduce job status memory allocation spikes ([\#5041](https://github.com/getarcaneapp/arcane/pull/5041) by @kmendell)
+- cache disk usage and skip redundant compose tag reconciliation ([\#5042](https://github.com/getarcaneapp/arcane/pull/5042) by @kmendell)
+- parallelize page loads and patch target inspection ([\#5048](https://github.com/getarcaneapp/arcane/pull/5048) by @kmendell)
+
+### Other
+
+- remove duplicate function wrappers and update deps ([7417206](https://github.com/getarcaneapp/arcane/commit/7417206ef9379343a9ac337a9345b8f535528286) by @kmendell)
+- use kits semver moodule ([0de0f9b](https://github.com/getarcaneapp/arcane/commit/0de0f9bc38cc580e81c21f842856bd517e124a94) by @kmendell)
+- cleanup some ui elements ([695d770](https://github.com/getarcaneapp/arcane/commit/695d770ae97a4df93d34dd059bffd32f92173801) by @kmendell)
+- export, import and transfer projects through the shared backup capture ([\#4999](https://github.com/getarcaneapp/arcane/pull/4999) by @neurekadev)
+- back up and restore volumes through the shared backup engine ([\#5000](https://github.com/getarcaneapp/arcane/pull/5000) by @neurekadev)
+- back up and restore Arcane through the shared backup engine ([\#5001](https://github.com/getarcaneapp/arcane/pull/5001) by @neurekadev)
+- keep every backup schedule in the shared policy table ([\#5002](https://github.com/getarcaneapp/arcane/pull/5002) by @neurekadev)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v3.1.1...v3.2.0
+
 ## v3.1.1
 
 ### Bug fixes

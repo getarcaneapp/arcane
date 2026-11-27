@@ -24,18 +24,19 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/mapping"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops/children/backup"
 	gitopssync "getarcane.dev/arcane/v3/internal/gitops/children/sync"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	projectpkg "getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -43,6 +44,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/gitutil"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/logging"
@@ -55,7 +57,7 @@ import (
 type (
 	GitOpsSyncService struct {
 		db              *database.DB
-		dockerService   *docker.DockerClientService
+		dockerService   *dockerInternal.DockerClientService
 		repoService     *gitrepo.GitRepositoryService
 		projectService  *projectpkg.ProjectService
 		swarmService    *swarm.SwarmService
@@ -96,7 +98,7 @@ type (
 
 		DB              *database.DB
 		RepoService     *gitrepo.GitRepositoryService
-		DockerService   *docker.DockerClientService
+		DockerService   *dockerInternal.DockerClientService
 		ProjectService  *projectpkg.ProjectService
 		SwarmService    *swarm.SwarmService
 		EventService    *event.EventService
@@ -407,6 +409,20 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 	var syncs []projectpkg.GitOpsSync
 	q := s.db.WithContext(ctx).Model(&projectpkg.GitOpsSync{}).
 		Where("environment_id = ?", environmentID)
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermGitOpsList, environmentID) {
+		syncIDs := ps.ResourceIDs(authz.PermGitOpsList, environmentID, authz.ResourceTypeGitOps)
+		projectIDs := ps.ResourceIDs(authz.PermGitOpsList, environmentID, authz.ResourceTypeProject)
+		switch {
+		case len(syncIDs) > 0 && len(projectIDs) > 0:
+			q = q.Where("id IN ? OR project_id IN ?", syncIDs, projectIDs)
+		case len(syncIDs) > 0:
+			q = q.Where("id IN ?", syncIDs)
+		case len(projectIDs) > 0:
+			q = q.Where("project_id IN ?", projectIDs)
+		default:
+			return []types.GitOpsSync{}, pagination.BuildResponse(0, 0, params), types.GitOpsSyncCounts{}, nil
+		}
+	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"

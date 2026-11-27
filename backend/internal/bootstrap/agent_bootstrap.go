@@ -11,7 +11,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/config"

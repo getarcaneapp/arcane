@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	acfstypes "kit.getarcane.app/acfs/types"
 
 	"getarcane.dev/types/v3"

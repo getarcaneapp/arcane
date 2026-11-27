@@ -15,7 +15,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/fs"
 
 	"getarcane.dev/arcane/v3/pkg/agent"
@@ -99,6 +99,8 @@ const (
 	AppEnvironmentProduction  AppEnvironment = "production"
 	AppEnvironmentDevelopment AppEnvironment = "development"
 	AppEnvironmentTest        AppEnvironment = "test"
+
+	AgentHealthSocket = "data/agent-health.sock"
 )
 
 var ErrDirectAgentRemoved = errors.New("direct agents were removed in v3; set ARCANE_AGENT=true and ARCANE_MANAGER_API_URL, then re-enroll from the manager")

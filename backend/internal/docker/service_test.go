@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/events"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyEvents "github.com/moby/moby/api/types/events"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -47,7 +47,7 @@ func TestDockerClientService_GetClientPinsEffectiveAPIVersion(t *testing.T) {
 		{
 			name:            "falls back to minimum API version when ping version is empty",
 			pingAPIVersion:  "",
-			expectedVersion: client.MinAPIVersion,
+			expectedVersion: mobyClient.MinAPIVersion,
 		},
 	}
 
@@ -62,7 +62,7 @@ func TestDockerClientService_GetClientPinsEffectiveAPIVersion(t *testing.T) {
 
 			assert.Equal(t, server.URL, cli.DaemonHost())
 			assert.Equal(t, tt.expectedVersion, cli.ClientVersion())
-			assert.NotEqual(t, client.MaxAPIVersion, cli.ClientVersion())
+			assert.NotEqual(t, mobyClient.MaxAPIVersion, cli.ClientVersion())
 		})
 	}
 }
@@ -198,7 +198,7 @@ func TestDockerClientService_RefreshClientClosesOldCachedClientWhenReplaced(t *t
 		_ = firstClient.Close()
 	})
 
-	_, err = firstClient.Ping(t.Context(), client.PingOptions{})
+	_, err = firstClient.Ping(t.Context(), mobyClient.PingOptions{})
 	require.NoError(t, err)
 	closedBeforeReplace := oldServerClosedConnections.Load()
 
@@ -276,11 +276,11 @@ func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testi
 }
 
 func TestDockerClientService_PublishesDaemonImageEvents(t *testing.T) {
-	expected := events.Message{
-		Type:     events.ImageEventType,
-		Action:   events.ActionPull,
+	expected := mobyEvents.Message{
+		Type:     mobyEvents.ImageEventType,
+		Action:   mobyEvents.ActionPull,
 		TimeNano: 123,
-		Actor: events.Actor{
+		Actor: mobyEvents.Actor{
 			ID:         "nginx:latest",
 			Attributes: map[string]string{"name": "nginx"},
 		},
@@ -301,7 +301,7 @@ func TestDockerClientService_PublishesDaemonImageEvents(t *testing.T) {
 	})
 	svc := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(svc.Close)
-	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{})
+	eventCh, unsubscribe := svc.EventBus().Subscribe(mobyEvents.ImageEventType, bus.SubscribeOptions{})
 	t.Cleanup(unsubscribe)
 	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
 		Run: func(ctx context.Context) error {
@@ -345,7 +345,7 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStream(t *testing.T) {
 	service := newDockerClientServiceForTest(t, server.URL)
 	t.Cleanup(service.Close)
 
-	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{})
+	eventsCh, unsubscribe := service.EventBus().Subscribe(mobyEvents.ImageEventType, bus.SubscribeOptions{})
 	t.Cleanup(unsubscribe)
 	stop := concurrency.Supervise(t.Context(), concurrency.SuperviseConfig{
 		Run: func(ctx context.Context) error {
@@ -380,9 +380,9 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStream(t *testing.T) {
 }
 
 func TestDockerClientService_WatchEventsResumesFromLastEventAfterRefresh(t *testing.T) {
-	first := events.Message{
-		Type:     events.ImageEventType,
-		Action:   events.ActionPull,
+	first := mobyEvents.Message{
+		Type:     mobyEvents.ImageEventType,
+		Action:   mobyEvents.ActionPull,
 		TimeNano: 1_700_000_000_123_456_789,
 	}
 	payload, err := json.Marshal(first)
@@ -481,7 +481,7 @@ func TestDockerClientService_EngineCachesUntilClientChanges(t *testing.T) {
 
 func TestDockerClientService_ListContainersCachedUntilInvalidated(t *testing.T) {
 	var listCalls atomic.Int32
-	daemonEvents := make(chan events.Message)
+	daemonEvents := make(chan mobyEvents.Message)
 	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case path.Base(r.URL.Path) == "_ping":
@@ -541,18 +541,18 @@ func TestDockerClientService_ListContainersCachedUntilInvalidated(t *testing.T) 
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), listCalls.Load())
 
-	daemonEvents <- events.Message{Type: events.ContainerEventType, Action: "exec_start: sh", TimeNano: 1}
+	daemonEvents <- mobyEvents.Message{Type: mobyEvents.ContainerEventType, Action: "exec_start: sh", TimeNano: 1}
 	_, err = svc.ListContainers(t.Context(), false)
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), listCalls.Load(), "exec events do not change the container list")
 
-	daemonEvents <- events.Message{Type: events.ContainerEventType, Action: events.ActionDie, TimeNano: 2}
+	daemonEvents <- mobyEvents.Message{Type: mobyEvents.ContainerEventType, Action: mobyEvents.ActionDie, TimeNano: 2}
 	require.Eventually(t, func() bool {
 		_, listErr := svc.ListContainers(t.Context(), false)
 		return listErr == nil && listCalls.Load() == 3
 	}, time.Second, time.Millisecond)
 
-	_, err = svc.ContainerRemove(t.Context(), "abc", client.ContainerRemoveOptions{})
+	_, err = svc.ContainerRemove(t.Context(), "abc", mobyClient.ContainerRemoveOptions{})
 	require.NoError(t, err)
 	_, err = svc.ListContainers(t.Context(), false)
 	require.NoError(t, err)
@@ -560,7 +560,7 @@ func TestDockerClientService_ListContainersCachedUntilInvalidated(t *testing.T) 
 }
 
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
-	images := []image.Summary{
+	images := []mobyImage.Summary{
 		{ID: "sha256:image-a", Containers: -1, Size: 100},
 		{ID: "sha256:image-b", Containers: 0, Size: 25},
 		{ID: "sha256:image-c", Containers: 99, Size: 3},
@@ -569,7 +569,7 @@ func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 		{ID: "sha256:image-f", Labels: map[string]string{"com.docker.dhi.name": "dhi/node", "com.docker.dhi.date.end-of-life": "2027-11-10"}},
 	}
 
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{ImageID: "sha256:image-a"},
 		{ImageID: "sha256:image-c"},
 		{ImageID: "sha256:image-a"},
@@ -587,7 +587,7 @@ func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 }
 
 func TestCountImageUsage_NoImages(t *testing.T) {
-	counts := CountImageUsage(nil, []container.Summary{{ImageID: "sha256:image-a"}}, time.Now())
+	counts := CountImageUsage(nil, []mobyContainer.Summary{{ImageID: "sha256:image-a"}}, time.Now())
 
 	assert.Equal(t, types.ImageUsageCounts{}, counts)
 }

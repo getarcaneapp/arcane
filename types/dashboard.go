@@ -1,17 +1,17 @@
 package types
 
 import (
-	dockercontainer "github.com/moby/moby/api/types/container"
-	dockerimage "github.com/moby/moby/api/types/image"
-	dockernetwork "github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 )
 
 type (
 	DashboardDockerSnapshot struct {
-		Volumes    *client.VolumeListResult  `json:"volumes"`
-		Containers []dockercontainer.Summary `json:"containers"`
-		Images     []dockerimage.Summary     `json:"images"`
-		Networks   []dockernetwork.Summary   `json:"networks"`
+		Volumes    *mobyClient.VolumeListResult `json:"volumes"`
+		Containers []mobyContainer.Summary      `json:"containers"`
+		Images     []mobyImage.Summary          `json:"images"`
+		Networks   []mobyNetwork.Summary        `json:"networks"`
 	}
 )

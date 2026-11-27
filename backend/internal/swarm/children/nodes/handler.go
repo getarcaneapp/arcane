@@ -6,7 +6,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/moby/moby/api/types/swarm"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
 
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/middleware"
@@ -307,15 +307,15 @@ func (h *Handler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (
 
 func (h *Handler) RunNodeAction(ctx context.Context, input *SwarmNodeActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	action := map[string]struct {
-		Role           swarm.NodeRole
+		Role           mobySwarm.NodeRole
 		SuccessMessage string
 	}{
 		"promote": {
-			Role:           swarm.NodeRoleManager,
+			Role:           mobySwarm.NodeRoleManager,
 			SuccessMessage: "Swarm node promoted successfully",
 		},
 		"demote": {
-			Role:           swarm.NodeRoleWorker,
+			Role:           mobySwarm.NodeRoleWorker,
 			SuccessMessage: "Swarm node demoted successfully",
 		},
 	}[input.Action]

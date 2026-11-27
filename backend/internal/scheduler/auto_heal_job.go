@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -36,9 +36,9 @@ import (
 
 type (
 	autoHealPlan struct {
-		Containers    []container.Summary `json:"containers"`
-		MaxRestarts   int                 `json:"maxRestarts"`
-		WindowMinutes int                 `json:"windowMinutes"`
+		Containers    []mobyContainer.Summary `json:"containers"`
+		MaxRestarts   int                     `json:"maxRestarts"`
+		WindowMinutes int                     `json:"windowMinutes"`
 	}
 
 	autoHealBaseline struct {
@@ -59,10 +59,10 @@ type (
 
 		restarts map[string]*restartRecord
 
-		getDockerClientFn  func(ctx context.Context) (*client.Client, error)
-		listContainers     func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
-		inspectContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
-		restartContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) error
+		getDockerClientFn  func(ctx context.Context) (*mobyClient.Client, error)
+		listContainers     func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyContainer.Summary, error)
+		inspectContainerFn func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) (mobyContainer.InspectResponse, error)
+		restartContainerFn func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) error
 		getSelfContainerID func() (string, error)
 		selfID             string
 
@@ -205,8 +205,8 @@ func (j *AutoHealJob) selfContainerID(ctx context.Context) string {
 }
 
 // filterCandidates keeps the containers auto-heal may restart under policy.
-func (j *AutoHealJob) filterCandidates(containers []container.Summary, policy settings.ContainerSelection, selfID string) []container.Summary {
-	candidates := make([]container.Summary, 0, len(containers))
+func (j *AutoHealJob) filterCandidates(containers []mobyContainer.Summary, policy settings.ContainerSelection, selfID string) []mobyContainer.Summary {
+	candidates := make([]mobyContainer.Summary, 0, len(containers))
 	for _, c := range containers {
 		if selfID != "" && strings.HasPrefix(strings.ToLower(c.ID), selfID) {
 			continue
@@ -232,8 +232,8 @@ func (j *AutoHealJob) filterCandidates(containers []container.Summary, policy se
 
 func (j *AutoHealJob) processCandidate(
 	ctx context.Context,
-	dockerClient *client.Client,
-	candidate container.Summary,
+	dockerClient *mobyClient.Client,
+	candidate mobyContainer.Summary,
 	maxRestarts int,
 	restartWindow time.Duration,
 	restartWindowMinutes int,
@@ -266,7 +266,7 @@ func (j *AutoHealJob) processCandidate(
 		return target, err
 	}
 
-	if kit.FromPtr(kit.FromPtr(inspect.State).Health).Status != container.Unhealthy {
+	if kit.FromPtr(kit.FromPtr(inspect.State).Health).Status != mobyContainer.Unhealthy {
 		return target, nil
 	}
 
@@ -383,30 +383,30 @@ func (j *AutoHealJob) releaseRestartSlot(containerID string, reserved time.Time)
 	}
 }
 
-func inspectAutoHealContainer(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
-	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+func inspectAutoHealContainer(ctx context.Context, dockerClient *mobyClient.Client, containerID string) (mobyContainer.InspectResponse, error) {
+	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, mobyClient.ContainerInspectOptions{})
 	if err != nil {
-		return container.InspectResponse{}, err
+		return mobyContainer.InspectResponse{}, err
 	}
 
 	return inspect.Container, nil
 }
 
-func restartAutoHealContainer(ctx context.Context, dockerClient *client.Client, containerID string) error {
-	_, err := dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
+func restartAutoHealContainer(ctx context.Context, dockerClient *mobyClient.Client, containerID string) error {
+	_, err := dockerClient.ContainerRestart(ctx, containerID, mobyClient.ContainerRestartOptions{})
 	return err
 }
 
 // autoHealListOptions filters unhealthy containers at the daemon, so
 // the common all-healthy case returns an empty list and nothing is inspected.
-func autoHealListOptions() client.ContainerListOptions {
-	return client.ContainerListOptions{
+func autoHealListOptions() mobyClient.ContainerListOptions {
+	return mobyClient.ContainerListOptions{
 		All:     false,
-		Filters: make(client.Filters).Add("health", string(container.Unhealthy)),
+		Filters: make(mobyClient.Filters).Add("health", string(mobyContainer.Unhealthy)),
 	}
 }
 
-func listUnhealthyContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+func listUnhealthyContainers(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyContainer.Summary, error) {
 	containerList, err := dockerClient.ContainerList(ctx, autoHealListOptions())
 	if err != nil {
 		return nil, err
@@ -453,7 +453,7 @@ func (j *AutoHealJob) Reconcile(ctx context.Context, previous types.SchedulerRun
 	return j.resumeHealingPlan(ctx, dockerClient, plan, previous)
 }
 
-func (j *AutoHealJob) confirmRestartTargets(ctx context.Context, dockerClient *client.Client, targets []types.TargetOutcome) (string, error) {
+func (j *AutoHealJob) confirmRestartTargets(ctx context.Context, dockerClient *mobyClient.Client, targets []types.TargetOutcome) (string, error) {
 	message := ""
 	for index, target := range targets {
 		if target.Status == types.RunStatusSucceeded || target.Status == types.RunStatusSkipped {
@@ -479,7 +479,7 @@ func (j *AutoHealJob) confirmRestartTargets(ctx context.Context, dockerClient *c
 	return message, nil
 }
 
-func (j *AutoHealJob) resumeHealingPlan(ctx context.Context, dockerClient *client.Client, plan autoHealPlan, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
+func (j *AutoHealJob) resumeHealingPlan(ctx context.Context, dockerClient *mobyClient.Client, plan autoHealPlan, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	outcome := types.SchedulerOutcome{Status: types.RunStatusSucceeded}
 	for _, candidate := range plan.Containers {
 		attempted := false

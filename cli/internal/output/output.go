@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/mattn/go-runewidth"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/conditional"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/middleware"
@@ -190,7 +190,12 @@ func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUs
 func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*handlerutil.Out[[]types.RoleAssignment], error) {
 	desired := make([]UserRoleAssignment, len(input.Body.Assignments))
 	for i, a := range input.Body.Assignments {
-		desired[i] = UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
+		desired[i] = UserRoleAssignment{
+			RoleID:        a.RoleID,
+			EnvironmentID: a.EnvironmentID,
+			ResourceType:  a.ResourceType,
+			ResourceID:    a.ResourceID,
+		}
 	}
 	if err := h.roleService.ReplaceUserAssignments(ctx, input.UserID, RoleAssignmentSourceManual, desired); err != nil {
 		switch {
@@ -238,6 +243,8 @@ func toAssignmentDTO(r *UserRoleAssignment) types.RoleAssignment {
 		UserID:        r.UserID,
 		RoleID:        r.RoleID,
 		EnvironmentID: r.EnvironmentID,
+		ResourceType:  r.ResourceType,
+		ResourceID:    r.ResourceID,
 		Source:        r.Source,
 		CreatedAt:     r.CreatedAt,
 	}

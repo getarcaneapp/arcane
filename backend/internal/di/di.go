@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"go.uber.org/fx"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/apikey"
@@ -20,7 +20,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops"
@@ -36,7 +36,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/port"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	s3domain "getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler"
@@ -137,28 +137,26 @@ var (
 				localSettings *settings.SettingsService,
 				localEvent *event.EventService,
 				localImage *image.ImageService,
-				localDocker *docker.DockerClientService,
+				localDocker *dockerInternal.DockerClientService,
 				localBuild *build.BuildService,
 				lifecycleService *project.LifecycleService,
 				localKv *kv.KVService,
-				localRegistry *registry.ContainerRegistryService,
-				localEnvironment *environment.EnvironmentService,
+				localRegistry *registryInternal.ContainerRegistryService,
 				localUploads *upload.UploadService,
 				cfg *config.Config,
 			) *project.ProjectService {
 				return project.NewProjectService(project.ProjectServiceParams{
-					DB:                          db,
-					SettingsService:             localSettings,
-					EventService:                localEvent,
-					ImageService:                localImage,
-					DockerService:               localDocker,
-					BuildService:                localBuild,
-					LifecycleService:            lifecycleService,
-					ContainerRegistryService:    localRegistry,
-					Uploads:                     localUploads,
-					Config:                      cfg,
-					KVService:                   localKv,
-					RegistryCredentialsProvider: localEnvironment.GetEnabledRegistryCredentials,
+					DB:                       db,
+					SettingsService:          localSettings,
+					EventService:             localEvent,
+					ImageService:             localImage,
+					DockerService:            localDocker,
+					BuildService:             localBuild,
+					LifecycleService:         lifecycleService,
+					ContainerRegistryService: localRegistry,
+					Uploads:                  localUploads,
+					Config:                   cfg,
+					KVService:                localKv,
 				})
 			},
 			provideBackupEngine,
@@ -167,8 +165,8 @@ var (
 			func(
 				httpClient *http.Client,
 				cfg *config.Config,
-				localRegistry *registry.ContainerRegistryService,
-				localDocker *docker.DockerClientService,
+				localRegistry *registryInternal.ContainerRegistryService,
+				localDocker *dockerInternal.DockerClientService,
 				eventService *event.EventService,
 				imageUpdate *imageupdate.ImageUpdateService,
 				settingsService *settings.SettingsService,
@@ -190,21 +188,23 @@ var (
 			func(db *database.DB, localEnvironment *environment.EnvironmentService) *s3domain.S3DestinationService {
 				return s3domain.NewS3DestinationService(db, localEnvironment.CheckS3DestinationReferences)
 			},
-			func(db *database.DB, localDocker *docker.DockerClientService, kvService *kv.KVService, settingsService *settings.SettingsService) *registry.ContainerRegistryService {
-				return registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
-					DB:              db,
-					DockerClient:    func(ctx context.Context) (registry.RegistryDaemonClient, error) { return localDocker.GetClient(ctx) },
+			func(db *database.DB, localDocker *dockerInternal.DockerClientService, kvService *kv.KVService, settingsService *settings.SettingsService) *registryInternal.ContainerRegistryService {
+				return registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
+					DB: db,
+					DockerClient: func(ctx context.Context) (registryInternal.RegistryDaemonClient, error) {
+						return localDocker.GetClient(ctx)
+					},
 					Engine:          localDocker.Engine,
 					KVService:       kvService,
 					SettingsService: settingsService,
 				})
 			},
-			func(localDocker *docker.DockerClientService, notificationService *notification.NotificationService) *podman.Service {
+			func(localDocker *dockerInternal.DockerClientService, notificationService *notification.NotificationService) *podman.Service {
 				return podman.NewService(podman.Config{
 					Engine: localDocker.Engine,
 					ContainerLabels: func(ctx context.Context, containerRef string) (map[string]string, error) {
-						inspect, err := localDocker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-							return dockerClient.ContainerInspect(ctx, containerRef, client.ContainerInspectOptions{})
+						inspect, err := localDocker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+							return dockerClient.ContainerInspect(ctx, containerRef, mobyClient.ContainerInspectOptions{})
 						})
 						if err != nil {
 							return nil, err
@@ -273,8 +273,8 @@ var (
 					localEnvironment.QueueRemoteSync(ctx, "S3 destinations", localEnvironment.SyncS3DestinationsToEnvironment)
 				})
 			},
-			func(service *registry.ContainerRegistryService, localEnvironment *environment.EnvironmentService) *registry.Module {
-				return registry.New(service, func(ctx context.Context) {
+			func(service *registryInternal.ContainerRegistryService, localEnvironment *environment.EnvironmentService) *registryInternal.Module {
+				return registryInternal.New(service, func(ctx context.Context) {
 					localEnvironment.QueueRemoteSync(ctx, "registries", localEnvironment.SyncRegistriesToEnvironment)
 				})
 			},

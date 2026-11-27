@@ -47,6 +47,7 @@ type (
 		Write    func(io.Writer) error
 		Kind     string
 		Filename string
+		Target   string
 	}
 
 	budgetWriter struct {
@@ -172,6 +173,7 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 		ID:          path.Base(sessionDir),
 		Kind:        kind,
 		Filename:    filename,
+		Target:      strings.TrimSpace(request.Target),
 		Size:        request.Size,
 		ChunkSize:   chunkSize,
 		TotalChunks: int((request.Size + chunkSize - 1) / chunkSize),
@@ -383,6 +385,7 @@ func (s *UploadService) WriteSession(ctx context.Context, opts WriteSessionOptio
 		ID:             path.Base(sessionDir),
 		Kind:           opts.Kind,
 		Filename:       filename,
+		Target:         opts.Target,
 		Size:           info.Size(),
 		ChunkSize:      types.UploadDefaultChunkSize,
 		TotalChunks:    totalChunks,

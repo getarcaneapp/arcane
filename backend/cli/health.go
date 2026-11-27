@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/config/schema"
@@ -70,7 +70,7 @@ func buildHealthURL(cfg *config.Config) (string, error) {
 	hostPort := net.JoinHostPort(healthHost, port)
 
 	u := &url.URL{
-		Scheme: kit.Ternary(cfg.TLSEnabled, "https", "http"),
+		Scheme: kit.Ternary(cfg.TLSEnabled && !cfg.AgentEnabled, "https", "http"),
 		Host:   hostPort,
 		Path:   healthPath,
 	}
@@ -94,7 +94,17 @@ func runHealthCommand(ctx context.Context, cfg *config.Config, timeout time.Dura
 	}
 
 	client := &http.Client{Timeout: timeout}
-	if cfg.TLSEnabled {
+	switch {
+	case cfg.AgentEnabled:
+		client = &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				DialContext: func(dialCtx context.Context, _, _ string) (net.Conn, error) {
+					return new(net.Dialer).DialContext(dialCtx, "unix", config.AgentHealthSocket)
+				},
+			},
+		}
+	case cfg.TLSEnabled:
 		client = &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{

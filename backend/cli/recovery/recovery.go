@@ -14,8 +14,8 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -83,17 +83,17 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	if request.SafetyBackup == nil || strings.TrimSpace(request.SafetyBackup.ID) == "" || len(request.RollbackStages) == 0 {
 		return errors.New("no pre-restore system backup is available for rollback")
 	}
-	dockerClient, err := client.New(client.FromEnv)
+	dockerClient, err := mobyClient.New(mobyClient.FromEnv)
 	if err != nil {
 		return fmt.Errorf("connect to Docker: %w", err)
 	}
 	defer func() { _ = dockerClient.Close() }()
-	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, request.ContainerID, client.ContainerInspectOptions{})
+	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, request.ContainerID, mobyClient.ContainerInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("inspect Arcane container: %w", err)
 	}
 	if _, imageInspectErr := dockerClient.ImageInspect(ctx, rusticImage); imageInspectErr != nil {
-		reader, pullErr := dockerClient.ImagePull(ctx, rusticImage, client.ImagePullOptions{})
+		reader, pullErr := dockerClient.ImagePull(ctx, rusticImage, mobyClient.ImagePullOptions{})
 		if pullErr != nil {
 			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
 		}
@@ -105,11 +105,11 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	}
 	arcane := arcaneContainer{
 		stop: func(ctx context.Context) error {
-			_, stopErr := dockerClient.ContainerStop(ctx, request.ContainerID, client.ContainerStopOptions{Timeout: new(30)})
+			_, stopErr := dockerClient.ContainerStop(ctx, request.ContainerID, mobyClient.ContainerStopOptions{Timeout: new(30)})
 			return stopErr
 		},
 		start: func(ctx context.Context) error {
-			_, startErr := dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{})
+			_, startErr := dockerClient.ContainerStart(ctx, request.ContainerID, mobyClient.ContainerStartOptions{})
 			return startErr
 		},
 	}
@@ -126,7 +126,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 			TrustExisting: true,
 		})
 		mounts := slices.Concat(stage.Repository.Mounts, stage.Target.Mounts, trust)
-		_, runErr := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, container.NetworkMode(request.NetworkMode))
+		_, runErr := rusticruntime.Run(ctx, dockerClient, request.RecoveryKey, command, stage.Repository.Environment, mounts, mobyContainer.NetworkMode(request.NetworkMode))
 		return runErr
 	}
 	if restoreErr := restoreData(ctx, request, rustic, arcane); restoreErr != nil {

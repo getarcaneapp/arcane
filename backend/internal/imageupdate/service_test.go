@@ -22,18 +22,18 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/pkg/authconfig"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	mobyAuthConfig "github.com/moby/moby/api/pkg/authconfig"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 	"kit.getarcane.app/updater/labels"
 
@@ -41,12 +41,12 @@ import (
 	"getarcane.dev/arcane/v3/internal/apns"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/notification"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -59,8 +59,8 @@ import (
 
 type (
 	fakeRegistryDaemonClient struct {
-		registryLoginFn       func(context.Context, client.RegistryLoginOptions) (client.RegistryLoginResult, error)
-		distributionInspectFn func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error)
+		registryLoginFn       func(context.Context, mobyClient.RegistryLoginOptions) (mobyClient.RegistryLoginResult, error)
+		distributionInspectFn func(context.Context, string, mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error)
 	}
 
 	// testProjectRow is a minimal stand-in for project.Project: the project
@@ -79,26 +79,26 @@ type (
 // autoLabels opts a test container into tag-based update checks.
 var autoLabels = map[string]string{labels.LabelUpdateStrategy: "auto"}
 
-func (f *fakeRegistryDaemonClient) RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
+func (f *fakeRegistryDaemonClient) RegistryLogin(ctx context.Context, options mobyClient.RegistryLoginOptions) (mobyClient.RegistryLoginResult, error) {
 	if f.registryLoginFn == nil {
-		return client.RegistryLoginResult{}, nil
+		return mobyClient.RegistryLoginResult{}, nil
 	}
 	return f.registryLoginFn(ctx, options)
 }
 
-func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 	if f.distributionInspectFn == nil {
-		return client.DistributionInspectResult{}, nil
+		return mobyClient.DistributionInspectResult{}, nil
 	}
 	return f.distributionInspectFn(ctx, imageRef, options)
 }
 
-func newImageUpdateTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newImageUpdateTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
@@ -115,7 +115,7 @@ func setupImageUpdateRegistryTestDB(t *testing.T) *database.DB {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
-		&registry.ContainerRegistry{},
+		&registryInternal.ContainerRegistry{},
 		&kv.KVEntry{},
 		&settings.SettingVariable{},
 		&testProjectRow{},
@@ -133,18 +133,18 @@ func createImageUpdateTestPullRegistry(t *testing.T, db *database.DB, localUrl, 
 	t.Helper()
 	encryptedToken, err := crypto.Encrypt(token)
 	require.NoError(t, err)
-	require.NoError(t, db.Create(&registry.ContainerRegistry{
+	require.NoError(t, db.Create(&registryInternal.ContainerRegistry{
 		URL:          localUrl,
 		Username:     username,
 		Token:        encryptedToken,
 		Enabled:      true,
-		RegistryType: registry.RegistryTypeGeneric,
+		RegistryType: registryInternal.RegistryTypeGeneric,
 	}).Error)
 }
 
-func decodeImageUpdateRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
+func decodeImageUpdateRegistryAuth(t *testing.T, encoded string) mobyRegistry.AuthConfig {
 	t.Helper()
-	authConfig, err := authconfig.Decode(encoded)
+	authConfig, err := mobyAuthConfig.Decode(encoded)
 	require.NoError(t, err)
 	return *authConfig
 }
@@ -290,7 +290,7 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 		&event.Event{},
 		&testProjectRow{},
 		&settings.SettingVariable{},
-		&registry.ContainerRegistry{},
+		&registryInternal.ContainerRegistry{},
 		&activity.Activity{},
 		&activity.ActivityMessage{},
 	))
@@ -314,13 +314,13 @@ func newComposeBuildImageUpdateService(t *testing.T) (*ImageUpdateService, *atom
 	t.Cleanup(dockerServer.Close)
 
 	var registryCalls atomic.Int32
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				distributionInspectFn: func(context.Context, string, mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 					registryCalls.Add(1)
-					return client.DistributionInspectResult{
+					return mobyClient.DistributionInspectResult{
 						Descriptor: v1.Descriptor{Digest: digest.Digest(remoteDigest)},
 					}, nil
 				},
@@ -385,7 +385,7 @@ func TestImageUpdateService_CheckImages_ComposeBuildMissingLocallySkipsRegistry(
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 			return
@@ -396,13 +396,13 @@ func TestImageUpdateService_CheckImages_ComposeBuildMissingLocallySkipsRegistry(
 	t.Cleanup(dockerServer.Close)
 
 	var registryCalls atomic.Int32
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				distributionInspectFn: func(context.Context, string, mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 					registryCalls.Add(1)
-					return client.DistributionInspectResult{}, nil
+					return mobyClient.DistributionInspectResult{}, nil
 				},
 			}, nil
 		},
@@ -440,7 +440,7 @@ func newArcaneLocalImageUpdateService(t *testing.T, imageExists bool) (*ImageUpd
 	dockerServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 			return
@@ -448,7 +448,7 @@ func newArcaneLocalImageUpdateService(t *testing.T, imageExists bool) (*ImageUpd
 
 		if imageExists && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+			assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:          "sha256:arcane-local-image-id",
 				RepoTags:    []string{"arcane.local/demo-2ab41b29/worker:latest"},
 				RepoDigests: []string{"arcane.local/demo-2ab41b29/worker@" + localDigest},
@@ -460,13 +460,13 @@ func newArcaneLocalImageUpdateService(t *testing.T, imageExists bool) (*ImageUpd
 	t.Cleanup(dockerServer.Close)
 
 	var registryCalls atomic.Int32
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				distributionInspectFn: func(context.Context, string, mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 					registryCalls.Add(1)
-					return client.DistributionInspectResult{
+					return mobyClient.DistributionInspectResult{
 						Descriptor: v1.Descriptor{Digest: digest.FromString("arcane-local-remote")},
 					}, nil
 				},
@@ -544,13 +544,13 @@ func TestImageUpdateService_InspectLocalImageSnapshot_IsLocalBuild(t *testing.T)
 	const repoDigest = "local-only@sha256:58fce97e65265c70d915f320949981079c7de4ef5c55f5f19642246401fb1d37"
 
 	tests := []struct {
-		inspect image.InspectResponse
+		inspect mobyImage.InspectResponse
 		name    string
 		want    bool
 	}{
 		{
 			name: "classic store image without repo digests",
-			inspect: image.InspectResponse{
+			inspect: mobyImage.InspectResponse{
 				ID:       "sha256:local-only-image",
 				RepoTags: []string{"local-only:latest"},
 			},
@@ -558,17 +558,17 @@ func TestImageUpdateService_InspectLocalImageSnapshot_IsLocalBuild(t *testing.T)
 		},
 		{
 			name: "containerd store image built on this daemon",
-			inspect: image.InspectResponse{
+			inspect: mobyImage.InspectResponse{
 				ID:          "sha256:local-only-image",
 				RepoTags:    []string{"local-only:latest"},
 				RepoDigests: []string{repoDigest},
-				Identity:    &image.Identity{Build: []image.BuildIdentity{{Ref: "build-ref"}}},
+				Identity:    &mobyImage.Identity{Build: []mobyImage.BuildIdentity{{Ref: "build-ref"}}},
 			},
 			want: true,
 		},
 		{
 			name: "containerd store image loaded from an archive",
-			inspect: image.InspectResponse{
+			inspect: mobyImage.InspectResponse{
 				ID:          "sha256:local-only-image",
 				RepoTags:    []string{"local-only:latest"},
 				RepoDigests: []string{repoDigest},
@@ -580,11 +580,11 @@ func TestImageUpdateService_InspectLocalImageSnapshot_IsLocalBuild(t *testing.T)
 		},
 		{
 			name: "containerd store image pulled from a registry",
-			inspect: image.InspectResponse{
+			inspect: mobyImage.InspectResponse{
 				ID:          "sha256:local-only-image",
 				RepoTags:    []string{"local-only:latest"},
 				RepoDigests: []string{repoDigest},
-				Identity:    &image.Identity{Pull: []image.PullIdentity{{Repository: "docker.io/library/local-only"}}},
+				Identity:    &mobyImage.Identity{Pull: []mobyImage.PullIdentity{{Repository: "docker.io/library/local-only"}}},
 			},
 		},
 	}
@@ -594,7 +594,7 @@ func TestImageUpdateService_InspectLocalImageSnapshot_IsLocalBuild(t *testing.T)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasSuffix(r.URL.Path, "/containers/json") {
 					w.Header().Set("Content-Type", "application/json")
-					assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+					assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{}))
 					return
 				}
 
@@ -646,7 +646,7 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 			return
@@ -661,7 +661,7 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:          "sha256:local-image-id",
 				RepoTags:    []string{imageRef},
 				RepoDigests: []string{repositoryRef + "@" + localDigest},
@@ -694,7 +694,7 @@ func newImageUpdateRegistryOnlyServer(t *testing.T, repositoryTag, remoteDigest 
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 			return
@@ -715,7 +715,7 @@ func newImageUpdateRegistryOnlyServer(t *testing.T, repositoryTag, remoteDigest 
 	}))
 }
 
-func newImageRefResolutionServer(t *testing.T, containers []container.Summary) *httptest.Server {
+func newImageRefResolutionServer(t *testing.T, containers []mobyContainer.Summary) *httptest.Server {
 	t.Helper()
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -744,18 +744,18 @@ func TestImageUpdateService_GetImageRefByID_UsesContainerFallback(t *testing.T) 
 		name       string
 		wantRef    string
 		wantErr    string
-		containers []container.Summary
+		containers []mobyContainer.Summary
 	}{
 		{
 			name: "uses repo tag from matching container when inspect fails",
-			containers: []container.Summary{
+			containers: []mobyContainer.Summary{
 				{ImageID: imageID, Image: "frooodle/s-pdf:latest"},
 			},
 			wantRef: "frooodle/s-pdf:latest",
 		},
 		{
 			name: "ignores named digest references from matching container",
-			containers: []container.Summary{
+			containers: []mobyContainer.Summary{
 				{ImageID: imageID, Image: "frooodle/s-pdf@sha256:abc123"},
 			},
 			wantErr: "no local image or running container found",
@@ -820,7 +820,7 @@ func TestImageUpdateService_CheckImages_SkipsDigestPinnedReference(t *testing.T)
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		RegistryService: registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 			DB:              db,
 			KVService:       kv.NewKVService(db),
 			SettingsService: newImageUpdateDefaultSettingsService(t),
@@ -863,7 +863,7 @@ func TestImageUpdateService_CheckImages_SkippedDigestPinnedReferenceClearsStaleE
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		RegistryService: registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 			DB:              db,
 			KVService:       kv.NewKVService(db),
 			SettingsService: newImageUpdateDefaultSettingsService(t),
@@ -903,7 +903,7 @@ func TestImageUpdateService_CheckImages_DigestPinnedTagPreservedWhenLocalImageHa
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activity.NewActivityService(db, newImageUpdateDefaultSettingsService(t)),
 		SettingsService: newImageUpdateDefaultSettingsService(t),
-		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		RegistryService: registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 			DB:              db,
 			KVService:       kv.NewKVService(db),
 			SettingsService: newImageUpdateDefaultSettingsService(t),
@@ -929,7 +929,7 @@ func newImageUpdateNoRepoTagsServer(t *testing.T, imageID, localDigest string) *
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 			return
@@ -937,7 +937,7 @@ func newImageUpdateNoRepoTagsServer(t *testing.T, imageID, localDigest string) *
 
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:          imageID,
 				RepoTags:    []string{},
 				RepoDigests: []string{r.Host + "/valkey/valkey@" + localDigest},
@@ -962,12 +962,12 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/team/app:1.2.3"
 
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-					return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+					return mobyClient.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
 				},
 			}, nil
 		},
@@ -1012,7 +1012,7 @@ func newImageUpdateConfigServer(t *testing.T, localDigest string, localLabels ma
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+			assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{}))
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
 			assert.NoError(t, json.MarshalWrite(w, map[string]any{
@@ -1044,8 +1044,8 @@ func TestImageUpdateService_CheckImageUpdate_DigestUpdateResolvesRemoteVersion(t
 	}{
 		{
 			name:               "version labels",
-			localLabels:        map[string]string{registry.OCIImageVersionLabel: "2.3.6"},
-			remoteConfig:       ggcrv1.Config{Labels: map[string]string{registry.OCIImageVersionLabel: "2.3.7"}},
+			localLabels:        map[string]string{registryInternal.OCIImageVersionLabel: "2.3.6"},
+			remoteConfig:       ggcrv1.Config{Labels: map[string]string{registryInternal.OCIImageVersionLabel: "2.3.7"}},
 			remoteCreated:      remoteCreated,
 			wantCurrentVersion: "2.3.6",
 			wantLatestVersion:  "2.3.7",
@@ -1080,12 +1080,12 @@ func TestImageUpdateService_CheckImageUpdate_DigestUpdateResolvesRemoteVersion(t
 			remoteDigest, err := img.Digest()
 			require.NoError(t, err)
 
-			registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+			registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 				DB: db,
-				DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+				DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 					return &fakeRegistryDaemonClient{
-						distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-							return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
+						distributionInspectFn: func(context.Context, string, mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+							return mobyClient.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
 						},
 					}, nil
 				},
@@ -1195,12 +1195,12 @@ func TestImageUpdateService_CheckImages_UsesRegistryFallback(t *testing.T) {
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/team/app:1.2.3"
 
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-					return client.DistributionInspectResult{}, errors.New("error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative r" +
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+					return mobyClient.DistributionInspectResult{}, errors.New("error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative r" +
 						"ules. </body></html>")
 				},
 			}, nil
@@ -1301,11 +1301,11 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 	activityService := activity.NewActivityService(db, settingsService)
 	dockerServer := newImageUpdateRegistryOnlyServer(t, "team/app:1.2.3", digest.FromString("unused").String())
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 					panic("registry check exploded")
 				},
 			}, nil
@@ -1319,7 +1319,7 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		SettingsService: settingsService,
 		RegistryService: registryService,
-		DockerService: docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(
+		DockerService: dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(
 			t,
 			dockerServer,
 		)),
@@ -1346,7 +1346,7 @@ func TestImageUpdateService_CheckImages_UsesDockerHubCredentialsOnFirstAttempt(t
 		&event.Event{},
 		&testProjectRow{},
 		&settings.SettingVariable{},
-		&registry.ContainerRegistry{},
+		&registryInternal.ContainerRegistry{},
 		&activity.Activity{},
 		&activity.ActivityMessage{},
 	))
@@ -1359,11 +1359,11 @@ func TestImageUpdateService_CheckImages_UsesDockerHubCredentialsOnFirstAttempt(t
 	defer server.Close()
 
 	var calls int
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 					calls++
 					assert.Equal(t, "docker.io/library/registry:3", imageRef)
 
@@ -1372,7 +1372,7 @@ func TestImageUpdateService_CheckImages_UsesDockerHubCredentialsOnFirstAttempt(t
 					assert.Equal(t, "docker-token", authCfg.Password)
 					assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
 
-					return client.DistributionInspectResult{
+					return mobyClient.DistributionInspectResult{
 						Descriptor: v1.Descriptor{
 							Digest: digest.Digest(remoteDigest),
 						},
@@ -1423,12 +1423,12 @@ func TestImageUpdateService_CheckImages_ReportsNotPulledWhenLocalImageMissing(t 
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/library/nginx:alpine"
 
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-					return client.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+					return mobyClient.DistributionInspectResult{}, errors.New("error response from daemon: Not Found")
 				},
 			}, nil
 		},
@@ -1619,9 +1619,9 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 		EventService:    event.NewEventService(db, &config.Config{}, nil),
 		ActivityService: activity.NewActivityService(db, settingsService),
 		SettingsService: settingsService,
-		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		RegistryService: registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 			DB: db,
-			DockerClient: func(ctx context.Context) (registry.RegistryDaemonClient, error) {
+			DockerClient: func(ctx context.Context) (registryInternal.RegistryDaemonClient, error) {
 				return dockerService.GetClient(ctx)
 			},
 			KVService:       kv.NewKVService(db),
@@ -2032,7 +2032,7 @@ func TestImageUpdateService_MarkUpdatesAsNotified(t *testing.T) {
 
 func TestImageUpdateService_CleanupOrphanedRecordsKeepsRefRecords(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
-	server := newImageUpdateDiscoveryServer(t, []image.Summary{{ID: "sha256:present"}}, nil)
+	server := newImageUpdateDiscoveryServer(t, []mobyImage.Summary{{ID: "sha256:present"}}, nil)
 	t.Cleanup(server.Close)
 	svc := &ImageUpdateService{
 		db:            db,
@@ -2059,7 +2059,7 @@ func TestImageUpdateService_CleanupOrphanedRecordsKeepsRefRecords(t *testing.T) 
 // with "context canceled" so notifications were never dispatched (issue #2920).
 // newImageUpdateNotificationDockerService stubs the container listing
 // the notification flush uses to resolve current update-check eligibility.
-func newImageUpdateNotificationDockerService(t *testing.T, containers []container.Summary) *docker.DockerClientService {
+func newImageUpdateNotificationDockerService(t *testing.T, containers []mobyContainer.Summary) *dockerInternal.DockerClientService {
 	t.Helper()
 	server := newImageUpdateDiscoveryServer(t, nil, containers)
 	t.Cleanup(server.Close)
@@ -2091,7 +2091,7 @@ func TestImageUpdateService_SendBatchNotifications_FiltersByUpdateCheckEligibili
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
 	calls := newImageUpdateGenericWebhookProvider(t, db)
 
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{ID: "install-excluded", ImageID: "sha256:install-excluded", Image: "test/install-excluded:latest", Labels: map[string]string{labels.LabelUpdater: "false"}},
 		{ID: "unmonitored", ImageID: "sha256:unmonitored", Image: "test/unmonitored:latest", Labels: map[string]string{imageref.UpdateCheckLabel: "false"}},
 		{ID: "shared-unmonitored", ImageID: "sha256:shared", Image: "test/shared:latest", Labels: map[string]string{imageref.UpdateCheckLabel: "false"}},
@@ -2158,7 +2158,7 @@ func TestImageUpdateService_SendBatchNotifications_FiltersByUpdateCheckEligibili
 
 	// Re-enabling monitoring lets the held-back records notify on the next flush.
 	resumedContainers := slices.Clone(containers)
-	resumedContainers[1] = container.Summary{
+	resumedContainers[1] = mobyContainer.Summary{
 		ID:      "unmonitored",
 		ImageID: "sha256:unmonitored",
 		Image:   "test/unmonitored:latest",
@@ -2443,9 +2443,9 @@ func newImageUpdateTestSettingsService(t *testing.T, registryTimeout, dockerAPIT
 	return newImageUpdateDefaultSettingsService(t)
 }
 
-func newImageUpdateTestDockerService(t *testing.T, server *httptest.Server) *docker.DockerClientService {
+func newImageUpdateTestDockerService(t *testing.T, server *httptest.Server) *dockerInternal.DockerClientService {
 	t.Helper()
-	return docker.NewDockerClientService(t.Context(), nil, newImageUpdateDefaultSettingsService(t), docker.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, server))
+	return dockerInternal.NewDockerClientService(t.Context(), nil, newImageUpdateDefaultSettingsService(t), dockerInternal.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, server))
 }
 
 func newImageUpdateDefaultSettingsService(t *testing.T) *settings.SettingsService {
@@ -2472,8 +2472,8 @@ func newImageUpdateDefaultSettingsService(t *testing.T) *settings.SettingsServic
 
 func newImageUpdateDiscoveryServer(
 	t *testing.T,
-	images []image.Summary,
-	containers []container.Summary,
+	images []mobyImage.Summary,
+	containers []mobyContainer.Summary,
 ) *httptest.Server {
 	t.Helper()
 
@@ -2512,14 +2512,14 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOut(t *tes
 		idOnlyImage     = "sha256:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 	)
 
-	images := []image.Summary{
+	images := []mobyImage.Summary{
 		{ID: "sha256:disabled", RepoTags: []string{disabledRef}},
 		{ID: "sha256:enabled", RepoTags: []string{enabledRef}},
 		{ID: "sha256:shared", RepoTags: []string{sharedRef}},
 		{ID: "sha256:unused", RepoTags: []string{unusedRef}},
 		{ID: "sha256:untagged", RepoTags: []string{"<none>:<none>"}},
 	}
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:     "disabled-container",
 			Image:  disabledRef,
@@ -2538,8 +2538,8 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOut(t *tes
 			ID:    "shared-enabled-container",
 			Image: sharedRef,
 		},
-		{ID: "running-only", ImageID: "sha256:untagged", Image: runningOnlyRef, State: container.StateRunning},
-		{ID: "stopped-only", ImageID: "sha256:pruned", Image: stoppedOnlyRef, State: container.StateExited},
+		{ID: "running-only", ImageID: "sha256:untagged", Image: runningOnlyRef, State: mobyContainer.StateRunning},
+		{ID: "stopped-only", ImageID: "sha256:pruned", Image: stoppedOnlyRef, State: mobyContainer.StateExited},
 		{ID: "disabled-only", ImageID: "sha256:pruned-disabled", Image: disabledOnlyRef, Labels: map[string]string{imageref.UpdateCheckLabel: "false"}},
 		{ID: "enabled-alias", ImageID: "sha256:enabled", Image: enabledAlias},
 		{ID: "pinned-container", ImageID: "sha256:pinned", Image: pinnedRef},
@@ -2570,12 +2570,12 @@ func TestImageUpdateService_GetAllImageRefsAppliesLimitAfterOptOutFiltering(t *t
 		containerOnlyRef = "local/container-only:1.0"
 	)
 
-	images := []image.Summary{
+	images := []mobyImage.Summary{
 		{ID: "sha256:disabled", RepoTags: []string{disabledRef}},
 		{ID: "sha256:enabled", RepoTags: []string{enabledRef}},
 		{ID: "sha256:unused", RepoTags: []string{unusedRef}},
 	}
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:     "disabled-container",
 			Image:  disabledRef,
@@ -2615,7 +2615,7 @@ func TestImageUpdateService_GetAllImageRefsExcludesAliasesOfOptedOutImage(t *tes
 		enabledRef = "local/enabled:latest"
 	)
 
-	images := []image.Summary{
+	images := []mobyImage.Summary{
 		{
 			ID:       imageID,
 			RepoTags: []string{primaryRef, aliasRef},
@@ -2625,7 +2625,7 @@ func TestImageUpdateService_GetAllImageRefsExcludesAliasesOfOptedOutImage(t *tes
 			RepoTags: []string{enabledRef},
 		},
 	}
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "disabled-container",
 			ImageID: imageID,
@@ -2664,13 +2664,13 @@ func TestImageUpdateService_GetAllImageRefsKeepsImageSharedByEligibleContainer(t
 		aliasRef = "local/shared:dev"
 	)
 
-	images := []image.Summary{
+	images := []mobyImage.Summary{
 		{
 			ID:       imageID,
 			RepoTags: []string{imageRef, aliasRef},
 		},
 	}
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "disabled-container",
 			ImageID: imageID,
@@ -2704,13 +2704,13 @@ func TestImageUpdateService_GetAllImageRefsKeepsImageSharedByEligibleContainer(t
 func TestImageUpdateService_GetAllImageRefsFallsBackToRefWhenImageIDsDiffer(t *testing.T) {
 	const imageRef = "local/caddy:latest"
 
-	images := []image.Summary{
+	images := []mobyImage.Summary{
 		{
 			ID:       "sha256:image-list-id",
 			RepoTags: []string{imageRef},
 		},
 	}
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "disabled-container",
 			ImageID: "sha256:container-list-id",
@@ -2741,13 +2741,13 @@ func TestImageUpdateService_GetAllImageRefsMergesIDAndReferenceEligibility(t *te
 		imageID  = "sha256:image-summary-id"
 	)
 
-	images := []image.Summary{
+	images := []mobyImage.Summary{
 		{
 			ID:       imageID,
 			RepoTags: []string{imageRef},
 		},
 	}
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "disabled-container",
 			ImageID: imageID,
@@ -2787,7 +2787,7 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFails(
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []image.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyImage.Summary{
 				{ID: "sha256:first", RepoTags: []string{firstRef}},
 				{ID: "sha256:second", RepoTags: []string{secondRef}},
 			})) {
@@ -2822,7 +2822,7 @@ func TestFilterImageSummariesKeepsInstallExcludedContainersMonitored(t *testing.
 		sharedRef        = "local/shared:latest"
 	)
 
-	images := []image.Summary{
+	images := []mobyImage.Summary{
 		{ID: "sha256:label-disabled", RepoTags: []string{labelDisabledRef}},
 		{ID: "sha256:ui-excluded", RepoTags: []string{uiExcludedRef}},
 		{ID: "sha256:unmonitored", RepoTags: []string{unmonitoredRef}},
@@ -2830,7 +2830,7 @@ func TestFilterImageSummariesKeepsInstallExcludedContainersMonitored(t *testing.
 	}
 	// Both automatic-installation exclusions keep the image monitored; only the
 	// update-check label (any spelling, false-like values only) removes it.
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{ID: "c1", Names: []string{"/label-disabled"}, ImageID: "sha256:label-disabled", Image: labelDisabledRef, Labels: map[string]string{labels.LabelUpdater: "false"}},
 		{ID: "c2", Names: []string{"/ui-excluded"}, ImageID: "sha256:ui-excluded", Image: uiExcludedRef},
 		{ID: "c3", Names: []string{"/unmonitored"}, ImageID: "sha256:unmonitored", Image: unmonitoredRef, Labels: map[string]string{strings.ToUpper(imageref.UpdateCheckLabel): "no"}},
@@ -2887,7 +2887,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			if !assert.NoError(
 				t,
-				json.MarshalWrite(w, []container.Summary{
+				json.MarshalWrite(w, []mobyContainer.Summary{
 					{
 						ID:      "one",
 						Image:   imageRef,
@@ -2907,7 +2907,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/images/"):
 			if !assert.NoError(
 				t,
-				json.MarshalWrite(w, image.InspectResponse{
+				json.MarshalWrite(w, mobyImage.InspectResponse{
 					ID:           imageID,
 					RepoTags:     []string{imageRef},
 					RepoDigests:  []string{registryURL.Host + "/team/app@" + imageID},
@@ -2921,10 +2921,10 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 			id := kit.Ternary(strings.Contains(r.URL.Path, "/two/"), "two", "one")
 			if !assert.NoError(
 				t,
-				json.MarshalWrite(w, container.InspectResponse{
+				json.MarshalWrite(w, mobyContainer.InspectResponse{
 					ID:    id,
 					Image: imageID,
-					Config: &container.Config{
+					Config: &mobyContainer.Config{
 						Image:  imageRef,
 						Labels: values[id],
 					},
@@ -2938,11 +2938,11 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		}
 	}))
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
-			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("manifest not found")
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+				return mobyClient.DistributionInspectResult{}, errors.New("manifest not found")
 			}}, nil
 		},
 		KVService:       kv.NewKVService(db),
@@ -2992,13 +2992,13 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 	require.False(t, records[0].HasUpdate)
 	require.True(t, records[1].HasUpdate)
 	limited := &types.ImageUpdateResponse{UpdateType: UpdateTypeTag, Error: "registry status: 429", CheckTime: time.Now().UTC()}
-	current := container.Summary{ID: "two", Image: imageRef, ImageID: imageID, Labels: values["two"]}
+	current := mobyContainer.Summary{ID: "two", Image: imageRef, ImageID: imageID, Labels: values["two"]}
 	require.NoError(t, svc.saveContainerTagResult(t.Context(), current, limited))
 	var retained ImageUpdateRecord
 	require.NoError(t, db.First(&retained, "id = ?", "container::two").Error)
 	require.True(t, retained.HasUpdate, "same-policy rate limits retain the last good result")
 	require.Equal(t, imageref.UpdatePolicyKey(imageRef, current.Labels), retained.PolicyKey)
-	current = container.Summary{
+	current = mobyContainer.Summary{
 		ID:      "two",
 		Image:   imageRef,
 		ImageID: imageID,
@@ -3069,7 +3069,7 @@ func TestContainerTagChecksSkipTagsWithoutPlatformManifest(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
 				{
 					ID:      "one",
 					Image:   imageRef,
@@ -3080,7 +3080,7 @@ func TestContainerTagChecksSkipTagsWithoutPlatformManifest(t *testing.T) {
 				return
 			}
 		case strings.Contains(r.URL.Path, "/images/"):
-			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:           imageID,
 				RepoTags:     []string{imageRef},
 				Os:           "linux",
@@ -3089,10 +3089,10 @@ func TestContainerTagChecksSkipTagsWithoutPlatformManifest(t *testing.T) {
 				return
 			}
 		case strings.Contains(r.URL.Path, "/containers/"):
-			if !assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID:    "one",
 				Image: imageID,
-				Config: &container.Config{
+				Config: &mobyContainer.Config{
 					Image:  imageRef,
 					Labels: containerLabels,
 				},
@@ -3105,11 +3105,11 @@ func TestContainerTagChecksSkipTagsWithoutPlatformManifest(t *testing.T) {
 		}
 	}))
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
-			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("manifest not found")
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+				return mobyClient.DistributionInspectResult{}, errors.New("manifest not found")
 			}}, nil
 		},
 		KVService:       kv.NewKVService(db),
@@ -3161,7 +3161,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
 				{ID: "install-excluded", Names: []string{"/install-excluded"}, Image: imageRef, ImageID: imageID, Labels: values["install-excluded"]},
 				{ID: "unmonitored", Names: []string{"/unmonitored"}, Image: imageRef, ImageID: imageID, Labels: values["unmonitored"]},
 			})) {
@@ -3172,11 +3172,11 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 			inspected = append(inspected, id)
 			if !assert.NoError(
 				t,
-				json.MarshalWrite(w, container.InspectResponse{
+				json.MarshalWrite(w, mobyContainer.InspectResponse{
 					ID:    id,
 					Name:  "/" + id,
 					Image: imageID,
-					Config: &container.Config{
+					Config: &mobyContainer.Config{
 						Image:  imageRef,
 						Labels: values[id],
 					},
@@ -3185,7 +3185,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 				return
 			}
 		case strings.Contains(r.URL.Path, "/images/"):
-			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: imageID, Os: "linux", Architecture: "amd64"})) {
+			if !assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{ID: imageID, Os: "linux", Architecture: "amd64"})) {
 				return
 			}
 		default:
@@ -3194,9 +3194,9 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 		}
 	}))
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{}, nil
 		},
 		KVService:       kv.NewKVService(db),
@@ -3212,7 +3212,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 		ActivityService:     activity.NewActivityService(db, settingsService),
 		SettingsService:     settingsService,
 		RegistryService:     registryService,
-		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
+		DockerService:       dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
 		NotificationService: newTestNotificationService(t, db),
 	})
 
@@ -3280,23 +3280,23 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 		name := nameFor(r.URL.Path)
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
 				{ID: "fast", Image: imageRefs["fast"], ImageID: imageIDs["fast"], Labels: autoLabels},
 				{ID: "slow", Image: imageRefs["slow"], ImageID: imageIDs["slow"], Labels: autoLabels},
 			})) {
 				return
 			}
 		case strings.Contains(r.URL.Path, "/images/"):
-			if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: imageIDs[name], RepoTags: []string{imageRefs[name]}})) {
+			if !assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{ID: imageIDs[name], RepoTags: []string{imageRefs[name]}})) {
 				return
 			}
 		case strings.Contains(r.URL.Path, "/containers/"):
 			if !assert.NoError(
 				t,
-				json.MarshalWrite(w, container.InspectResponse{
+				json.MarshalWrite(w, mobyContainer.InspectResponse{
 					ID:    name,
 					Image: imageIDs[name],
-					Config: &container.Config{
+					Config: &mobyContainer.Config{
 						Image:  imageRefs[name],
 						Labels: autoLabels,
 					},
@@ -3309,11 +3309,11 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 		}
 	}))
 	defer dockerServer.Close()
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
-			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("manifest not found")
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{distributionInspectFn: func(context.Context, string, mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+				return mobyClient.DistributionInspectResult{}, errors.New("manifest not found")
 			}}, nil
 		},
 		SettingsService: settingsService,
@@ -3325,7 +3325,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 		ActivityService:     activity.NewActivityService(db, settingsService),
 		SettingsService:     settingsService,
 		RegistryService:     registryService,
-		DockerService:       docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
+		DockerService:       dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
 		NotificationService: newTestNotificationService(t, db),
 	})
 
@@ -3346,9 +3346,9 @@ func TestImageUpdateService_RunImageCheckExhaustedRateLimitKeepsPreviousResult(t
 	// Serial: it shortens the package-wide retry backoff.
 	const imageRef = "registry.example.com/team/app:1"
 	var calls atomic.Int32
-	svc, db := newWorkflowCheckService(t, map[string]string{imageRef: "sha256:app"}, func(string) (client.DistributionInspectResult, error) {
+	svc, db := newWorkflowCheckService(t, map[string]string{imageRef: "sha256:app"}, func(string) (mobyClient.DistributionInspectResult, error) {
 		calls.Add(1)
-		return client.DistributionInspectResult{}, errors.New("toomanyrequests: rate limit exceeded")
+		return mobyClient.DistributionInspectResult{}, errors.New("toomanyrequests: rate limit exceeded")
 	})
 	shortenImageCheckRetryBackoff(t)
 	previousDigest := digest.FromString("previous-remote").String()
@@ -3378,11 +3378,11 @@ func TestImageUpdateService_RunImageCheckReportsPartialFailure(t *testing.T) {
 	const okRef = "registry.example.com/team/app:1"
 	const deniedRef = "registry.example.com/team/private:1"
 	remoteDigest := digest.FromString("remote").String()
-	svc, _ := newWorkflowCheckService(t, map[string]string{okRef: "sha256:app"}, func(imageRef string) (client.DistributionInspectResult, error) {
+	svc, _ := newWorkflowCheckService(t, map[string]string{okRef: "sha256:app"}, func(imageRef string) (mobyClient.DistributionInspectResult, error) {
 		if strings.Contains(imageRef, "private") {
-			return client.DistributionInspectResult{}, errors.New("unauthorized: authentication required")
+			return mobyClient.DistributionInspectResult{}, errors.New("unauthorized: authentication required")
 		}
-		return client.DistributionInspectResult{Descriptor: v1.Descriptor{Digest: digest.Digest(remoteDigest)}}, nil
+		return mobyClient.DistributionInspectResult{Descriptor: v1.Descriptor{Digest: digest.Digest(remoteDigest)}}, nil
 	})
 	harness := startCheckWorkflow(t, svc)
 	flowtest.AssertDefinitions(t, harness)
@@ -3432,20 +3432,20 @@ func checkImages(t *testing.T, ctx context.Context, svc *ImageUpdateService, ima
 func newWorkflowCheckService(
 	t *testing.T,
 	localImages map[string]string,
-	inspect func(imageRef string) (client.DistributionInspectResult, error),
+	inspect func(imageRef string) (mobyClient.DistributionInspectResult, error),
 ) (*ImageUpdateService, *database.DB) {
 	t.Helper()
 	db := setupImageUpdateTestDB(t)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+			assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{}))
 			return
 		}
 		for imageRef, imageID := range localImages {
 			if strings.Contains(r.URL.Path, "/images/"+imageRef+"/json") {
 				repository := imageRef[:strings.LastIndex(imageRef, ":")]
-				assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{
+				assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{
 					ID:          imageID,
 					RepoTags:    []string{imageRef},
 					RepoDigests: []string{repository + "@" + digest.FromString(imageID).String()},
@@ -3456,11 +3456,11 @@ func newWorkflowCheckService(
 		http.Error(w, "No such image", http.StatusNotFound)
 	}))
 	t.Cleanup(server.Close)
-	registryService := registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return &fakeRegistryDaemonClient{
-				distributionInspectFn: func(_ context.Context, imageRef string, _ client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				distributionInspectFn: func(_ context.Context, imageRef string, _ mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 					return inspect(imageRef)
 				},
 			}, nil
@@ -3545,12 +3545,12 @@ func newTestNotificationService(t *testing.T, db *database.DB) *notification.Not
 	})
 }
 
-func newImageUpdateTestRegistryService(t *testing.T, db *database.DB, dockerService *docker.DockerClientService) *registry.ContainerRegistryService {
+func newImageUpdateTestRegistryService(t *testing.T, db *database.DB, dockerService *dockerInternal.DockerClientService) *registryInternal.ContainerRegistryService {
 	t.Helper()
 
-	return registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+	return registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 		DB: db,
-		DockerClient: func(ctx context.Context) (registry.RegistryDaemonClient, error) {
+		DockerClient: func(ctx context.Context) (registryInternal.RegistryDaemonClient, error) {
 			return dockerService.GetClient(ctx)
 		},
 		KVService:       kv.NewKVService(db),

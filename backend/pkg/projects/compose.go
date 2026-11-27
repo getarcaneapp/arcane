@@ -16,10 +16,10 @@ import (
 	"github.com/docker/compose/v5/cmd/display"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
-	"github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/docker/types"
@@ -33,7 +33,7 @@ type (
 	}
 
 	ClientConfig struct {
-		AuthConfigs    map[string]registry.AuthConfig
+		AuthConfigs    map[string]mobyRegistry.AuthConfig
 		DockerHost     string
 		MaxConcurrency int
 		Timeout        time.Duration
@@ -49,7 +49,7 @@ type (
 	inspectCompatibleDockerCli struct {
 		command.Cli
 
-		apiClient client.APIClient
+		apiClient mobyClient.APIClient
 	}
 
 	// writerConsumer is locked because compose streams several containers into one consumer.
@@ -149,7 +149,7 @@ func plainComposeClient(dockerHost string) (*Client, error) {
 	return c, nil
 }
 
-func buildComposeAuthConfigs(authConfigs map[string]registry.AuthConfig) map[string]clitypes.AuthConfig {
+func buildComposeAuthConfigs(authConfigs map[string]mobyRegistry.AuthConfig) map[string]clitypes.AuthConfig {
 	if len(authConfigs) == 0 {
 		return nil
 	}
@@ -176,7 +176,7 @@ func buildComposeAuthConfigs(authConfigs map[string]registry.AuthConfig) map[str
 	return kit.Ternary(len(composeAuthConfigs) == 0, nil, composeAuthConfigs)
 }
 
-func (c *inspectCompatibleDockerCli) Client() client.APIClient {
+func (c *inspectCompatibleDockerCli) Client() mobyClient.APIClient {
 	return c.apiClient
 }
 

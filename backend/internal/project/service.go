@@ -21,14 +21,14 @@ import (
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
@@ -49,6 +49,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/deployment"
 	projectdetails "getarcane.dev/arcane/v3/internal/project/children/details"
 	"getarcane.dev/arcane/v3/internal/project/children/lifecycle"
@@ -58,9 +59,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/tags"
 	"getarcane.dev/arcane/v3/internal/project/children/update"
 	"getarcane.dev/arcane/v3/internal/project/children/workspace"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/iconcatalog"
@@ -85,24 +87,23 @@ type (
 		// composeIdentities lets a sync re-parse only projects whose compose or env files changed.
 		composeIdentities types.ComposeCache[types.ComposeIdentity]
 
-		db                          *database.DB
-		settingsService             *settings.SettingsService
-		eventService                *event.EventService
-		imageService                *image.ImageService
-		dockerService               *dockerInternal.DockerClientService
-		lifecycleService            *LifecycleService
-		workspace                   *workspace.Service
-		details                     *projectdetails.Service
-		listing                     *listing.Service
-		statuses                    *projectstatus.Service
-		deployment                  *deployment.Service
-		updates                     *update.Service
-		containerRegistryService    *registry.ContainerRegistryService
-		uploads                     *upload.UploadService
-		config                      *config.Config
-		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
-		FilesChanged                *concurrency.Signal[string]
-		Deleted                     *concurrency.Signal[string]
+		db                       *database.DB
+		settingsService          *settings.SettingsService
+		eventService             *event.EventService
+		imageService             *image.ImageService
+		dockerService            *dockerInternal.DockerClientService
+		lifecycleService         *LifecycleService
+		workspace                *workspace.Service
+		details                  *projectdetails.Service
+		listing                  *listing.Service
+		statuses                 *projectstatus.Service
+		deployment               *deployment.Service
+		updates                  *update.Service
+		containerRegistryService *registryInternal.ContainerRegistryService
+		uploads                  *upload.UploadService
+		config                   *config.Config
+		FilesChanged             *concurrency.Signal[string]
+		Deleted                  *concurrency.Signal[string]
 
 		opLock concurrency.KeyedMutex
 
@@ -147,18 +148,17 @@ type (
 	}
 
 	ProjectServiceParams struct {
-		DB                          *database.DB
-		SettingsService             *settings.SettingsService
-		EventService                *event.EventService
-		ImageService                *image.ImageService
-		DockerService               *dockerInternal.DockerClientService
-		BuildService                builder
-		LifecycleService            *LifecycleService
-		ContainerRegistryService    *registry.ContainerRegistryService
-		Uploads                     *upload.UploadService
-		Config                      *config.Config
-		KVService                   *kv.KVService
-		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
+		DB                       *database.DB
+		SettingsService          *settings.SettingsService
+		EventService             *event.EventService
+		ImageService             *image.ImageService
+		DockerService            *dockerInternal.DockerClientService
+		BuildService             builder
+		LifecycleService         *LifecycleService
+		ContainerRegistryService *registryInternal.ContainerRegistryService
+		Uploads                  *upload.UploadService
+		Config                   *config.Config
+		KVService                *kv.KVService
 	}
 
 	// The pre-deploy script is trusted like the repo's compose.yaml; configuring its path is the trust event.
@@ -341,7 +341,7 @@ func (s *ProjectService) CreateGitOpsManagedProject(ctx context.Context, req Git
 	if err := s.EnsureGitOpsProjectLinked(ctx, req.Sync, req.Project); err != nil {
 		return err
 	}
-	if err := s.reconcileComposeTagsForProject(ctx, req.Project); err != nil {
+	if err := s.reconcileComposeTagsForProject(ctx, req.Project, types.ComposeIdentity{}); err != nil {
 		slog.WarnContext(ctx, "failed to reconcile Compose project tags during GitOps project creation", "projectId", req.Project.ID, "error", err)
 	}
 	if !req.SkipEvent {
@@ -413,7 +413,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		workspace:          workspace.New(p.SettingsService),
 		details:            projectdetails.New(p.DB, p.DockerService, p.ImageService, p.SettingsService),
 		listing: listing.New(
-			func(ctx context.Context) ([]container.Summary, error) { return s.details.ComposeContainers(ctx) },
+			func(ctx context.Context) ([]mobyContainer.Summary, error) { return s.details.ComposeContainers(ctx) },
 			p.ImageService,
 			func(imageRefs []string, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) *types.ProjectUpdateInfo {
 				return buildUpdateInfoSummary(imageRefs, projectdetails.MergeProjectContainerUpdateInfo(nil, services, scoped), nil)
@@ -428,9 +428,6 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 			KVService:       p.KVService,
 			DockerService:   p.DockerService,
 			RegistryService: p.ContainerRegistryService,
-			Credentials: func(ctx context.Context) ([]types.ContainerRegistryCredential, error) {
-				return s.ResolveRegistryCredentials(ctx)
-			},
 			ProjectState: func(ctx context.Context, projectID string) (string, string, bool, error) {
 				proj, found, err := s.FindProjectByID(ctx, projectID)
 				if err != nil || !found {
@@ -450,16 +447,15 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 				return s.persistServiceImageEnv(ctx, projectPath, content)
 			},
 		}),
-		containerRegistryService:    p.ContainerRegistryService,
-		uploads:                     p.Uploads,
-		config:                      p.Config,
-		RegistryCredentialsProvider: p.RegistryCredentialsProvider,
-		parsedCompose:               projects.NewComposeCache(2048, projects.CloneComposeProject),
-		metaCache:                   projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
-		composeIdentities:           projects.NewComposeCache[types.ComposeIdentity](2048, nil),
-		composeNames:                composeNameCache{byName: make(map[string]string)},
-		FilesChanged:                concurrency.NewSignal[string](),
-		Deleted:                     concurrency.NewSignal[string](),
+		containerRegistryService: p.ContainerRegistryService,
+		uploads:                  p.Uploads,
+		config:                   p.Config,
+		parsedCompose:            projects.NewComposeCache(2048, projects.CloneComposeProject),
+		metaCache:                projects.NewComposeCache[projects.ArcaneComposeMetadata](1024, nil),
+		composeIdentities:        projects.NewComposeCache[types.ComposeIdentity](2048, nil),
+		composeNames:             composeNameCache{byName: make(map[string]string)},
+		FilesChanged:             concurrency.NewSignal[string](),
+		Deleted:                  concurrency.NewSignal[string](),
 	}
 	return s
 }
@@ -529,15 +525,6 @@ func (s *ProjectService) RecoverStuckProjectStatuses(ctx context.Context) error 
 		slog.InfoContext(ctx, "Recovered interrupted project statuses", "found", len(stuck), "recovered", recovered)
 	}
 	return firstErr
-}
-
-func (s *ProjectService) ResolveRegistryCredentials(ctx context.Context) ([]types.ContainerRegistryCredential, error) {
-	credentials, err := s.RegistryCredentialsProvider(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get enabled registry credentials: %w", err)
-	}
-
-	return credentials, nil
 }
 
 func (s *ProjectService) GetProjectsDirectory(ctx context.Context) (string, error) {
@@ -1364,14 +1351,6 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 		return updateProjectStatusErr
 	}
 
-	credentials, err := s.ResolveRegistryCredentials(ctx)
-	if err != nil {
-		if statusErr := s.updateProjectStatus(context.WithoutCancel(ctx), projectID, previousStatus); statusErr != nil {
-			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after credential lookup failure", "projectId", projectID, "error", statusErr)
-		}
-		return fmt.Errorf("resolve registry credentials: %w", err)
-	}
-
 	authConfigs, authErr := s.containerRegistryService.GetAllRegistryAuthConfigs(ctx)
 	if authErr != nil {
 		slog.WarnContext(ctx, "failed to load registry auth for compose pulls", "error", authErr)
@@ -1379,7 +1358,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	if updateServicesErr := s.composeCoordinator.UpdateServices(ctx, types.ComposeServiceUpdate{
 		Project: compProj, DockerHost: dockerHost, Services: options.Services, Dependents: dependents, StoppedDependents: stoppedDependents,
-		Images: s.deployment.ImageOperations(&options.User, credentials, options.PinnedImages), Progress: progressWriter,
+		Images: s.deployment.ImageOperations(&options.User, nil, options.PinnedImages), Progress: progressWriter,
 		AuthConfigs: authConfigs, WaitTimeout: timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		RestoreBeforeMutation: func(ctx context.Context) {
 			if statusErr := s.updateProjectStatus(ctx, projectID, previousStatus); statusErr != nil {
@@ -1545,16 +1524,15 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 			return model, loadComposeProjectForProjectErr
 		},
 		ResolveImages: func(ctx context.Context) (types.ComposeImageOperations, error) {
-			credentials, resolveRegistryCredentialsErr := s.ResolveRegistryCredentials(ctx)
-			operations := s.deployment.ImageOperations(&user, credentials, nil)
+			operations := s.deployment.ImageOperations(&user, nil, nil)
 			return types.ComposeImageOperations{
 				Exists:     operations.Exists,
 				LastTagged: operations.LastTagged,
 				// Deployment pulls are recorded as system actions; builds retain the requesting actor.
-				Pull:          s.deployment.ImageOperations(nil, credentials, nil).Pull,
+				Pull:          s.deployment.ImageOperations(nil, nil, nil).Pull,
 				Build:         operations.Build,
 				BuildProvider: operations.BuildProvider,
-			}, resolveRegistryCredentialsErr
+			}, nil
 		},
 		Recover: func(ctx context.Context) {
 			s.restoreRuntimeProjectStatus(ctx, projectID)
@@ -1961,6 +1939,7 @@ func (s *ProjectService) ExportProjectArchive(ctx context.Context, projectID str
 		Write:    pack,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(proj.Name) + ".tar.gz",
+		Target:   proj.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", proj.Name, err)
@@ -2049,6 +2028,12 @@ func (s *ProjectService) destroyProject(ctx context.Context, projectID string, o
 		// An imported project can live anywhere, so removal is rooted at its parent directory.
 		if removeAllErr := (acfs.Root{Path: filepath.Dir(proj.Path)}).RemoveAll(ctx, "/"+filepath.Base(proj.Path)); removeAllErr != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", removeAllErr)
+			if errors.Is(removeAllErr, os.ErrPermission) {
+				return fmt.Errorf(
+					"failed to remove project files: %s or its parent directory is not writable by the runtime user (uid %d, gid %d); fix their ownership or set PUID/PGID to a user that can write to both: %w",
+					proj.Path, os.Geteuid(), os.Getegid(), removeAllErr,
+				)
+			}
 			return fmt.Errorf("failed to remove project files: %w", removeAllErr)
 		}
 		slog.InfoContext(ctx, "Project files removed successfully", "path", proj.Path)
@@ -2094,7 +2079,7 @@ func (s *ProjectService) runsArcane(ctx context.Context, proj *Project) bool {
 		return false
 	}
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	return slices.ContainsFunc(listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj)), func(c container.Summary) bool {
+	return slices.ContainsFunc(listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj)), func(c mobyContainer.Summary) bool {
 		return labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
 			CurrentErr:         currentContainerErr,
 			Labels:             c.Labels,
@@ -2159,11 +2144,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	}
 
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
-	credentials, cerr := s.ResolveRegistryCredentials(ctx)
-	if cerr != nil {
-		slog.WarnContext(ctx, "failed to resolve registry credentials for redeploy pull", "error", cerr)
-	}
-	if pullProjectImagesErr := s.PullProjectImages(ctx, projectID, kit.Ternary(progressWriter == nil, io.Discard, progressWriter), user, credentials); pullProjectImagesErr != nil {
+	if pullProjectImagesErr := s.PullProjectImages(ctx, projectID, kit.Ternary(progressWriter == nil, io.Discard, progressWriter), user, nil); pullProjectImagesErr != nil {
 		slog.WarnContext(ctx, "failed to pull project images", "error", pullProjectImagesErr)
 		logWriter := docker.NewLogLineWriter(progressWriter)
 		_, _ = io.WriteString(logWriter, "WARNING: failed to pull project images; deploying with local images:\n"+pullProjectImagesErr.Error()+"\n")
@@ -2914,6 +2895,13 @@ func (s *ProjectService) ListAllProjects(ctx context.Context) ([]Project, error)
 func (s *ProjectService) ListProjects(ctx context.Context, params pagination.QueryParams) ([]types.Project, pagination.Response, error) {
 	updatesFilter := strings.TrimSpace(params.Filters["updates"])
 	query := s.db.WithContext(ctx).Model(&Project{})
+	allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList)
+	if allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []types.Project{}, pagination.BuildResponse(0, 0, params), nil
+		}
+		query = query.Where("id IN ?", allowedIDs)
+	}
 	if archivedFilter := strings.TrimSpace(params.Filters["archived"]); !strings.EqualFold(archivedFilter, "all") {
 		archived, _ := kit.ParseBool(archivedFilter)
 		query = query.Where("is_archived = ?", archived)
@@ -2983,8 +2971,8 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	if updatesFilter != "" {
 		s.preloadGitOpsSyncs(ctx, env, projectsArray)
 		items = s.enrichProjectsWithUpdateInfo(ctx, projectsArray, items, true, env)
-		// Untracked compose projects only join an unfiltered-by-tag has_update view.
-		if strings.EqualFold(updatesFilter, "has_update") && strings.TrimSpace(params.Filters["tags"]) == "" {
+		// Untracked compose projects only join an unfiltered-by-tag has_update view for unrestricted callers.
+		if allowedIDs == nil && strings.EqualFold(updatesFilter, "has_update") && strings.TrimSpace(params.Filters["tags"]) == "" {
 			if snapshot.Err != nil {
 				slog.WarnContext(ctx, "failed to list compose containers for project update rows", "error", snapshot.Err)
 			} else {
@@ -3041,7 +3029,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	return result.Items, kit.Ternary(paginateInDB, paginationResp, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)), nil
 }
 
-func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, allContainers []container.Summary, allProjects []Project) int {
+func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, allContainers []mobyContainer.Summary, allProjects []Project) int {
 	activeProjects := make([]Project, 0, len(allProjects))
 	for _, proj := range allProjects {
 		if !proj.IsArchived {
@@ -3072,7 +3060,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 		}
 	}
 
-	visibleContainers := make([]container.Summary, 0, len(allContainers))
+	visibleContainers := make([]mobyContainer.Summary, 0, len(allContainers))
 	for _, c := range allContainers {
 		hidden, _ := kit.ParseBool(c.Labels[selfcontainer.HiddenResourceLabel])
 		if !hidden {
@@ -3208,7 +3196,7 @@ func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []
 	}
 	for i := range projectsList {
 		s.refreshProjectImageRefs(ctx, &projectsList[i])
-		if err := s.reconcileComposeTagsForProject(ctx, &projectsList[i]); err != nil {
+		if err := s.reconcileComposeTagsForProject(ctx, &projectsList[i], types.ComposeIdentity{}); err != nil {
 			slog.WarnContext(ctx, "failed to reconcile Compose project tags after file change", "projectId", projectsList[i].ID, "error", err)
 		}
 	}
@@ -3459,7 +3447,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			}
 		}
 		if len(updates) == 0 {
-			return s.reconcileComposeTagsForProject(ctx, &existing)
+			return s.reconcileComposeTagsForProject(ctx, &existing, composeMetadata)
 		}
 		updates["updated_at"] = time.Now()
 		if uerr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", existing.ID).Updates(updates).Error; uerr != nil {
@@ -3477,20 +3465,26 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			slog.WarnContext(ctx, "multiple project directories resolve to the same compose project name", "composeProjectName", composeMetadata.ResolvedProjectName, "path", dirPath, "duplicates", duplicates)
 		}
 	}
-	return s.reconcileComposeTagsForProject(ctx, &existing)
+	return s.reconcileComposeTagsForProject(ctx, &existing, composeMetadata)
 }
 
 func (s *ProjectService) ApplyGitSyncEnvToDirectory(ctx context.Context, projectPath, projectsDirectory string, gitEnvContent *string) (before, after string, err error) {
 	return projectsync.ApplyGitSyncEnv(ctx, projectPath, projectsDirectory, gitEnvContent)
 }
 
-func (s *ProjectService) reconcileComposeTagsForProject(ctx context.Context, projectModel *Project) error {
+func (s *ProjectService) reconcileComposeTagsForProject(ctx context.Context, projectModel *Project, identity types.ComposeIdentity) error {
 	if projectModel == nil {
 		return nil
 	}
 	composeFile, err := s.ResolveProjectComposeFile(ctx, projectModel)
 	if err != nil {
 		return fmt.Errorf("resolve Compose file for tag reconciliation: %w", err)
+	}
+	if identity.ComposeFile == composeFile {
+		if !identity.ProjectTagsAuthoritative {
+			return nil
+		}
+		return s.reconcileComposeProjectTags(ctx, projectModel.ID, identity.ProjectTags)
 	}
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -3630,7 +3624,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if composeContent != nil || overrideContent != nil {
 		s.refreshComposeProjectName(ctx, proj)
 		s.refreshProjectImageRefs(ctx, proj)
-		if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj); reconcileErr != nil {
+		if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj, types.ComposeIdentity{}); reconcileErr != nil {
 			slog.WarnContext(ctx, "failed to reconcile Compose project tags after project content update", "projectId", proj.ID, "error", reconcileErr)
 		}
 		if countsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.None[ProjectStatus]()); countsErr != nil {
@@ -3857,7 +3851,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 
 	s.refreshComposeProjectName(ctx, proj)
 	s.refreshProjectImageRefs(ctx, proj)
-	if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj); reconcileErr != nil {
+	if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj, types.ComposeIdentity{}); reconcileErr != nil {
 		slog.WarnContext(ctx, "failed to reconcile Compose project tags after project content update", "projectId", proj.ID, "error", reconcileErr)
 	}
 	if countsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.None[ProjectStatus]()); countsErr != nil {
@@ -4285,15 +4279,32 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.ProjectStatusCounts, error) {
+	query := s.db.WithContext(ctx).Model(&Project{})
+	if allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList); allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return types.ProjectStatusCounts{}, nil
+		}
+		query = query.Where("id IN ?", allowedIDs)
+	}
 	var projectsList []Project
-	if listProjectsErr := s.db.WithContext(ctx).Find(&projectsList).Error; listProjectsErr != nil {
+	if listProjectsErr := query.Find(&projectsList).Error; listProjectsErr != nil {
 		return types.ProjectStatusCounts{}, fmt.Errorf("failed to list projects: %w", listProjectsErr)
 	}
 	snapshot := s.listing.Snapshot(ctx)
 	if snapshot.Err != nil {
 		return types.ProjectStatusCounts{}, fmt.Errorf("failed to list containers for project update count: %w", snapshot.Err)
 	}
-	updates := s.CountProjectsWithPendingUpdates(ctx, snapshot.Containers, projectsList)
+	allowedCompose, unrestricted, err := middleware.AllowedComposeProjects(ctx, s.db, types.LocalDockerEnvironmentID, authz.PermProjectsList)
+	if err != nil {
+		return types.ProjectStatusCounts{}, err
+	}
+	containers := make([]mobyContainer.Summary, 0, len(snapshot.Containers))
+	for _, c := range snapshot.Containers {
+		if _, allowed := allowedCompose[strings.ToLower(docker.ComposeProjectLabel(c.Labels))]; unrestricted || allowed {
+			containers = append(containers, c)
+		}
+	}
+	updates := s.CountProjectsWithPendingUpdates(ctx, containers, projectsList)
 	counts := listing.StatusCounts(projectRecords(projectsList), snapshot)
 	return types.ProjectStatusCounts{
 		RunningProjects:  counts.RunningProjects,
@@ -4364,8 +4375,15 @@ func (s *ProjectService) GetProjectTags(ctx context.Context, projectID string) (
 }
 
 func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]types.ProjectTagOption, error) {
+	query := s.db.WithContext(ctx).Model(&ProjectTag{})
+	if allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList); allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []types.ProjectTagOption{}, nil
+		}
+		query = query.Where("project_id IN ?", allowedIDs)
+	}
 	var rows []types.ProjectTagAssignment
-	if err := s.db.WithContext(ctx).Model(&ProjectTag{}).Order("name, source DESC, color").Find(&rows).Error; err != nil {
+	if err := query.Order("name, source DESC, color").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list project tag options: %w", err)
 	}
 	// Rows are ordered by name with the UI source first, so each name's first row wins.
@@ -4379,8 +4397,15 @@ func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]types.Pro
 }
 
 func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]types.ProjectReference, error) {
+	query := s.db.WithContext(ctx).Model(&Project{})
+	if allowedIDs := middleware.AllowedProjectIDs(ctx, types.LocalDockerEnvironmentID, authz.PermProjectsList); allowedIDs != nil {
+		if len(allowedIDs) == 0 {
+			return []types.ProjectReference{}, nil
+		}
+		query = query.Where("id IN ?", allowedIDs)
+	}
 	references := []types.ProjectReference{}
-	if err := s.db.WithContext(ctx).Model(&Project{}).Select("id", "name").Order("name").Find(&references).Error; err != nil {
+	if err := query.Select("id", "name").Order("name").Find(&references).Error; err != nil {
 		return nil, fmt.Errorf("list project references: %w", err)
 	}
 	return references, nil

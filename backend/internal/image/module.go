@@ -8,7 +8,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/build"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/image/children/attestations"
 	"getarcane.dev/arcane/v3/internal/image/children/patch"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
@@ -23,7 +23,7 @@ import (
 type (
 	Module struct {
 		service     *ImageService
-		docker      *docker.DockerClientService
+		docker      *dockerInternal.DockerClientService
 		imageUpdate *imageupdate.ImageUpdateService
 		settings    *settings.SettingsService
 		build       *build.BuildService
@@ -37,7 +37,7 @@ type (
 		fx.In
 
 		Service         *ImageService
-		DockerService   *docker.DockerClientService
+		DockerService   *dockerInternal.DockerClientService
 		ImageUpdate     *imageupdate.ImageUpdateService
 		SettingsService *settings.SettingsService
 		BuildService    *build.BuildService
@@ -55,7 +55,7 @@ func New(p Params) *Module {
 		build:               p.BuildService,
 		activity:            p.ActivityService,
 		upload:              p.UploadService,
-		attestationsHandler: attestations.NewHandler(attestations.NewService(p.Service.dockerService, p.Service.registryService.GetRegistryAuthForImage)),
+		attestationsHandler: attestations.NewHandler(attestations.NewService(p.Service.dockerService, p.Service.registryService.GetRegistryAuthForImage), p.Service.CheckImageAccess),
 	}
 }
 
@@ -69,18 +69,18 @@ func (m *Module) Service() *ImageService {
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		RegisterImages(api, nil, nil, nil, nil, nil, nil, nil, appCtx)
-		attestations.RegisterRoutes(api, attestations.NewHandler(nil))
-		patch.RegisterRoutes(api, nil, appCtx)
+		attestations.RegisterRoutes(api, attestations.NewHandler(nil, nil))
+		patch.RegisterRoutes(api, nil, appCtx, nil)
 		return
 	}
 	RegisterImages(api, m.docker, m.service, m.imageUpdate, m.settings, m.build, m.activity, m.upload, appCtx)
 	attestations.RegisterRoutes(api, m.attestationsHandler)
-	patch.RegisterRoutes(api, m.service.patch, appCtx)
+	patch.RegisterRoutes(api, m.service.patch, appCtx, m.service.CheckImageAccess)
 }
 
 func RegisterImages(
 	api huma.API,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	imageService *ImageService,
 	imageUpdateService *imageupdate.ImageUpdateService,
 	settingsService *settings.SettingsService,

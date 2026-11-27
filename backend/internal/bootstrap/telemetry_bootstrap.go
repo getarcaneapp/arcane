@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 
 	"go.opentelemetry.io/contrib/exporters/autoexport"
@@ -20,7 +21,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.19.0"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/telemetry"
@@ -144,6 +145,9 @@ func (t *telemetryProviders) Shutdown(ctx context.Context) error {
 }
 
 func redactSecrets(s string) string {
+	if !strings.Contains(s, "://") && !strings.Contains(s, "/webhooks/trigger/") {
+		return s
+	}
 	s = urlUserinfo.ReplaceAllString(s, "$1")
 	return webhookToken.ReplaceAllString(urlQuery.ReplaceAllString(s, "$1"), "${1}:token")
 }

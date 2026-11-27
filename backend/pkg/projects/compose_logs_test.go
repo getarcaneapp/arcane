@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/api/pkg/stdcopy"
+	mobyStdCopy "github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -65,8 +65,8 @@ func TestComposeLogsMarksStderrWithoutChangingComposeOptions(t *testing.T) {
 			logsQueries <- r.URL.RawQuery
 			w.Header().Set("Content-Type", "application/vnd.docker.multiplexed-stream")
 			_, err := w.Write(bytes.Join([][]byte{
-				frameLogEntry(stdcopy.Stdout, []byte(composeLogsTestTimestamp+"hello stdout\n")),
-				frameLogEntry(stdcopy.Stderr, []byte(composeLogsTestTimestamp+"hello stderr\n")),
+				frameLogEntry(mobyStdCopy.Stdout, []byte(composeLogsTestTimestamp+"hello stdout\n")),
+				frameLogEntry(mobyStdCopy.Stderr, []byte(composeLogsTestTimestamp+"hello stderr\n")),
 			}, nil))
 			if !assert.NoError(t, err) {
 				return

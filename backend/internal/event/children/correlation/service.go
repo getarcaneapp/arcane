@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

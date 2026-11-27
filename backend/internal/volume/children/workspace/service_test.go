@@ -18,10 +18,10 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/volume"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyVolume "github.com/moby/moby/api/types/volume"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -30,18 +30,18 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
-func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
@@ -58,7 +58,7 @@ func TestValidateVolumeHelperSupport(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local", Options: options}); err != nil {
+		if err := json.MarshalWrite(w, mobyVolume.Volume{Name: "workspace-volume", Driver: "local", Options: options}); err != nil {
 			t.Errorf("encode volume inspect response: %v", err)
 		}
 	}))
@@ -458,7 +458,7 @@ func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
 
 func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *testing.T) {
 	var createRequest struct {
-		HostConfig *container.HostConfig `json:"HostConfig"`
+		HostConfig *mobyContainer.HostConfig `json:"HostConfig"`
 	}
 	createCalls := 0
 	removeCalls := 0
@@ -494,8 +494,8 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 		HelperImage: func(context.Context) (string, error) {
 			return volumes.ToolsImage(""), nil
 		},
-		BackupStorageMount: func(_ context.Context, _ *client.Client, target string, readOnly bool) (mount.Mount, error) {
-			return mount.Mount{Type: mount.TypeVolume, Source: "arcane-backups", Target: target, ReadOnly: readOnly}, nil
+		BackupStorageMount: func(_ context.Context, _ *mobyClient.Client, target string, readOnly bool) (mobyMount.Mount, error) {
+			return mobyMount.Mount{Type: mobyMount.TypeVolume, Source: "arcane-backups", Target: target, ReadOnly: readOnly}, nil
 		},
 	})
 
@@ -599,7 +599,7 @@ if stat -c '%A' -- /tmp/missing-nested-backup.tar >/dev/null 2>&1; then exit 1; 
 	require.Equal(t, "absent\x00New Folder\x00", missingNested)
 }
 
-func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newVolumeTestDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -614,5 +614,5 @@ func newVolumeTestDockerService(t *testing.T, dockerClient *client.Client) *dock
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

@@ -177,7 +177,7 @@ func LoadCachedComposeProject(ctx context.Context,
 	if projectCache == nil {
 		return model, nil
 	}
-	composeFiles, envFiles, ok := ComposeCacheDependencies(ctx, model, dependencies, composePath, projectsDirectory, autoInject)
+	composeFiles, envFiles, _, ok := ComposeCacheDependencies(ctx, model, dependencies, composePath, projectsDirectory, autoInject)
 	if !ok {
 		// Metadata discovery failure disables caching; the executable model is valid.
 		return model, nil
@@ -194,7 +194,7 @@ func ComposeCacheDependencies(
 	dependencies types.ComposeDependencies,
 	composePath, projectsDirectory string,
 	autoInject bool,
-) ([]string, []string, bool) {
+) ([]string, []string, ArcaneComposeMetadata, bool) {
 	envFiles := dependencies.EnvFiles
 	if envOpts, parseErr := ParseComposeEnvOptions(ctx, model.WorkingDir, EnvMap(model.Environment)); parseErr == nil {
 		envFiles = append(envFiles, envOpts.EnvFiles...)
@@ -202,8 +202,8 @@ func ComposeCacheDependencies(
 	// Metadata discovery already follows recursive includes and their interpolation env files.
 	meta, err := ParseArcaneComposeMetadata(ctx, composePath, projectsDirectory, autoInject)
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, meta, false
 	}
 	composeFiles := append(append([]string{}, model.ComposeFiles...), meta.ComposeFiles...)
-	return composeFiles, append(envFiles, meta.EnvFiles...), true
+	return composeFiles, append(envFiles, meta.EnvFiles...), meta, true
 }

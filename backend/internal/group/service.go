@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/normalization"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -44,6 +44,13 @@ type (
 		MemberUserIDs   *[]string
 		RoleAssignments *[]GroupRoleAssignment
 		Name            string
+	}
+
+	MembershipSync struct {
+		ClaimGroups map[string][]string
+		UserID      string
+		Source      string
+		Claims      []string
 	}
 )
 
@@ -390,7 +397,7 @@ func replaceRoleAssignmentsInTx(tx *gorm.DB, groupID, source string, desired []G
 	seen := make(map[string]struct{}, len(desired))
 	rows := make([]GroupRoleAssignment, 0, len(desired))
 	for _, a := range desired {
-		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID)
+		key := a.RoleID + "\x00" + kit.FromPtr(a.EnvironmentID) + "\x00" + kit.FromPtr(a.ResourceType) + "\x00" + kit.FromPtr(a.ResourceID)
 		if _, dup := seen[key]; dup {
 			continue
 		}
@@ -399,6 +406,8 @@ func replaceRoleAssignmentsInTx(tx *gorm.DB, groupID, source string, desired []G
 			GroupID:       groupID,
 			RoleID:        a.RoleID,
 			EnvironmentID: a.EnvironmentID,
+			ResourceType:  a.ResourceType,
+			ResourceID:    a.ResourceID,
 			Source:        source,
 		})
 	}
@@ -446,10 +455,129 @@ func validateGroupAssignmentsExist(tx *gorm.DB, desired []GroupRoleAssignment) e
 	roleIDSet := make(map[string]struct{}, len(desired))
 	envIDSet := make(map[string]struct{}, len(desired))
 	for _, a := range desired {
+		if err := role.ValidateResourceScope(a.EnvironmentID, a.ResourceType, a.ResourceID); err != nil {
+			return err
+		}
 		roleIDSet[a.RoleID] = struct{}{}
 		if a.EnvironmentID != nil {
 			envIDSet[*a.EnvironmentID] = struct{}{}
 		}
 	}
 	return role.ValidateRoleAndEnvIDsExist(tx, roleIDSet, envIDSet)
+}
+
+func (s *GroupService) ListIdpMappings(ctx context.Context, groupID string) ([]GroupIdpMapping, error) {
+	var out []GroupIdpMapping
+	query := s.db.WithContext(ctx).Model(&GroupIdpMapping{})
+	if trimmed := strings.TrimSpace(groupID); trimmed != "" {
+		query = query.Where("group_id = ?", trimmed)
+	}
+	if err := query.Order("claim_value ASC, group_id ASC").Find(&out).Error; err != nil {
+		return nil, fmt.Errorf("failed to list group IdP mappings: %w", err)
+	}
+	return out, nil
+}
+
+func (s *GroupService) CreateIdpMapping(ctx context.Context, claimValue, groupID string) (*GroupIdpMapping, error) {
+	claimValue = strings.TrimSpace(claimValue)
+	groupID = strings.TrimSpace(groupID)
+	if claimValue == "" {
+		return nil, common.Classify(common.ErrValidation, errors.New("claim value is required"))
+	}
+	if groupID == "" {
+		return nil, common.Classify(common.ErrValidation, errors.New("group id is required"))
+	}
+	var mapping GroupIdpMapping
+	err := s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := role.VerifyIDsExist(tx.Model(&Group{}), map[string]struct{}{groupID: {}}, "group"); err != nil {
+			return err
+		}
+		mapping = GroupIdpMapping{
+			ClaimValue: claimValue,
+			GroupID:    groupID,
+			Source:     SourceManual,
+		}
+		if err := tx.Create(&mapping).Error; err != nil {
+			return fmt.Errorf("failed to create group IdP mapping: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &mapping, nil
+}
+
+func (s *GroupService) DeleteIdpMapping(ctx context.Context, id string) error {
+	return s.db.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing GroupIdpMapping
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.Classify(common.ErrNotFound, errors.New("Group IdP mapping not found"))
+			}
+			return fmt.Errorf("failed to load group IdP mapping: %w", err)
+		}
+		if existing.Source == SourceEnv {
+			return common.Classify(common.ErrConflict, errors.New("Group IdP mapping is environment-managed and cannot be deleted"))
+		}
+		if err := tx.Delete(&GroupIdpMapping{}, "id = ?", id).Error; err != nil {
+			return fmt.Errorf("failed to delete group IdP mapping: %w", err)
+		}
+		return nil
+	})
+}
+
+func LoadClaimGroupsInDB(ctx context.Context, tx *gorm.DB) (map[string][]string, error) {
+	if !tx.WithContext(ctx).Migrator().HasTable("group_idp_mappings") {
+		return nil, nil
+	}
+	var mappings []GroupIdpMapping
+	if err := tx.WithContext(ctx).Select("group_id", "claim_value").Find(&mappings).Error; err != nil {
+		return nil, fmt.Errorf("failed to resolve group IdP mappings: %w", err)
+	}
+	claimGroups := make(map[string][]string, len(mappings))
+	for _, mapping := range mappings {
+		key := strings.ToLower(strings.TrimSpace(mapping.ClaimValue))
+		if key != "" && !slices.Contains(claimGroups[key], mapping.GroupID) {
+			claimGroups[key] = append(claimGroups[key], mapping.GroupID)
+		}
+	}
+	return claimGroups, nil
+}
+
+// SyncUserMembershipsInDB replaces a user's synced group memberships for source
+// ('oidc' or 'ldap') based on group_idp_mappings matching the provided IdP claim values.
+// Manual memberships are never touched.
+func SyncUserMembershipsInDB(ctx context.Context, tx *gorm.DB, opts MembershipSync) error {
+	if !tx.WithContext(ctx).Migrator().HasTable("group_members") {
+		return nil
+	}
+	var matchedGroupIDs []string
+	for _, claim := range opts.Claims {
+		for _, groupID := range opts.ClaimGroups[strings.ToLower(strings.TrimSpace(claim))] {
+			if !slices.Contains(matchedGroupIDs, groupID) {
+				matchedGroupIDs = append(matchedGroupIDs, groupID)
+			}
+		}
+	}
+	if err := tx.WithContext(ctx).
+		Where("user_id = ? AND source = ?", opts.UserID, opts.Source).
+		Delete(&GroupMember{}).Error; err != nil {
+		return fmt.Errorf("failed to clear %s group memberships: %w", opts.Source, err)
+	}
+	if len(matchedGroupIDs) == 0 {
+		return nil
+	}
+	rows := make([]GroupMember, len(matchedGroupIDs))
+	for i, gid := range matchedGroupIDs {
+		rows[i] = GroupMember{
+			GroupID: gid,
+			UserID:  opts.UserID,
+			Source:  opts.Source,
+		}
+	}
+	if err := tx.WithContext(ctx).Create(&rows).Error; err != nil {
+		return fmt.Errorf("failed to insert %s group memberships: %w", opts.Source, err)
+	}
+	return nil
 }

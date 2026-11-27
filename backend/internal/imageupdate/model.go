@@ -3,7 +3,7 @@ package imageupdate
 import (
 	"time"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/types/v3"

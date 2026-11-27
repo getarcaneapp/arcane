@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/cli/v3/internal/output"
 	"getarcane.dev/cli/v3/internal/prompt"

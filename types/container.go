@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyNetwork "github.com/moby/moby/api/types/network"
 )
 
 type (
@@ -452,7 +452,7 @@ func IsContainerResourceSort(sort string) bool {
 	return sort == ContainerSortCPUUsage || sort == ContainerSortMemoryUsage
 }
 
-func NewContainerSummary(c container.Summary) ContainerSummary {
+func NewContainerSummary(c mobyContainer.Summary) ContainerSummary {
 	names := make([]string, 0, len(c.Names))
 	for _, name := range c.Names {
 		names = append(names, strings.TrimPrefix(name, "/"))
@@ -514,7 +514,7 @@ func NewContainerSummary(c container.Summary) ContainerSummary {
 	}
 }
 
-func NewContainerDetails(c *container.InspectResponse) ContainerDetails {
+func NewContainerDetails(c *mobyContainer.InspectResponse) ContainerDetails {
 	cfg, labels, imageName := mapInspectConfig(c.Config)
 
 	return ContainerDetails{
@@ -536,7 +536,7 @@ func NewContainerDetails(c *container.InspectResponse) ContainerDetails {
 	}
 }
 
-func mapInspectPorts(networkSettings *container.NetworkSettings) []ContainerPort {
+func mapInspectPorts(networkSettings *mobyContainer.NetworkSettings) []ContainerPort {
 	ports := make([]ContainerPort, 0)
 	if networkSettings == nil || networkSettings.Ports == nil {
 		return ports
@@ -572,7 +572,7 @@ func mapInspectPorts(networkSettings *container.NetworkSettings) []ContainerPort
 	return ports
 }
 
-func mapInspectMounts(mountPoints []container.MountPoint) []ContainerMount {
+func mapInspectMounts(mountPoints []mobyContainer.MountPoint) []ContainerMount {
 	mounts := make([]ContainerMount, 0, len(mountPoints))
 	for _, m := range mountPoints {
 		mounts = append(mounts, ContainerMount{
@@ -590,7 +590,7 @@ func mapInspectMounts(mountPoints []container.MountPoint) []ContainerMount {
 	return mounts
 }
 
-func mapInspectNetworks(networkSettings *container.NetworkSettings) map[string]ContainerNetworkEndpoint {
+func mapInspectNetworks(networkSettings *mobyContainer.NetworkSettings) map[string]ContainerNetworkEndpoint {
 	networks := map[string]ContainerNetworkEndpoint{}
 	if networkSettings == nil || networkSettings.Networks == nil {
 		return networks
@@ -603,7 +603,7 @@ func mapInspectNetworks(networkSettings *container.NetworkSettings) map[string]C
 	return networks
 }
 
-func mapInspectHostConfig(hostConfig *container.HostConfig) ContainerHostConfig {
+func mapInspectHostConfig(hostConfig *mobyContainer.HostConfig) ContainerHostConfig {
 	if hostConfig == nil {
 		return ContainerHostConfig{}
 	}
@@ -617,7 +617,7 @@ func mapInspectHostConfig(hostConfig *container.HostConfig) ContainerHostConfig 
 	}
 }
 
-func mapInspectConfig(config *container.Config) (ContainerConfig, map[string]string, string) {
+func mapInspectConfig(config *mobyContainer.Config) (ContainerConfig, map[string]string, string) {
 	labels := map[string]string{}
 	if config == nil {
 		return ContainerConfig{}, labels, ""
@@ -650,7 +650,7 @@ func mapInspectConfig(config *container.Config) (ContainerConfig, map[string]str
 	return cfg, labels, config.Image
 }
 
-func mapInspectState(state *container.State) ContainerState {
+func mapInspectState(state *mobyContainer.State) ContainerState {
 	if state == nil {
 		return ContainerState{}
 	}
@@ -670,7 +670,7 @@ func mapInspectState(state *container.State) ContainerState {
 	return mappedState
 }
 
-func mapInspectHealth(health *container.Health) *ContainerHealth {
+func mapInspectHealth(health *mobyContainer.Health) *ContainerHealth {
 	log := make([]ContainerHealthLogEntry, 0, len(health.Log))
 	for _, entry := range health.Log {
 		if entry == nil {
@@ -724,7 +724,7 @@ func mapComposeInfo(labels map[string]string) *ContainerComposeInfo {
 	return composeInfo
 }
 
-func mapEndpointSettings(n *network.EndpointSettings) ContainerNetworkEndpoint {
+func mapEndpointSettings(n *mobyNetwork.EndpointSettings) ContainerNetworkEndpoint {
 	if n == nil {
 		return ContainerNetworkEndpoint{}
 	}
@@ -773,7 +773,7 @@ func mapEndpointSettings(n *network.EndpointSettings) ContainerNetworkEndpoint {
 	}
 }
 
-func NewContainerEditConfigFromInspect(c *container.InspectResponse, isCompose, editDisabled bool) ContainerEditConfig {
+func NewContainerEditConfigFromInspect(c *mobyContainer.InspectResponse, isCompose, editDisabled bool) ContainerEditConfig {
 	cfg := ContainerEditConfig{
 		ID:           c.ID,
 		Name:         strings.TrimPrefix(c.Name, "/"),
@@ -803,7 +803,7 @@ func NewContainerEditConfigFromInspect(c *container.InspectResponse, isCompose, 
 	return cfg
 }
 
-func mapEditHealthcheck(hc *container.HealthConfig) *ContainerHealthcheckCreate {
+func mapEditHealthcheck(hc *mobyContainer.HealthConfig) *ContainerHealthcheckCreate {
 	if hc == nil {
 		return nil
 	}
@@ -818,7 +818,7 @@ func mapEditHealthcheck(hc *container.HealthConfig) *ContainerHealthcheckCreate 
 	}
 }
 
-func mapEditHostConfig(hc *container.HostConfig) ContainerEditConfigHostConfig {
+func mapEditHostConfig(hc *mobyContainer.HostConfig) ContainerEditConfigHostConfig {
 	if hc == nil {
 		return ContainerEditConfigHostConfig{}
 	}
@@ -871,7 +871,7 @@ func mapEditHostConfig(hc *container.HostConfig) ContainerEditConfigHostConfig {
 	return out
 }
 
-func mapEditNetworks(c *container.InspectResponse) map[string]ContainerEditConfigNetwork {
+func mapEditNetworks(c *mobyContainer.InspectResponse) map[string]ContainerEditConfigNetwork {
 	if c.NetworkSettings == nil || len(c.NetworkSettings.Networks) == 0 {
 		return nil
 	}

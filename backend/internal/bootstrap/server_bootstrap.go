@@ -8,17 +8,19 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/labstack/echo/v5"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/pires/go-proxyproto"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 
 	"getarcane.dev/arcane/v3/internal/config"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -52,7 +54,7 @@ func serverOptions(agentEnabled bool) fx.Option {
 
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	if p.Config.AgentEnabled {
-		return &http.Server{Handler: p.Router}, nil
+		return newAgentHealthServer(lc, p), nil
 	}
 	listenAddr := p.Config.ListenAddr()
 	useTLS, tlsCertFile, tlsKeyFile, agentTLSConfig, err := prepareServerTLS(p.AppCtx, p.Config, p.TunnelServer.MTLS)
@@ -189,6 +191,37 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	return srv, nil
 }
 
+func newAgentHealthServer(lc fx.Lifecycle, p HTTPServerParams) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("/api/health", p.Router)
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			if mkdirErr := os.MkdirAll(filepath.Dir(config.AgentHealthSocket), cmp.Or(p.Config.DirPerm, 0o755)); mkdirErr != nil {
+				slog.ErrorContext(ctx, "Failed to create agent health socket directory", "path", config.AgentHealthSocket, "error", mkdirErr)
+				return nil
+			}
+			_ = os.Remove(config.AgentHealthSocket)
+			listener, err := new(net.ListenConfig).Listen(ctx, "unix", config.AgentHealthSocket)
+			if err != nil {
+				slog.ErrorContext(ctx, "Failed to listen on agent health socket", "path", config.AgentHealthSocket, "error", err)
+				return nil
+			}
+			go func() {
+				if serveErr := srv.Serve(listener); !errors.Is(serveErr, http.ErrServerClosed) {
+					slog.ErrorContext(p.AppCtx, "Agent health server exited with error", "error", serveErr)
+				}
+			}()
+			return nil
+		},
+		OnStop: srv.Shutdown,
+	})
+	return srv
+}
+
 func prepareServerTLS(ctx context.Context, cfg *config.Config, mtls *agent.MTLS) (bool, string, string, *tls.Config, error) {
 	useTLS := cfg.TLSEnabled
 	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
@@ -224,7 +257,7 @@ func buildAgentRuntimeConfig(cfg *config.Config, agentToken string, hostInfo age
 	}
 }
 
-func agentHostInfo(ctx context.Context, dockerService *docker.DockerClientService) agent.AgentHostInfo {
+func agentHostInfo(ctx context.Context, dockerService *dockerInternal.DockerClientService) agent.AgentHostInfo {
 	infoCtx, cancel := context.WithTimeout(ctx, startupTaskTimeout)
 	defer cancel()
 	dockerClient, err := dockerService.GetClient(infoCtx)
@@ -232,7 +265,7 @@ func agentHostInfo(ctx context.Context, dockerService *docker.DockerClientServic
 		slog.WarnContext(ctx, "Failed to connect to Docker for agent host info", "error", err)
 		return agent.AgentHostInfo{AgentVersion: config.Version}
 	}
-	result, err := dockerClient.Info(infoCtx, client.InfoOptions{})
+	result, err := dockerClient.Info(infoCtx, mobyClient.InfoOptions{})
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to read Docker info for agent host info", "error", err)
 		return agent.AgentHostInfo{AgentVersion: config.Version}

@@ -7,18 +7,20 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/mapping"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/types/v3"
@@ -27,7 +29,7 @@ import (
 type (
 	NetworkHandler struct {
 		networkService  *NetworkService
-		dockerService   *docker.DockerClientService
+		dockerService   *dockerInternal.DockerClientService
 		activityService *activity.ActivityService
 		appCtx          context.Context
 	}
@@ -121,6 +123,10 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *types.Envi
 		return &handlerutil.Out[types.NetworkUsageCounts]{Body: body}, nil
 	}
 
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermNetworksList, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermNetworksList)
+	}
+
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get network counts: " + err.Error())
@@ -144,7 +150,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, err
 	}
 
-	dockerOptions, err := mapping.MapOne[types.NetworkCreateOptions, client.NetworkCreateOptions](input.Body.Options)
+	dockerOptions, err := mapping.MapOne[types.NetworkCreateOptions, mobyClient.NetworkCreateOptions](input.Body.Options)
 	if err != nil {
 		return nil, huma.Error400BadRequest("Invalid network options: " + err.Error())
 	}
@@ -152,7 +158,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		dockerOptions.EnableIPv6 = nil // keep: mapped options need nil to omit IPv6
 	}
 
-	var response *network.CreateResponse
+	var response *mobyNetwork.CreateResponse
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -178,7 +184,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
-	out, err := mapping.MapOne[network.CreateResponse, types.NetworkCreateResponse](*response)
+	out, err := mapping.MapOne[mobyNetwork.CreateResponse, types.NetworkCreateResponse](*response)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
@@ -192,14 +198,36 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	}, nil
 }
 
+func (h *NetworkHandler) requireNetworkAccess(ctx context.Context, envID, perm, networkID string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.Allows(perm, envID) {
+		return nil
+	}
+	netInspect, err := h.networkService.GetNetworkByID(ctx, networkID)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireComposeResourcePermission(ctx, h.networkService.db, middleware.ComposeResourceAccessInput{
+		EnvID:        envID,
+		Permission:   perm,
+		ResourceType: authz.ResourceTypeNetwork,
+		ResourceID:   netInspect.ID,
+		ResourceName: netInspect.Name,
+		Labels:       netInspect.Labels,
+	})
+}
+
 func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*handlerutil.Out[types.NetworkInspect], error) {
+	if err := h.requireNetworkAccess(ctx, input.EnvironmentID, authz.PermNetworksRead, input.NetworkID); err != nil {
+		return nil, err
+	}
 	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve network: "+apiErr.Message)
 	}
 
-	out, err := mapping.MapOne[network.Inspect, types.NetworkInspect](*networkInspect)
+	out, err := mapping.MapOne[mobyNetwork.Inspect, types.NetworkInspect](*networkInspect)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
@@ -243,6 +271,9 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *types.En
 		}
 		return &handlerutil.Out[types.NetworkTopology]{Body: body}, nil
 	}
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && !ps.Allows(authz.PermNetworksRead, input.EnvironmentID) {
+		return nil, huma.Error403Forbidden("permission denied: " + authz.PermNetworksRead)
+	}
 
 	topology, err := h.networkService.GetNetworkTopology(ctx)
 	if err != nil {
@@ -259,6 +290,9 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *types.En
 }
 
 func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetworkInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if err := h.requireNetworkAccess(ctx, input.EnvironmentID, authz.PermNetworksDelete, input.NetworkID); err != nil {
+		return nil, err
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -290,6 +324,10 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 }
 
 func (h *NetworkHandler) RunNetworkAction(ctx context.Context, input *NetworkActionInput) (*handlerutil.Out[types.MessageResponse], error) {
+	actionPerm := kit.Ternary(input.Action == "connect", authz.PermNetworksConnect, authz.PermNetworksDisconnect)
+	if err := h.requireNetworkAccess(ctx, input.EnvironmentID, actionPerm, input.NetworkID); err != nil {
+		return nil, err
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -342,7 +380,7 @@ func (h *NetworkHandler) RunNetworkAction(ctx context.Context, input *NetworkAct
 }
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkPruneReport], error) {
-	var report *network.PruneReport
+	var report *mobyNetwork.PruneReport
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -361,7 +399,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *types.Environ
 		return nil, huma.Error500InternalServerError("Failed to prune networks: " + err.Error())
 	}
 
-	out, err := mapping.MapOne[network.PruneReport, types.NetworkPruneReport](*report)
+	out, err := mapping.MapOne[mobyNetwork.PruneReport, types.NetworkPruneReport](*report)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}

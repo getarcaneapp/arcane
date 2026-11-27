@@ -1,6 +1,6 @@
 package pagination
 
-import "kit.getarcane.app"
+import kit "kit.getarcane.app"
 
 type (
 	Params struct {

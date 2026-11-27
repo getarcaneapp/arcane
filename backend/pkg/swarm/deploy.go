@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/moby/moby/api/types/swarm"
-	dockerclient "github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -33,7 +33,7 @@ type (
 	}
 )
 
-func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts StackDeployOptions) error {
+func DeployStack(ctx context.Context, dockerClient *mobyClient.Client, opts StackDeployOptions) error {
 	stackName := strings.TrimSpace(opts.Name)
 	if err := ValidateStackName(stackName); err != nil {
 		return invalidStackError(err)
@@ -124,7 +124,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 			if _, ok := desiredServices[name]; ok {
 				continue
 			}
-			if _, serviceRemoveErr := dockerClient.ServiceRemove(ctx, svc.ID, dockerclient.ServiceRemoveOptions{}); serviceRemoveErr != nil {
+			if _, serviceRemoveErr := dockerClient.ServiceRemove(ctx, svc.ID, mobyClient.ServiceRemoveOptions{}); serviceRemoveErr != nil {
 				return fmt.Errorf("failed to remove swarm service %s: %w", name, serviceRemoveErr)
 			}
 		}
@@ -139,14 +139,14 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 
 func reconcileStackServices(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient *mobyClient.Client,
 	project *composeTypes.Project,
 	ns namespace,
 	stackLabels map[string]string,
 	networkNameByKey map[string]string,
 	configMetaByKey map[string]resourceMeta,
 	secretMetaByKey map[string]resourceMeta,
-	existingServices map[string]swarm.Service,
+	existingServices map[string]mobySwarm.Service,
 	opts StackDeployOptions,
 	resolveMode string,
 ) (map[string]struct{}, error) {
@@ -176,15 +176,15 @@ func reconcileStackServices(
 	return desiredServices, nil
 }
 
-func listStackServices(ctx context.Context, dockerClient *dockerclient.Client, stackName string) (map[string]swarm.Service, error) {
-	filter := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
-	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{Filters: filter})
+func listStackServices(ctx context.Context, dockerClient *mobyClient.Client, stackName string) (map[string]mobySwarm.Service, error) {
+	filter := make(mobyClient.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
+	servicesResult, err := dockerClient.ServiceList(ctx, mobyClient.ServiceListOptions{Filters: filter})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 	services := servicesResult.Items
 
-	byName := make(map[string]swarm.Service, len(services))
+	byName := make(map[string]mobySwarm.Service, len(services))
 	for _, service := range services {
 		byName[service.Spec.Name] = service
 	}
@@ -193,8 +193,8 @@ func listStackServices(ctx context.Context, dockerClient *dockerclient.Client, s
 
 func createSwarmService(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
-	spec swarm.ServiceSpec,
+	dockerClient *mobyClient.Client,
+	spec mobySwarm.ServiceSpec,
 	withRegistryAuth bool,
 	registryAuthForImage func(context.Context, string) (string, error),
 	resolveMode string,
@@ -204,7 +204,7 @@ func createSwarmService(
 		return err
 	}
 	queryRegistry := encodedRegistryAuth != "" || (resolveMode == resolveImageAlways || resolveMode == resolveImageChanged)
-	opts := dockerclient.ServiceCreateOptions{
+	opts := mobyClient.ServiceCreateOptions{
 		Spec:                spec,
 		QueryRegistry:       queryRegistry,
 		EncodedRegistryAuth: encodedRegistryAuth,
@@ -217,9 +217,9 @@ func createSwarmService(
 
 func updateSwarmService(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
-	existing swarm.Service,
-	spec swarm.ServiceSpec,
+	dockerClient *mobyClient.Client,
+	existing mobySwarm.Service,
+	spec mobySwarm.ServiceSpec,
 	withRegistryAuth bool,
 	registryAuthForImage func(context.Context, string) (string, error),
 	resolveMode string,
@@ -235,12 +235,12 @@ func updateSwarmService(
 	// Do not force task rescheduling on no-op updates.
 	spec.TaskTemplate.ForceUpdate = existing.Spec.TaskTemplate.ForceUpdate
 
-	opts := dockerclient.ServiceUpdateOptions{
+	opts := mobyClient.ServiceUpdateOptions{
 		Version:             existing.Version,
 		Spec:                spec,
 		QueryRegistry:       queryRegistry,
 		EncodedRegistryAuth: encodedRegistryAuth,
-		RegistryAuthFrom:    kit.Ternary(encodedRegistryAuth != "", swarm.RegistryAuthFromSpec, swarm.RegistryAuthFromPreviousSpec),
+		RegistryAuthFrom:    kit.Ternary(encodedRegistryAuth != "", mobySwarm.RegistryAuthFromSpec, mobySwarm.RegistryAuthFromPreviousSpec),
 	}
 
 	if _, serviceUpdateErr := dockerClient.ServiceUpdate(ctx, existing.ID, opts); serviceUpdateErr != nil {
@@ -269,7 +269,7 @@ func normalizeResolveImageMode(value string) (string, error) {
 	}
 }
 
-func shouldQueryRegistryOnUpdate(resolveMode string, existing swarm.Service, desired swarm.ServiceSpec) bool {
+func shouldQueryRegistryOnUpdate(resolveMode string, existing mobySwarm.Service, desired mobySwarm.ServiceSpec) bool {
 	switch resolveMode {
 	case resolveImageAlways:
 		return true
@@ -282,7 +282,7 @@ func shouldQueryRegistryOnUpdate(resolveMode string, existing swarm.Service, des
 	}
 }
 
-func preserveExistingResolvedImage(spec *swarm.ServiceSpec, existing swarm.Service) {
+func preserveExistingResolvedImage(spec *mobySwarm.ServiceSpec, existing mobySwarm.Service) {
 	if spec.TaskTemplate.ContainerSpec == nil || existing.Spec.TaskTemplate.ContainerSpec == nil {
 		return
 	}
@@ -298,7 +298,7 @@ func stripImageDigest(image string) string {
 
 func resolveRegistryAuthForSpec(
 	ctx context.Context,
-	spec swarm.ServiceSpec,
+	spec mobySwarm.ServiceSpec,
 	withRegistryAuth bool,
 	registryAuthForImage func(context.Context, string) (string, error),
 ) (string, error) {

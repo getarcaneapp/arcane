@@ -12,7 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/sys/crypto"
 
@@ -20,7 +20,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
 	"getarcane.dev/arcane/v3/internal/middleware"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
@@ -156,12 +156,20 @@ func (s *Service) execute(
 ) (*agent.RemoteResponse, error) {
 	// Forward the activity batch ID so bulk actions proxied to a remote
 	// environment group the same way they do locally.
-	requestHeaders := make(http.Header, 3)
+	requestHeaders := make(http.Header, 4)
 	if batchID := activitylib.ActivityBatchIDFromContext(ctx); batchID != "" {
 		requestHeaders.Set(middleware.HeaderActivityBatchID, batchID)
 	}
 	if len(body) > 0 && method != http.MethodGet {
 		requestHeaders.Set("Content-Type", "application/json")
+	}
+	forward, _ := ctx.Value(middleware.ContextKeyForwardPermissions).(bool)
+	if ps, ok := middleware.PermissionsFromContext(ctx); ok && forward && !ps.Sudo {
+		forwarded, marshalErr := json.Marshal(ps.ForwardedPermissions(target.id))
+		if marshalErr != nil {
+			return nil, fmt.Errorf("failed to encode forwarded permissions: %w", marshalErr)
+		}
+		requestHeaders.Set(middleware.HeaderForwardedPermissions, string(forwarded))
 	}
 	agent.SetAgentToken(requestHeaders, kit.FromPtr(target.accessToken))
 
@@ -248,31 +256,31 @@ func (s *Service) SyncRegistriesToEnvironment(ctx context.Context, envID string)
 		return targetErr
 	}
 	return s.fanOutSyncToEnvironment(ctx, target, "registries", "/api/registries/sync",
-		func(reg registry.ContainerRegistry) (types.ContainerRegistrySync, bool, error) {
-			registryType, typeErr := registry.NormalizeRegistryType(reg.RegistryType)
+		func(reg registryInternal.ContainerRegistry) (types.ContainerRegistrySync, bool, error) {
+			registryType, typeErr := registryInternal.NormalizeRegistryType(reg.RegistryType)
 			if typeErr != nil {
 				return types.ContainerRegistrySync{}, false, fmt.Errorf("normalize registry type for sync %s: %w", reg.ID, typeErr)
 			}
 
-			decrypted, err := crypto.Decrypt(kit.Ternary(registryType == registry.RegistryTypeECR, reg.AWSSecretAccessKey, reg.Token))
+			decrypted, err := crypto.Decrypt(kit.Ternary(registryType == registryInternal.RegistryTypeECR, reg.AWSSecretAccessKey, reg.Token))
 			if err != nil {
 				return types.ContainerRegistrySync{}, false, fmt.Errorf("failed to decrypt %s for registry %s for sync: %w",
-					kit.Ternary(registryType == registry.RegistryTypeECR, "ECR secret", "token"), reg.ID, err)
+					kit.Ternary(registryType == registryInternal.RegistryTypeECR, "ECR secret", "token"), reg.ID, err)
 			}
 
 			return types.ContainerRegistrySync{
 				ID:                 reg.ID,
 				URL:                reg.URL,
-				Username:           kit.Ternary(registryType == registry.RegistryTypeECR, "", reg.Username),
-				Token:              kit.Ternary(registryType == registry.RegistryTypeECR, "", decrypted),
+				Username:           kit.Ternary(registryType == registryInternal.RegistryTypeECR, "", reg.Username),
+				Token:              kit.Ternary(registryType == registryInternal.RegistryTypeECR, "", decrypted),
 				Description:        reg.Description,
 				Insecure:           reg.Insecure,
 				Enabled:            reg.Enabled,
 				RegistryType:       registryType,
 				RepositoryNames:    reg.RepositoryNames,
-				AWSAccessKeyID:     kit.Ternary(registryType == registry.RegistryTypeECR, reg.AWSAccessKeyID, ""),
-				AWSSecretAccessKey: kit.Ternary(registryType == registry.RegistryTypeECR, decrypted, ""),
-				AWSRegion:          kit.Ternary(registryType == registry.RegistryTypeECR, reg.AWSRegion, ""),
+				AWSAccessKeyID:     kit.Ternary(registryType == registryInternal.RegistryTypeECR, reg.AWSAccessKeyID, ""),
+				AWSSecretAccessKey: kit.Ternary(registryType == registryInternal.RegistryTypeECR, decrypted, ""),
+				AWSRegion:          kit.Ternary(registryType == registryInternal.RegistryTypeECR, reg.AWSRegion, ""),
 				CreatedAt:          reg.CreatedAt,
 				UpdatedAt:          reg.UpdatedAt,
 			}, true, nil

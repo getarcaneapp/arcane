@@ -15,7 +15,7 @@ import (
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	dockertypes "kit.getarcane.app/docker/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"
@@ -614,7 +614,7 @@ func (h *ProjectHandler) RestoreProjectBackupAsNew(ctx context.Context, input *R
 		return nil, err
 	}
 	required := append([]string{authz.PermProjectsRead}, authz.ProjectImportConditions.Required("start", strconv.FormatBool(input.Body.Start))...)
-	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, required); permErr != nil {
+	if permErr := middleware.RequireResourcePermissions(ctx, input.EnvironmentID, authz.ResourceTypeProject, input.ProjectID, required); permErr != nil {
 		return nil, permErr
 	}
 	permissions, _ := middleware.PermissionsFromContext(ctx)
@@ -665,7 +665,7 @@ func (h *ProjectHandler) ExportProjectArchive(ctx context.Context, input *Export
 		authz.ProjectExportConditions.Required("volumes", strconv.FormatBool(len(request.Volumes) > 0)),
 		authz.ProjectExportConditions.Required("stopProject", strconv.FormatBool(request.StopProject)),
 	)
-	if permErr := middleware.RequirePermissions(ctx, input.EnvironmentID, required); permErr != nil {
+	if permErr := middleware.RequireResourcePermissions(ctx, input.EnvironmentID, authz.ResourceTypeProject, input.ProjectID, required); permErr != nil {
 		return nil, permErr
 	}
 

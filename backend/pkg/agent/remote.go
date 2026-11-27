@@ -14,7 +14,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/timeouts"

@@ -5,11 +5,12 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -68,7 +69,16 @@ func RequireEchoPermission(perm string) echo.MiddlewareFunc {
 			if authz.IsEnvScoped(perm) {
 				envID = authz.EnvIDFromPath(c.Request().URL.Path)
 			}
-			if !ps.Allows(perm, envID) {
+			if projectID := c.Param("projectId"); projectID != "" && strings.HasPrefix(perm, "projects:") {
+				if !ps.AllowsResource(perm, envID, authz.ResourceTypeProject, projectID) {
+					return c.JSON(http.StatusForbidden, common.APIError{
+						Code:    "FORBIDDEN",
+						Message: "permission denied: " + perm,
+					})
+				}
+				return next(c)
+			}
+			if !ps.AllowsRoute(perm, envID) {
 				return c.JSON(http.StatusForbidden, common.APIError{
 					Code:    "FORBIDDEN",
 					Message: "permission denied: " + perm,
@@ -116,10 +126,20 @@ func RequirePermissions(ctx context.Context, environmentID string, perms []strin
 	return nil
 }
 
+func RequireResourcePermissions(ctx context.Context, environmentID, resourceType, resourceID string, perms []string) error {
+	ps, _ := PermissionsFromContext(ctx)
+	for _, perm := range perms {
+		if !ps.AllowsResource(perm, environmentID, resourceType, resourceID) {
+			return huma.Error403Forbidden("permission denied: " + perm)
+		}
+	}
+	return nil
+}
+
 func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {
 	if scope, scoped := httpx.EnvironmentScopeFromContext(ctx.Context()); scoped && authz.IsEnvScoped(perm) {
 		denied := slices.DeleteFunc(slices.Clone(scope.IDs), func(id string) bool {
-			return ps.Allows(perm, id)
+			return ps.AllowsRoute(perm, id)
 		})
 		return kit.Ternary(ctx.Method() == http.MethodGet, len(denied) < len(scope.IDs), len(denied) == 0)
 	}
@@ -129,7 +149,10 @@ func permissionAllowed(ctx huma.Context, ps *authz.PermissionSet, perm string) b
 	if target := envcontext.EnvironmentIDFromContext(ctx.Context()); target != "" && authz.IsEnvScoped(perm) {
 		envID = target
 	}
-	return ps.Allows(perm, envID)
+	if projectID := ctx.Param("projectId"); projectID != "" && strings.HasPrefix(perm, "projects:") {
+		return ps.AllowsResource(perm, envID, authz.ResourceTypeProject, projectID)
+	}
+	return ps.AllowsRoute(perm, envID)
 }
 
 func RequireGlobalAdmin(api huma.API, op huma.Operation) huma.Operation {

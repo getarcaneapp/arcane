@@ -3,8 +3,8 @@ package backup
 import (
 	"testing"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,47 +12,47 @@ func TestBackupMountWarningFromArcaneMounts(t *testing.T) {
 	tests := []struct {
 		name   string
 		want   string
-		mounts []container.MountPoint
+		mounts []mobyContainer.MountPoint
 	}{
 		{
 			name: "bind mount at backups suppresses warning",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/backups", Destination: "/backups"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/backups", Destination: "/backups"},
 			},
 			want: "",
 		},
 		{
 			name: "named volume at backups suppresses warning",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeVolume, Name: "arcane-backups", Destination: "/backups"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeVolume, Name: "arcane-backups", Destination: "/backups"},
 			},
 			want: "",
 		},
 		{
 			name: "bind mount at restores suppresses warning",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/restores", Destination: "/restores"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/restores", Destination: "/restores"},
 			},
 			want: "",
 		},
 		{
 			name: "unsupported restores mount still suppresses warning for compatibility",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeTmpfs, Destination: "/restores"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeTmpfs, Destination: "/restores"},
 			},
 			want: "",
 		},
 		{
 			name: "missing backups mount warns",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/other", Destination: "/other"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/other", Destination: "/other"},
 			},
 			want: backupMountMissingWarning,
 		},
 		{
 			name: "unsupported backups mount type warns",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeTmpfs, Destination: "/backups"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeTmpfs, Destination: "/backups"},
 			},
 			want: backupMountMissingWarning,
 		},

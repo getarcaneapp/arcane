@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/types/v3"
 )
 
@@ -30,17 +30,17 @@ func newReadyTestService(t *testing.T, shutdown <-chan struct{}) (*Service, *dat
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
 
 	return &Service{
 		db:       db,
-		docker:   (&docker.DockerClientService{}).WithClient(dockerClient),
+		docker:   (&dockerInternal.DockerClientService{}).WithClient(dockerClient),
 		shutdown: shutdown,
 	}, db
 }

@@ -15,15 +15,16 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/distribution/reference"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyClient "github.com/moby/moby/client"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
@@ -39,11 +40,13 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image/children/patch"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
-	"getarcane.dev/arcane/v3/internal/registry"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -64,7 +67,7 @@ type (
 		db                   *database.DB
 		dockerService        *dockerInternal.DockerClientService
 		imageUpdateService   *imageupdate.ImageUpdateService
-		registryService      *registry.ContainerRegistryService
+		registryService      *registryInternal.ContainerRegistryService
 		vulnerabilityService *vulnerability.VulnerabilityService
 		eventService         *event.EventService
 
@@ -90,7 +93,7 @@ type (
 
 		DB                   *database.DB
 		DockerService        *dockerInternal.DockerClientService
-		RegistryService      *registry.ContainerRegistryService
+		RegistryService      *registryInternal.ContainerRegistryService
 		ImageUpdateService   *imageupdate.ImageUpdateService
 		VulnerabilityService *vulnerability.VulnerabilityService
 		EventService         *event.EventService
@@ -255,9 +258,9 @@ func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.ImageDetailSummary, error) {
 	var (
-		inspect    image.InspectResponse
+		inspect    mobyImage.InspectResponse
 		listSize   int64
-		containers []container.Summary
+		containers []mobyContainer.Summary
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -265,14 +268,14 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "image worker")
 
-		inspectResult, inspectImageErr := s.dockerService.Call(gctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		inspectResult, inspectImageErr := s.dockerService.Call(gctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, id)
 		})
 		if inspectImageErr != nil {
 			return fmt.Errorf("inspect not found: %w", inspectImageErr)
 		}
 		repoTags, repoDigests := imageref.SplitRepositoryReferences(inspectResult.RepoTags, inspectResult.RepoDigests)
-		inspect = image.InspectResponse{ //exhaustruct:enforce
+		inspect = mobyImage.InspectResponse{ //exhaustruct:enforce
 			ID:           inspectResult.ID,
 			RepoTags:     repoTags,
 			RepoDigests:  repoDigests,
@@ -353,7 +356,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 }
 
 func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user types.Actor) error {
-	imageDetails, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	imageDetails, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, id)
 	})
 	imageName := func() string {
@@ -376,8 +379,8 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 			tagReleases = append(tagReleases, s.eventService.BeginDockerResourceSuppressionWindow("image", "", tag))
 		}
 	}
-	removed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageRemoveResult, error) {
-		return dockerClient.ImageRemove(ctx, id, client.ImageRemoveOptions{
+	removed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageRemoveResult, error) {
+		return dockerClient.ImageRemove(ctx, id, mobyClient.ImageRemoveOptions{
 			Force:         force,
 			PruneChildren: true,
 		})
@@ -418,7 +421,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	return nil
 }
 
-func (s *ImageService) cleanupRemovedImages(ctx context.Context, deleted []image.DeleteResponse, extraIDs ...string) {
+func (s *ImageService) cleanupRemovedImages(ctx context.Context, deleted []mobyImage.DeleteResponse, extraIDs ...string) {
 	idsToDelete := make([]string, 0, len(deleted)+len(extraIDs))
 	for _, img := range deleted {
 		if deletedID := cmp.Or(img.Deleted, img.Untagged); deletedID != "" {
@@ -460,7 +463,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	pullOptions, err := s.PullOptionsWithAuth(ctx, imageName, externalCreds)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to get registry authentication for image; proceeding without auth", "image", imageName, "error", err.Error())
-		pullOptions = client.ImagePullOptions{}
+		pullOptions = mobyClient.ImagePullOptions{}
 	}
 
 	initialHasAuth := pullOptions.RegistryAuth != ""
@@ -471,7 +474,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	if err != nil && ShouldRetryAnonymousPull(pullOptions, err) {
 		retriedWithoutAuth = true
 		slog.WarnContext(ctx, "Docker ImagePull failed with registry auth; retrying anonymously", "image", imageName, "error", err.Error())
-		pullOptions = client.ImagePullOptions{}
+		pullOptions = mobyClient.ImagePullOptions{}
 		reader, err = dockerClient.ImagePull(ctx, imageName, pullOptions)
 	}
 	if err != nil {
@@ -555,7 +558,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 }
 
 func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (time.Time, error) {
-	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageName)
 	})
 	if err != nil {
@@ -621,8 +624,8 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req types.Im
 	target := kit.Ternary(tag != "", repository+":"+tag, repository)
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", target)()
-	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageTagResult, error) {
-		return dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
+	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageTagResult, error) {
+		return dockerClient.ImageTag(ctx, mobyClient.ImageTagOptions{Source: source, Target: target})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
@@ -664,7 +667,7 @@ func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([
 		return nil, errors.New("image name is required")
 	}
 
-	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageHistoryResult, error) {
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageHistoryResult, error) {
 		return dockerClient.ImageHistory(ctx, imageName)
 	})
 	if err != nil {
@@ -691,8 +694,8 @@ func (s *ImageService) SearchImages(ctx context.Context, term string) ([]types.I
 		return nil, errors.New("search term is required")
 	}
 
-	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageSearchResult, error) {
-		return dockerClient.ImageSearch(ctx, term, client.ImageSearchOptions{})
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageSearchResult, error) {
+		return dockerClient.ImageSearch(ctx, term, mobyClient.ImageSearchOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to search images: %w", err)
@@ -818,7 +821,7 @@ func (r *uploadLimitReader) Read(p []byte) (int, error) {
 }
 
 func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string) (bool, error) {
-	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageName)
 	})
 	if err == nil {
@@ -831,7 +834,7 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 }
 
-func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (client.ImagePullOptions, error) {
+func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (mobyClient.ImagePullOptions, error) {
 	registryHost := arcaneregistry.ExtractRegistryHost(imageRef)
 
 	usableCreds := slices.DeleteFunc(slices.Clone(externalCreds), func(cred types.ContainerRegistryCredential) bool {
@@ -839,31 +842,31 @@ func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string,
 	})
 	matchingCreds, err := arcaneregistry.MatchingForImage(imageRef, usableCreds, func(cred types.ContainerRegistryCredential) string { return cred.URL })
 	if err != nil {
-		return client.ImagePullOptions{}, fmt.Errorf("failed to match external credentials: %w", err)
+		return mobyClient.ImagePullOptions{}, fmt.Errorf("failed to match external credentials: %w", err)
 	}
 	if len(matchingCreds) > 0 {
 		cred := matchingCreds[0]
 		authStr, encodeErr := arcaneregistry.EncodeAuthHeader(cred.Username, cred.Token, arcaneregistry.NormalizeRegistryURL(cred.URL))
 		if encodeErr != nil {
-			return client.ImagePullOptions{}, fmt.Errorf("failed to create auth header: %w", encodeErr)
+			return mobyClient.ImagePullOptions{}, fmt.Errorf("failed to create auth header: %w", encodeErr)
 		}
 
 		slog.DebugContext(ctx, "Using external credentials for image pull", "registry", registryHost, "username", cred.Username)
-		return client.ImagePullOptions{RegistryAuth: authStr}, nil
+		return mobyClient.ImagePullOptions{RegistryAuth: authStr}, nil
 	}
 
 	authStr, err := s.registryService.GetRegistryAuthForImage(ctx, imageRef)
 	if err != nil {
-		return client.ImagePullOptions{}, fmt.Errorf("failed to get registry credentials: %w", err)
+		return mobyClient.ImagePullOptions{}, fmt.Errorf("failed to get registry credentials: %w", err)
 	}
 	if authStr != "" {
 		slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost)
 	}
 
-	return client.ImagePullOptions{RegistryAuth: authStr}, nil
+	return mobyClient.ImagePullOptions{RegistryAuth: authStr}, nil
 }
 
-func ShouldRetryAnonymousPull(pullOptions client.ImagePullOptions, pullErr error) bool {
+func ShouldRetryAnonymousPull(pullOptions mobyClient.ImagePullOptions, pullErr error) bool {
 	if pullOptions.RegistryAuth == "" || pullErr == nil {
 		return false
 	}
@@ -876,20 +879,20 @@ func ShouldRetryAnonymousPull(pullOptions client.ImagePullOptions, pullErr error
 	}, func(indicator string) bool { return strings.Contains(strings.ToLower(pullErr.Error()), indicator) })
 }
 
-func (s *ImageService) PruneImages(ctx context.Context, options types.PruneImagesOptions) (*image.PruneReport, error) {
-	filterArgs, err := func() (client.Filters, error) {
+func (s *ImageService) PruneImages(ctx context.Context, options types.PruneImagesOptions) (*mobyImage.PruneReport, error) {
+	filterArgs, err := func() (mobyClient.Filters, error) {
 		switch options.Mode {
 		case types.PruneImageModeNone:
 			return nil, errors.New("image prune mode none is not allowed")
 		case types.PruneImageModeDangling:
-			return make(client.Filters).Add("dangling", "true"), nil
+			return make(mobyClient.Filters).Add("dangling", "true"), nil
 		case types.PruneImageModeAll:
-			return make(client.Filters).Add("dangling", "false"), nil
+			return make(mobyClient.Filters).Add("dangling", "false"), nil
 		case types.PruneImageModeOlderThan:
 			if strings.TrimSpace(options.Until) == "" {
 				return nil, errors.New("image prune mode olderThan requires until")
 			}
-			return make(client.Filters).Add("dangling", "false").Add("until", options.Until), nil
+			return make(mobyClient.Filters).Add("dangling", "false").Add("until", options.Until), nil
 		default:
 			return nil, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
 		}
@@ -902,7 +905,7 @@ func (s *ImageService) PruneImages(ctx context.Context, options types.PruneImage
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune images: %w", err)
 	}
-	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
+	report, err := dockerClient.ImagePrune(ctx, mobyClient.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune images: %w", err)
 	}
@@ -951,7 +954,7 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 	return result, nil
 }
 
-func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers []container.Summary) (map[string]*types.ImageUpdateInfo, error) {
+func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers []mobyContainer.Summary) (map[string]*types.ImageUpdateInfo, error) {
 	result := make(map[string]*types.ImageUpdateInfo)
 	if len(containers) == 0 {
 		return result, nil
@@ -1099,10 +1102,28 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 	return result, nil
 }
 
+func (s *ImageService) CheckImageAccess(ctx context.Context, envID, perm, imageRef string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.AllowsResource(perm, envID, authz.ResourceTypeImage, imageRef) {
+		return nil
+	}
+	detail, err := s.GetImageDetail(ctx, imageRef)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireImagePermission(ctx, s.db, middleware.ImageAccessInput{
+		EnvID:       envID,
+		Permission:  perm,
+		ImageID:     detail.ID,
+		RepoTags:    detail.RepoTags,
+		RepoDigests: detail.RepoDigests,
+	})
+}
+
 func (s *ImageService) ListImagesPaginated(ctx context.Context, params pagination.QueryParams) ([]types.ImageSummary, pagination.Response, error) {
 	var (
-		dockerImages  []image.Summary
-		containers    []container.Summary
+		dockerImages  []mobyImage.Summary
+		containers    []mobyContainer.Summary
 		updateRecords []imageupdate.ImageUpdateRecord
 	)
 
@@ -1132,6 +1153,22 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 
 	if err := g.Wait(); err != nil {
 		return nil, pagination.Response{}, err
+	}
+
+	if allowedRefs, unrestricted, permErr := middleware.AllowedProjectImageRefs(ctx, s.db, types.LocalDockerEnvironmentID, authz.PermImagesList); permErr != nil {
+		return nil, pagination.Response{}, permErr
+	} else if !unrestricted {
+		ps, _ := middleware.PermissionsFromContext(ctx)
+		dockerImages = slices.DeleteFunc(slices.Clone(dockerImages), func(img mobyImage.Summary) bool {
+			return !middleware.ImagePermitted(ps, middleware.ImageAccessInput{
+				EnvID:       types.LocalDockerEnvironmentID,
+				Permission:  authz.PermImagesList,
+				ImageID:     img.ID,
+				RepoTags:    img.RepoTags,
+				RepoDigests: img.RepoDigests,
+				AllowedRefs: allowedRefs,
+			})
+		})
 	}
 
 	imageIDs := make([]string, 0, len(dockerImages))
@@ -1237,7 +1274,7 @@ func (s *ImageService) AggregatePruneImages(ctx context.Context) (types.ApiRespo
 	})
 }
 
-func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []container.Summary) map[string]string {
+func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []mobyContainer.Summary) map[string]string {
 	projectIDs := make(map[string]string)
 	projectNameSet := make(map[string]struct{})
 	for _, c := range containers {
@@ -1277,7 +1314,7 @@ func (s *ImageService) BuildProjectIDMap(ctx context.Context, containers []conta
 	return projectIDs
 }
 
-func BuildVolumeUsageMap(containers []container.Summary, projectIDByName map[string]string) map[string][]types.ImageUsedBy {
+func BuildVolumeUsageMap(containers []mobyContainer.Summary, projectIDByName map[string]string) map[string][]types.ImageUsedBy {
 	usageMap := make(map[string][]types.ImageUsedBy)
 	projectSeen := make(map[string]map[string]bool)
 	containerSeen := make(map[string]map[string]bool)
@@ -1354,7 +1391,7 @@ func buildUpdateMap(records []imageupdate.ImageUpdateRecord) map[string]*imageup
 	return updateMap
 }
 
-func collectPinnedReferencesByImageID(containers []container.Summary) map[string][]string {
+func collectPinnedReferencesByImageID(containers []mobyContainer.Summary) map[string][]string {
 	if len(containers) == 0 {
 		return nil
 	}
@@ -1396,8 +1433,8 @@ func collectPinnedReferencesByImageID(containers []container.Summary) map[string
 }
 
 func MapDockerImagesToDTOs(
-	dockerImages []image.Summary,
-	containers []container.Summary,
+	dockerImages []mobyImage.Summary,
+	containers []mobyContainer.Summary,
 	usageMap map[string][]types.ImageUsedBy,
 	updateMap map[string]*imageupdate.ImageUpdateRecord,
 	vulnerabilityMap map[string]*types.VulnerabilityScanSummary,

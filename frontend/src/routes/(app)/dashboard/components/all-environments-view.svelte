@@ -3,7 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { MediaQuery } from 'svelte/reactivity';
 
@@ -135,6 +135,7 @@
 	let pruneDefaults = $state<Partial<Settings> | null>(null);
 	let pruneDefaultsLoadingId = $state<string | null>(null);
 	let pruningEnvironmentId = $state<string | null>(null);
+	let pruneRunning = $state(false);
 	const liveStats = new DashboardLiveStats();
 	const upgradeDialogOpenById = $state<Record<string, boolean>>({});
 	const upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
@@ -490,6 +491,7 @@
 					podCount: loadedItem.podCount ?? null,
 					updates: loadedItem.updates,
 					reclaimable: diskUsageEntry ? totalReclaimableBytes(diskUsageEntry) : null,
+					reclaimableLoading: loadableEnvironmentIds.has(environment.id) && (diskUsageQuery.isFetching || pruneRunning),
 					risk: risk ? { score: risk.riskScore, band: risk.riskBand, status: risk.scoreStatus } : null,
 					versionText: vInfo?.displayVersion || vInfo?.currentTag || vInfo?.currentVersion || null,
 					updateAvailable: !!vInfo?.updateAvailable,
@@ -574,6 +576,22 @@
 		}
 	}
 
+	onMount(() => {
+		let finishedPrunes: Set<string> | undefined;
+		return activityStore.subscribeActivities((activities) => {
+			const prunes = activities.filter(
+				(activity) =>
+					activity.type === 'system_prune' && shownEnvironmentIds.has(activity.sourceEnvironmentId || activity.environmentId)
+			);
+			const finished = new Set(
+				prunes.filter((activity) => activity.status !== 'queued' && activity.status !== 'running').map((activity) => activity.id)
+			);
+			pruneRunning = finished.size < prunes.length;
+			if (finishedPrunes && [...finished].some((id) => !finishedPrunes?.has(id))) void diskUsageQuery.refetch();
+			finishedPrunes = finished;
+		});
+	});
+
 	function closePruneDialog() {
 		if (pruningEnvironmentId) {
 			return;
@@ -624,7 +642,6 @@
 						...activityToastOptions(extractActivityId(data)),
 						description: target.environment.name
 					});
-					void diskUsageQuery.refetch();
 				}
 			});
 			return;
@@ -641,7 +658,6 @@
 		isPruneDialogOpen = false;
 		pruneTargetId = null;
 		pruneDefaults = null;
-		void diskUsageQuery.refetch();
 
 		let succeeded = 0;
 		let failures = [extractApiErrorMessage(result.error)];
@@ -855,7 +871,7 @@
 					reclaimable={{
 						bytes: diskUsageQuery.isError ? null : diskUsage.reduce((sum, entry) => sum + totalReclaimableBytes(entry.data), 0),
 						environments: diskUsage.length,
-						loading: loadableEnvironmentIds.size > 0 && diskUsageQuery.isPending,
+						loading: loadableEnvironmentIds.size > 0 && (diskUsageQuery.isFetching || pruneRunning),
 						failedEnvironments: diskUsageFailures
 					}}
 				/>
@@ -923,7 +939,7 @@
 			{:else if item.type === 'reclaimable'}
 				<ReclaimableSpace
 					usage={diskUsage}
-					loading={diskUsageQuery.isPending && loadableEnvironmentIds.size > 0}
+					loading={(diskUsageQuery.isFetching || pruneRunning) && loadableEnvironmentIds.size > 0}
 					failed={diskUsageQuery.isError}
 					failedEnvironments={diskUsageFailures}
 					onPrune={prunableEnvironments.length > 0 ? () => void openPruneDialog('all') : undefined}

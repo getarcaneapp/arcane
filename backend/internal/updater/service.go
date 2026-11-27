@@ -17,15 +17,15 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -488,12 +488,12 @@ func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options types.U
 	if listErr != nil {
 		return nil, nil, nil, nil, fmt.Errorf("list containers: %w", listErr)
 	}
-	matches := func(summary container.Summary) bool {
+	matches := func(summary mobyContainer.Summary) bool {
 		return docker.ComposeServiceLabel(summary.Labels) != "" && wanted[strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels)))]
 	}
 	if scope == "image" {
-		matches = func(summary container.Summary) bool {
-			configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+		matches = func(summary mobyContainer.Summary) bool {
+			configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (string, error) {
 				return imageref.ConfiguredImage(ctx, dockerClient, summary), nil
 			})
 			return wanted[summary.ImageID] || wanted[refs.NormalizeImageUpdateRef(configured)]
@@ -509,7 +509,7 @@ func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options types.U
 		matched = append(matched, summary.ID)
 		skips[summary.ID] = localServices[projectKey+"/"+docker.ComposeServiceLabel(summary.Labels)]
 		checkRecords[summary.ID] = kit.Ternary(projectIDs[projectKey] != "", "project::"+projectIDs[projectKey]+"::"+docker.ComposeServiceLabel(summary.Labels), "")
-		running[summary.ID] = summary.State == container.StateRunning
+		running[summary.ID] = summary.State == mobyContainer.StateRunning
 	}
 	return matched, skips, checkRecords, running, nil
 }
@@ -726,7 +726,7 @@ func (s *UpdaterService) updatePendingContainer(ctx context.Context, containerID
 	if listErr != nil {
 		return moduleResult, err
 	}
-	current := slices.IndexFunc(containers, func(summary container.Summary) bool {
+	current := slices.IndexFunc(containers, func(summary mobyContainer.Summary) bool {
 		return docker.ComposeProjectLabel(summary.Labels)+"/"+docker.ComposeServiceLabel(summary.Labels) == serviceKey
 	})
 	if current < 0 {
@@ -922,7 +922,7 @@ func (s *UpdaterService) recordAutoUpdateEvent(ctx context.Context, severity eve
 	}
 }
 
-func (s *UpdaterService) DockerClient(ctx context.Context) (*client.Client, error) {
+func (s *UpdaterService) DockerClient(ctx context.Context) (*mobyClient.Client, error) {
 	return s.deps.Docker.GetClient(ctx)
 }
 
@@ -939,12 +939,8 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	})
 	defer activitylib.FlushWriter(writer)
 
-	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
-	if err != nil {
-		return fmt.Errorf("resolve registry credentials: %w", err)
-	}
 	gate := s.vulnerabilityGate(ctx)
-	gatedRef, err := s.scanBeforeUpdate(ctx, pulledRef, writer, credentials, gate)
+	gatedRef, err := s.scanBeforeUpdate(ctx, pulledRef, writer, gate)
 	if err != nil {
 		if reason, blocked := strings.CutPrefix(err.Error(), vulnerabilityGateBlockedPrefix); blocked {
 			_, digest, _ := strings.Cut(gatedRef, "@")
@@ -959,11 +955,10 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 		return err
 	}
 	if pullErr := s.deps.ImagePuller.Pull(ctx, image.PullRequest{
-		Ref:         gatedRef,
-		Tag:         imageRef,
-		Progress:    writer,
-		User:        s.deps.SystemUser,
-		Credentials: credentials,
+		Ref:      gatedRef,
+		Tag:      imageRef,
+		Progress: writer,
+		User:     s.deps.SystemUser,
 	}); pullErr != nil {
 		return pullErr
 	}
@@ -999,23 +994,23 @@ func (s *UpdaterService) vulnerabilityGate(ctx context.Context) vulnerabilityGat
 	}
 }
 
-func (s *UpdaterService) scanBeforeUpdate(ctx context.Context, pulledRef string, progress io.Writer, credentials []types.ContainerRegistryCredential, gate vulnerabilityGate) (string, error) {
+func (s *UpdaterService) scanBeforeUpdate(ctx context.Context, pulledRef string, progress io.Writer, gate vulnerabilityGate) (string, error) {
 	if !gate.enabled {
 		return pulledRef, nil
 	}
-	digestRef, err := s.resolveGateDigestRef(ctx, pulledRef, credentials)
+	digestRef, err := s.resolveGateDigestRef(ctx, pulledRef)
 	if err != nil {
 		return "", fmt.Errorf("%s%w", vulnerabilityGateScanFailedPrefix, err)
 	}
-	_, absentErr := s.deps.Docker.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+	_, absentErr := s.deps.Docker.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return cli.ImageInspect(ctx, digestRef)
 	})
-	if pullErr := s.pullForScan(ctx, digestRef, progress, credentials); pullErr != nil {
+	if pullErr := s.pullForScan(ctx, digestRef, progress); pullErr != nil {
 		return "", pullErr
 	}
 	s.appendAutoUpdateActivityMessage(ctx, activityIDFromContext(ctx), "Scanning "+pulledRef+" for vulnerabilities", "Scanning updated images", 30)
 	gateErr := func() error {
-		inspected, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+		inspected, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return cli.ImageInspect(ctx, digestRef)
 		})
 		if inspectErr != nil {
@@ -1038,7 +1033,7 @@ func (s *UpdaterService) scanBeforeUpdate(ctx context.Context, pulledRef string,
 	return digestRef, gateErr
 }
 
-func (s *UpdaterService) resolveGateDigestRef(ctx context.Context, pulledRef string, credentials []types.ContainerRegistryCredential) (string, error) {
+func (s *UpdaterService) resolveGateDigestRef(ctx context.Context, pulledRef string) (string, error) {
 	if refs.IsDigestPinnedReference(pulledRef) {
 		return pulledRef, nil
 	}
@@ -1046,7 +1041,7 @@ func (s *UpdaterService) resolveGateDigestRef(ctx context.Context, pulledRef str
 	if err != nil {
 		return "", err
 	}
-	digest, err := s.deps.ImagePuller.RemoteDigest(ctx, pulledRef, credentials)
+	digest, err := s.deps.ImagePuller.RemoteDigest(ctx, pulledRef, nil)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("resolve digest for %s: %w", pulledRef, err)
@@ -1056,10 +1051,10 @@ func (s *UpdaterService) resolveGateDigestRef(ctx context.Context, pulledRef str
 	return reference.RegistryHost + "/" + reference.Repository + "@" + digest, nil
 }
 
-func (s *UpdaterService) pullForScan(ctx context.Context, digestRef string, progress io.Writer, credentials []types.ContainerRegistryCredential) error {
+func (s *UpdaterService) pullForScan(ctx context.Context, digestRef string, progress io.Writer) error {
 	pullCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.deps.Settings.GetSettingsConfig().DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer cancel()
-	err := s.deps.ImagePuller.PullImage(pullCtx, digestRef, progress, s.deps.SystemUser, credentials)
+	err := s.deps.ImagePuller.PullImage(pullCtx, digestRef, progress, s.deps.SystemUser, nil)
 	if err != nil && errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 		return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting): %w", digestRef, context.DeadlineExceeded)
 	}
@@ -1189,15 +1184,15 @@ func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater
 		if scopedCount == 0 && !isScoped && !slices.ContainsFunc(records, imageLevel) {
 			return nil, nil
 		}
-		listed, listErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-			return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+		listed, listErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+			return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{})
 		})
 		if listErr != nil {
 			return nil, listErr
 		}
 		matched := make([]eligibleContainer, 0, len(listed.Items))
 		for _, cnt := range listed.Items {
-			configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+			configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (string, error) {
 				return imageref.ConfiguredImage(ctx, dockerClient, cnt), nil
 			})
 			resolved, policyErr := tagpolicy.Resolve(configured, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
@@ -1307,14 +1302,14 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 	if err != nil {
 		return err
 	}
-	target, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	target, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, record.NewImageRef())
 	})
 	if err != nil {
 		return err
 	}
-	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{})
 	})
 	if err != nil {
 		return err
@@ -1327,7 +1322,7 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 			continue
 		}
 		// Untagged images list by ID, so an orphaned container matches by its configured image.
-		configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+		configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (string, error) {
 			return imageref.ConfiguredImage(ctx, dockerClient, cnt), nil
 		})
 		resolved, policyErr := tagpolicy.Resolve(configured, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
@@ -1349,8 +1344,8 @@ func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, erro
 	if !policy.Include {
 		return slices.Sorted(maps.Keys(policy.Listed)), nil
 	}
-	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{All: true})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list containers for auto-update include mode: %w", err)
@@ -1472,7 +1467,7 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 			<-waitCtx.Done()
 			return
 		}
-		wait := dockerClient.ContainerWait(waitCtx, upgraderID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+		wait := dockerClient.ContainerWait(waitCtx, upgraderID, mobyClient.ContainerWaitOptions{Condition: mobyContainer.WaitConditionNotRunning})
 		select {
 		case <-wait.Result:
 		case waitErr := <-wait.Error:
@@ -1558,8 +1553,8 @@ func (s *UpdaterService) singleContainerActivityRequest(ctx context.Context, con
 	name := func() string {
 		lookupCtx, cancelLookup := context.WithTimeout(ctx, 2*time.Second)
 		defer cancelLookup()
-		inspected, inspectErr := s.deps.Docker.Call(lookupCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+		inspected, inspectErr := s.deps.Docker.Call(lookupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, mobyClient.ContainerInspectOptions{})
 		})
 		if inspectErr != nil {
 			return containerID
@@ -1794,8 +1789,8 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, out map[string]struct{}) error {
 	policy := s.deps.Settings.AutoUpdatePolicy(ctx)
 	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
-	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{})
 	})
 	if err != nil {
 		return err
@@ -1821,8 +1816,8 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 		}
 
 		// The summary only names an image ID, so the image's tags and the configured reference stand in.
-		inspectResult, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, summary.ID, client.ContainerInspectOptions{})
+		inspectResult, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, summary.ID, mobyClient.ContainerInspectOptions{})
 		})
 		if inspectErr != nil {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect failed", "containerId", summary.ID, "error", inspectErr)
@@ -1834,7 +1829,7 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 		}
 		if _, inspected := inspectedImages[inspectResult.Container.Image]; !inspected {
 			inspectedImages[inspectResult.Container.Image] = struct{}{}
-			if imageInspect, imageErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			if imageInspect, imageErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 				return dockerClient.ImageInspect(ctx, inspectResult.Container.Image)
 			}); imageErr == nil {
 				for _, tag := range imageInspect.RepoTags {
@@ -1874,7 +1869,7 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 		return nil
 	}
 
-	composeContainers, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+	composeContainers, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyContainer.Summary, error) {
 		dockerHost, hostErr := s.deps.Docker.ResolveHostForContext(ctx)
 		if hostErr != nil {
 			return nil, hostErr
@@ -2101,11 +2096,7 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 }
 
 func (s *UpdaterService) ListTags(ctx context.Context, imageRef string) ([]string, error) {
-	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve registry credentials: %w", err)
-	}
-	return s.deps.RegistryDigestResolver.ListImageTags(ctx, imageRef, credentials)
+	return s.deps.RegistryDigestResolver.ListImageTags(ctx, imageRef, nil)
 }
 
 func (s *UpdaterService) AcceptTag(ctx context.Context, candidate updatertypes.TagCandidate) (bool, error) {
@@ -2117,11 +2108,7 @@ func (s *UpdaterService) AcceptTag(ctx context.Context, candidate updatertypes.T
 	if err != nil {
 		return false, err
 	}
-	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
-	if err != nil {
-		return false, fmt.Errorf("resolve registry credentials: %w", err)
-	}
-	return s.deps.RegistryDigestResolver.HasImagePlatform(ctx, candidate.TargetRef, platform, credentials)
+	return s.deps.RegistryDigestResolver.HasImagePlatform(ctx, candidate.TargetRef, platform, nil)
 }
 
 func (s *UpdaterService) UpdateServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) error {
@@ -2371,14 +2358,14 @@ func (s *UpdaterService) checkProjectService(
 }
 
 // runningServiceImages inspects the running images of service replicas whose configured image matches service.Image.
-func (s *UpdaterService) runningServiceImages(ctx context.Context, service composeTypes.ServiceConfig, runtime []types.ProjectRuntimeService) ([]client.ImageInspectResult, error) {
-	var images []client.ImageInspectResult
+func (s *UpdaterService) runningServiceImages(ctx context.Context, service composeTypes.ServiceConfig, runtime []types.ProjectRuntimeService) ([]mobyClient.ImageInspectResult, error) {
+	var images []mobyClient.ImageInspectResult
 	for _, replica := range runtime {
-		if replica.Name != service.Name || replica.ContainerID == "" || replica.Status != string(container.StateRunning) {
+		if replica.Name != service.Name || replica.ContainerID == "" || replica.Status != string(mobyContainer.StateRunning) {
 			continue
 		}
-		inspected, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, replica.ContainerID, client.ContainerInspectOptions{})
+		inspected, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, replica.ContainerID, mobyClient.ContainerInspectOptions{})
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "failed to inspect project container for update check", "containerId", replica.ContainerID, "service", service.Name, "error", err)
@@ -2388,7 +2375,7 @@ func (s *UpdaterService) runningServiceImages(ctx context.Context, service compo
 		if refs.NormalizeImageUpdateRef(kit.FromPtr(inspected.Container.Config).Image) != refs.NormalizeImageUpdateRef(service.Image) {
 			continue
 		}
-		running, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		running, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, inspected.Container.Image)
 		})
 		if err != nil {
@@ -2401,7 +2388,7 @@ func (s *UpdaterService) runningServiceImages(ctx context.Context, service compo
 }
 
 // staleDigestInImages returns the digest of the first running image lacking targetDigest.
-func staleDigestInImages(images []client.ImageInspectResult, imageRef, targetDigest string) (string, bool) {
+func staleDigestInImages(images []mobyClient.ImageInspectResult, imageRef, targetDigest string) (string, bool) {
 	for _, running := range images {
 		if digests := imageref.RepositoryDigests(running.RepoDigests, imageRef); !slices.Contains(digests, targetDigest) {
 			return slices.Concat(digests, []string{running.ID})[0], true
@@ -2524,7 +2511,7 @@ func (s *UpdaterService) planAutoUpdate(ctx context.Context, t flow.Task) (any, 
 	return nil, nil
 }
 
-func (s *UpdaterService) autoUpdateDeferral(ctx context.Context, now time.Time) (func(updater.ImageUpdateRecord, container.Summary) bool, error) {
+func (s *UpdaterService) autoUpdateDeferral(ctx context.Context, now time.Time) (func(updater.ImageUpdateRecord, mobyContainer.Summary) bool, error) {
 	var seen []imageupdate.ImageUpdateRecord
 	if err := s.deps.DB.WithContext(ctx).Select("id", "latest_seen_at", "blocked_reason", "blocked_policy").Where("has_update = ?", true).Find(&seen).Error; err != nil {
 		return nil, err
@@ -2539,7 +2526,7 @@ func (s *UpdaterService) autoUpdateDeferral(ctx context.Context, now time.Time) 
 		}
 	}
 	envDelay := s.deps.Settings.GetIntSetting(ctx, "autoUpdateDelay")
-	return func(record updater.ImageUpdateRecord, candidate container.Summary) bool {
+	return func(record updater.ImageUpdateRecord, candidate mobyContainer.Summary) bool {
 		if reason, blocked := stillBlocked[record.ID]; blocked {
 			slog.InfoContext(ctx, "Deferring auto-update of an image blocked by the vulnerability gate until its target or the gate policy changes",
 				"containerId", candidate.ID, "imageRef", record.ImageRef(), "reason", reason)

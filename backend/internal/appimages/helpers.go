@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/semver"
 )
 

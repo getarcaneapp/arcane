@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -30,6 +30,8 @@ import (
 	"getarcane.dev/arcane/v3/internal/database"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
+	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -66,9 +68,9 @@ func NewNetworkService(db *database.DB, dockerService *dockerInternal.DockerClie
 	}
 }
 
-func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*network.Inspect, error) {
-	networkInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
-		return compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
+func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*mobyNetwork.Inspect, error) {
+	networkInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkInspectResult, error) {
+		return compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, mobyClient.NetworkInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("network not found: %w", err)
@@ -121,19 +123,19 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopol
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	containersByID := make(map[string]container.Summary, len(containers))
+	containersByID := make(map[string]mobyContainer.Summary, len(containers))
 	for _, rawContainer := range containers {
 		containersByID[rawContainer.ID] = rawContainer
 	}
 
-	networkList, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkListResult, error) {
-		return compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	networkList, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkListResult, error) {
+		return compat.NetworkListWithCompatibility(ctx, dockerClient, mobyClient.NetworkListOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
 
-	inspectedNetworks := make([]network.Inspect, len(networkList.Items))
+	inspectedNetworks := make([]mobyNetwork.Inspect, len(networkList.Items))
 
 	g, groupCtx := errgroup.WithContext(ctx)
 	g.SetLimit(8)
@@ -142,8 +144,8 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopol
 		g.Go(func() (workerErr error) {
 			defer concurrency.RecoverToError(&workerErr, "network worker")
 
-			inspected, inspectErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
-				return compat.NetworkInspectWithCompatibility(ctx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
+			inspected, inspectErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkInspectResult, error) {
+				return compat.NetworkInspectWithCompatibility(ctx, dockerClient, rawNetwork.ID, mobyClient.NetworkInspectOptions{})
 			})
 			if errdefs.IsNotFound(inspectErr) {
 				return nil
@@ -217,12 +219,12 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopol
 	}, nil
 }
 
-func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error) {
+func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options mobyClient.NetworkCreateOptions, user types.Actor) (*mobyNetwork.CreateResponse, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("network name is required"))
 	}
 	defer s.eventService.BeginDockerResourceSuppressionWindow("network", "", name)()
-	response, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkCreateResult, error) {
+	response, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkCreateResult, error) {
 		return dockerClient.NetworkCreate(ctx, name, options)
 	})
 	if err != nil {
@@ -256,21 +258,21 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 		slog.WarnContext(ctx, "could not log network creation action", "error", logErr)
 	}
 
-	return &network.CreateResponse{
+	return &mobyNetwork.CreateResponse{
 		ID:      response.ID,
 		Warning: strings.Join(response.Warning, "; "),
 	}, nil
 }
 
 func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user types.Actor) error {
-	networkInfo, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
-		return compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
+	networkInfo, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkInspectResult, error) {
+		return compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, mobyClient.NetworkInspectOptions{})
 	})
 	networkName := kit.Ternary(err == nil, networkInfo.Network.Name, id)
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("network", id, networkName)()
-	if _, networkRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkRemoveResult, error) {
-		return dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{})
+	if _, networkRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkRemoveResult, error) {
+		return dockerClient.NetworkRemove(ctx, id, mobyClient.NetworkRemoveOptions{})
 	}); networkRemoveErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 			Type:          event.EventTypeNetworkError,
@@ -315,16 +317,16 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 		return common.Classify(common.ErrValidation, fmt.Errorf("invalid IPv6 address %s: %w", strings.TrimSpace(req.IPv6Address), ipv6Err))
 	}
 
-	if _, networkConnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkConnectResult, error) {
-		return dockerClient.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{
+	if _, networkConnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkConnectResult, error) {
+		return dockerClient.NetworkConnect(ctx, networkID, mobyClient.NetworkConnectOptions{
 			Container: req.ContainerID,
-			EndpointConfig: &network.EndpointSettings{
+			EndpointConfig: &mobyNetwork.EndpointSettings{
 				Aliases: req.Aliases,
-				IPAMConfig: func() *network.EndpointIPAMConfig {
+				IPAMConfig: func() *mobyNetwork.EndpointIPAMConfig {
 					if !ipv4.IsValid() && !ipv6.IsValid() {
 						return nil
 					}
-					return &network.EndpointIPAMConfig{
+					return &mobyNetwork.EndpointIPAMConfig{
 						IPv4Address: ipv4,
 						IPv6Address: ipv6,
 					}
@@ -369,8 +371,8 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 }
 
 func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID string, req types.NetworkContainerRequest, user types.Actor) error {
-	if _, networkDisconnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkDisconnectResult, error) {
-		return dockerClient.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{
+	if _, networkDisconnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkDisconnectResult, error) {
+		return dockerClient.NetworkDisconnect(ctx, networkID, mobyClient.NetworkDisconnectOptions{
 			Container: req.ContainerID,
 			Force:     req.Force,
 		})
@@ -412,9 +414,9 @@ func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID stri
 	return nil
 }
 
-func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneReport, error) {
-	report, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkPruneResult, error) {
-		return dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: make(client.Filters)})
+func (s *NetworkService) PruneNetworks(ctx context.Context) (*mobyNetwork.PruneReport, error) {
+	report, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkPruneResult, error) {
+		return dockerClient.NetworkPrune(ctx, mobyClient.NetworkPruneOptions{Filters: make(mobyClient.Filters)})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune networks: %w", err)
@@ -441,8 +443,8 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 
 func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]types.NetworkSummary, pagination.Response, types.NetworkUsageCounts, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
-	var containers []container.Summary
-	var networkList client.NetworkListResult
+	var containers []mobyContainer.Summary
+	var networkList mobyClient.NetworkListResult
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "network container list worker")
 		var err error
@@ -455,8 +457,8 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 	g.Go(func() (workerErr error) {
 		defer concurrency.RecoverToError(&workerErr, "network list worker")
 		var err error
-		networkList, err = s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkListResult, error) {
-			return compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+		networkList, err = s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkListResult, error) {
+			return compat.NetworkListWithCompatibility(ctx, dockerClient, mobyClient.NetworkListOptions{})
 		})
 		if err != nil {
 			return fmt.Errorf("failed to list Docker networks: %w", err)
@@ -467,11 +469,28 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		return nil, pagination.Response{}, types.NetworkUsageCounts{}, err
 	}
 
+	if allowedCompose, unrestricted, permErr := middleware.AllowedComposeProjects(ctx, s.db, types.LocalDockerEnvironmentID, authz.PermNetworksList); permErr != nil {
+		return nil, pagination.Response{}, types.NetworkUsageCounts{}, permErr
+	} else if !unrestricted {
+		ps, _ := middleware.PermissionsFromContext(ctx)
+		networkList.Items = slices.DeleteFunc(networkList.Items, func(n mobyNetwork.Summary) bool {
+			return !middleware.ComposeResourcePermitted(ps, middleware.ComposeResourceAccessInput{
+				EnvID:          types.LocalDockerEnvironmentID,
+				Permission:     authz.PermNetworksList,
+				ResourceType:   authz.ResourceTypeNetwork,
+				ResourceID:     n.ID,
+				ResourceName:   n.Name,
+				Labels:         n.Labels,
+				AllowedCompose: allowedCompose,
+			})
+		})
+	}
+
 	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
 	items := make([]types.NetworkSummary, 0, len(networkList.Items))
 	inUse := 0
 	for _, n := range networkList.Items {
-		netDto, mapErr := mapping.MapOne[network.Summary, types.NetworkSummary](n)
+		netDto, mapErr := mapping.MapOne[mobyNetwork.Summary, types.NetworkSummary](n)
 		if mapErr != nil {
 			return nil, pagination.Response{}, types.NetworkUsageCounts{}, fmt.Errorf("failed to map network: %w", mapErr)
 		}

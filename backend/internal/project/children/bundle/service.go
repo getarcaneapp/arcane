@@ -15,11 +15,11 @@ import (
 	"uuid"
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
 
@@ -57,7 +57,7 @@ type (
 		DeployProject       func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		RemoveProject       func(ctx context.Context, projectID string, opts types.ProjectDestroyOptions, user types.Actor) error
 		LockVolumes         func(ctx context.Context, names []string) (func(), error)
-		ArchiveVolumes      func(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error
+		ArchiveVolumes      func(ctx context.Context, parts []mobyMount.Mount, add func(ctx context.Context, part mobyMount.Mount, size int64, body io.Reader) error) error
 		RestoreVolume       func(ctx context.Context, name string, request types.RestoreVolumeUploadRequest, user types.Actor) error
 		DeleteVolume        func(ctx context.Context, name string, user types.Actor) error
 		CreateProject       func(ctx context.Context, project NewProject) (string, error)
@@ -98,7 +98,7 @@ type (
 	exportState struct {
 		docker     map[string]types.Volume
 		volumes    []types.ProjectVolume
-		containers []container.Summary
+		containers []mobyContainer.Summary
 		active     bool
 		runsArcane bool
 	}
@@ -171,6 +171,7 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) (*types.Upload
 		Write:    write,
 		Kind:     types.UploadKindProjectArchive,
 		Filename: projects.SanitizeProjectName(project.Name) + types.ProjectBundleExtension,
+		Target:   project.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to package project %s: %w", project.Name, err)
@@ -188,7 +189,7 @@ func (s *Service) exportState(ctx context.Context, project types.Project) (expor
 		return exportState{}, err
 	}
 	activeContainers, inUse := projects.ProjectContainerUse(project.ComposeName, running)
-	arcaneOfProject := func(c container.Summary) bool {
+	arcaneOfProject := func(c mobyContainer.Summary) bool {
 		return project.ComposeName != "" && docker.ComposeProjectLabel(c.Labels) == project.ComposeName && labels.IsArcaneContainer(c.Labels)
 	}
 	resolved, inspected, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
@@ -314,7 +315,7 @@ func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, 
 		return err
 	}
 	defer unlock()
-	mounts := make([]mount.Mount, 0, len(names))
+	mounts := make([]mobyMount.Mount, 0, len(names))
 	for _, name := range names {
 		mounts = append(mounts, backup.VolumePart(name))
 	}
@@ -325,7 +326,7 @@ func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, 
 		Rejected: nil,
 		Mounts:   mounts,
 		Volumes:  names,
-	}, func(ctx context.Context, mounts []mount.Mount) error {
+	}, func(ctx context.Context, mounts []mobyMount.Mount) error {
 		writer, writerErr := projects.NewProjectBundleWriter(w, manifest)
 		if writerErr != nil {
 			return writerErr
@@ -343,7 +344,7 @@ func (s *Service) capture(ctx context.Context, w io.Writer, opts ExportOptions, 
 		if addErr != nil {
 			return addErr
 		}
-		if archiveErr := s.deps.ArchiveVolumes(ctx, mounts, func(_ context.Context, part mount.Mount, size int64, body io.Reader) error {
+		if archiveErr := s.deps.ArchiveVolumes(ctx, mounts, func(_ context.Context, part mobyMount.Mount, size int64, body io.Reader) error {
 			return writer.Add(archives[part.Source], size, body)
 		}); archiveErr != nil {
 			return archiveErr
@@ -668,8 +669,8 @@ func sharedBinds(services []composeTypes.ServiceConfig, projectDirs []string) []
 	return shared
 }
 
-func newVolumes(target importTarget, included []types.ProjectVolume) ([]client.VolumeCreateOptions, []types.ProjectBackupRestoreVolume, error) {
-	create := make([]client.VolumeCreateOptions, 0, len(target.restores))
+func newVolumes(target importTarget, included []types.ProjectVolume) ([]mobyClient.VolumeCreateOptions, []types.ProjectBackupRestoreVolume, error) {
+	create := make([]mobyClient.VolumeCreateOptions, 0, len(target.restores))
 	restores := make([]types.ProjectBackupRestoreVolume, 0, len(target.restores))
 	for _, archive := range slices.Sorted(maps.Keys(target.restores)) {
 		index := target.restores[archive]

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 
 	"kit.getarcane.app/updater/refs"
 )
@@ -13,7 +13,7 @@ import (
 // and verifies the tag resolves to the pulled image. Both must name the same
 // repository. The digest name is kept on purpose: removing it deletes the image
 // on the containerd image store.
-func PullAsTag(ctx context.Context, dockerClient *client.Client, pulled, selected string, pull func(context.Context) error) error {
+func PullAsTag(ctx context.Context, dockerClient *mobyClient.Client, pulled, selected string, pull func(context.Context) error) error {
 	pulledRef, err := refs.NormalizeReference(pulled)
 	if err != nil {
 		return err
@@ -29,7 +29,7 @@ func PullAsTag(ctx context.Context, dockerClient *client.Client, pulled, selecte
 	if pullErr := pull(ctx); pullErr != nil {
 		return pullErr
 	}
-	if _, tagErr := dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: pulled, Target: selected}); tagErr != nil {
+	if _, tagErr := dockerClient.ImageTag(ctx, mobyClient.ImageTagOptions{Source: pulled, Target: selected}); tagErr != nil {
 		return tagErr
 	}
 	pulledInspect, err := dockerClient.ImageInspect(ctx, pulled)

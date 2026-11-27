@@ -12,9 +12,9 @@ import (
 	"strconv"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
 	"kit.getarcane.app/docker"
 
@@ -33,15 +33,15 @@ type (
 		Watch    func(ctx context.Context) (func(context.Context) error, error)
 		Verify   func(ctx context.Context) error
 		Rejected func(ctx context.Context, err error) error
-		Mounts   []mount.Mount
+		Mounts   []mobyMount.Mount
 		Volumes  []string
 	}
 
 	ArchiveOutput struct {
-		Add   func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error
+		Add   func(ctx context.Context, part mobyMount.Mount, size int64, body io.Reader) error
 		Exec  func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		Image string
-		Parts []mount.Mount
+		Parts []mobyMount.Mount
 	}
 
 	ProjectStop struct {
@@ -50,7 +50,7 @@ type (
 		User      types.Actor
 		ProjectID string
 		Compose   string
-		Active    []container.Summary
+		Active    []mobyContainer.Summary
 	}
 )
 
@@ -61,12 +61,12 @@ const (
 
 var errVolumeReplaced = common.Classify(common.ErrConflict, errors.New("a volume was removed or replaced while it was copied, so the backup failed; start it again"))
 
-func VolumePart(name string) mount.Mount {
-	return mount.Mount{Type: mount.TypeVolume, Source: name, Target: path.Join(SnapshotRoot, "volumes", name), ReadOnly: true}
+func VolumePart(name string) mobyMount.Mount {
+	return mobyMount.Mount{Type: mobyMount.TypeVolume, Source: name, Target: path.Join(SnapshotRoot, "volumes", name), ReadOnly: true}
 }
 
-func InspectVolume(ctx context.Context, dockerClient *client.Client, name string) (types.Volume, bool, error) {
-	inspect, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+func InspectVolume(ctx context.Context, dockerClient *mobyClient.Client, name string) (types.Volume, bool, error) {
+	inspect, err := dockerClient.VolumeInspect(ctx, name, mobyClient.VolumeInspectOptions{})
 	if errdefs.IsNotFound(err) {
 		return types.Volume{}, false, nil
 	}
@@ -76,7 +76,7 @@ func InspectVolume(ctx context.Context, dockerClient *client.Client, name string
 	return types.NewVolume(inspect.Volume), true, nil
 }
 
-func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Context, mounts []mount.Mount) error) (err error) {
+func Capture(ctx context.Context, plan CapturePlan, read func(ctx context.Context, mounts []mobyMount.Mount) error) (err error) {
 	before, err := volumeIdentities(ctx, plan.Inspect, plan.Volumes)
 	if err != nil {
 		return err
@@ -174,7 +174,7 @@ func CheckNoWriters(ctx context.Context, dockerService *dockerInternal.DockerCli
 	}
 	for _, c := range running {
 		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume && m.RW && slices.Contains(names, m.Name) {
+			if m.Type == mobyMount.TypeVolume && m.RW && slices.Contains(names, m.Name) {
 				return common.Classify(common.ErrConflict, fmt.Errorf("container %s writes to volume %s; stop it and try again", docker.ContainerNameFromNames(c.Names), m.Name))
 			}
 		}
@@ -215,7 +215,7 @@ func (o ArchiveOutput) Write(ctx context.Context, dockerService *dockerInternal.
 	return nil
 }
 
-func (o ArchiveOutput) add(ctx context.Context, dockerClient *client.Client, containerID, archive string, part mount.Mount) (err error) {
+func (o ArchiveOutput) add(ctx context.Context, dockerClient *mobyClient.Client, containerID, archive string, part mobyMount.Mount) (err error) {
 	reader, size, err := docker.CopyFromContainer(ctx, dockerClient, containerID, archive)
 	if err != nil {
 		return fmt.Errorf("read the archive of %s: %w", part.Source, err)
@@ -226,10 +226,10 @@ func (o ArchiveOutput) add(ctx context.Context, dockerClient *client.Client, con
 	return o.Add(ctx, part, size, reader)
 }
 
-func StartHelper(ctx context.Context, dockerService *dockerInternal.DockerClientService, image string, mounts []mount.Mount) (string, func(), error) {
-	helper, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-			Config:     &container.Config{Image: image, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()},
+func StartHelper(ctx context.Context, dockerService *dockerInternal.DockerClientService, image string, mounts []mobyMount.Mount) (string, func(), error) {
+	helper, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
+			Config:     &mobyContainer.Config{Image: image, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()},
 			HostConfig: volumes.HostConfig(volumes.HelperHost{Image: image, Mounts: mounts}),
 		})
 	})
@@ -237,14 +237,14 @@ func StartHelper(ctx context.Context, dockerService *dockerInternal.DockerClient
 		return "", nil, fmt.Errorf("create helper container: %w", err)
 	}
 	remove := func() {
-		if _, removeErr := dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		if _, removeErr := dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, helper.ID, volumes.RemoveOptions())
 		}); removeErr != nil {
 			slog.WarnContext(ctx, "Failed to remove the backup helper container", "containerId", helper.ID, "error", removeErr)
 		}
 	}
-	if _, err = dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, helper.ID, client.ContainerStartOptions{})
+	if _, err = dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, helper.ID, mobyClient.ContainerStartOptions{})
 	}); err != nil {
 		remove()
 		return "", nil, fmt.Errorf("start helper container: %w", err)

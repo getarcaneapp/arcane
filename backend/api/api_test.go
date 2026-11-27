@@ -14,8 +14,8 @@ import (
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	humav2 "github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/swarm"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -110,8 +110,8 @@ func TestSchemaRegistry_PointerMatchesValue(t *testing.T) {
 func TestSchemaRegistry_AliasesCollidingDockerTypes(t *testing.T) {
 	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.Equal(t, "#/components/schemas/DockerSwarmPlacement", registry.Schema(reflect.TypeFor[swarm.Placement](), true, "").Ref)
-	require.Equal(t, "#/components/schemas/DockerNetworkConfigReference", registry.Schema(reflect.TypeFor[*network.ConfigReference](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/DockerSwarmPlacement", registry.Schema(reflect.TypeFor[mobySwarm.Placement](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/DockerNetworkConfigReference", registry.Schema(reflect.TypeFor[*mobyNetwork.ConfigReference](), true, "").Ref)
 	require.Equal(t, "#/components/schemas/Placement", registry.Schema(reflect.TypeFor[composeTypes.Placement](), true, "").Ref)
 }
 

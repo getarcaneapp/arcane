@@ -19,7 +19,7 @@ import (
 	kitfs "kit.getarcane.app/fs"
 	"kit.getarcane.app/updater/refs"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -33,12 +33,12 @@ type (
 
 	Service struct {
 		imageService  *image.ImageService
-		dockerService *docker.DockerClientService
+		dockerService *dockerInternal.DockerClientService
 		buildService  Builder
 	}
 )
 
-func New(imageService *image.ImageService, dockerService *docker.DockerClientService, buildService Builder) *Service {
+func New(imageService *image.ImageService, dockerService *dockerInternal.DockerClientService, buildService Builder) *Service {
 	return &Service{
 		imageService:  imageService,
 		dockerService: dockerService,

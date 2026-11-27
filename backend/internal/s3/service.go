@@ -10,7 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"
 

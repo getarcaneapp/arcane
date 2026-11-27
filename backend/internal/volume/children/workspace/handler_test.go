@@ -35,29 +35,33 @@ func TestParseVolumeWorkspaceManifest(t *testing.T) {
 }
 
 func TestRequireVolumeWorkspacePermissions(t *testing.T) {
-	const environmentID = "env-1"
+	const (
+		environmentID = "env-1"
+		volumeName    = "vol-1"
+	)
+	h := &Handler{}
 	create := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpCreateFile}}
 	rename := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpRename}}
 	remove := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpDelete}}
 	restore := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpRestoreFile}}
 
-	require.Error(t, requireVolumeWorkspacePermissions(t.Context(), environmentID, create))
-	require.NoError(t, requireVolumeWorkspacePermissions(
-		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesUpload), environmentID, create,
+	require.Error(t, h.requireVolumeWorkspacePermissions(t.Context(), environmentID, volumeName, create))
+	require.NoError(t, h.requireVolumeWorkspacePermissions(
+		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesUpload), environmentID, volumeName, create,
 	))
-	require.Error(t, requireVolumeWorkspacePermissions(
-		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesUpload), environmentID, rename,
+	require.Error(t, h.requireVolumeWorkspacePermissions(
+		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesUpload), environmentID, volumeName, rename,
 	))
-	require.NoError(t, requireVolumeWorkspacePermissions(
-		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesUpload, authz.PermVolumesDelete), environmentID, rename,
+	require.NoError(t, h.requireVolumeWorkspacePermissions(
+		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesUpload, authz.PermVolumesDelete), environmentID, volumeName, rename,
 	))
-	require.NoError(t, requireVolumeWorkspacePermissions(
-		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesDelete), environmentID, remove,
+	require.NoError(t, h.requireVolumeWorkspacePermissions(
+		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesDelete), environmentID, volumeName, remove,
 	))
-	require.NoError(t, requireVolumeWorkspacePermissions(
-		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesBackup), environmentID, restore,
+	require.NoError(t, h.requireVolumeWorkspacePermissions(
+		volumeWorkspacePermissionContext(t, environmentID, authz.PermVolumesBackup), environmentID, volumeName, restore,
 	))
-	require.Error(t, requireVolumeWorkspacePermissions(
-		volumeWorkspacePermissionContext(t, "env-2", authz.PermVolumesUpload), environmentID, create,
+	require.Error(t, h.requireVolumeWorkspacePermissions(
+		volumeWorkspacePermissionContext(t, "env-2", authz.PermVolumesUpload), environmentID, volumeName, create,
 	))
 }

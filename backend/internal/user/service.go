@@ -23,7 +23,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	kitfs "kit.getarcane.app/fs"
 	"kit.getarcane.app/normalization"
@@ -34,6 +34,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
+	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/sqlite"
 	"getarcane.dev/arcane/v3/pkg/validation"
@@ -230,6 +231,9 @@ func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*
 }
 
 func (s *UserService) GetUserByID(ctx context.Context, id string) (*User, error) {
+	if parent, ok := ctx.Value(httpx.EnvironmentParentUserKey{}).(*User); ok && parent.ID == id {
+		return new(*parent), nil
+	}
 	return sqlite.FirstWhere[User](ctx, s.db.DB, common.ErrUserNotFound, "id = ?", id)
 }
 
@@ -805,6 +809,8 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 			dto.RoleAssignments[i] = types.RoleAssignmentSummary{
 				RoleID:        r.RoleID,
 				EnvironmentID: r.EnvironmentID,
+				ResourceType:  r.ResourceType,
+				ResourceID:    r.ResourceID,
 				Source:        r.Source,
 			}
 		}
@@ -826,8 +832,35 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 	if ps, err := s.roleService.ResolvePermissions(ctx, u.ID); err == nil && ps != nil {
 		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
 		dto.PermissionsByEnv = permissionSetToMap(ps)
+		dto.ResourcePermissions = resourcePermissionsToMap(ps)
 	}
 	return dto
+}
+
+func resourcePermissionsToMap(ps *authz.PermissionSet) map[string][]types.ResourceGrant {
+	if ps == nil || len(ps.PerResource) == 0 {
+		return nil
+	}
+	out := make(map[string][]types.ResourceGrant, len(ps.PerResource))
+	for envID, resources := range ps.PerResource {
+		grants := make([]types.ResourceGrant, 0, len(resources))
+		for key, perms := range resources {
+			list := slices.Collect(maps.Keys(perms))
+			slices.Sort(list)
+			grants = append(grants, types.ResourceGrant{ //exhaustruct:enforce
+				Type:        key.Type,
+				ID:          key.ID,
+				Permissions: list,
+			})
+		}
+		if len(grants) > 0 {
+			out[envID] = grants
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func permissionSetToMap(ps *authz.PermissionSet) map[string][]string {

@@ -14,17 +14,17 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/upload"
@@ -37,22 +37,22 @@ import (
 type (
 	// Dependencies are the backup runtime, storage, and helper-container operations restores run through.
 	Dependencies struct {
-		Docker          *docker.DockerClientService
+		Docker          *dockerInternal.DockerClientService
 		Engine          *backup.Engine
 		Events          *event.EventService
 		Locks           *concurrency.KeyedMutex
 		Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
-		Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
-		Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
+		Repository      func(ctx context.Context, dockerClient *mobyClient.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
+		Password        func(ctx context.Context, dockerClient *mobyClient.Client, repositories ...backup.Repository) (string, error)
 		Containers      *backup.Containers
 		SafetyBackup    func(ctx context.Context, volumeName string, user types.Actor) (string, error)
 		ArchivePaths    func(ctx context.Context, backupID string) ([]string, error)
 		ArchiveFilename func(backupID string) (string, error)
 		HelperImage     func(ctx context.Context) (string, error)
-		StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
+		StorageMount    func(ctx context.Context, dockerClient *mobyClient.Client, target string, readOnly bool) (mobyMount.Mount, error)
 		StopHelper      func(ctx context.Context, volumeName string) error
 		HoldLocal       func(ctx context.Context) (context.Context, func(), error)
-		TempContainer   func(ctx context.Context, target mount.Mount) (string, func(), error)
+		TempContainer   func(ctx context.Context, target mobyMount.Mount) (string, func(), error)
 		AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
 		AcquireRun      func(ctx context.Context, volumeName string) (*runs.Lease, error)
 		Uploads         *upload.UploadService
@@ -70,7 +70,7 @@ type (
 		User       types.Actor
 		VolumeName string
 		Repository string
-		Create     []client.VolumeCreateOptions
+		Create     []mobyClient.VolumeCreateOptions
 	}
 
 	snapshotSource struct {
@@ -159,7 +159,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	safetyID, err := s.run(ctx, dockerClient, runOptions{
 		VolumeName: volumeName,
 		User:       user,
-		Create:     kit.Ternary(exists, nil, []client.VolumeCreateOptions{{Name: volumeName}}),
+		Create:     kit.Ternary(exists, nil, []mobyClient.VolumeCreateOptions{{Name: volumeName}}),
 		Write: func(ctx context.Context) error {
 			if entry.Format == types.VolumeBackupFormatArchive {
 				return s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, nil)
@@ -190,7 +190,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	return nil
 }
 
-func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts runOptions) (string, error) {
+func (s *Service) run(ctx context.Context, dockerClient *mobyClient.Client, opts runOptions) (string, error) {
 	lease, leaseErr := s.deps.AcquireRun(ctx, opts.VolumeName)
 	if leaseErr != nil {
 		return "", leaseErr
@@ -201,7 +201,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			return "", err
 		}
 	}
-	var stopped []container.Summary
+	var stopped []mobyContainer.Summary
 	var safetyID string
 	steps := backup.RestoreSteps{
 		Subject: "the volume",
@@ -261,8 +261,8 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 		Write: func(ctx context.Context, safety string) error {
 			if safety == "" {
 				if safetyID != "" {
-					_, remove, checkErr := s.ownerHelper(ctx, mount.Mount{
-						Type:   mount.TypeVolume,
+					_, remove, checkErr := s.ownerHelper(ctx, mobyMount.Mount{
+						Type:   mobyMount.TypeVolume,
 						Source: opts.VolumeName,
 						Target: "/volume",
 					})
@@ -283,8 +283,8 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 			if err := s.deps.StopHelper(ctx, name); err != nil && !errdefs.IsNotFound(err) {
 				return err
 			}
-			_, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
-				return dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{})
+			_, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeRemoveResult, error) {
+				return dockerClient.VolumeRemove(ctx, name, mobyClient.VolumeRemoveOptions{})
 			})
 			return err
 		},
@@ -304,7 +304,7 @@ func (s *Service) run(ctx context.Context, dockerClient *client.Client, opts run
 	return safetyID, nil
 }
 
-func (s *Service) snapshotSource(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (snapshotSource, error) {
+func (s *Service) snapshotSource(ctx context.Context, dockerClient *mobyClient.Client, entry *types.VolumeBackup) (snapshotSource, error) {
 	repository, snapshotID, err := s.deps.Repository(ctx, dockerClient, entry)
 	if err != nil {
 		return snapshotSource{}, err
@@ -320,7 +320,7 @@ func (s *Service) snapshotSource(ctx context.Context, dockerClient *client.Clien
 	}, nil
 }
 
-func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, volumeName string) error {
+func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *mobyClient.Client, entry *types.VolumeBackup, volumeName string) error {
 	source, err := s.snapshotSource(ctx, dockerClient, entry)
 	if err != nil {
 		return err
@@ -328,13 +328,13 @@ func (s *Service) RestoreSnapshot(ctx context.Context, dockerClient *client.Clie
 	return s.restoreSnapshot(ctx, dockerClient, volumeName, source)
 }
 
-func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Client, volumeName string, source snapshotSource) error {
+func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *mobyClient.Client, volumeName string, source snapshotSource) error {
 	snapshot, _, err := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, source.repository, source.password, "", source.snapshotID)
 	if err != nil {
 		return fmt.Errorf("%w (%w)", err, backup.ErrRestoreUnchanged)
 	}
-	target := mount.Mount{
-		Type:   mount.TypeVolume,
+	target := mobyMount.Mount{
+		Type:   mobyMount.TypeVolume,
 		Source: volumeName,
 		Target: "/volume",
 	}
@@ -357,7 +357,7 @@ func (s *Service) restoreSnapshot(ctx context.Context, dockerClient *client.Clie
 	return owner.Apply(ctx, s.deps.Exec, containerID)
 }
 
-func (s *Service) ownerHelper(ctx context.Context, target mount.Mount) (string, func(), error) {
+func (s *Service) ownerHelper(ctx context.Context, target mobyMount.Mount) (string, func(), error) {
 	helperID, remove, err := s.deps.TempContainer(ctx, target)
 	if err != nil {
 		return "", nil, fmt.Errorf("%w (%w)", err, backup.ErrRestoreUnchanged)
@@ -371,7 +371,7 @@ func (s *Service) ownerHelper(ctx context.Context, target mount.Mount) (string, 
 
 func (s *Service) resolveRestoreSelection(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	entry *types.VolumeBackup,
 	repository backup.Repository,
 	snapshotID string,
@@ -440,7 +440,7 @@ func archiveMembersForSelection(paths []string, selected []types.BackupFileEntry
 
 func (s *Service) restoreSelection(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	volumeName, backupID string,
 	entry *types.VolumeBackup,
 	repository backup.Repository,
@@ -458,7 +458,7 @@ func (s *Service) restoreSelection(
 	if selection.globalRoot {
 		return s.restoreSnapshot(ctx, dockerClient, volumeName, snapshotSource{repository: repository, snapshotID: snapshotID, password: password})
 	}
-	target := mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume"}
+	target := mobyMount.Mount{Type: mobyMount.TypeVolume, Source: volumeName, Target: "/volume"}
 	for _, selectedEntry := range selection.entries {
 		sourcePath := selectedEntry.Path
 		if selectedEntry.IsDirectory {
@@ -538,7 +538,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 }
 
 // restoreArchiveBackup restores a legacy archive into volumeName: all of it when members is nil, otherwise only members.
-func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, members []string) (err error) {
+func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *mobyClient.Client, volumeName, backupID string, members []string) (err error) {
 	filename, err := s.deps.ArchiveFilename(backupID)
 	if err != nil {
 		return err
@@ -559,9 +559,9 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 		"sh",
 		path.Join("/backups", filename),
 	}
-	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-			Config: &container.Config{
+	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
+			Config: &mobyContainer.Config{
 				Image:           helperImage,
 				Cmd:             kit.Ternary(members == nil, fullRestoreCmd, []string{"sleep", "infinity"}),
 				NetworkDisabled: true,
@@ -570,7 +570,7 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 			HostConfig: volumes.HostConfig(volumes.HelperHost{
 				Image:  helperImage,
 				Binds:  []string{volumeName + ":/volume"},
-				Mounts: []mount.Mount{backupMount},
+				Mounts: []mobyMount.Mount{backupMount},
 				Keep:   true,
 			}),
 		})
@@ -579,7 +579,7 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 		return fmt.Errorf("failed to create restore container: %w", err)
 	}
 	defer func() {
-		_, removeErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		_, removeErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 		switch {
@@ -590,8 +590,8 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 			slog.WarnContext(ctx, "Failed to remove the restore helper container", "containerId", resp.ID, "error", removeErr)
 		}
 	}()
-	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, mobyClient.ContainerStartOptions{})
 	}); containerStartErr != nil {
 		return fmt.Errorf("failed to start restore container: %w", containerStartErr)
 	}
@@ -605,8 +605,8 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 		}
 		return nil
 	}
-	waitResult := dockerClient.ContainerWait(context.WithoutCancel(ctx), resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
-	var waitBody container.WaitResponse
+	waitResult := dockerClient.ContainerWait(context.WithoutCancel(ctx), resp.ID, mobyClient.ContainerWaitOptions{Condition: mobyContainer.WaitConditionNotRunning})
+	var waitBody mobyContainer.WaitResponse
 	select {
 	case waitHelperErr := <-waitResult.Error:
 		if waitHelperErr != nil {
@@ -647,13 +647,13 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName, uploadID str
 	if err != nil {
 		return err
 	}
-	var create []client.VolumeCreateOptions
+	var create []mobyClient.VolumeCreateOptions
 	if composeVolume != nil {
 		createOptions, optionsErr := projects.ComposeVolumeTargetCreateOptions(volumeName, *composeVolume)
 		if optionsErr != nil {
 			return optionsErr
 		}
-		create = []client.VolumeCreateOptions{createOptions}
+		create = []mobyClient.VolumeCreateOptions{createOptions}
 	}
 	var archive io.ReadSeeker
 	var session *types.UploadSession
@@ -722,7 +722,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName, uploadID str
 	return nil
 }
 
-func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, job uploadWrite) (err error) {
+func (s *Service) writeUpload(ctx context.Context, dockerClient *mobyClient.Client, job uploadWrite) (err error) {
 	containerID, cleanup, err := s.deps.AcquireHelper(ctx, job.volumeName)
 	if err != nil {
 		return err
@@ -751,7 +751,7 @@ func (s *Service) writeUpload(ctx context.Context, dockerClient *client.Client, 
 	if _, seekErr := job.archive.Seek(0, io.SeekStart); seekErr != nil {
 		return fmt.Errorf("failed to read uploaded archive: %w", seekErr)
 	}
-	if _, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{DestinationPath: tmpDir, Content: job.archive}); err != nil {
+	if _, err = dockerClient.CopyToContainer(ctx, containerID, mobyClient.CopyToContainerOptions{DestinationPath: tmpDir, Content: job.archive}); err != nil {
 		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 

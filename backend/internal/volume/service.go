@@ -14,16 +14,17 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/volume"
-	"github.com/moby/moby/client"
+	"github.com/danielgtaylor/huma/v2"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyVolume "github.com/moby/moby/api/types/volume"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 
@@ -34,6 +35,7 @@ import (
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
+	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -41,6 +43,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/upload"
 	volumebackup "getarcane.dev/arcane/v3/internal/volume/children/backup"
 	"getarcane.dev/arcane/v3/internal/volume/children/workspace"
+	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/envcontext"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -107,6 +110,7 @@ var (
 	ErrVolumeBackupPolicyOverridden = common.Classify(common.ErrConflict, errors.New("a volume-level backup policy covers this volume"))
 
 	generatedAnonymousVolumeName = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	buildxStateVolumeName        = regexp.MustCompile(`^buildx_buildkit_.+_state$`)
 )
 
 func NewVolumeService(p VolumeServiceParams) *VolumeService {
@@ -204,7 +208,7 @@ func (s *VolumeService) CreateSystemManagedBackup(
 	return volumeBackupFromRecord(entry), err
 }
 
-func (s *VolumeService) ArchiveVolumes(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error {
+func (s *VolumeService) ArchiveVolumes(ctx context.Context, parts []mobyMount.Mount, add func(ctx context.Context, part mobyMount.Mount, size int64, body io.Reader) error) error {
 	helperImage, err := s.getVolumeHelperImage(ctx)
 	if err != nil {
 		return err
@@ -457,18 +461,18 @@ func (s *VolumeService) listBackups(ctx context.Context, volumeName string, para
 
 func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*types.Volume, error) {
 	slog.DebugContext(ctx, "volume service: get volume", "volume", name)
-	volResult, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	volResult, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, name, mobyClient.VolumeInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("volume not found: %w", err)
 	}
-	usage, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (mo.Option[[]volume.Volume], error) {
+	usage, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mo.Option[[]mobyVolume.Volume], error) {
 		return s.dockerService.VolumeUsage.GetStaleWhileRevalidate(ctx, dockerClient), nil
 	})
-	v := types.NewVolume(enrichVolumesWithUsageData([]volume.Volume{volResult.Volume}, usage.OrEmpty())[0])
+	v := types.NewVolume(enrichVolumesWithUsageData([]mobyVolume.Volume{volResult.Volume}, usage.OrEmpty())[0])
 
-	containerIDs, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]string, error) {
+	containerIDs, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) ([]string, error) {
 		return docker.GetContainersUsingVolume(ctx, dockerClient, name)
 	})
 	if err != nil {
@@ -483,7 +487,7 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*type
 	return &v, nil
 }
 
-func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error) {
+func (s *VolumeService) CreateVolume(ctx context.Context, options mobyClient.VolumeCreateOptions, user types.Actor) (*types.Volume, error) {
 	slog.DebugContext(ctx, "volume service: create volume", "volume", options.Name, "driver", options.Driver, "user", user.ID)
 	if strings.TrimSpace(options.Name) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("volume name is required"))
@@ -503,7 +507,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("volume", options.Name, options.Name)()
-	created, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+	created, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeCreateResult, error) {
 		return dockerClient.VolumeCreate(ctx, options)
 	})
 	if err != nil {
@@ -520,8 +524,8 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("volume", created.Volume.Name, created.Volume.Name)()
-	vol, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
+	vol, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, created.Volume.Name, mobyClient.VolumeInspectOptions{})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
@@ -571,8 +575,8 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	if isBackupVolume(name) {
 		return common.ErrVolumeDeleteProtected
 	}
-	if inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, name, mobyClient.VolumeInspectOptions{})
 	}); inspectErr == nil && s.isInternalVolume(types.NewVolume(inspected.Volume), isBackupVolume) {
 		return common.ErrVolumeDeleteProtected
 	}
@@ -598,8 +602,8 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("volume", name, name)()
-	if _, volumeRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
-		return dockerClient.VolumeRemove(ctx, name, client.VolumeRemoveOptions{Force: force})
+	if _, volumeRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeRemoveResult, error) {
+		return dockerClient.VolumeRemove(ctx, name, mobyClient.VolumeRemoveOptions{Force: force})
 	}); volumeRemoveErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 			Type:          event.EventTypeVolumeError,
@@ -655,8 +659,8 @@ func (s *VolumeService) PruneVolumes(ctx context.Context) (*types.VolumePruneRep
 	// - Without 'all' flag: Only removes anonymous (unnamed) volumes that are not in use
 	// - With 'all=true' flag: Removes ALL unused volumes (both named and anonymous)
 	// Note: Volumes are considered "in use" if referenced by any container (running or stopped)
-	volumePruneResult, err := dockerClient.VolumePrune(ctx, client.VolumePruneOptions{
-		Filters: make(client.Filters).Add("label!", internalVolumePruneFilterValue),
+	volumePruneResult, err := dockerClient.VolumePrune(ctx, mobyClient.VolumePruneOptions{
+		Filters: make(mobyClient.Filters).Add("label!", internalVolumePruneFilterValue),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune volumes: %w", err)
@@ -696,14 +700,14 @@ func (s *VolumeService) PruneVolumes(ctx context.Context) (*types.VolumePruneRep
 
 func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, []string, error) {
 	slog.DebugContext(ctx, "volume service: get volume usage", "volume", name)
-	vol, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	vol, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, name, mobyClient.VolumeInspectOptions{})
 	})
 	if err != nil {
 		return false, nil, fmt.Errorf("volume not found: %w", err)
 	}
 
-	containerIDs, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]string, error) {
+	containerIDs, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) ([]string, error) {
 		return docker.GetContainersUsingVolume(ctx, dockerClient, vol.Volume.Name)
 	})
 	if err != nil {
@@ -736,8 +740,8 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 	return result, nil
 }
 
-func enrichVolumesWithUsageData(dockerVolumes, usageVolumes []volume.Volume) []volume.Volume {
-	usageByName := make(map[string]*volume.UsageData, len(usageVolumes))
+func enrichVolumesWithUsageData(dockerVolumes, usageVolumes []mobyVolume.Volume) []mobyVolume.Volume {
+	usageByName := make(map[string]*mobyVolume.UsageData, len(usageVolumes))
 	for _, uv := range usageVolumes {
 		if uv.Name == "" || uv.UsageData == nil {
 			continue
@@ -748,7 +752,7 @@ func enrichVolumesWithUsageData(dockerVolumes, usageVolumes []volume.Volume) []v
 		}
 	}
 
-	result := make([]volume.Volume, 0, len(dockerVolumes))
+	result := make([]mobyVolume.Volume, 0, len(dockerVolumes))
 	for _, v := range dockerVolumes {
 		if usageData, exists := usageByName[v.Name]; exists {
 			v.UsageData = usageData
@@ -859,8 +863,8 @@ func (s *VolumeService) isInternalVolume(v types.Volume, isBackupVolume func(nam
 
 // ListBackupVolumeOptions returns the current non-internal volumes used by centralized backup selection.
 func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.SystemVolumeBackupOption, error) {
-	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
-		return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeListResult, error) {
+		return dockerClient.VolumeList(ctx, mobyClient.VolumeListOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
@@ -873,8 +877,8 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.Sy
 	isBackupVolume := s.BackupVolumeMatcher(ctx)
 	options := make([]types.SystemVolumeBackupOption, 0, len(result.Items))
 	for _, item := range result.Items {
-		if s.isInternalVolume(types.NewVolume(item), isBackupVolume) || slices.ContainsFunc(arcaneMounts, func(m container.MountPoint) bool {
-			return m.Type == mount.TypeVolume && cmp.Or(strings.TrimSpace(m.Name), strings.TrimSpace(m.Source)) == item.Name
+		if buildxStateVolumeName.MatchString(item.Name) || s.isInternalVolume(types.NewVolume(item), isBackupVolume) || slices.ContainsFunc(arcaneMounts, func(m mobyContainer.MountPoint) bool {
+			return m.Type == mobyMount.TypeVolume && cmp.Or(strings.TrimSpace(m.Name), strings.TrimSpace(m.Source)) == item.Name
 		}) {
 			continue
 		}
@@ -886,6 +890,25 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.Sy
 		})
 	}
 	return options, nil
+}
+
+func (s *VolumeService) CheckVolumeAccess(ctx context.Context, envID, perm, volumeName string) error {
+	ps, ok := middleware.PermissionsFromContext(ctx)
+	if !ok || ps.AllowsResource(perm, envID, authz.ResourceTypeVolume, volumeName) {
+		return nil
+	}
+	vol, err := s.GetVolumeByName(ctx, volumeName)
+	if err != nil {
+		return huma.Error403Forbidden("permission denied: " + perm)
+	}
+	return middleware.RequireComposeResourcePermission(ctx, s.db, middleware.ComposeResourceAccessInput{
+		EnvID:        envID,
+		Permission:   perm,
+		ResourceType: authz.ResourceTypeVolume,
+		ResourceID:   vol.Name,
+		ResourceName: vol.Name,
+		Labels:       vol.Labels,
+	})
 }
 
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]types.Volume, pagination.Response, types.VolumeUsageCounts, error) {
@@ -910,7 +933,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	// Run volume list and container list in parallel for better performance
 	type volumeListResult struct {
 		err     error
-		volumes []volume.Volume
+		volumes []mobyVolume.Volume
 	}
 	type containerMapResult struct {
 		containerMap map[string][]string
@@ -921,8 +944,8 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	containerChan := make(chan containerMapResult, 1)
 
 	go func() {
-		volListBody, volumeListErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
-			return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+		volListBody, volumeListErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeListResult, error) {
+			return dockerClient.VolumeList(ctx, mobyClient.VolumeListOptions{})
 		})
 		volChan <- volumeListResult{volumes: volListBody.Items, err: volumeListErr}
 	}()
@@ -936,7 +959,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 		containerMap := make(map[string][]string)
 		for _, c := range containers {
 			for _, m := range c.Mounts {
-				if m.Type == mount.TypeVolume && m.Name != "" {
+				if m.Type == mobyMount.TypeVolume && m.Name != "" {
 					containerMap[m.Name] = append(containerMap[m.Name], c.ID)
 				}
 			}
@@ -962,9 +985,9 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 	// Size sorting consumes the current cache snapshot and refreshes it in the
 	// background so this list request never waits for Docker's DiskUsage call.
-	var usageVolumes []volume.Volume
+	var usageVolumes []mobyVolume.Volume
 	if params.Sort == "size" {
-		usage, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (mo.Option[[]volume.Volume], error) {
+		usage, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mo.Option[[]mobyVolume.Volume], error) {
 			return s.dockerService.VolumeUsage.GetStaleWhileRevalidate(ctx, dockerClient), nil
 		})
 		if uv, found := usage.Get(); found && (len(uv) > 0 || len(volResult.volumes) == 0) {
@@ -978,6 +1001,22 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}
 
 	enrichedVolumes := enrichVolumesWithUsageData(volResult.volumes, usageVolumes)
+	if allowedCompose, unrestricted, permErr := middleware.AllowedComposeProjects(ctx, s.db, types.LocalDockerEnvironmentID, authz.PermVolumesList); permErr != nil {
+		return nil, pagination.Response{}, types.VolumeUsageCounts{}, permErr
+	} else if !unrestricted {
+		ps, _ := middleware.PermissionsFromContext(ctx)
+		enrichedVolumes = slices.DeleteFunc(enrichedVolumes, func(v mobyVolume.Volume) bool {
+			return !middleware.ComposeResourcePermitted(ps, middleware.ComposeResourceAccessInput{
+				EnvID:          types.LocalDockerEnvironmentID,
+				Permission:     authz.PermVolumesList,
+				ResourceType:   authz.ResourceTypeVolume,
+				ResourceID:     v.Name,
+				ResourceName:   v.Name,
+				Labels:         v.Labels,
+				AllowedCompose: allowedCompose,
+			})
+		})
+	}
 
 	isBackupVolume := s.BackupVolumeMatcher(ctx)
 	items := make([]types.Volume, 0, len(enrichedVolumes))
@@ -1101,8 +1140,8 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	source, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
+	source, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, oldName, mobyClient.VolumeInspectOptions{})
 	})
 	if err != nil {
 		if errdefs.IsNotFound(err) {

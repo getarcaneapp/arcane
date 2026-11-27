@@ -11,7 +11,7 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/builds/pkg/contextsource"
 	buildtypes "kit.getarcane.app/builds/types"
 

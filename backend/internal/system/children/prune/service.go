@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"golang.org/x/sync/errgroup"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -32,9 +32,11 @@ import (
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/httpx"
+	"getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/rustic"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
+	volumehelper "getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
@@ -359,7 +361,7 @@ func (s *Service) completeSystemPruneActivity(ctx context.Context, activityID st
 }
 
 func (s *Service) pruneContainers(ctx context.Context, options types.PruneContainersOptions) (types.PruneAllResult, error) {
-	filterArgs := make(client.Filters)
+	filterArgs := make(mobyClient.Filters)
 	if options.Mode == types.PruneContainerModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
 			return types.PruneAllResult{}, errors.New("container prune mode olderThan requires until")
@@ -371,7 +373,7 @@ func (s *Service) pruneContainers(ctx context.Context, options types.PruneContai
 	if err != nil {
 		return types.PruneAllResult{}, fmt.Errorf("failed to prune containers: %w", err)
 	}
-	report, err := cli.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: filterArgs})
+	report, err := cli.ContainerPrune(ctx, mobyClient.ContainerPruneOptions{Filters: filterArgs})
 	if err != nil {
 		return types.PruneAllResult{}, fmt.Errorf("failed to prune containers: %w", err)
 	}
@@ -384,7 +386,7 @@ func (s *Service) pruneContainers(ctx context.Context, options types.PruneContai
 }
 
 func (s *Service) pruneImages(ctx context.Context, options types.PruneImagesOptions) (types.PruneAllResult, error) {
-	filterArgs := make(client.Filters)
+	filterArgs := make(mobyClient.Filters).Add("label!", volumehelper.ToolsImageLabel)
 	switch options.Mode {
 	case types.PruneImageModeNone:
 		return types.PruneAllResult{}, errors.New("image prune mode none is not allowed")
@@ -406,7 +408,7 @@ func (s *Service) pruneImages(ctx context.Context, options types.PruneImagesOpti
 	if err != nil {
 		return types.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
 	}
-	existing, listErr := cli.ImageList(ctx, client.ImageListOptions{})
+	existing, listErr := cli.ImageList(ctx, mobyClient.ImageListOptions{})
 	if listErr != nil {
 		slog.WarnContext(ctx, "Failed to list images before prune; deleted counts may include layers", "error", listErr)
 	}
@@ -415,7 +417,7 @@ func (s *Service) pruneImages(ctx context.Context, options types.PruneImagesOpti
 		existingIDs[item.ID] = struct{}{}
 	}
 
-	report, err := cli.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
+	report, err := cli.ImagePrune(ctx, mobyClient.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
 		return types.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
 	}
@@ -454,9 +456,9 @@ func (s *Service) pruneBuildCache(ctx context.Context, options types.PruneBuildC
 		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
 		return types.PruneAllResult{}, fmt.Errorf("failed to prune build cache: %w", err)
 	}
-	report, err := cli.BuildCachePrune(ctx, client.BuildCachePruneOptions{
+	report, err := cli.BuildCachePrune(ctx, mobyClient.BuildCachePruneOptions{
 		All:     options.Mode == types.PruneBuildCacheModeAll,
-		Filters: kit.Ternary(options.Mode == types.PruneBuildCacheModeOlderThan, make(client.Filters).Add("until", options.Until), nil),
+		Filters: kit.Ternary(options.Mode == types.PruneBuildCacheModeOlderThan, make(mobyClient.Filters).Add("until", options.Until), nil),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
@@ -498,7 +500,7 @@ func (s *Service) pruneVolumes(ctx context.Context, options types.PruneVolumesOp
 }
 
 func (s *Service) pruneNetworks(ctx context.Context, options types.PruneNetworksOptions) (types.PruneAllResult, error) {
-	filterArgs := make(client.Filters)
+	filterArgs := make(mobyClient.Filters)
 	if options.Mode == types.PruneNetworkModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
 			return types.PruneAllResult{}, errors.New("network prune mode olderThan requires until")
@@ -510,7 +512,7 @@ func (s *Service) pruneNetworks(ctx context.Context, options types.PruneNetworks
 	if err != nil {
 		return types.PruneAllResult{}, fmt.Errorf("failed to prune networks: %w", err)
 	}
-	report, err := cli.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
+	report, err := cli.NetworkPrune(ctx, mobyClient.NetworkPruneOptions{Filters: filterArgs})
 	if err != nil {
 		return types.PruneAllResult{}, fmt.Errorf("failed to prune networks: %w", err)
 	}
@@ -660,7 +662,7 @@ func (s *Service) preparePrunePlan(ctx context.Context, req types.PruneAllReques
 			slog.WarnContext(ctx, "could not remove idle volume helpers before prune", "error", reapErr.Error())
 		}
 	}
-	usage, err := s.pruneDiskUsage(ctx, client.DiskUsageOptions{
+	usage, err := s.pruneDiskUsage(ctx, mobyClient.DiskUsageOptions{
 		Containers: req.Containers != nil,
 		Images:     req.Images != nil,
 		Volumes:    req.Volumes != nil,
@@ -693,21 +695,21 @@ func (s *Service) preparePrunePlan(ctx context.Context, req types.PruneAllReques
 	}, nil
 }
 
-func (s *Service) pruneDiskUsage(ctx context.Context, options client.DiskUsageOptions) (client.DiskUsageResult, error) {
+func (s *Service) pruneDiskUsage(ctx context.Context, options mobyClient.DiskUsageOptions) (mobyClient.DiskUsageResult, error) {
 	cli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return client.DiskUsageResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return mobyClient.DiskUsageResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 	usageCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultDockerDiskUsage)
 	defer cancel()
 	usage, err := dockerInternal.FetchDiskUsage(usageCtx, cli, options)
 	if err != nil {
-		return client.DiskUsageResult{}, fmt.Errorf("%w: %w", errDiskUsageUnavailable, err)
+		return mobyClient.DiskUsageResult{}, fmt.Errorf("%w: %w", errDiskUsageUnavailable, err)
 	}
 	return usage, nil
 }
 
-func (s *Service) selectPruneContainers(req types.PruneAllRequest, usage client.DiskUsageResult) ([]pruneResource, error) {
+func (s *Service) selectPruneContainers(req types.PruneAllRequest, usage mobyClient.DiskUsageResult) ([]pruneResource, error) {
 	if req.Containers == nil || req.Containers.Mode == types.PruneContainerModeNone {
 		return nil, nil
 	}
@@ -729,7 +731,7 @@ func (s *Service) selectPruneContainers(req types.PruneAllRequest, usage client.
 	return resources, nil
 }
 
-func (s *Service) selectPruneImages(req types.PruneAllRequest, usage client.DiskUsageResult, imageRefs map[string]int) ([]pruneResource, error) {
+func (s *Service) selectPruneImages(req types.PruneAllRequest, usage mobyClient.DiskUsageResult, imageRefs map[string]int) ([]pruneResource, error) {
 	if req.Images == nil || req.Images.Mode == types.PruneImageModeNone {
 		return nil, nil
 	}
@@ -740,6 +742,9 @@ func (s *Service) selectPruneImages(req types.PruneAllRequest, usage client.Disk
 	var resources []pruneResource
 	for _, item := range usage.Images.Items {
 		if item.Containers > int64(imageRefs[item.ID]) || slices.Contains(item.RepoTags, rustic.DefaultImage) ||
+			slices.Contains(item.RepoTags, volumehelper.ToolsImage("")) ||
+			slices.Contains(item.RepoTags, volumehelper.ToolsImage(registry.DefaultRegistryDomain)) ||
+			slices.Contains(item.RepoTags, strings.TrimPrefix(volumehelper.ToolsImage(registry.DefaultRegistryDomain), registry.DefaultRegistryDomain+"/")) ||
 			(req.Images.Mode == types.PruneImageModeDangling && len(item.RepoTags) > 0) ||
 			(!until.IsZero() && !time.Unix(item.Created, 0).Before(until)) {
 			continue
@@ -754,7 +759,7 @@ func (s *Service) selectPruneImages(req types.PruneAllRequest, usage client.Disk
 	return resources, nil
 }
 
-func (s *Service) selectPruneVolumes(ctx context.Context, req types.PruneAllRequest, usage client.DiskUsageResult, volumeRefs map[string]int) []pruneResource {
+func (s *Service) selectPruneVolumes(ctx context.Context, req types.PruneAllRequest, usage mobyClient.DiskUsageResult, volumeRefs map[string]int) []pruneResource {
 	if req.Volumes == nil || req.Volumes.Mode == types.PruneVolumeModeNone {
 		return nil
 	}
@@ -774,8 +779,8 @@ func (s *Service) selectPruneVolumes(ctx context.Context, req types.PruneAllRequ
 }
 
 func (s *Service) prepareVolumePlanWithoutUsage(ctx context.Context, req types.PruneAllRequest) (prunePlan, error) {
-	volumes, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.VolumeListResult, error) {
-		return cli.VolumeList(ctx, client.VolumeListOptions{})
+	volumes, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.VolumeListResult, error) {
+		return cli.VolumeList(ctx, mobyClient.VolumeListOptions{})
 	})
 	if err != nil {
 		return prunePlan{}, err
@@ -813,8 +818,8 @@ func (s *Service) selectPruneNetworks(ctx context.Context, req types.PruneAllReq
 	if err != nil {
 		return nil, err
 	}
-	networks, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NetworkListResult, error) {
-		return cli.NetworkList(ctx, client.NetworkListOptions{})
+	networks, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.NetworkListResult, error) {
+		return cli.NetworkList(ctx, mobyClient.NetworkListOptions{})
 	})
 	if err != nil {
 		return nil, err
@@ -825,8 +830,8 @@ nextNetwork:
 		if item.Name == "bridge" || item.Name == "host" || item.Name == "none" || item.Ingress || item.Scope != "local" || (!until.IsZero() && !item.Created.Before(until)) {
 			continue
 		}
-		inspect, networkInspectWithCompatibilityErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NetworkInspectResult, error) {
-			return compat.NetworkInspectWithCompatibility(ctx, cli, item.ID, client.NetworkInspectOptions{})
+		inspect, networkInspectWithCompatibilityErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.NetworkInspectResult, error) {
+			return compat.NetworkInspectWithCompatibility(ctx, cli, item.ID, mobyClient.NetworkInspectOptions{})
 		})
 		if networkInspectWithCompatibilityErr != nil {
 			return nil, networkInspectWithCompatibilityErr
@@ -844,7 +849,7 @@ nextNetwork:
 	return resources, nil
 }
 
-func (s *Service) selectPruneBuildCache(req types.PruneAllRequest, usage client.DiskUsageResult) ([]pruneResource, error) {
+func (s *Service) selectPruneBuildCache(req types.PruneAllRequest, usage mobyClient.DiskUsageResult) ([]pruneResource, error) {
 	if req.BuildCache == nil || req.BuildCache.Mode == types.PruneBuildCacheModeNone {
 		return nil, nil
 	}
@@ -866,7 +871,7 @@ func (s *Service) selectPruneBuildCache(req types.PruneAllRequest, usage client.
 	return resources, nil
 }
 
-func pruneSelectedReferences(containers []pruneResource, usage client.DiskUsageResult) (map[string]bool, map[string]int, map[string]int) {
+func pruneSelectedReferences(containers []pruneResource, usage mobyClient.DiskUsageResult) (map[string]bool, map[string]int, map[string]int) {
 	selectedContainers := make(map[string]bool)
 	imageRefs := make(map[string]int)
 	volumeRefs := make(map[string]int)
@@ -1014,14 +1019,14 @@ func (s *Service) executePrunePlan(
 func (s *Service) removePruneResource(ctx context.Context, resource pruneResource) error {
 	switch resource.Kind {
 	case "container":
-		_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerRemoveResult, error) {
-			return cli.ContainerRemove(ctx, resource.ID, client.ContainerRemoveOptions{})
+		_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+			return cli.ContainerRemove(ctx, resource.ID, mobyClient.ContainerRemoveOptions{})
 		})
 		return err
 	case "image":
 		untagged := false
 		for _, name := range resource.Names {
-			inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+			inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 				return cli.ImageInspect(ctx, name)
 			})
 			if errdefs.IsNotFound(inspectErr) {
@@ -1033,15 +1038,15 @@ func (s *Service) removePruneResource(ctx context.Context, resource pruneResourc
 			if inspected.ID != resource.ID {
 				continue
 			}
-			if _, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageRemoveResult, error) {
-				return cli.ImageRemove(ctx, name, client.ImageRemoveOptions{PruneChildren: false})
+			if _, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ImageRemoveResult, error) {
+				return cli.ImageRemove(ctx, name, mobyClient.ImageRemoveOptions{PruneChildren: false})
 			}); err != nil {
 				return err
 			}
 			untagged = true
 		}
-		_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageRemoveResult, error) {
-			return cli.ImageRemove(ctx, resource.ID, client.ImageRemoveOptions{PruneChildren: false})
+		_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ImageRemoveResult, error) {
+			return cli.ImageRemove(ctx, resource.ID, mobyClient.ImageRemoveOptions{PruneChildren: false})
 		})
 		if untagged && errdefs.IsNotFound(err) {
 			return nil
@@ -1062,7 +1067,7 @@ func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recover
 		return 0, nil
 	}
 	if recovery {
-		usage, err := s.pruneDiskUsage(ctx, client.DiskUsageOptions{BuildCache: true, Verbose: true})
+		usage, err := s.pruneDiskUsage(ctx, mobyClient.DiskUsageOptions{BuildCache: true, Verbose: true})
 		if err != nil {
 			return 0, err
 		}
@@ -1085,7 +1090,7 @@ func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recover
 			continue
 		}
 		// Docker interprets the ID filter as a regular expression.
-		filters := make(client.Filters).Add("id", "^"+regexp.QuoteMeta(resource.ID)+"$")
+		filters := make(mobyClient.Filters).Add("id", "^"+regexp.QuoteMeta(resource.ID)+"$")
 		if request.Mode == types.PruneBuildCacheModeOlderThan {
 			filters = filters.Add("until", request.Until)
 		}
@@ -1093,7 +1098,7 @@ func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recover
 		if err != nil {
 			return reclaimed, err
 		}
-		report, err := cli.BuildCachePrune(ctx, client.BuildCachePruneOptions{
+		report, err := cli.BuildCachePrune(ctx, mobyClient.BuildCachePruneOptions{
 			All:     request.Mode == types.PruneBuildCacheModeAll,
 			Filters: filters,
 		})
@@ -1107,8 +1112,8 @@ func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recover
 
 func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, resource pruneResource) (size int64, eligible, exists bool, err error) {
 	if resource.Kind == "network" {
-		inspected, networkInspectWithCompatibilityErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NetworkInspectResult, error) {
-			return compat.NetworkInspectWithCompatibility(ctx, cli, resource.ID, client.NetworkInspectOptions{})
+		inspected, networkInspectWithCompatibilityErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.NetworkInspectResult, error) {
+			return compat.NetworkInspectWithCompatibility(ctx, cli, resource.ID, mobyClient.NetworkInspectOptions{})
 		})
 		if errdefs.IsNotFound(networkInspectWithCompatibilityErr) {
 			return resource.Size, false, false, nil
@@ -1120,8 +1125,8 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 	}
 	switch resource.Kind {
 	case "container":
-		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, cli, resource.ID, client.ContainerInspectOptions{})
+		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, cli, resource.ID, mobyClient.ContainerInspectOptions{})
 		})
 		if errdefs.IsNotFound(inspectErr) {
 			return resource.Size, false, false, nil
@@ -1132,7 +1137,7 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 		state := kit.FromPtr(inspected.Container.State)
 		return resource.Size, !state.Running && !state.Paused && !state.Restarting, true, nil
 	case "image":
-		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return cli.ImageInspect(ctx, resource.ID)
 		})
 		if errdefs.IsNotFound(inspectErr) {
@@ -1144,10 +1149,10 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 		if slices.ContainsFunc(inspected.RepoTags, func(tag string) bool { return !slices.Contains(resource.Names, tag) }) {
 			return resource.Size, false, true, nil
 		}
-		users, listErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerListResult, error) {
-			return cli.ContainerList(ctx, client.ContainerListOptions{
+		users, listErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+			return cli.ContainerList(ctx, mobyClient.ContainerListOptions{
 				All:     true,
-				Filters: make(client.Filters).Add("ancestor", resource.ID),
+				Filters: make(mobyClient.Filters).Add("ancestor", resource.ID),
 			})
 		})
 		if listErr != nil {
@@ -1155,8 +1160,8 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 		}
 		return resource.Size, len(users.Items) == 0 && (plan.Request.Images.Mode != types.PruneImageModeDangling || len(inspected.RepoTags) == 0), true, nil
 	case "volume":
-		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.VolumeInspectResult, error) {
-			return cli.VolumeInspect(ctx, resource.ID, client.VolumeInspectOptions{})
+		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+			return cli.VolumeInspect(ctx, resource.ID, mobyClient.VolumeInspectOptions{})
 		})
 		if errdefs.IsNotFound(inspectErr) {
 			return resource.Size, false, false, nil
@@ -1164,7 +1169,7 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 		if inspectErr != nil {
 			return resource.Size, false, false, inspectErr
 		}
-		users, usersErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) ([]string, error) {
+		users, usersErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) ([]string, error) {
 			return docker.GetContainersUsingVolume(ctx, cli, resource.ID)
 		})
 		if usersErr != nil {

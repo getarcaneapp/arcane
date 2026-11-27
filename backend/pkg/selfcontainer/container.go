@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater/labels"
@@ -118,11 +118,11 @@ func isHexContainerID(id string) bool {
 	return true
 }
 
-func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *client.Client) string {
-	filters := make(client.Filters)
+func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *mobyClient.Client) string {
+	filters := make(mobyClient.Filters)
 	filters = filters.Add("label", labels.LabelArcane+"=true")
 
-	list, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: filters})
+	list, err := dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{All: true, Filters: filters})
 	if err != nil {
 		slog.DebugContext(ctx, "find arcane container by label: list failed", "error", err)
 		return ""
@@ -133,7 +133,7 @@ func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *client.Clie
 		if v, ok := c.Labels[LabelArcaneUpgrader]; ok && strings.EqualFold(strings.TrimSpace(v), "true") {
 			continue
 		}
-		if c.State == container.StateRunning {
+		if c.State == mobyContainer.StateRunning {
 			return c.ID
 		}
 		fallbackID = cmp.Or(fallbackID, c.ID)
@@ -143,11 +143,11 @@ func FindArcaneContainerIDByLabel(ctx context.Context, dockerClient *client.Clie
 	return fallbackID
 }
 
-func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Client) (*container.InspectResponse, error) {
+func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *mobyClient.Client) (*mobyContainer.InspectResponse, error) {
 	// Behind a network_mode sidecar, hostname and cgroup resolve the sidecar, so only a labeled hit is trusted (#3544, #3693).
-	var unlabeled *container.InspectResponse
+	var unlabeled *mobyContainer.InspectResponse
 	if target, err := CurrentContainerInspectTarget(CurrentContainerID, os.Hostname); err == nil && target != "" {
-		if inspect, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, target, client.ContainerInspectOptions{}); inspectErr == nil {
+		if inspect, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, target, mobyClient.ContainerInspectOptions{}); inspectErr == nil {
 			if inspect.Container.Config != nil && strings.EqualFold(strings.TrimSpace(inspect.Container.Config.Labels[labels.LabelArcane]), "true") {
 				return &inspect.Container, nil
 			}
@@ -156,7 +156,7 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 	}
 
 	if containerID := FindArcaneContainerIDByLabel(ctx, dockerClient); containerID != "" {
-		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, mobyClient.ContainerInspectOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("inspect Arcane container: %w", err)
 		}
@@ -173,7 +173,7 @@ func InspectCurrentArcaneContainer(ctx context.Context, dockerClient *client.Cli
 	return nil, errors.New("could not detect Arcane container")
 }
 
-func sharesNetworkNamespace(candidate, owner *container.InspectResponse) bool {
+func sharesNetworkNamespace(candidate, owner *mobyContainer.InspectResponse) bool {
 	if candidate.HostConfig == nil || !candidate.HostConfig.NetworkMode.IsContainer() {
 		return false
 	}

@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/cache"
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 const (

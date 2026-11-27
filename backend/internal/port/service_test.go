@@ -12,15 +12,15 @@ import (
 	"testing"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -28,7 +28,7 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-func newPortServiceTestDockerService(t *testing.T, containers []container.Summary) *docker.DockerClientService {
+func newPortServiceTestDockerService(t *testing.T, containers []mobyContainer.Summary) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,11 +49,11 @@ func newPortServiceTestDockerService(t *testing.T, containers []container.Summar
 }
 
 func TestPortService_ListPortsPaginated_FlattensPublishedAndExposedPorts(t *testing.T) {
-	svc := NewPortService(newPortServiceTestDockerService(t, []container.Summary{
+	svc := NewPortService(newPortServiceTestDockerService(t, []mobyContainer.Summary{
 		{
 			ID:    "container-published",
 			Names: []string{"/web"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{IP: netip.MustParseAddr("0.0.0.0"), PrivatePort: 80, PublicPort: 8080, Type: "tcp"},
 				{PrivatePort: 443, Type: "tcp"},
 			},
@@ -61,7 +61,7 @@ func TestPortService_ListPortsPaginated_FlattensPublishedAndExposedPorts(t *test
 		{
 			ID:    "container-exposed",
 			Names: []string{"/api"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{PrivatePort: 9000, Type: "udp"},
 			},
 		},
@@ -95,25 +95,25 @@ func TestPortService_ListPortsPaginated_FlattensPublishedAndExposedPorts(t *test
 }
 
 func TestPortService_ListPortsPaginated_SortsByHostPortWithUnpublishedLast(t *testing.T) {
-	svc := NewPortService(newPortServiceTestDockerService(t, []container.Summary{
+	svc := NewPortService(newPortServiceTestDockerService(t, []mobyContainer.Summary{
 		{
 			ID:    "container-3000",
 			Names: []string{"/api"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{IP: netip.MustParseAddr("127.0.0.1"), PrivatePort: 3000, PublicPort: 3000, Type: "tcp"},
 			},
 		},
 		{
 			ID:    "container-8080",
 			Names: []string{"/web"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{IP: netip.MustParseAddr("0.0.0.0"), PrivatePort: 80, PublicPort: 8080, Type: "tcp"},
 			},
 		},
 		{
 			ID:    "container-unpublished",
 			Names: []string{"/worker"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{PrivatePort: 9000, Type: "tcp"},
 			},
 		},
@@ -140,25 +140,25 @@ func TestPortService_ListPortsPaginated_SortsByHostPortWithUnpublishedLast(t *te
 }
 
 func TestPortService_ListPortsPaginated_SortsByHostPortDescWithUnpublishedLast(t *testing.T) {
-	svc := NewPortService(newPortServiceTestDockerService(t, []container.Summary{
+	svc := NewPortService(newPortServiceTestDockerService(t, []mobyContainer.Summary{
 		{
 			ID:    "container-3000",
 			Names: []string{"/api"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{IP: netip.MustParseAddr("127.0.0.1"), PrivatePort: 3000, PublicPort: 3000, Type: "tcp"},
 			},
 		},
 		{
 			ID:    "container-8080",
 			Names: []string{"/web"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{IP: netip.MustParseAddr("0.0.0.0"), PrivatePort: 80, PublicPort: 8080, Type: "tcp"},
 			},
 		},
 		{
 			ID:    "container-unpublished",
 			Names: []string{"/worker"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{PrivatePort: 9000, Type: "tcp"},
 			},
 		},
@@ -185,25 +185,25 @@ func TestPortService_ListPortsPaginated_SortsByHostPortDescWithUnpublishedLast(t
 }
 
 func TestPortService_ListPortsPaginated_SortsByHostIPDescWithUnpublishedLast(t *testing.T) {
-	svc := NewPortService(newPortServiceTestDockerService(t, []container.Summary{
+	svc := NewPortService(newPortServiceTestDockerService(t, []mobyContainer.Summary{
 		{
 			ID:    "container-127",
 			Names: []string{"/api"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{IP: netip.MustParseAddr("127.0.0.1"), PrivatePort: 3000, PublicPort: 3000, Type: "tcp"},
 			},
 		},
 		{
 			ID:    "container-000",
 			Names: []string{"/web"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{IP: netip.MustParseAddr("0.0.0.0"), PrivatePort: 80, PublicPort: 8080, Type: "tcp"},
 			},
 		},
 		{
 			ID:    "container-unpublished",
 			Names: []string{"/worker"},
-			Ports: []container.PortSummary{
+			Ports: []mobyContainer.PortSummary{
 				{PrivatePort: 9000, Type: "tcp"},
 			},
 		},
@@ -234,14 +234,14 @@ func TestPrimaryContainerName_TrimsDockerPrefix(t *testing.T) {
 	assert.Equal(t, "abcdef123456", primaryContainerName(nil, "abcdef1234567890"))
 }
 
-func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
 
 	httpClient := server.Client()
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(httpClient),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(httpClient),
 	)
 	require.NoError(t, err)
 
@@ -338,7 +338,7 @@ func TestAggregatePortsMergesEnvironments(t *testing.T) {
 	})
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -353,5 +353,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -30,8 +30,8 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-var testDockerService = (&dockerInternal.DockerClientService{}).WithClient(func() *client.Client {
-	cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
+var testDockerService = (&dockerInternal.DockerClientService{}).WithClient(func() *mobyClient.Client {
+	cli, _ := mobyClient.New(mobyClient.WithHost("tcp://127.0.0.1:1"), mobyClient.WithAPIVersion("1.41"))
 	return cli
 }())
 

@@ -5,6 +5,7 @@ export interface UploadSession {
 	id: string;
 	kind: UploadKind;
 	filename: string;
+	target?: string;
 	receivedChunks: number[];
 	size: number;
 	chunkSize: number;

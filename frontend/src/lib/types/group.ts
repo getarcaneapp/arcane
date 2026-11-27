@@ -1,4 +1,4 @@
-import type { UserRoleAssignmentInput } from './role';
+import type { ResourceScopeType, UserRoleAssignmentInput } from './role';
 import type { CreateRequest, UpdateRequest } from './ui/pagination';
 
 export type GroupMemberSource = 'manual' | 'oidc' | 'ldap';
@@ -31,6 +31,8 @@ export type GroupRoleAssignment = {
 	groupId: string;
 	roleId: string;
 	environmentId?: string;
+	resourceType?: ResourceScopeType;
+	resourceId?: string;
 	source: GroupMemberSource;
 	createdAt: string;
 };
@@ -46,3 +48,17 @@ export type SetGroupRoleAssignments = {
 export type GroupWritable = 'name' | 'description' | 'memberUserIds' | 'roleAssignments';
 export type GroupCreate = CreateRequest<Group, GroupWritable, 'name'>;
 export type GroupUpdate = UpdateRequest<Group, GroupWritable>;
+
+export type GroupIdpMapping = {
+	id: string;
+	claimValue: string;
+	groupId: string;
+	source: 'manual' | 'env';
+	createdAt: string;
+	updatedAt?: string;
+};
+
+export type GroupIdpMappingCreate = {
+	claimValue: string;
+	groupId: string;
+};

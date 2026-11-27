@@ -9,10 +9,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -104,16 +104,16 @@ func snapshotRun(entry *ProjectBackup, p plan) backup.SnapshotRun {
 	}
 }
 
-func snapshotInput(projectMounts []mount.Mount, metaVolume string, entry *ProjectBackup, p plan) backup.CreateSnapshotInput {
+func snapshotInput(projectMounts []mobyMount.Mount, metaVolume string, entry *ProjectBackup, p plan) backup.CreateSnapshotInput {
 	mounts := slices.Clone(projectMounts)
 	for _, name := range p.volumeNames() {
 		mounts = append(mounts, backup.VolumePart(name))
 	}
-	mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: metaVolume, Target: path.Join(backup.SnapshotRoot, "meta"), ReadOnly: true})
+	mounts = append(mounts, mobyMount.Mount{Type: mobyMount.TypeVolume, Source: metaVolume, Target: path.Join(backup.SnapshotRoot, "meta"), ReadOnly: true})
 	return backup.CreateSnapshotInput{Mounts: mounts, Sources: []string{backup.SnapshotRoot}, AsPath: "/", Tags: snapshotTags(entry)}
 }
 
-func nestedTargets(mounts []mount.Mount) []string {
+func nestedTargets(mounts []mobyMount.Mount) []string {
 	targets := make([]string, 0, len(mounts)-1)
 	for _, nested := range mounts[1:] {
 		targets = append(targets, nested.Target)
@@ -121,7 +121,7 @@ func nestedTargets(mounts []mount.Mount) []string {
 	return targets
 }
 
-func projectSourceMounts(ctx context.Context, dockerClient *client.Client, source backup.SourceMountOptions) ([]mount.Mount, error) {
+func projectSourceMounts(ctx context.Context, dockerClient *mobyClient.Client, source backup.SourceMountOptions) ([]mobyMount.Mount, error) {
 	mounts, inContainer, err := backup.CurrentMounts(ctx, dockerClient)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func projectSourceMounts(ctx context.Context, dockerClient *client.Client, sourc
 	if err != nil {
 		return nil, err
 	}
-	if store := docker.MountForDestination(mounts, "/backups", "/backups"); store != nil && store.Type == mount.TypeBind && resolved[0].Type == mount.TypeBind &&
+	if store := docker.MountForDestination(mounts, "/backups", "/backups"); store != nil && store.Type == mobyMount.TypeBind && resolved[0].Type == mobyMount.TypeBind &&
 		(kit.FilePathMatches(store.Source, resolved[0].Source) || kit.FilePathMatches(resolved[0].Source, store.Source)) {
 		return nil, common.Classify(common.ErrValidation, fmt.Errorf(
 			"the project folder %s and Arcane's backup folder %s overlap on the host, so the project cannot be backed up or restored", containerPath, store.Source,

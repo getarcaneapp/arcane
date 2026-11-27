@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -135,9 +135,9 @@ func TestRefreshRecreatedContainerLabelsInternalPreservesLabelsWhenTargetInspect
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient, err := client.New(
-		client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
-		client.WithAPIVersion("1.41"),
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
+		mobyClient.WithAPIVersion("1.41"),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
@@ -176,9 +176,9 @@ func TestRefreshRecreatedContainerLabelsInternalPreservesOverridesWhenPreviousIn
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient, err := client.New(
-		client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
-		client.WithAPIVersion("1.41"),
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
+		mobyClient.WithAPIVersion("1.41"),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
