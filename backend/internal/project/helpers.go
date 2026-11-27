@@ -132,11 +132,12 @@ func deleteProjectWithTags(tx *gorm.DB, projectID string) error {
 	if err := tx.Where("mode IN ? AND project_id = ?", GitOpsPushModes, projectID).Delete(&GitOpsSync{}).Error; err != nil {
 		return fmt.Errorf("delete project git backups: %w", err)
 	}
-	if err := tx.Where("project_id = ?", projectID).Delete(&imageupdate.ImageUpdateRecord{}).Error; err != nil {
-		return fmt.Errorf("delete project image updates: %w", err)
-	}
 	if err := tx.Delete(&Project{}, "id = ?", projectID).Error; err != nil {
 		return fmt.Errorf("delete project: %w", err)
+	}
+	// After the project row: that delete waits for an update check holding the row lock, so its rows are visible here.
+	if err := tx.Where("project_id = ?", projectID).Delete(&imageupdate.ImageUpdateRecord{}).Error; err != nil {
+		return fmt.Errorf("delete project image updates: %w", err)
 	}
 	return nil
 }
