@@ -41,6 +41,7 @@ type (
 	target struct {
 		password   string
 		repository backup.Repository
+		volume     bool
 	}
 )
 
@@ -118,7 +119,7 @@ func (s *Service) Refresh(ctx context.Context) (types.BackupStorageStats, error)
 	group.SetLimit(refreshConcurrency)
 	for _, entry := range targets {
 		group.Go(func() error {
-			refreshErr := s.deps.Engine.RefreshStats(ctx, dockerClient, entry.repository, entry.password)
+			refreshErr := s.refresh(ctx, dockerClient, entry)
 			if refreshErr == nil || errors.Is(refreshErr, backup.ErrRepositoryMissing) || errors.Is(refreshErr, backup.ErrRepositoryBusy) {
 				return nil
 			}
@@ -136,6 +137,22 @@ func (s *Service) Refresh(ctx context.Context) (types.BackupStorageStats, error)
 	return s.Get(ctx)
 }
 
+func (s *Service) refresh(ctx context.Context, dockerClient *mobyClient.Client, entry target) error {
+	heldCtx, release, err := s.deps.Engine.TryHoldRepository(ctx, entry.repository.ID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	password := entry.password
+	if entry.volume {
+		password, err = s.deps.Repository.RepositoryPassword(heldCtx, dockerClient, entry.repository, backup.PasswordOptions{ReadOnly: true})
+		if err != nil {
+			return err
+		}
+	}
+	return s.deps.Engine.RefreshStats(heldCtx, dockerClient, entry.repository, password)
+}
+
 func (s *Service) targets(ctx context.Context, dockerClient *mobyClient.Client) ([]target, error) {
 	var targets []target
 	systemKey, keyErr := s.deps.RecoveryKeys.Get(ctx, backup.RecoveryKeyConfigID)
@@ -148,19 +165,15 @@ func (s *Service) targets(ctx context.Context, dockerClient *mobyClient.Client) 
 			return nil, err
 		}
 		for _, repository := range systemRepositories {
-			targets = append(targets, target{repository: repository, password: systemKey})
+			targets = append(targets, target{repository: repository, password: systemKey, volume: false})
 		}
-	}
-	volumePassword, err := s.deps.Repository.Password(ctx, dockerClient)
-	if err != nil {
-		return nil, err
 	}
 	volumeRepositories, err := s.deps.Repository.Repositories(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	for _, repository := range volumeRepositories {
-		targets = append(targets, target{repository: repository, password: volumePassword})
+		targets = append(targets, target{repository: repository, password: "", volume: true})
 	}
 	return targets, nil
 }

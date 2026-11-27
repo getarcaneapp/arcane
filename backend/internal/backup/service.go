@@ -135,8 +135,9 @@ type (
 		// held parks admission a manual start won until the run that won it takes it over.
 		held      map[types.SchedulerAdmissionKey]heldLease
 		Authorize func(context.Context, types.BackupRequester) error
+		ctx       context.Context
+		cancel    context.CancelFunc
 		mu        sync.Mutex
-		stopped   bool
 	}
 
 	heldLease struct {
@@ -353,11 +354,14 @@ func NewResourceRequester(ctx context.Context, requestedBy types.Actor, environm
 }
 
 func NewEngine(admission *runs.Admission, imageService *image.ImageService, db *database.DB, authorize func(context.Context, types.BackupRequester) error) *Engine {
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:forbidigo // Queued stats refreshes outlive requests and stop with the engine.
 	return &Engine{
 		imageService: imageService,
 		admission:    admission,
 		db:           db,
 		Authorize:    authorize,
+		ctx:          ctx,
+		cancel:       cancel,
 		repositories: make(map[string]chan struct{}),
 		queuedStats:  make(map[string]*queuedStats),
 		held:         make(map[types.SchedulerAdmissionKey]heldLease),
@@ -421,7 +425,7 @@ func (e *Engine) Stop(ctx context.Context) error {
 	e.mu.Lock()
 	held := e.held
 	e.held = make(map[types.SchedulerAdmissionKey]heldLease)
-	e.stopped = true
+	e.cancel()
 	for id, queued := range e.queuedStats {
 		queued.timer.Stop()
 		delete(e.queuedStats, id)
@@ -786,7 +790,7 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *mobyClient.C
 		requested = append(requested, strings.ToLower(id))
 	}
 	requested = kit.Unique(requested)
-	unlock, err := e.lockRepository(ctx, repository.ID)
+	_, unlock, err := e.lockRepository(ctx, repository.ID, true)
 	if err != nil {
 		return err
 	}
@@ -827,6 +831,9 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *mobyClient.C
 	for i, batch := range batches {
 		command := slices.Concat([]string{"forget"}, kit.Ternary(i == len(batches)-1, []string{"--prune"}, nil), []string{"--"}, batch)
 		if _, err = e.runContainer(ctx, dockerClient, repository, password, command); err != nil {
+			if i > 0 {
+				e.queueStats(ctx, dockerClient, repository, password)
+			}
 			return err
 		}
 	}
@@ -926,7 +933,7 @@ func (e *Engine) Replicate(ctx context.Context, dockerClient *mobyClient.Client,
 }
 
 func (e *Engine) run(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password string, command []string, extraMounts ...mobyMount.Mount) (string, error) {
-	unlock, err := e.lockRepository(ctx, repository.ID)
+	_, unlock, err := e.lockRepository(ctx, repository.ID, true)
 	if err != nil {
 		return "", err
 	}
@@ -1060,32 +1067,39 @@ func AcceptedBackupID(run types.SchedulerRun) string {
 	return strings.TrimPrefix(run.Outcome.Targets[index].ID, "accepted:")
 }
 
-func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) {
+func (e *Engine) lockRepository(ctx context.Context, id string, wait bool) (context.Context, func(), error) {
 	if strings.TrimSpace(id) == "" {
-		return nil, errors.New("backup repository ID is required")
+		return nil, nil, errors.New("backup repository ID is required")
 	}
 	if ctx.Value(heldRepository{engine: e, id: id}) != nil {
-		return func() {}, nil
+		return ctx, func() {}, nil
 	}
 	lock := e.repositoryLock(id)
 	select {
 	case lock <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	default:
+		if !wait {
+			return nil, nil, ErrRepositoryBusy
+		}
+		select {
+		case lock <- struct{}{}:
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		<-lock
-		return nil, err
+		return nil, nil, err
 	}
-	return func() { <-lock }, nil
+	return context.WithValue(ctx, heldRepository{engine: e, id: id}, true), sync.OnceFunc(func() { <-lock }), nil
 }
 
 func (e *Engine) HoldRepository(ctx context.Context, id string) (context.Context, func(), error) {
-	unlock, err := e.lockRepository(ctx, id)
-	if err != nil {
-		return nil, nil, err
-	}
-	return context.WithValue(ctx, heldRepository{engine: e, id: id}, true), sync.OnceFunc(unlock), nil
+	return e.lockRepository(ctx, id, true)
+}
+
+func (e *Engine) TryHoldRepository(ctx context.Context, id string) (context.Context, func(), error) {
+	return e.lockRepository(ctx, id, false)
 }
 
 func ValidatePolicyUpdate(ctx context.Context, domain string, update types.UpdateBackupPolicy, s3Service *s3.S3DestinationService) (types.UpdateBackupPolicy, error) {

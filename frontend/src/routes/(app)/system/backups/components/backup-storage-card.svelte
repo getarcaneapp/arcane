@@ -50,7 +50,6 @@
 	const scope = $derived(environments.map((environment) => environment.id).join(','));
 	const statsQuery = createQuery(() => ({
 		...backupStorageStatsQuery(scope, environments),
-		enabled: environments.length > 0,
 		refetchInterval: 60_000
 	}));
 	const report = $derived(statsQuery.data);

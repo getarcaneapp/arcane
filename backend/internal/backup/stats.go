@@ -12,6 +12,7 @@ import (
 	mobyClient "github.com/moby/moby/client"
 
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
 )
 
 type (
@@ -50,16 +51,11 @@ func (e *Engine) Stats(ctx context.Context) ([]RepositoryStats, error) {
 }
 
 func (e *Engine) RefreshStats(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password string) error {
-	if ctx.Value(heldRepository{engine: e, id: repository.ID}) != nil {
-		return e.saveStats(ctx, dockerClient, repository, password)
+	ctx, release, err := e.TryHoldRepository(ctx, repository.ID)
+	if err != nil {
+		return err
 	}
-	lock := e.repositoryLock(repository.ID)
-	select {
-	case lock <- struct{}{}:
-	default:
-		return ErrRepositoryBusy
-	}
-	defer func() { <-lock }()
+	defer release()
 	return e.saveStats(ctx, dockerClient, repository, password)
 }
 
@@ -112,7 +108,7 @@ func (e *Engine) saveStats(ctx context.Context, dockerClient *mobyClient.Client,
 func (e *Engine) queueStats(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.stopped {
+	if e.ctx.Err() != nil {
 		return
 	}
 	timer := func() *time.Timer {
@@ -139,7 +135,11 @@ func (e *Engine) refreshQueuedStats(id string) {
 	if queued == nil {
 		return
 	}
-	err := e.RefreshStats(queued.ctx, queued.client, queued.repository, queued.password)
+	ctx, cancel := context.WithTimeout(queued.ctx, timeouts.DefaultJobRun)
+	defer cancel()
+	stop := context.AfterFunc(e.ctx, cancel)
+	defer stop()
+	err := e.RefreshStats(ctx, queued.client, queued.repository, queued.password)
 	switch {
 	case errors.Is(err, ErrRepositoryBusy):
 		e.queueStats(queued.ctx, queued.client, queued.repository, queued.password)
