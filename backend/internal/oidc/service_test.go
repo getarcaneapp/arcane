@@ -2,11 +2,16 @@ package oidc
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json/v2"
 	"testing"
+	"time"
 
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
+	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -54,6 +59,39 @@ func TestValidateMobileRedirectURITrimsAllowlistWhitespace(t *testing.T) {
 		require.NoError(t, s.ValidateMobileRedirectURI(ctx, uri))
 	}
 	require.Error(t, s.ValidateMobileRedirectURI(ctx, "  arcane-mobile://a  "))
+}
+
+func TestDecodeOidcStateRejectsUnsignedAndEmptyNonce(t *testing.T) {
+	ctx := t.Context()
+	crypto.InitEncryption(crypto.Config{Environment: "development"})
+	settingsService, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+	s := &OidcService{settingsService: settingsService}
+	key, err := settingsService.EnsureBrowserSessionSigningKey(ctx)
+	require.NoError(t, err)
+
+	encode := func(nonce string) (string, string) {
+		stateJSON, marshalErr := json.Marshal(OidcState{CreatedAt: time.Now(), State: "s", Nonce: nonce, CodeVerifier: "v"})
+		require.NoError(t, marshalErr)
+		payload := base64.RawURLEncoding.EncodeToString(stateJSON)
+		return payload, payload + "." + base64.RawURLEncoding.EncodeToString(oidcStateMAC(key, payload))
+	}
+
+	payload, signed := encode("n")
+	state, err := s.decodeOidcState(ctx, signed)
+	require.NoError(t, err)
+	require.Equal(t, "n", state.Nonce)
+
+	_, err = s.decodeOidcState(ctx, payload)
+	require.Error(t, err, "unsigned state must be rejected")
+
+	forged, _ := encode("other")
+	_, err = s.decodeOidcState(ctx, forged+signed[len(payload):])
+	require.Error(t, err, "tampered state must be rejected")
+
+	_, signedEmpty := encode("")
+	_, err = s.decodeOidcState(ctx, signedEmpty)
+	require.Error(t, err, "empty nonce must be rejected")
 }
 
 func setupSettingsTestDB(t *testing.T) *database.DB {
