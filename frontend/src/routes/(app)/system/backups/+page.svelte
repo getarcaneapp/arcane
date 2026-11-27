@@ -731,13 +731,23 @@
 {/snippet}
 
 {#snippet backupsEmptyState()}
-	<EmptyState
-		icon={BackupIcon}
-		title={m.system_backups_empty_title()}
-		description={m.system_backups_empty_description()}
-		actionLabel={isReadOnly || !canCreateBackups ? undefined : m.common_create()}
-		onAction={() => openAction('create')}
-	/>
+	{#if backupsQuery.error && !backupsQuery.data}
+		<EmptyState
+			icon={AlertIcon}
+			title={m.volumes_backup_load_failed()}
+			description={extractApiErrorMessage(backupsQuery.error)}
+			actionLabel={m.common_retry()}
+			onAction={() => backupsQuery.refetch()}
+		/>
+	{:else}
+		<EmptyState
+			icon={BackupIcon}
+			title={m.system_backups_empty_title()}
+			description={m.system_backups_empty_description()}
+			actionLabel={isReadOnly || !canCreateBackups ? undefined : m.common_create()}
+			onAction={() => openAction('create')}
+		/>
+	{/if}
 {/snippet}
 
 {#snippet backupsLoadingState()}
