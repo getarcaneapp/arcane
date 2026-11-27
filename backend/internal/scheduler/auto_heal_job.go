@@ -337,11 +337,6 @@ func (j *AutoHealJob) postRestartActions(ctx context.Context, containerID, conta
 	}
 }
 
-func (j *AutoHealJob) Reschedule(ctx context.Context) error {
-	slog.InfoContext(ctx, "rescheduling auto-heal job in new scheduler; currently requires restart")
-	return nil
-}
-
 func (j *AutoHealJob) pruneRecordLocked(containerID string, cutoff time.Time) *restartRecord {
 	record, exists := j.restarts[containerID]
 	if !exists {

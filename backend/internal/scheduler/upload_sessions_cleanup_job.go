@@ -43,7 +43,3 @@ func (j *UploadSessionsCleanupJob) Run(ctx context.Context) (types.SchedulerOutc
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
-
-func (j *UploadSessionsCleanupJob) Reschedule(ctx context.Context) error {
-	return nil
-}

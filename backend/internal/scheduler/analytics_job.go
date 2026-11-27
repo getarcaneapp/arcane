@@ -179,11 +179,6 @@ func (j *AnalyticsJob) Run(ctx context.Context) (types.SchedulerOutcome, error) 
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
-func (j *AnalyticsJob) Reschedule(ctx context.Context) error {
-	slog.InfoContext(ctx, "analytics heartbeat schedule is fixed and managed internally", "schedule", analyticsHeartbeatCheckSchedule)
-	return nil
-}
-
 func (j *AnalyticsJob) claimHeartbeat(ctx context.Context) (bool, error) {
 	j.runMu.Lock()
 	defer j.runMu.Unlock()

@@ -117,11 +117,6 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, er
 	return outcome, nil
 }
 
-func (j *ScheduledPruneJob) Reschedule(ctx context.Context) error {
-	slog.InfoContext(ctx, "rescheduling scheduled prune job in new scheduler; currently requires restart")
-	return nil
-}
-
 func buildScheduledPruneRequest(ctx context.Context, settingsService *settings.SettingsService) types.PruneAllRequest {
 	return types.PruneAllRequest{
 		Containers: buildScheduledPruneOption(ctx, settingsService, "pruneContainerMode", types.PruneContainerModeNone, func(mode types.PruneContainerMode) *types.PruneContainersOptions {
