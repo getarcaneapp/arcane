@@ -19,7 +19,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.4
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.69.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.116.1
-	github.com/aws/smithy-go v1.28.10
+	github.com/aws/smithy-go v1.28.11
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/coder/websocket v1.8.15
 	github.com/compose-spec/compose-go/v2 v2.17.0
@@ -30,7 +30,7 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.41.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.10.1+incompatible
-	github.com/docker/compose/v5 v5.8.0
+	github.com/docker/compose/v5 v5.8.1
 	github.com/docker/go-units v0.5.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
@@ -47,7 +47,7 @@ require (
 	github.com/labstack/echo-otel/v5 v5.0.0
 	github.com/labstack/echo/v5 v5.4.7
 	github.com/lestrrat-go/httprc/v3 v3.0.6
-	github.com/lestrrat-go/jwx/v4 v4.6.0
+	github.com/lestrrat-go/jwx/v4 v4.7.0
 	github.com/libtnb/sqlite v1.3.0
 	github.com/lmittmann/tint v1.2.1
 	github.com/moby/buildkit v0.35.1
@@ -152,8 +152,8 @@ require (
 	github.com/depot/depot-go v0.5.4 // indirect
 	github.com/docker/docker-credential-helpers v0.9.13 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
-	github.com/docker/secrets-engine/client v0.2.2 // indirect
-	github.com/docker/secrets-engine/x v0.8.5 // indirect
+	github.com/docker/secrets-engine/client v1.0.0 // indirect
+	github.com/docker/secrets-engine/secrets v1.0.0 // indirect
 	github.com/dunglas/httpsfv v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/ebitengine/purego v0.11.3 // indirect
@@ -312,5 +312,5 @@ require (
 	modernc.org/libc v1.81.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	tags.cncf.io/container-device-interface v1.1.1 // indirect
+	tags.cncf.io/container-device-interface v1.1.2 // indirect
 )
