@@ -1616,6 +1616,33 @@ func TestContainerRegistryService_InspectImageDigest_ECRCredentials(t *testing.T
 		assert.Equal(t, "new-ecr-password", gotAuth.Password)
 	})
 
+	t.Run("prefers more specific saved namespace credential over host-wide caller credential", func(t *testing.T) {
+		db := setupContainerRegistryTestDB(t)
+		createTestPullRegistry(t, db, "ghcr.io/team", "team-user", "team-token")
+		createTestECRRegistry(t, db, "unused-ecr-password")
+
+		var gotAuth mobyRegistry.AuthConfig
+		svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+					gotAuth = decodeRegistryAuth(t, options.EncodedRegistryAuth)
+					return mobyClient.DistributionInspectResult{
+						Descriptor: ocispec.Descriptor{Digest: digest.Digest(wantDigest)},
+					}, nil
+				},
+			}, nil
+		})
+
+		result, err := svc.InspectImageDigest(t.Context(), "ghcr.io/team/app:latest", []types.ContainerRegistryCredential{
+			{URL: "ghcr.io", Username: "host-user", Token: "host-token", Enabled: true},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "team-user", gotAuth.Username)
+		assert.Equal(t, "team-token", gotAuth.Password)
+		assert.Equal(t, wantDigest, result.Digest)
+		assert.Zero(t, svc.ecrCredentials.Len())
+	})
+
 	t.Run("GetOrRefreshECRToken respects caller cancellation", func(t *testing.T) {
 		db := setupContainerRegistryTestDB(t)
 		record := createTestECRRegistry(t, db, "")

@@ -107,6 +107,17 @@ type (
 		password    string
 	}
 
+	registryCredentialCandidate struct {
+		external *resolvedRegistryCredential
+		stored   *cachedEnabledRegistry
+		url      string
+	}
+
+	registryScopeKey struct {
+		host      string
+		namespace string
+	}
+
 	registryRateLimitCacheEntry struct {
 		CheckedAt time.Time              `json:"checkedAt"`
 		RateLimit registry.RateLimitInfo `json:"rateLimit"`
@@ -1251,60 +1262,65 @@ func registryOperationWithCredentials[T any](
 	usableCreds := slices.DeleteFunc(slices.Clone(externalCreds), func(cred types.ContainerRegistryCredential) bool {
 		return !cred.Enabled || strings.TrimSpace(cred.Username) == "" || strings.TrimSpace(cred.Token) == ""
 	})
-	matchingCreds, err := arcaneregistry.MatchingForImage(imageRef, usableCreds, func(cred types.ContainerRegistryCredential) string { return cred.URL })
-	if err != nil {
-		return *new(T), nil, fmt.Errorf("%s failed: %w", operation, err)
+	allCandidates := make([]registryCredentialCandidate, 0, len(usableCreds)+len(entries))
+	coveredRegistries := make(map[registryScopeKey]bool, len(usableCreds))
+	for _, cred := range usableCreds {
+		host, namespace := arcaneregistry.SplitRegistryURL(cred.URL)
+		coveredRegistries[registryScopeKey{host: host, namespace: namespace}] = true
+		resolved := resolvedRegistryCredential{
+			Username:      strings.TrimSpace(cred.Username),
+			Token:         strings.TrimSpace(cred.Token),
+			ServerAddress: normalizeRegistryServerAddress(cred.URL),
+		}
+		allCandidates = append(allCandidates, registryCredentialCandidate{
+			external: &resolved,
+			url:      cred.URL,
+		})
 	}
-	matchingEntries, err := arcaneregistry.MatchingForImage(imageRef, entries, func(entry cachedEnabledRegistry) string { return entry.registry.URL })
+	for i := range entries {
+		host, namespace := arcaneregistry.SplitRegistryURL(entries[i].registry.URL)
+		if coveredRegistries[registryScopeKey{host: host, namespace: namespace}] {
+			continue
+		}
+		allCandidates = append(allCandidates, registryCredentialCandidate{
+			stored: &entries[i],
+			url:    entries[i].registry.URL,
+		})
+	}
+	candidates, err := arcaneregistry.MatchingForImage(imageRef, allCandidates, func(candidate registryCredentialCandidate) string { return candidate.url })
 	if err != nil {
 		return *new(T), nil, fmt.Errorf("%s failed: %w", operation, err)
 	}
 
 	var lastErr error
 	var lastResult *types.ContainerRegistryDigestResult
-	tryCredential := func(credential resolvedRegistryCredential) (T, bool, error) {
+	for _, candidate := range candidates {
+		var credential *resolvedRegistryCredential
+		if candidate.external != nil {
+			credential = candidate.external
+		} else {
+			var resolveErr error
+			credential, resolveErr = s.resolveCachedCredential(ctx, *candidate.stored)
+			if resolveErr != nil {
+				if ctx.Err() != nil {
+					return *new(T), cmp.Or(lastResult, &types.ContainerRegistryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}), fmt.Errorf("%s failed: %w", operation, ctx.Err())
+				}
+				slog.WarnContext(ctx, "failed to resolve registry credential", "registry", candidate.stored.registry.URL, "error", resolveErr)
+				continue
+			}
+			if credential == nil {
+				continue
+			}
+		}
+
 		lastResult = &types.ContainerRegistryDigestResult{AuthMethod: "credential", AuthUsername: credential.Username, AuthRegistry: registryHost, UsedCredential: true}
-		value, fetchErr := fetch(ctx, &credential)
+		value, fetchErr := fetch(ctx, credential)
 		if fetchErr == nil {
-			return value, true, nil
+			return value, lastResult, nil
 		}
 		lastErr = fetchErr
 		if !browse.IsUnauthorizedRegistryError(fetchErr) {
-			return *new(T), true, fmt.Errorf("%s failed with credentials: %w", operation, fetchErr)
-		}
-		return *new(T), false, nil
-	}
-
-	coveredRegistries := make(map[string]bool, len(matchingCreds))
-	for _, cred := range matchingCreds {
-		coveredRegistries[arcaneregistry.NormalizeRegistryURL(cred.URL)] = true
-		value, done, tryErr := tryCredential(resolvedRegistryCredential{
-			Username:      strings.TrimSpace(cred.Username),
-			Token:         strings.TrimSpace(cred.Token),
-			ServerAddress: normalizeRegistryServerAddress(cred.URL),
-		})
-		if done {
-			return value, lastResult, tryErr
-		}
-	}
-	for _, entry := range matchingEntries {
-		if coveredRegistries[arcaneregistry.NormalizeRegistryURL(entry.registry.URL)] {
-			continue
-		}
-		credential, resolveErr := s.resolveCachedCredential(ctx, entry)
-		if resolveErr != nil {
-			if ctx.Err() != nil {
-				return *new(T), cmp.Or(lastResult, &types.ContainerRegistryDigestResult{AuthMethod: "anonymous", AuthRegistry: registryHost}), fmt.Errorf("%s failed: %w", operation, ctx.Err())
-			}
-			slog.WarnContext(ctx, "failed to resolve registry credential", "registry", entry.registry.URL, "error", resolveErr)
-			continue
-		}
-		if credential == nil {
-			continue
-		}
-		value, done, tryErr := tryCredential(*credential)
-		if done {
-			return value, lastResult, tryErr
+			return *new(T), lastResult, fmt.Errorf("%s failed with credentials: %w", operation, fetchErr)
 		}
 	}
 	if lastErr != nil {
