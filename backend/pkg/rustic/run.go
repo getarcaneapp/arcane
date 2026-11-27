@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,6 +41,12 @@ func Run(ctx context.Context, dockerClient *mobyClient.Client, password string, 
 		default:
 			env = append(env, entry)
 		}
+	}
+	// Config.Cmd is as readable as Config.Env, so a replacement password moves to a file too.
+	command = slices.Clone(command)
+	if i := slices.Index(command, "--new-password"); i >= 0 && i+1 < len(command) {
+		secrets[secretsDir+"/new-password"] = []byte(command[i+1])
+		command[i], command[i+1] = "--new-password-file", "/"+secretsDir+"/new-password"
 	}
 	if credentials.Len() > 0 {
 		env = append(env, "AWS_SHARED_CREDENTIALS_FILE=/"+secretsDir+"/credentials")
