@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -52,7 +53,7 @@ func serverOptions(agentEnabled bool) fx.Option {
 
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	if p.Config.AgentEnabled {
-		return &http.Server{Handler: p.Router}, nil
+		return newAgentHealthServer(lc, p), nil
 	}
 	listenAddr := p.Config.ListenAddr()
 	useTLS, tlsCertFile, tlsKeyFile, agentTLSConfig, err := prepareServerTLS(p.AppCtx, p.Config, p.TunnelServer.MTLS)
@@ -187,6 +188,33 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	})
 
 	return srv, nil
+}
+
+func newAgentHealthServer(lc fx.Lifecycle, p HTTPServerParams) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("/api/health", p.Router)
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			_ = os.Remove(config.AgentHealthSocket)
+			listener, err := new(net.ListenConfig).Listen(ctx, "unix", config.AgentHealthSocket)
+			if err != nil {
+				slog.ErrorContext(ctx, "Failed to listen on agent health socket", "path", config.AgentHealthSocket, "error", err)
+				return nil
+			}
+			go func() {
+				if serveErr := srv.Serve(listener); !errors.Is(serveErr, http.ErrServerClosed) {
+					slog.ErrorContext(p.AppCtx, "Agent health server exited with error", "error", serveErr)
+				}
+			}()
+			return nil
+		},
+		OnStop: srv.Shutdown,
+	})
+	return srv
 }
 
 func prepareServerTLS(ctx context.Context, cfg *config.Config, mtls *agent.MTLS) (bool, string, string, *tls.Config, error) {
