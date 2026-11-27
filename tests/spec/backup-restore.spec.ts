@@ -66,6 +66,8 @@ rm bin.dat
 printf new > extra.txt
 rm rel-link
 ln -s elsewhere rel-link
+chown 0:0 .
+chmod 777 .
 `;
 
 function mutate(source: FixtureSource) {
