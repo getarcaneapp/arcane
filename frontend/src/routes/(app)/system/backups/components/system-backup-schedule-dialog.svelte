@@ -80,7 +80,6 @@
 	let volumeSelectionMode = $state<SystemVolumeSelectionMode>(initialProjectPolicy?.volumeSelectionMode ?? 'all');
 	let selectedVolumes = $state<string[]>((initialProjectPolicy?.volumes ?? []).map(projectVolumeValue));
 	const projectOptionsQuery = createQuery(() => ({ ...projectBackupOptionsQuery(), enabled: backupType === 'project' }));
-	// Only the volumes of the projects this policy backs up can be picked.
 	const projectVolumeOptions = $derived(
 		(projectOptionsQuery.data ?? []).filter((project) => project.volumes.length > 0 && projectSelected(project.id))
 	);

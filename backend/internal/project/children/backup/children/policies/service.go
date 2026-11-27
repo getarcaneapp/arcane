@@ -558,9 +558,8 @@ func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBacku
 				slog.WarnContext(ctx, "Failed to list the volumes of a project for backup selection", "projectId", project.ID, "error", volumeErr)
 			}
 			options[i] = types.GlobalProjectBackupOption{ //exhaustruct:enforce
-				ID:   project.ID,
-				Name: project.Name,
-				// Volumes not created yet stay selectable so a policy can exclude them before the first deploy.
+				ID:        project.ID,
+				Name:      project.Name,
 				Volumes:   slices.DeleteFunc(volumes, func(volume types.ProjectVolume) bool { return !volume.Included && !volume.Missing }),
 				Available: true,
 			}
@@ -798,7 +797,6 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 	}, disabled, nil
 }
 
-// globalVolumes returns nil for every volume, so volumes added to a project later are backed up too.
 func (s *Service) globalVolumes(ctx context.Context, options backup.PolicyOptions, projectID string) ([]string, error) {
 	selection := cmp.Or(options.VolumeSelection, types.SystemVolumeSelectionAll)
 	if selection == types.SystemVolumeSelectionAll {

@@ -367,7 +367,6 @@ export interface GlobalProjectVolume {
 export interface GlobalProjectBackupOption {
 	id: string;
 	name: string;
-	/** Volumes a backup can include; ones not created yet are marked missing. */
 	volumes: ProjectVolume[];
 	available: boolean;
 }

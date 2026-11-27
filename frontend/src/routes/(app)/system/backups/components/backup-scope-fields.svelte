@@ -1,7 +1,6 @@
 <script lang="ts" module>
 	import type { GlobalProjectVolume } from '#lib/types/project.js';
 
-	// Project volumes are selected by project ID and compose key, which stay stable when a project is renamed.
 	export function projectVolumeValue(volume: GlobalProjectVolume): string {
 		return JSON.stringify([volume.projectId, volume.key]);
 	}
