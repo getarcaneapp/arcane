@@ -31,6 +31,8 @@ type (
 		Volumes         []string                        `json:"volumes"`
 		SelectionMode   types.SystemVolumeSelectionMode `json:"selectionMode"`
 		ProjectIDs      []string                        `json:"projectIds"`
+		VolumeSelection types.SystemVolumeSelectionMode `json:"volumeSelectionMode"`
+		ProjectVolumes  []types.GlobalProjectVolume     `json:"projectVolumes"`
 		VolumeNames     []string                        `json:"volumeNames"`
 		IgnoreAnonymous bool                            `json:"ignoreAnonymous"`
 	}

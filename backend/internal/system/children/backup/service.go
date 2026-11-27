@@ -1465,6 +1465,8 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBack
 					Volumes:         nil,
 					SelectionMode:   "",
 					ProjectIDs:      nil,
+					VolumeSelection: "",
+					ProjectVolumes:  nil,
 					VolumeNames:     nil,
 					IgnoreAnonymous: false,
 				},

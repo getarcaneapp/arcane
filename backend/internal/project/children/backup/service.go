@@ -212,7 +212,7 @@ func NewService(deps Dependencies) *Service {
 			Config:         deps.Config,
 			ProjectName:    deps.ProjectName,
 			ListProjects:   deps.ListProjects,
-			CheckVolumes:   s.checkVolumes,
+			ProjectVolumes: s.projectVolumes,
 			Authorize:      s.authorize,
 			LatestRun:      s.latestRun,
 			Resume:         s.resumeScheduled,
@@ -965,13 +965,12 @@ func (s *Service) RemovePolicies(ctx context.Context, projectID string) {
 	s.policies.Remove(ctx, projectID)
 }
 
-func (s *Service) checkVolumes(ctx context.Context, projectID string, keys []string) error {
+func (s *Service) projectVolumes(ctx context.Context, projectID string, keys []string) ([]types.ProjectVolume, error) {
 	project, err := s.deps.Project(ctx, projectID, projectDetails)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = s.inspectVolumes(ctx, project, keys, false)
-	return err
+	return s.inspectVolumes(ctx, project, keys, false)
 }
 
 func (s *Service) latestRun(ctx context.Context, query, series string) (*types.ProjectBackup, error) {

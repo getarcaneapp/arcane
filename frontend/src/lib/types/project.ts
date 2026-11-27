@@ -339,6 +339,8 @@ export interface GlobalProjectBackupPolicy {
 	s3DestinationName?: string;
 	selectionMode: SystemVolumeSelectionMode;
 	projectIds: string[];
+	volumeSelectionMode: SystemVolumeSelectionMode;
+	volumes: GlobalProjectVolume[];
 	retentionCount: number;
 	enabled: boolean;
 	stopContainers: boolean;
@@ -353,11 +355,20 @@ export interface GlobalProjectBackupPolicyCollection {
 export type UpdateGlobalProjectBackupPolicy = UpdateBackupPolicy & {
 	selectionMode: SystemVolumeSelectionMode;
 	projectIds: string[];
+	volumeSelectionMode: SystemVolumeSelectionMode;
+	volumes: GlobalProjectVolume[];
 };
+
+export interface GlobalProjectVolume {
+	projectId: string;
+	key: string;
+}
 
 export interface GlobalProjectBackupOption {
 	id: string;
 	name: string;
+	/** Volumes a backup can include; ones not created yet are marked missing. */
+	volumes: ProjectVolume[];
 	available: boolean;
 }
 

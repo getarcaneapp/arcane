@@ -40,7 +40,7 @@ type (
 		Config         *config.Config
 		ProjectName    func(ctx context.Context, projectID string) (string, error)
 		ListProjects   func(ctx context.Context) ([]types.ProjectReference, error)
-		CheckVolumes   func(ctx context.Context, projectID string, keys []string) error
+		ProjectVolumes func(ctx context.Context, projectID string, keys []string) ([]types.ProjectVolume, error)
 		Authorize      func(ctx context.Context, requester types.BackupRequester, permissions ...string) error
 		LatestRun      func(ctx context.Context, query, series string) (*types.ProjectBackup, error)
 		Resume         func(ctx context.Context, previous types.SchedulerRun, requester *types.BackupRequester, recoveryData []byte) error
@@ -187,7 +187,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequ
 			slices.Sort(volumes)
 			volumes = slices.Compact(volumes)
 			if volumes != nil && (policy.Options.Volumes == nil || !slices.Equal(volumes, policy.Options.Volumes)) {
-				if checkErr := s.deps.CheckVolumes(ctx, projectID, volumes); checkErr != nil {
+				if _, checkErr := s.deps.ProjectVolumes(ctx, projectID, volumes); checkErr != nil {
 					return checkErr
 				}
 			}
@@ -197,7 +197,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequ
 				SubjectID:       projectID,
 				Schedule:        normalized.Schedule,
 				S3DestinationID: normalized.S3DestinationID,
-				Options:         backup.PolicyOptions{Volumes: volumes, SelectionMode: "", ProjectIDs: nil, VolumeNames: nil, IgnoreAnonymous: false},
+				Options:         backup.PolicyOptions{Volumes: volumes, SelectionMode: "", ProjectIDs: nil, VolumeSelection: "", ProjectVolumes: nil, VolumeNames: nil, IgnoreAnonymous: false},
 				RetentionCount:  normalized.RetentionCount,
 				Enabled:         normalized.Enabled,
 				StopContainers:  *cmp.Or(update.StopContainers, new(true)),
@@ -461,6 +461,8 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 			S3DestinationName: destinations[policy.S3DestinationID].Name,
 			SelectionMode:     policy.Options.SelectionMode,
 			ProjectIDs:        policy.Options.ProjectIDs,
+			VolumeSelection:   cmp.Or(policy.Options.VolumeSelection, types.SystemVolumeSelectionAll),
+			Volumes:           policy.Options.ProjectVolumes,
 			RetentionCount:    policy.RetentionCount,
 			Enabled:           policy.Enabled,
 			StopContainers:    policy.StopContainers,
@@ -480,6 +482,10 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.Back
 			if !update.SelectionMode.Valid() {
 				return common.Classify(common.ErrValidation, errors.New("selectionMode must be all, allowlist, or blocklist"))
 			}
+			volumeSelection := cmp.Or(update.VolumeSelection, types.SystemVolumeSelectionAll)
+			if !volumeSelection.Valid() {
+				return common.Classify(common.ErrValidation, errors.New("volumeSelectionMode must be all, allowlist, or blocklist"))
+			}
 			normalized, validateErr := backup.ValidatePolicyUpdate(ctx, "project", update.UpdateBackupPolicy, s.deps.S3Destinations)
 			if validateErr != nil {
 				return common.Classify(common.ErrValidation, validateErr)
@@ -491,6 +497,10 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.Back
 			}
 			projectIDs := kit.Unique(kit.TrimNonEmpty(update.ProjectIDs))
 			slices.Sort(projectIDs)
+			volumes := kit.Unique(update.Volumes)
+			slices.SortFunc(volumes, func(a, b types.GlobalProjectVolume) int {
+				return cmp.Or(cmp.Compare(a.ProjectID, b.ProjectID), cmp.Compare(a.Key, b.Key))
+			})
 			*policy = backup.Policy{ //exhaustruct:enforce
 				BaseModel:       policy.BaseModel,
 				SubjectKind:     backup.PolicyProject,
@@ -501,6 +511,8 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.Back
 					Volumes:         nil,
 					SelectionMode:   update.SelectionMode,
 					ProjectIDs:      kit.Ternary(update.SelectionMode == types.SystemVolumeSelectionAll, nil, projectIDs),
+					VolumeSelection: volumeSelection,
+					ProjectVolumes:  kit.Ternary(volumeSelection == types.SystemVolumeSelectionAll, nil, volumes),
 					VolumeNames:     nil,
 					IgnoreAnonymous: false,
 				},
@@ -534,7 +546,17 @@ func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBacku
 	}
 	options := make([]types.GlobalProjectBackupOption, 0, len(references))
 	for _, project := range references {
-		options = append(options, types.GlobalProjectBackupOption{ID: project.ID, Name: project.Name, Available: true})
+		volumes, volumeErr := s.deps.ProjectVolumes(ctx, project.ID, nil)
+		if volumeErr != nil {
+			slog.WarnContext(ctx, "Failed to list the volumes of a project for backup selection", "projectId", project.ID, "error", volumeErr)
+		}
+		options = append(options, types.GlobalProjectBackupOption{ //exhaustruct:enforce
+			ID:   project.ID,
+			Name: project.Name,
+			// Volumes not created yet stay selectable so a policy can exclude them before the first deploy.
+			Volumes:   slices.DeleteFunc(volumes, func(volume types.ProjectVolume) bool { return !volume.Included && !volume.Missing }),
+			Available: true,
+		})
 	}
 	for _, policy := range policies {
 		for _, projectID := range policy.Options.ProjectIDs {
@@ -750,6 +772,10 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 	if own {
 		return types.CreateProjectBackupRequest{}, false, errProjectSkipped
 	}
+	volumes, err := s.globalVolumes(ctx, policy.Options, projectID)
+	if err != nil {
+		return types.CreateProjectBackupRequest{}, false, err
+	}
 	disabled, err := s.checkRemote(ctx, policy)
 	if err != nil {
 		return types.CreateProjectBackupRequest{}, disabled, err
@@ -758,7 +784,28 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 		StopContainers:  new(policy.StopContainers),
 		Destination:     backup.Destination(backup.DestinationOptions{Local: policy.LocalEnabled, Remote: policy.S3Enabled}),
 		S3DestinationID: policy.S3DestinationID,
+		Volumes:         volumes,
 	}, disabled, nil
+}
+
+// globalVolumes returns nil for every volume, so volumes added to a project later are backed up too.
+func (s *Service) globalVolumes(ctx context.Context, options backup.PolicyOptions, projectID string) ([]string, error) {
+	selection := cmp.Or(options.VolumeSelection, types.SystemVolumeSelectionAll)
+	if selection == types.SystemVolumeSelectionAll {
+		return nil, nil
+	}
+	resolved, err := s.deps.ProjectVolumes(ctx, projectID, nil)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(resolved))
+	for _, volume := range resolved {
+		listed := slices.Contains(options.ProjectVolumes, types.GlobalProjectVolume{ProjectID: projectID, Key: volume.Key})
+		if volume.Included && selection.Selects(listed) {
+			keys = append(keys, volume.Key)
+		}
+	}
+	return keys, nil
 }
 
 func globalOutcome(finished map[string]types.TargetOutcome, remoteDisabled bool) types.SchedulerOutcome {
