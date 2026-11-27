@@ -1780,12 +1780,28 @@ func TestMigration00126_GroupIdpMappingsUpDown(t *testing.T) {
 	assert.Zero(t, count)
 }
 
-func TestMigration00127_BackupRepositoryStatsUpDown(t *testing.T) {
+func TestMigration00127_ImagePatchesPatchedRefIndexUpDown(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-image-patches-index-migration.db")
+	rawDB.SetMaxOpenConns(1)
+	const countIndex = `SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_image_patches_env_patched_ref'`
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 127))
+	var count int
+	require.NoError(t, rawDB.QueryRowContext(ctx, countIndex).Scan(&count))
+	assert.Equal(t, 1, count)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 126))
+	require.NoError(t, rawDB.QueryRowContext(ctx, countIndex).Scan(&count))
+	assert.Zero(t, count)
+}
+
+func TestMigration00128_BackupRepositoryStatsUpDown(t *testing.T) {
 	ctx := t.Context()
 	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-backup-repository-stats.db")
 	rawDB.SetMaxOpenConns(1)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 127))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 128))
 	_, err := rawDB.ExecContext(ctx, `INSERT INTO backup_repository_stats (id, snapshot_count, stored_bytes, raw_bytes, logical_bytes) VALUES ('volumes:local', 3, 10, 25, 90)`)
 	require.NoError(t, err)
 	var stored, raw int64
@@ -1793,7 +1809,7 @@ func TestMigration00127_BackupRepositoryStatsUpDown(t *testing.T) {
 	assert.Equal(t, int64(10), stored)
 	assert.Equal(t, int64(25), raw)
 
-	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 126))
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 127))
 	var count int
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'backup_repository_stats'`).Scan(&count))
 	assert.Zero(t, count)

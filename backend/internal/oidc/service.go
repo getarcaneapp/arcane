@@ -3,6 +3,8 @@ package oidc
 import (
 	"cmp"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json/v2"
@@ -56,7 +58,6 @@ type (
 		State        string    `json:"state"`
 		Nonce        string    `json:"nonce"`
 		CodeVerifier string    `json:"code_verifier"`
-		RedirectTo   string    `json:"redirect_to"`
 	}
 
 	OidcServiceParams struct {
@@ -185,7 +186,7 @@ func (s *OidcService) ValidateMobileRedirectURI(ctx context.Context, uri string)
 	return fmt.Errorf("mobile redirect URI %q is not in the configured allowlist", uri)
 }
 
-func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, mobileRedirectURI string) (string, string, error) {
+func (s *OidcService) GenerateAuthURL(ctx context.Context, origin, mobileRedirectURI string) (string, string, error) {
 	oidcConfig, err := s.effectiveConfig(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "GenerateAuthURL: failed to get OIDC config", "error", err)
@@ -221,16 +222,52 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, m
 		State:        state,
 		Nonce:        nonce,
 		CodeVerifier: codeVerifier,
-		RedirectTo:   redirectTo,
 		CreatedAt:    time.Now(),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "GenerateAuthURL: failed to marshal state", "error", err)
 		return "", "", fmt.Errorf("failed to encode state: %w", err)
 	}
+	key, err := s.settingsService.EnsureBrowserSessionSigningKey(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "GenerateAuthURL: failed to load state signing key", "error", err)
+		return "", "", fmt.Errorf("failed to sign state: %w", err)
+	}
+	payload := base64.RawURLEncoding.EncodeToString(stateJSON)
 
 	slog.DebugContext(ctx, "GenerateAuthURL: generated authorization URL", "issuer", oidcConfig.IssuerURL, "scopes", oauth2Config.Scopes)
-	return authURL, base64.URLEncoding.EncodeToString(stateJSON), nil
+	return authURL, payload + "." + base64.RawURLEncoding.EncodeToString(oidcStateMAC(key, payload)), nil
+}
+
+func oidcStateMAC(key []byte, payload string) []byte {
+	mac := hmac.New(sha256.New, key)
+	// Domain-separate from other uses of the browser session key.
+	mac.Write([]byte("arcane.oidc_state." + payload))
+	return mac.Sum(nil)
+}
+
+func (s *OidcService) decodeOidcState(ctx context.Context, stored string) (OidcState, error) {
+	key, err := s.settingsService.EnsureBrowserSessionSigningKey(ctx)
+	if err != nil {
+		return OidcState{}, fmt.Errorf("failed to load state signing key: %w", err)
+	}
+	payload, sig, _ := strings.Cut(stored, ".")
+	gotMAC, err := base64.RawURLEncoding.DecodeString(sig)
+	if err != nil || !hmac.Equal(gotMAC, oidcStateMAC(key, payload)) {
+		return OidcState{}, errors.New("state signature is invalid")
+	}
+	stateJSON, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return OidcState{}, fmt.Errorf("failed to decode state: %w", err)
+	}
+	var stateData OidcState
+	if err = json.Unmarshal(stateJSON, &stateData); err != nil {
+		return OidcState{}, fmt.Errorf("failed to decode state: %w", err)
+	}
+	if stateData.Nonce == "" {
+		return OidcState{}, errors.New("state is missing nonce")
+	}
+	return stateData, nil
 }
 
 func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *settings.OidcConfig) (*oidc.Provider, error) {
@@ -288,11 +325,7 @@ func (s *OidcService) HandleCallback(ctx context.Context, req CallbackRequest) (
 	defer func() { logging.EndSpan(span, err) }()
 	slog.DebugContext(ctx, "HandleCallback: processing callback", "codePresent", req.Code != "", "statePresent", req.State != "")
 
-	var stateData OidcState
-	stateJSON, err := base64.URLEncoding.DecodeString(req.StoredState)
-	if err == nil {
-		err = json.Unmarshal(stateJSON, &stateData)
-	}
+	stateData, err := s.decodeOidcState(ctx, req.StoredState)
 	if err != nil {
 		slog.ErrorContext(ctx, "HandleCallback: failed to decode stored state", "error", err)
 		return nil, nil, fmt.Errorf("invalid state parameter: %w", err)
@@ -377,6 +410,7 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 		return nil, "", fmt.Errorf("failed to verify ID token: %w", err)
 	}
 
+	// Device flow sends no nonce; browser callbacks never reach here with an empty one (decodeOidcState rejects it).
 	if nonce != "" {
 		var claims struct {
 			Nonce string `json:"nonce"`

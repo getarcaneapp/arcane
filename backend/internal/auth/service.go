@@ -361,24 +361,6 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	return localUser, tokenPair, nil
 }
 
-func (s *AuthService) OidcLogin(ctx context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse, meta types.SessionMeta) (*user.User, *TokenPair, error) {
-	localUser, isNewUser, err := s.PrepareOidcLogin(ctx, userInfo, tokenResp)
-	if err != nil {
-		return nil, nil, err
-	}
-	if localUser.PasskeyMFAEnabled {
-		return nil, nil, ErrMFARequired
-	}
-	tokenPair, err := s.CompleteLogin(ctx, localUser, meta, session.UserSessionSourceOidc, "", database.JSON{
-		"newUser": isNewUser,
-		"subject": userInfo.Subject,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return localUser, tokenPair, nil
-}
-
 func (s *AuthService) LogLogout(ctx context.Context, localUser *user.User) {
 	if localUser == nil {
 		return

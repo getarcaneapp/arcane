@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	v127SQLiteUp = `
+	v128SQLiteUp = `
 CREATE TABLE IF NOT EXISTS backup_repository_stats (
     id TEXT PRIMARY KEY,
     snapshot_count INTEGER NOT NULL DEFAULT 0,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS backup_repository_stats (
     updated_at DATETIME
 );
 `
-	v127PostgresUp = `
+	v128PostgresUp = `
 CREATE TABLE IF NOT EXISTS backup_repository_stats (
     id text PRIMARY KEY,
     snapshot_count bigint NOT NULL DEFAULT 0,
@@ -27,11 +27,11 @@ CREATE TABLE IF NOT EXISTS backup_repository_stats (
     updated_at timestamp with time zone
 );
 `
-	v127Down = `
+	v128Down = `
 DROP TABLE IF EXISTS backup_repository_stats;
 `
 )
 
 func init() {
-	goose.AddMigrationContext(run(v127SQLiteUp, v127PostgresUp), run(v127Down, v127Down))
+	goose.AddMigrationContext(run(v128SQLiteUp, v128PostgresUp), run(v128Down, v128Down))
 }
