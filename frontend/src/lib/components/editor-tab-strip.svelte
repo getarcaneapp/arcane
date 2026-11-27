@@ -112,7 +112,7 @@
 			</div>
 			{@render editorStatus('hidden shrink-0 @3xl:flex')}
 			{#if actions || statusHost.actions}
-				<div class="flex shrink-0 items-center gap-0.5">
+				<div class="hidden shrink-0 items-center gap-0.5 has-[>*]:flex">
 					{@render statusHost.actions?.()}
 					{@render actions?.()}
 				</div>

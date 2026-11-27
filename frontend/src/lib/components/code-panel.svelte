@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import type {
@@ -89,10 +89,9 @@
 		isMarkdown && markdownView === 'preview' && !outlineOpen && !diffOpen && !commandPaletteOpen
 	);
 	const statusHost = hasEditorStatusHost() ? getEditorStatusHost() : null;
-	const hostedToggle = $derived(variant === 'plain' && isMarkdown && statusHost !== null);
 
-	$effect(() => {
-		if (!hostedToggle || !statusHost) return;
+	onMount(() => {
+		if (!statusHost || variant !== 'plain') return;
 		statusHost.actions = markdownViewToggle;
 		return () => {
 			if (statusHost.actions === markdownViewToggle) statusHost.actions = null;
@@ -134,17 +133,19 @@
 </script>
 
 {#snippet markdownViewToggle()}
-	<ArcaneButton
-		action="base"
-		tone={showMarkdownPreview ? 'outline-primary' : 'ghost'}
-		size="icon"
-		class={variant === 'plain' ? 'size-6 pointer-coarse:min-h-touch-target pointer-coarse:min-w-touch-target' : undefined}
-		showLabel={false}
-		icon={EyeOnIcon}
-		customLabel={m.preview()}
-		aria-pressed={showMarkdownPreview}
-		onclick={() => selectMarkdownView(showMarkdownPreview ? 'raw' : 'preview')}
-	/>
+	{#if isMarkdown}
+		<ArcaneButton
+			action="base"
+			tone={showMarkdownPreview ? 'outline-primary' : 'ghost'}
+			size="icon"
+			class={variant === 'plain' ? 'size-6 pointer-coarse:min-h-touch-target pointer-coarse:min-w-touch-target' : undefined}
+			showLabel={false}
+			icon={EyeOnIcon}
+			customLabel={m.preview()}
+			aria-pressed={showMarkdownPreview}
+			onclick={() => selectMarkdownView(showMarkdownPreview ? 'raw' : 'preview')}
+		/>
+	{/if}
 {/snippet}
 
 {#snippet markdownPreview()}
@@ -235,7 +236,7 @@
 
 {#if variant === 'plain'}
 	<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
-		{#if isMarkdown && !hostedToggle}
+		{#if isMarkdown && !statusHost}
 			<div class="flex shrink-0 justify-end px-2 pb-1">
 				{@render markdownViewToggle()}
 			</div>
@@ -250,9 +251,7 @@
 			</Card.Title>
 			<Card.Action>
 				<div class="flex items-center gap-1 pt-1">
-					{#if isMarkdown}
-						{@render markdownViewToggle()}
-					{/if}
+					{@render markdownViewToggle()}
 					<ArcaneButton
 						action="base"
 						tone={outlineOpen ? 'outline-primary' : 'ghost'}
