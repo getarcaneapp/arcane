@@ -939,12 +939,8 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	})
 	defer activitylib.FlushWriter(writer)
 
-	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
-	if err != nil {
-		return fmt.Errorf("resolve registry credentials: %w", err)
-	}
 	gate := s.vulnerabilityGate(ctx)
-	gatedRef, err := s.scanBeforeUpdate(ctx, pulledRef, writer, credentials, gate)
+	gatedRef, err := s.scanBeforeUpdate(ctx, pulledRef, writer, gate)
 	if err != nil {
 		if reason, blocked := strings.CutPrefix(err.Error(), vulnerabilityGateBlockedPrefix); blocked {
 			_, digest, _ := strings.Cut(gatedRef, "@")
@@ -959,11 +955,10 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 		return err
 	}
 	if pullErr := s.deps.ImagePuller.Pull(ctx, image.PullRequest{
-		Ref:         gatedRef,
-		Tag:         imageRef,
-		Progress:    writer,
-		User:        s.deps.SystemUser,
-		Credentials: credentials,
+		Ref:      gatedRef,
+		Tag:      imageRef,
+		Progress: writer,
+		User:     s.deps.SystemUser,
 	}); pullErr != nil {
 		return pullErr
 	}
@@ -999,18 +994,18 @@ func (s *UpdaterService) vulnerabilityGate(ctx context.Context) vulnerabilityGat
 	}
 }
 
-func (s *UpdaterService) scanBeforeUpdate(ctx context.Context, pulledRef string, progress io.Writer, credentials []types.ContainerRegistryCredential, gate vulnerabilityGate) (string, error) {
+func (s *UpdaterService) scanBeforeUpdate(ctx context.Context, pulledRef string, progress io.Writer, gate vulnerabilityGate) (string, error) {
 	if !gate.enabled {
 		return pulledRef, nil
 	}
-	digestRef, err := s.resolveGateDigestRef(ctx, pulledRef, credentials)
+	digestRef, err := s.resolveGateDigestRef(ctx, pulledRef)
 	if err != nil {
 		return "", fmt.Errorf("%s%w", vulnerabilityGateScanFailedPrefix, err)
 	}
 	_, absentErr := s.deps.Docker.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return cli.ImageInspect(ctx, digestRef)
 	})
-	if pullErr := s.pullForScan(ctx, digestRef, progress, credentials); pullErr != nil {
+	if pullErr := s.pullForScan(ctx, digestRef, progress); pullErr != nil {
 		return "", pullErr
 	}
 	s.appendAutoUpdateActivityMessage(ctx, activityIDFromContext(ctx), "Scanning "+pulledRef+" for vulnerabilities", "Scanning updated images", 30)
@@ -1038,7 +1033,7 @@ func (s *UpdaterService) scanBeforeUpdate(ctx context.Context, pulledRef string,
 	return digestRef, gateErr
 }
 
-func (s *UpdaterService) resolveGateDigestRef(ctx context.Context, pulledRef string, credentials []types.ContainerRegistryCredential) (string, error) {
+func (s *UpdaterService) resolveGateDigestRef(ctx context.Context, pulledRef string) (string, error) {
 	if refs.IsDigestPinnedReference(pulledRef) {
 		return pulledRef, nil
 	}
@@ -1046,7 +1041,7 @@ func (s *UpdaterService) resolveGateDigestRef(ctx context.Context, pulledRef str
 	if err != nil {
 		return "", err
 	}
-	digest, err := s.deps.ImagePuller.RemoteDigest(ctx, pulledRef, credentials)
+	digest, err := s.deps.ImagePuller.RemoteDigest(ctx, pulledRef, nil)
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("resolve digest for %s: %w", pulledRef, err)
@@ -1056,10 +1051,10 @@ func (s *UpdaterService) resolveGateDigestRef(ctx context.Context, pulledRef str
 	return reference.RegistryHost + "/" + reference.Repository + "@" + digest, nil
 }
 
-func (s *UpdaterService) pullForScan(ctx context.Context, digestRef string, progress io.Writer, credentials []types.ContainerRegistryCredential) error {
+func (s *UpdaterService) pullForScan(ctx context.Context, digestRef string, progress io.Writer) error {
 	pullCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.deps.Settings.GetSettingsConfig().DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer cancel()
-	err := s.deps.ImagePuller.PullImage(pullCtx, digestRef, progress, s.deps.SystemUser, credentials)
+	err := s.deps.ImagePuller.PullImage(pullCtx, digestRef, progress, s.deps.SystemUser, nil)
 	if err != nil && errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 		return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting): %w", digestRef, context.DeadlineExceeded)
 	}
@@ -2101,11 +2096,7 @@ func (p *updateProgress) completeBatch(ctx context.Context, options types.Update
 }
 
 func (s *UpdaterService) ListTags(ctx context.Context, imageRef string) ([]string, error) {
-	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve registry credentials: %w", err)
-	}
-	return s.deps.RegistryDigestResolver.ListImageTags(ctx, imageRef, credentials)
+	return s.deps.RegistryDigestResolver.ListImageTags(ctx, imageRef, nil)
 }
 
 func (s *UpdaterService) AcceptTag(ctx context.Context, candidate updatertypes.TagCandidate) (bool, error) {
@@ -2117,11 +2108,7 @@ func (s *UpdaterService) AcceptTag(ctx context.Context, candidate updatertypes.T
 	if err != nil {
 		return false, err
 	}
-	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
-	if err != nil {
-		return false, fmt.Errorf("resolve registry credentials: %w", err)
-	}
-	return s.deps.RegistryDigestResolver.HasImagePlatform(ctx, candidate.TargetRef, platform, credentials)
+	return s.deps.RegistryDigestResolver.HasImagePlatform(ctx, candidate.TargetRef, platform, nil)
 }
 
 func (s *UpdaterService) UpdateServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) error {

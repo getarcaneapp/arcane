@@ -89,6 +89,30 @@ func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, t
 	require.NoError(t, db.WithContext(t.Context()).Create(record).Error)
 }
 
+func createTestECRRegistry(t *testing.T, db *database.DB, ecrPassword string) *ContainerRegistry {
+	t.Helper()
+
+	var encryptedToken string
+	var generatedAt *time.Time
+	if ecrPassword != "" {
+		var err error
+		encryptedToken, err = crypto.Encrypt(ecrPassword)
+		require.NoError(t, err)
+		generatedAt = new(time.Now().UTC())
+	}
+
+	record := &ContainerRegistry{
+		URL:                 "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		RegistryType:        RegistryTypeECR,
+		AWSRegion:           "us-east-1",
+		ECRToken:            encryptedToken,
+		ECRTokenGeneratedAt: generatedAt,
+		Enabled:             true,
+	}
+	require.NoError(t, db.WithContext(t.Context()).Create(record).Error)
+	return record
+}
+
 func decodeRegistryAuth(t *testing.T, encoded string) mobyRegistry.AuthConfig {
 	t.Helper()
 
@@ -1482,6 +1506,156 @@ func TestContainerRegistryService_UpdateRegistry_RepositoryNamesPointerSemantics
 	assert.Empty(t, fetchRegistry(t, db, registryRecord.ID).RepositoryNames)
 }
 
+func TestContainerRegistryService_InspectImageDigest_ECRCredentials(t *testing.T) {
+	const ecrHost = "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+	const ecrImageRef = ecrHost + "/team/app:latest"
+	wantDigest := digest.FromString("ecr-credentials").String()
+
+	t.Run("resolves stored ECR alongside caller credential for another registry", func(t *testing.T) {
+		db := setupContainerRegistryTestDB(t)
+		createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
+		createTestECRRegistry(t, db, "ecr-password")
+
+		var gotAuth mobyRegistry.AuthConfig
+		svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+					gotAuth = decodeRegistryAuth(t, options.EncodedRegistryAuth)
+					return mobyClient.DistributionInspectResult{
+						Descriptor: ocispec.Descriptor{Digest: digest.Digest(wantDigest)},
+					}, nil
+				},
+			}, nil
+		})
+
+		result, err := svc.InspectImageDigest(t.Context(), ecrImageRef, []types.ContainerRegistryCredential{
+			{URL: "https://index.docker.io/v1/", Username: "docker-user", Token: "docker-token", Enabled: true},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "AWS", gotAuth.Username)
+		assert.Equal(t, "ecr-password", gotAuth.Password)
+		assert.Equal(t, wantDigest, result.Digest)
+		assert.Equal(t, "credential", result.AuthMethod)
+		assert.True(t, result.UsedCredential)
+	})
+
+	t.Run("skips unrelated ECR and caller-covered ECR entries", func(t *testing.T) {
+		db := setupContainerRegistryTestDB(t)
+		createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
+		createTestECRRegistry(t, db, "stored-ecr-password")
+
+		var gotAuth mobyRegistry.AuthConfig
+		svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+					gotAuth = decodeRegistryAuth(t, options.EncodedRegistryAuth)
+					return mobyClient.DistributionInspectResult{
+						Descriptor: ocispec.Descriptor{Digest: digest.Digest(wantDigest)},
+					}, nil
+				},
+			}, nil
+		})
+
+		_, err := svc.InspectImageDigest(t.Context(), "docker.io/library/nginx:latest", nil)
+		require.NoError(t, err)
+		assert.Equal(t, "docker-user", gotAuth.Username)
+		assert.Zero(t, svc.ecrCredentials.Len())
+
+		_, err = svc.InspectImageDigest(t.Context(), ecrImageRef, []types.ContainerRegistryCredential{
+			{URL: ecrHost, Username: "AWS", Token: "caller-ecr-password", Enabled: true},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "caller-ecr-password", gotAuth.Password)
+		assert.Zero(t, svc.ecrCredentials.Len())
+	})
+
+	t.Run("late reader cannot poison ECR cache after UpdateRegistry", func(t *testing.T) {
+		db := setupContainerRegistryTestDB(t)
+		record := createTestECRRegistry(t, db, "old-ecr-password")
+
+		var gotAuth mobyRegistry.AuthConfig
+		svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+					gotAuth = decodeRegistryAuth(t, options.EncodedRegistryAuth)
+					return mobyClient.DistributionInspectResult{
+						Descriptor: ocispec.Descriptor{Digest: digest.Digest(wantDigest)},
+					}, nil
+				},
+			}, nil
+		})
+
+		staleEntries, err := svc.loadEnabledRegistryEntries(t.Context())
+		require.NoError(t, err)
+		require.Len(t, staleEntries, 1)
+
+		_, err = svc.UpdateRegistry(t.Context(), record.ID, types.ContainerRegistry{
+			AWSRegion:          "us-east-1",
+			AWSAccessKeyID:     "AKIAUPDATED",
+			AWSSecretAccessKey: "updated-secret",
+		}, map[string]bool{
+			"awsRegion":          true,
+			"awsAccessKeyId":     true,
+			"awsSecretAccessKey": true,
+		})
+		require.NoError(t, err)
+
+		newEncryptedToken, err := crypto.Encrypt("new-ecr-password")
+		require.NoError(t, err)
+		require.NoError(t, db.WithContext(t.Context()).Model(&ContainerRegistry{}).Where("id = ?", record.ID).Updates(map[string]any{
+			"ecr_token":              newEncryptedToken,
+			"ecr_token_generated_at": time.Now().UTC(),
+		}).Error)
+
+		staleCred, err := svc.resolveCachedCredential(t.Context(), staleEntries[0])
+		require.NoError(t, err)
+		assert.Equal(t, "old-ecr-password", staleCred.Token)
+
+		_, err = svc.InspectImageDigest(t.Context(), ecrImageRef, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "new-ecr-password", gotAuth.Password)
+	})
+
+	t.Run("prefers more specific saved namespace credential over host-wide caller credential", func(t *testing.T) {
+		db := setupContainerRegistryTestDB(t)
+		createTestPullRegistry(t, db, "ghcr.io/team", "team-user", "team-token")
+		createTestECRRegistry(t, db, "unused-ecr-password")
+
+		var gotAuth mobyRegistry.AuthConfig
+		svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
+			return &fakeRegistryDaemonClient{
+				distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+					gotAuth = decodeRegistryAuth(t, options.EncodedRegistryAuth)
+					return mobyClient.DistributionInspectResult{
+						Descriptor: ocispec.Descriptor{Digest: digest.Digest(wantDigest)},
+					}, nil
+				},
+			}, nil
+		})
+
+		result, err := svc.InspectImageDigest(t.Context(), "ghcr.io/team/app:latest", []types.ContainerRegistryCredential{
+			{URL: "ghcr.io", Username: "host-user", Token: "host-token", Enabled: true},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "team-user", gotAuth.Username)
+		assert.Equal(t, "team-token", gotAuth.Password)
+		assert.Equal(t, wantDigest, result.Digest)
+		assert.Zero(t, svc.ecrCredentials.Len())
+	})
+
+	t.Run("GetOrRefreshECRToken respects caller cancellation", func(t *testing.T) {
+		db := setupContainerRegistryTestDB(t)
+		record := createTestECRRegistry(t, db, "")
+		svc := newRegistryTestService(t, db, nil)
+
+		canceledCtx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		_, _, err := svc.GetOrRefreshECRToken(canceledCtx, record)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+}
+
 func TestListImageTagsCredentials(t *testing.T) {
 	for _, tt := range []struct {
 		name         string
@@ -1501,8 +1675,18 @@ func TestListImageTagsCredentials(t *testing.T) {
 			wantUser:     "external-user",
 			wantPassword: "external-token",
 		},
-		{name: "external excludes unrelated stored", external: []types.ContainerRegistryCredential{{URL: "other.test", Username: "external-user", Token: "external-token", Enabled: true}}},
-		{name: "disabled external ignored", external: []types.ContainerRegistryCredential{{URL: "docker.io", Username: "external-user", Token: "external-token", Enabled: false}}},
+		{
+			name:         "external for another registry keeps stored",
+			wantUser:     "stored-user",
+			wantPassword: "stored-token",
+			external:     []types.ContainerRegistryCredential{{URL: "other.test", Username: "external-user", Token: "external-token", Enabled: true}},
+		},
+		{
+			name:         "disabled external ignored",
+			wantUser:     "stored-user",
+			wantPassword: "stored-token",
+			external:     []types.ContainerRegistryCredential{{URL: "docker.io", Username: "external-user", Token: "external-token", Enabled: false}},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			db := setupContainerRegistryTestDB(t)

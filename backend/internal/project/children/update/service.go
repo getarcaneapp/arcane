@@ -44,7 +44,6 @@ type (
 		kv              *kv.KVService
 		dockerService   *dockerInternal.DockerClientService
 		registryService *registryInternal.ContainerRegistryService
-		credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
 		projectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
 		restoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
 		resolveEnv      func(ctx context.Context, projectPath string, effective *composeTypes.Project, values map[string]string) (*composeTypes.Project, string, error)
@@ -55,7 +54,6 @@ type (
 		KVService       *kv.KVService
 		DockerService   *dockerInternal.DockerClientService
 		RegistryService *registryInternal.ContainerRegistryService
-		Credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
 		ProjectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
 		RestoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
 		ResolveEnv      func(ctx context.Context, projectPath string, effective *composeTypes.Project, values map[string]string) (*composeTypes.Project, string, error)
@@ -92,7 +90,6 @@ func New(p Params) *Service {
 		kv:              p.KVService,
 		dockerService:   p.DockerService,
 		registryService: p.RegistryService,
-		credentials:     p.Credentials,
 		projectState:    p.ProjectState,
 		restoreState:    p.RestoreState,
 		resolveEnv:      p.ResolveEnv,
@@ -749,11 +746,7 @@ func (s *Service) imageTags(ctx context.Context, name, image string) (*refs.Refe
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse service %s image: %w", name, err)
 	}
-	credentials, err := s.credentials(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	tags, err := s.registryService.ListImageTags(ctx, image, credentials)
+	tags, err := s.registryService.ListImageTags(ctx, image, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list service %s image tags: %w", name, err)
 	}
