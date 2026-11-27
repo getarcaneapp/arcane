@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -448,26 +449,23 @@ func TestGetPullOptionsWithAuth_DBRegistrySkipsEmptyToken(t *testing.T) {
 	svc, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://docker.io", "docker-user", "   ")
 
-	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil)
-	require.NoError(t, err)
-	assert.Empty(t, pullOptions)
+	pullOptions := slices.Collect(svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil))
+	assert.Equal(t, []mobyClient.ImagePullOptions{{}}, pullOptions)
 }
 
 func TestGetPullOptionsWithAuth_DBRegistrySkipsEmptyUsername(t *testing.T) {
 	svc, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://docker.io", "   ", "docker-token")
 
-	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil)
-	require.NoError(t, err)
-	assert.Empty(t, pullOptions)
+	pullOptions := slices.Collect(svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil))
+	assert.Equal(t, []mobyClient.ImagePullOptions{{}}, pullOptions)
 }
 
 func TestGetPullOptionsWithAuth_DBRegistryUsesValidCredentials(t *testing.T) {
 	svc, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 
-	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil)
-	require.NoError(t, err)
+	pullOptions := slices.Collect(svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil))
 	require.NotEmpty(t, pullOptions)
 
 	authCfg := decodeRegistryAuth(t, pullOptions[0].RegistryAuth)
@@ -480,15 +478,14 @@ func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistry(t *testing
 	svc, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://registry.example.com", "db-user", "db-token")
 
-	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "registry.example.com/team/app:latest", []types.ContainerRegistryCredential{
+	pullOptions := slices.Collect(svc.PullOptionsWithAuth(t.Context(), "registry.example.com/team/app:latest", []types.ContainerRegistryCredential{
 		{
 			URL:      "https://registry.example.com",
 			Username: "external-user",
 			Token:    "external-token",
 			Enabled:  true,
 		},
-	})
-	require.NoError(t, err)
+	}))
 	require.NotEmpty(t, pullOptions)
 
 	authCfg := decodeRegistryAuth(t, pullOptions[0].RegistryAuth)
