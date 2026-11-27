@@ -109,6 +109,7 @@ var (
 	ErrVolumeBackupPolicyOverridden = common.Classify(common.ErrConflict, errors.New("a volume-level backup policy covers this volume"))
 
 	generatedAnonymousVolumeName = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	buildxStateVolumeName        = regexp.MustCompile(`^buildx_buildkit_.+_state$`)
 )
 
 func NewVolumeService(p VolumeServiceParams) *VolumeService {
@@ -833,7 +834,7 @@ func (s *VolumeService) ListBackupVolumeOptions(ctx context.Context) ([]types.Sy
 	isBackupVolume := s.BackupVolumeMatcher(ctx)
 	options := make([]types.SystemVolumeBackupOption, 0, len(result.Items))
 	for _, item := range result.Items {
-		if s.isInternalVolume(types.NewVolume(item), isBackupVolume) || slices.ContainsFunc(arcaneMounts, func(m mobyContainer.MountPoint) bool {
+		if buildxStateVolumeName.MatchString(item.Name) || s.isInternalVolume(types.NewVolume(item), isBackupVolume) || slices.ContainsFunc(arcaneMounts, func(m mobyContainer.MountPoint) bool {
 			return m.Type == mobyMount.TypeVolume && cmp.Or(strings.TrimSpace(m.Name), strings.TrimSpace(m.Source)) == item.Name
 		}) {
 			continue
