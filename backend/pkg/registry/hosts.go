@@ -3,7 +3,7 @@ package registry
 import (
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 const (

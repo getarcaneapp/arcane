@@ -3,7 +3,7 @@ package scheduler
 import (
 	"context"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -15,7 +15,7 @@ const (
 )
 
 // Interrupted runs that cannot resume fall back to frozen-plan recovery.
-func NewAutoUpdateJob(engine *flow.Engine, updaterService *updater.UpdaterService, settingsService *settings.SettingsService, dockerService *docker.DockerClientService) *flow.Job {
+func NewAutoUpdateJob(engine *flow.Engine, updaterService *updater.UpdaterService, settingsService *settings.SettingsService, dockerService *dockerInternal.DockerClientService) *flow.Job {
 	return &flow.Job{
 		Engine:   engine,
 		Workflow: updaterService.AutoUpdateWorkflow(),

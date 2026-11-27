@@ -7,9 +7,9 @@ import (
 	"io"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/mapping"
@@ -33,11 +33,11 @@ type (
 		RetargetWebhooks func(ctx context.Context, retarget types.ProjectWebhookRetarget) (int64, error)
 		CountWebhooks    func(ctx context.Context, environmentID, projectID string) (int64, error)
 		VolumeSizes      func(ctx context.Context) (map[string]volumeDomain.VolumeSizeData, error)
-		ArchiveVolumes   func(ctx context.Context, parts []mount.Mount, add func(ctx context.Context, part mount.Mount, size int64, body io.Reader) error) error
+		ArchiveVolumes   func(ctx context.Context, parts []mobyMount.Mount, add func(ctx context.Context, part mobyMount.Mount, size int64, body io.Reader) error) error
 		RestoreVolume    func(ctx context.Context, volumeName string, request types.RestoreVolumeUploadRequest, user types.Actor) error
 		DeleteVolume     func(ctx context.Context, name string, force bool, user types.Actor) error
-		CreateVolume     func(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
-		CreateNetwork    func(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error)
+		CreateVolume     func(ctx context.Context, options mobyClient.VolumeCreateOptions, user types.Actor) (*types.Volume, error)
+		CreateNetwork    func(ctx context.Context, name string, options mobyClient.NetworkCreateOptions, user types.Actor) (*mobyNetwork.CreateResponse, error)
 	}
 
 	localTransferEnvironment struct {
@@ -76,19 +76,19 @@ func (e localTransferEnvironment) Network(ctx context.Context, name string) (typ
 	if err != nil {
 		return types.NetworkInspect{}, false, err
 	}
-	inspect, err := dockerClient.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
+	inspect, err := dockerClient.NetworkInspect(ctx, name, mobyClient.NetworkInspectOptions{})
 	if errdefs.IsNotFound(err) {
 		return types.NetworkInspect{}, false, nil
 	}
 	if err != nil {
 		return types.NetworkInspect{}, false, err
 	}
-	found, err := mapping.MapOne[network.Inspect, types.NetworkInspect](inspect.Network)
+	found, err := mapping.MapOne[mobyNetwork.Inspect, types.NetworkInspect](inspect.Network)
 	return found, err == nil, err
 }
 
 func (e localTransferEnvironment) CreateVolume(ctx context.Context, volume types.Volume, user types.Actor) error {
-	_, err := e.deps.CreateVolume(ctx, client.VolumeCreateOptions{
+	_, err := e.deps.CreateVolume(ctx, mobyClient.VolumeCreateOptions{
 		Name:       volume.Name,
 		Driver:     volume.Driver,
 		DriverOpts: volume.Options,
@@ -98,7 +98,7 @@ func (e localTransferEnvironment) CreateVolume(ctx context.Context, volume types
 }
 
 func (e localTransferEnvironment) CreateNetwork(ctx context.Context, created types.Network, user types.Actor) error {
-	options, err := mapping.MapOne[types.NetworkCreateOptions, client.NetworkCreateOptions](created.Options)
+	options, err := mapping.MapOne[types.NetworkCreateOptions, mobyClient.NetworkCreateOptions](created.Options)
 	if err != nil {
 		return common.Classify(common.ErrBadRequest, fmt.Errorf("invalid options for network %s: %w", created.Name, err))
 	}
@@ -111,9 +111,9 @@ func (e localTransferEnvironment) ComposeProjectInUse(ctx context.Context, name 
 	if err != nil {
 		return false, err
 	}
-	found, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
+	found, err := dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{
 		All:     true,
-		Filters: make(client.Filters).Add("label", docker.ComposeProjectLabelKey+"="+name),
+		Filters: make(mobyClient.Filters).Add("label", docker.ComposeProjectLabelKey+"="+name),
 	})
 	return len(found.Items) > 0, err
 }

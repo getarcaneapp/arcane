@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
 
@@ -31,8 +31,8 @@ type (
 	}
 )
 
-func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string) []types.SchedulerAdmissionKey {
-	identity := func(summary container.Summary) string {
+func updateAdmissionKeys(containers []mobyContainer.Summary) func(targetIDs []string) []types.SchedulerAdmissionKey {
+	identity := func(summary mobyContainer.Summary) string {
 		if project := strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels))); project != "" {
 			return "project:" + project
 		}
@@ -41,19 +41,19 @@ func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string
 		})
 		return "container:" + cmp.Or(docker.ContainerNameFromNames(ownNames), summary.ID)
 	}
-	lookup := func(ref string) (container.Summary, bool) {
-		if index := slices.IndexFunc(containers, func(summary container.Summary) bool {
+	lookup := func(ref string) (mobyContainer.Summary, bool) {
+		if index := slices.IndexFunc(containers, func(summary mobyContainer.Summary) bool {
 			return slices.ContainsFunc(summary.Names, func(name string) bool {
 				return strings.TrimPrefix(name, "/") == ref
 			})
 		}); index >= 0 {
 			return containers[index], true
 		}
-		index := slices.IndexFunc(containers, func(summary container.Summary) bool {
+		index := slices.IndexFunc(containers, func(summary mobyContainer.Summary) bool {
 			return ref != "" && strings.HasPrefix(summary.ID, ref)
 		})
 		if index < 0 {
-			return container.Summary{}, false
+			return mobyContainer.Summary{}, false
 		}
 		return containers[index], true
 	}
@@ -78,7 +78,7 @@ func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string
 		if strings.HasPrefix(self, "container:") {
 			union(self, "id:"+summary.ID)
 		}
-		networkMode := container.NetworkMode(summary.HostConfig.NetworkMode)
+		networkMode := mobyContainer.NetworkMode(summary.HostConfig.NetworkMode)
 		peers := kit.TrimNonEmpty(strings.Split(summary.Labels[labels.LabelDependsOn], ","))
 		if networkMode.IsContainer() {
 			peers = append(peers, networkMode.ConnectedContainer())

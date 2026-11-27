@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/events"
+	mobyEvents "github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
@@ -27,7 +27,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/federated"
@@ -43,7 +43,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/port"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	s3domain "getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler"
@@ -89,9 +89,9 @@ type (
 		Session           *session.SessionService
 		Auth              *auth.AuthService
 		Oidc              *oidc.OidcService
-		Docker            *docker.DockerClientService
+		Docker            *dockerInternal.DockerClientService
 		Template          *template.TemplateService
-		ContainerRegistry *registry.ContainerRegistryService
+		ContainerRegistry *registryInternal.ContainerRegistryService
 		System            *system.Module
 		Diagnostics       *diagnostics.DiagnosticsService
 		Updater           *updater.Module
@@ -164,10 +164,10 @@ func TestDockerEventLifecycle(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				err := json.MarshalWrite(
 					w,
-					events.Message{
-						Type:   events.ContainerEventType,
-						Action: events.ActionStart,
-						Actor: events.Actor{
+					mobyEvents.Message{
+						Type:   mobyEvents.ContainerEventType,
+						Action: mobyEvents.ActionStart,
+						Actor: mobyEvents.Actor{
 							ID:         "daemon-container",
 							Attributes: map[string]string{"name": "external"},
 						},

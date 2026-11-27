@@ -7,17 +7,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
 )
 
 type (
 	Service struct {
-		docker        *docker.DockerClientService
+		docker        *dockerInternal.DockerClientService
 		ensureManager func(ctx context.Context) error
 	}
 )
@@ -44,7 +44,7 @@ var secretPagination = pagination.Config[types.SwarmSecret]{
 	},
 }
 
-func NewService(dockerService *docker.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
+func NewService(dockerService *dockerInternal.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
 	return &Service{docker: dockerService, ensureManager: ensureManager}
 }
 
@@ -53,8 +53,8 @@ func (s *Service) ListSecrets(ctx context.Context, params pagination.QueryParams
 		return nil, pagination.Response{}, err
 	}
 
-	listResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SecretListResult, error) {
-		return dockerClient.SecretList(ctx, client.SecretListOptions{})
+	listResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SecretListResult, error) {
+		return dockerClient.SecretList(ctx, mobyClient.SecretListOptions{})
 	})
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm secrets: %w", err)
@@ -73,8 +73,8 @@ func (s *Service) GetSecret(ctx context.Context, secretID string) (*types.SwarmS
 		return nil, err
 	}
 
-	secretResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SecretInspectResult, error) {
-		return dockerClient.SecretInspect(ctx, secretID, client.SecretInspectOptions{})
+	secretResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SecretInspectResult, error) {
+		return dockerClient.SecretInspect(ctx, secretID, mobyClient.SecretInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm secret: %w", err)
@@ -92,8 +92,8 @@ func (s *Service) CreateSecret(ctx context.Context, secret types.SwarmSecret) (*
 		return nil, errors.New("secret spec name is required")
 	}
 
-	createResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SecretCreateResult, error) {
-		return dockerClient.SecretCreate(ctx, client.SecretCreateOptions{Spec: secret.Spec})
+	createResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SecretCreateResult, error) {
+		return dockerClient.SecretCreate(ctx, mobyClient.SecretCreateOptions{Spec: secret.Spec})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create swarm secret: %w", err)
@@ -108,11 +108,11 @@ func (s *Service) UpdateSecret(ctx context.Context, secretID string, req types.S
 		return nil, err
 	}
 
-	if _, updateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SecretUpdateResult, error) {
-		return dockerClient.SecretUpdate(ctx, current.ID, client.SecretUpdateOptions{
-			Version: swarm.Version{Index: cmp.Or(req.Version, current.Version.Index)},
-			Spec: swarm.SecretSpec{
-				Annotations: swarm.Annotations{
+	if _, updateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SecretUpdateResult, error) {
+		return dockerClient.SecretUpdate(ctx, current.ID, mobyClient.SecretUpdateOptions{
+			Version: mobySwarm.Version{Index: cmp.Or(req.Version, current.Version.Index)},
+			Spec: mobySwarm.SecretSpec{
+				Annotations: mobySwarm.Annotations{
 					Name:   current.Spec.Name,
 					Labels: req.Labels,
 				},
@@ -132,8 +132,8 @@ func (s *Service) RemoveSecret(ctx context.Context, secretID string) error {
 		return err
 	}
 
-	if _, secretRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SecretRemoveResult, error) {
-		return dockerClient.SecretRemove(ctx, secretID, client.SecretRemoveOptions{})
+	if _, secretRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SecretRemoveResult, error) {
+		return dockerClient.SecretRemove(ctx, secretID, mobyClient.SecretRemoveOptions{})
 	}); secretRemoveErr != nil {
 		return fmt.Errorf("failed to remove swarm secret: %w", secretRemoveErr)
 	}

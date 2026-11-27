@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -24,7 +24,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/volume"
@@ -60,11 +60,11 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	dialer := &net.Dialer{}
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
-		client.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
+		mobyClient.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
 		}),
 	)
@@ -137,11 +137,11 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	dialer := &net.Dialer{}
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
-		client.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
+		mobyClient.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
 		}),
 	)
@@ -180,9 +180,9 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 	defer mu.Unlock()
 	require.Equal(t, "1", containerQuery.Get("all"))
 	require.Equal(t, "1", containerQuery.Get("size"))
-	var filters client.Filters
+	var filters mobyClient.Filters
 	require.NoError(t, json.Unmarshal([]byte(containerQuery.Get("filters")), &filters))
-	require.Equal(t, client.Filters{
+	require.Equal(t, mobyClient.Filters{
 		"status": {
 			"created":  true,
 			"removing": true,
@@ -192,7 +192,7 @@ func TestGetDiskUsageSumsReclaimableResources(t *testing.T) {
 	}, filters)
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -207,7 +207,7 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }
 
 func TestPreparePrunePlanRequestsOnlySelectedUsageTypes(t *testing.T) {
@@ -255,11 +255,11 @@ func newPruneTestService(t *testing.T, handler http.Handler) *Service {
 	t.Cleanup(server.Close)
 
 	dialer := &net.Dialer{}
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
-		client.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
+		mobyClient.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
 		}),
 	)
@@ -334,11 +334,11 @@ func newVolumeFallbackService(t *testing.T) (*Service, func() []string) {
 	t.Cleanup(server.Close)
 
 	dialer := &net.Dialer{}
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
-		client.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
+		mobyClient.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
 		}),
 	)

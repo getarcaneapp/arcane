@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/pires/go-proxyproto"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 
 	"getarcane.dev/arcane/v3/internal/config"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -224,7 +224,7 @@ func buildAgentRuntimeConfig(cfg *config.Config, agentToken string, hostInfo age
 	}
 }
 
-func agentHostInfo(ctx context.Context, dockerService *docker.DockerClientService) agent.AgentHostInfo {
+func agentHostInfo(ctx context.Context, dockerService *dockerInternal.DockerClientService) agent.AgentHostInfo {
 	infoCtx, cancel := context.WithTimeout(ctx, startupTaskTimeout)
 	defer cancel()
 	dockerClient, err := dockerService.GetClient(infoCtx)
@@ -232,7 +232,7 @@ func agentHostInfo(ctx context.Context, dockerService *docker.DockerClientServic
 		slog.WarnContext(ctx, "Failed to connect to Docker for agent host info", "error", err)
 		return agent.AgentHostInfo{AgentVersion: config.Version}
 	}
-	result, err := dockerClient.Info(infoCtx, client.InfoOptions{})
+	result, err := dockerClient.Info(infoCtx, mobyClient.InfoOptions{})
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to read Docker info for agent host info", "error", err)
 		return agent.AgentHostInfo{AgentVersion: config.Version}

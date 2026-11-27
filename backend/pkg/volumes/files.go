@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 
 	"kit.getarcane.app/docker"
 )
@@ -26,7 +26,7 @@ func (c *cleanupReadCloser) Close() error {
 
 func DownloadFileFromContainer(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	containerID string,
 	containerPath string,
 	cleanup func(),

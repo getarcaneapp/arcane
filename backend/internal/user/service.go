@@ -23,7 +23,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	kitfs "kit.getarcane.app/fs"
 	"kit.getarcane.app/normalization"

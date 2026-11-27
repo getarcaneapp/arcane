@@ -7,11 +7,11 @@ import (
 	"log/slog"
 	"slices"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/backup"
@@ -29,8 +29,8 @@ const (
 	systemRecoverySnapshotLabel = "arcane-system-recovery"
 )
 
-func backupMountWarningFromArcaneMounts(mounts []container.MountPoint) string {
-	restoresMounted := slices.ContainsFunc(mounts, func(m container.MountPoint) bool { return m.Destination == "/restores" })
+func backupMountWarningFromArcaneMounts(mounts []mobyContainer.MountPoint) string {
+	restoresMounted := slices.ContainsFunc(mounts, func(m mobyContainer.MountPoint) bool { return m.Destination == "/restores" })
 	if docker.MountForDestination(mounts, "/backups", "/backups") != nil || restoresMounted {
 		return ""
 	}
@@ -53,7 +53,7 @@ func backupArchiveFilename(backupID string) (string, error) {
 	return name + ".tar.gz", nil
 }
 
-func (s *Service) snapshotRepository(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error) {
+func (s *Service) snapshotRepository(ctx context.Context, dockerClient *mobyClient.Client, entry *types.VolumeBackup) (backup.Repository, string, error) {
 	if entry.LocalSnapshotID != "" {
 		local, err := s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 		return local, entry.LocalSnapshotID, err
@@ -92,12 +92,12 @@ func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType,
 	}
 }
 
-func (s *Service) createBackupTempContainerWithMount(ctx context.Context, backupMount mount.Mount) (string, func(), error) {
+func (s *Service) createBackupTempContainerWithMount(ctx context.Context, backupMount mobyMount.Mount) (string, func(), error) {
 	helperImage, err := s.deps.HelperImage(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	return backup.StartHelper(ctx, s.deps.Docker, helperImage, []mount.Mount{backupMount})
+	return backup.StartHelper(ctx, s.deps.Docker, helperImage, []mobyMount.Mount{backupMount})
 }
 
 func (s *Service) createBackupTempContainer(ctx context.Context, target string, readOnly bool) (string, func(), error) {

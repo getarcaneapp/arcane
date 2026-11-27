@@ -11,8 +11,8 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -137,10 +137,10 @@ func TestListGlobalComposeContainersUsesProvidedClient(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	apiClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	apiClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = apiClient.Close() })
@@ -155,26 +155,26 @@ func TestListGlobalComposeContainersUsesProvidedClient(t *testing.T) {
 func TestFormatDockerPorts(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    []container.PortSummary
+		input    []mobyContainer.PortSummary
 		expected []string
 	}{
 		{
 			name: "public port",
-			input: []container.PortSummary{
+			input: []mobyContainer.PortSummary{
 				{PublicPort: 8080, PrivatePort: 80, Type: "tcp"},
 			},
 			expected: []string{"8080:80/tcp"},
 		},
 		{
 			name: "private only",
-			input: []container.PortSummary{
+			input: []mobyContainer.PortSummary{
 				{PrivatePort: 80, Type: "tcp"},
 			},
 			expected: []string{"80/tcp"},
 		},
 		{
 			name:     "empty",
-			input:    []container.PortSummary{},
+			input:    []mobyContainer.PortSummary{},
 			expected: nil,
 		},
 	}

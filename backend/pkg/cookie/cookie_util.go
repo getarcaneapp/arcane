@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

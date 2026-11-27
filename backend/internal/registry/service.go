@@ -31,8 +31,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/samber/mo"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -42,7 +42,7 @@ import (
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/normalization"
@@ -70,8 +70,8 @@ import (
 
 type (
 	RegistryDaemonClient interface {
-		RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
-		DistributionInspect(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error)
+		RegistryLogin(ctx context.Context, options mobyClient.RegistryLoginOptions) (mobyClient.RegistryLoginResult, error)
+		DistributionInspect(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error)
 	}
 
 	registryDaemonGetter func(context.Context) (RegistryDaemonClient, error)
@@ -612,13 +612,13 @@ func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, 
 	return "", nil
 }
 
-func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]dockerregistry.AuthConfig, error) {
+func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]mobyRegistry.AuthConfig, error) {
 	entries, err := s.loadEnabledRegistryEntries(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	authConfigs := make(map[string]dockerregistry.AuthConfig, len(entries))
+	authConfigs := make(map[string]mobyRegistry.AuthConfig, len(entries))
 	for _, entry := range entries {
 		credential, credErr := s.resolveCachedCredential(ctx, entry)
 		if credErr != nil {
@@ -629,7 +629,7 @@ func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context
 			continue
 		}
 		for _, key := range kitregistry.LookupKeys(entry.registry.URL) {
-			authConfigs[key] = dockerregistry.AuthConfig{
+			authConfigs[key] = mobyRegistry.AuthConfig{
 				Username:      credential.Username,
 				Password:      credential.Token,
 				ServerAddress: credential.ServerAddress,
@@ -829,7 +829,7 @@ func (s *ContainerRegistryService) TestRegistry(ctx context.Context, registryURL
 		return err
 	}
 
-	_, err = dockerClient.RegistryLogin(ctx, client.RegistryLoginOptions{
+	_, err = dockerClient.RegistryLogin(ctx, mobyClient.RegistryLoginOptions{
 		Username:      strings.TrimSpace(username),
 		Password:      strings.TrimSpace(token),
 		ServerAddress: normalizeRegistryServerAddress(registryURL),
@@ -1044,7 +1044,7 @@ func (s *ContainerRegistryService) inspectDigestViaDaemon(
 			if encodeErr != nil {
 				return "", fmt.Errorf("encode registry auth header for %s: %w", parts.RegistryHost, encodeErr)
 			}
-			inspectResult, inspectErr := dockerClient.DistributionInspect(ctx, parts.NormalizedRef, client.DistributionInspectOptions{EncodedRegistryAuth: authHeader})
+			inspectResult, inspectErr := dockerClient.DistributionInspect(ctx, parts.NormalizedRef, mobyClient.DistributionInspectOptions{EncodedRegistryAuth: authHeader})
 			if inspectErr != nil {
 				return "", inspectErr
 			}
@@ -1672,7 +1672,7 @@ func (s *ContainerRegistryService) ImageConfig(ctx context.Context, imageRef str
 	return cfg, nil
 }
 
-func ImagePlatform(ctx context.Context, dockerClient *client.Client, candidate updatertypes.TagCandidate) (ocispec.Platform, error) {
+func ImagePlatform(ctx context.Context, dockerClient *mobyClient.Client, candidate updatertypes.TagCandidate) (ocispec.Platform, error) {
 	inspected, inspectErr := dockerClient.ImageInspect(ctx, cmp.Or(candidate.ImageID, candidate.CurrentRef))
 	if inspectErr == nil && inspected.Os != "" && inspected.Architecture != "" {
 		return ocispec.Platform{
@@ -1681,7 +1681,7 @@ func ImagePlatform(ctx context.Context, dockerClient *client.Client, candidate u
 			Variant:      inspected.Variant,
 		}, nil
 	}
-	version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
+	version, err := dockerClient.ServerVersion(ctx, mobyClient.ServerVersionOptions{})
 	if err != nil {
 		return ocispec.Platform{}, errors.Join(inspectErr, fmt.Errorf("resolve daemon platform: %w", err))
 	}

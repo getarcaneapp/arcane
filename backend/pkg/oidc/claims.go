@@ -8,7 +8,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func GetStringClaim(m map[string]any, key string) string {

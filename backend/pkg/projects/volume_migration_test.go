@@ -7,7 +7,7 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/volume"
+	mobyVolume "github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -40,9 +40,9 @@ func TestBuildProjectRenamedVolumeConfig(t *testing.T) {
 func TestRenamedVolumeCreateOptionsInternal_UsesPendingComposeDriverOptions(t *testing.T) {
 	entry := struct {
 		NewConfig composeTypes.VolumeConfig
-		OldVolume volume.Volume
+		OldVolume mobyVolume.Volume
 	}{
-		OldVolume: volume.Volume{
+		OldVolume: mobyVolume.Volume{
 			Driver:  "old-driver",
 			Options: map[string]string{"old": "true"},
 			Labels:  map[string]string{"existing": "kept"},

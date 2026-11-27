@@ -20,7 +20,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/diagnostics"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops"
@@ -34,7 +34,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/port"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -73,8 +73,8 @@ type (
 		AuthService        *auth.AuthService
 		ApiKeyService      *apikey.ApiKeyService
 		RoleService        *role.RoleService
-		Docker             *docker.DockerClientService
-		ContainerRegistry  *registry.Module
+		Docker             *dockerInternal.DockerClientService
+		ContainerRegistry  *registryInternal.Module
 		System             *system.Module
 		Diagnostics        *diagnostics.DiagnosticsService
 		Updater            *updater.Module

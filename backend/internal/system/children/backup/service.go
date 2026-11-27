@@ -23,16 +23,16 @@ import (
 	"uuid"
 
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
@@ -89,11 +89,11 @@ type (
 	RuntimeOptionsResolver func(
 		ctx context.Context,
 		dockerHost string,
-		currentContainer *container.InspectResponse,
+		currentContainer *mobyContainer.InspectResponse,
 		discoverHostPath func(context.Context, string) (string, error),
 		isRunningInDocker func() bool,
-		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
-	) ([]string, []mount.Mount, container.NetworkMode, error)
+		selectReachableNetwork func(context.Context, *mobyContainer.InspectResponse, string) string,
+	) ([]string, []mobyMount.Mount, mobyContainer.NetworkMode, error)
 
 	Dependencies struct {
 		Store                 Store
@@ -198,7 +198,7 @@ func NewService(deps Dependencies) *Service {
 			Engine:     deps.Engine,
 			SqlDB:      deps.SQLDB,
 			ActorStore: deps.ActorStore,
-			LocalRepository: func(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
+			LocalRepository: func(ctx context.Context, dockerClient *mobyClient.Client, readOnly bool) (backup.Repository, error) {
 				return service.localRepository(ctx, dockerClient, readOnly)
 			},
 			RemoteRepository: func(ctx context.Context, destinationID string) (backup.Repository, error) {
@@ -361,7 +361,7 @@ func (s *Service) databaseFile() (string, error) {
 	return absolute, nil
 }
 
-func (s *Service) localRepository(ctx context.Context, dockerClient *client.Client, readOnly bool) (backup.Repository, error) {
+func (s *Service) localRepository(ctx context.Context, dockerClient *mobyClient.Client, readOnly bool) (backup.Repository, error) {
 	storage, err := s.repository.StorageMount(ctx, dockerClient, "/repository", readOnly)
 	if err != nil {
 		return backup.Repository{}, err
@@ -369,7 +369,7 @@ func (s *Service) localRepository(ctx context.Context, dockerClient *client.Clie
 	return backup.Repository{
 		ID:          "system:local",
 		Environment: []string{"RUSTIC_REPOSITORY=/repository/system-recovery"},
-		Mounts:      []mount.Mount{storage},
+		Mounts:      []mobyMount.Mount{storage},
 	}, nil
 }
 
@@ -946,7 +946,7 @@ func (s *Service) pruneDeletedLocalRuns(ctx context.Context) error {
 	return s.engine.ForgetSnapshots(ctx, dockerClient, repository, key, nil)
 }
 
-func (s *Service) discoverySource(ctx context.Context, dockerClient *client.Client, request types.DiscoverSystemBackupsRequest) (backup.Repository, []string, error) {
+func (s *Service) discoverySource(ctx context.Context, dockerClient *mobyClient.Client, request types.DiscoverSystemBackupsRequest) (backup.Repository, []string, error) {
 	if request.Destination == types.SystemBackupDestinationLocal {
 		repository, err := s.localRepository(ctx, dockerClient, true)
 		if err != nil {
@@ -1202,7 +1202,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
 		selfcontainer.RunningInContainer,
-		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
+		func(ctx context.Context, inspect *mobyContainer.InspectResponse, dockerHost string) string {
 			return docker.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
 		},
 	)
@@ -1214,12 +1214,12 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 		return fmt.Errorf("resolve Arcane executable: %w", err)
 	}
 	executableMount := docker.MountForSubpath(current.Mounts, executablePath, systemRecoveryHelperPath)
-	if executableMount != nil && executableMount.Type != mount.TypeBind {
+	if executableMount != nil && executableMount.Type != mobyMount.TypeBind {
 		return errors.New("resolve recovery helper executable: the Arcane executable must come from the image or a bind mount")
 	}
 	mounts := append(slices.Clone(runtimeMounts), *appDataMount)
 	if executableMount != nil {
-		mounts = append(mounts, mount.Mount{
+		mounts = append(mounts, mobyMount.Mount{
 			Type:           executableMount.Type,
 			Source:         executableMount.Source,
 			Target:         executableMount.Target,
@@ -1232,16 +1232,16 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			ClusterOptions: executableMount.ClusterOptions,
 		})
 	}
-	created, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerCreateResult, error) {
-		return cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-			Config: &container.Config{
+	created, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
+		return cli.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
+			Config: &mobyContainer.Config{
 				Image:  current.Config.Image,
 				Cmd:    []string{kit.Ternary(executableMount != nil, systemRecoveryHelperPath, executablePath), "recovery-restore", "--request", requestFile},
 				User:   "0:0",
 				Env:    containerEnv,
 				Labels: map[string]string{"com.getarcaneapp.arcane.recovery": "true", "com.getarcaneapp.arcane": "true"},
 			},
-			HostConfig: &container.HostConfig{
+			HostConfig: &mobyContainer.HostConfig{
 				AutoRemove:  true,
 				Mounts:      mounts,
 				NetworkMode: networkMode,
@@ -1254,11 +1254,11 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 	if err != nil {
 		return fmt.Errorf("create recovery helper container: %w", err)
 	}
-	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerStartResult, error) {
-		return cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{})
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return cli.ContainerStart(ctx, created.ID, mobyClient.ContainerStartOptions{})
 	}); containerStartErr != nil {
-		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerRemoveResult, error) {
-			return cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+			return cli.ContainerRemove(ctx, created.ID, mobyClient.ContainerRemoveOptions{Force: true})
 		})
 		return fmt.Errorf("start recovery helper container: %w", containerStartErr)
 	}
@@ -1343,7 +1343,7 @@ func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) 
 	if systemRuns == 0 && volumeRuns == 0 {
 		return nil
 	}
-	var dockerClient *client.Client
+	var dockerClient *mobyClient.Client
 	var systemRepositories []backup.Repository
 	if systemRuns > 0 {
 		dockerClient, err = s.dockerService.GetClient(ctx)
@@ -1941,7 +1941,7 @@ func (s *Service) reconcileBackup(
 }
 
 func (s *Service) observeBackupSnapshots(
-	ctx context.Context, dockerClient *client.Client, previous types.SchedulerRun, run *types.SystemBackupRun, checkpoint systemBackupRecovery, key string,
+	ctx context.Context, dockerClient *mobyClient.Client, previous types.SchedulerRun, run *types.SystemBackupRun, checkpoint systemBackupRecovery, key string,
 ) (backup.Snapshot, backup.Repository, backup.Repository, error) {
 	var staged backup.Snapshot
 	var local, remote backup.Repository

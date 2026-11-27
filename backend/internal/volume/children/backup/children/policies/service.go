@@ -13,7 +13,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -32,7 +32,7 @@ type (
 		LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
 		CreateBackup   func(ctx context.Context, volumeName, policyID string, admitted func(context.Context) error) (*types.VolumeBackup, error)
 		Reconcile      func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
-		Docker         *docker.DockerClientService
+		Docker         *dockerInternal.DockerClientService
 		Ctx            context.Context
 		Scheduler      types.DynamicScheduler
 		Admission      *runs.Admission

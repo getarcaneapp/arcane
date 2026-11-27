@@ -7,20 +7,20 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/agent"
 )
 
 type (
 	Service struct {
-		dockerService *docker.DockerClientService
+		dockerService *dockerInternal.DockerClientService
 		tunnels       *agent.TunnelRegistry
 	}
 )
 
-func New(dockerService *docker.DockerClientService, tunnels *agent.TunnelRegistry) *Service {
+func New(dockerService *dockerInternal.DockerClientService, tunnels *agent.TunnelRegistry) *Service {
 	return &Service{
 		dockerService: dockerService,
 		tunnels:       tunnels,
@@ -32,8 +32,8 @@ func (s *Service) Probe(ctx context.Context, id string, authenticated func(conte
 		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		if _, pingErr := s.dockerService.Call(reqCtx, func(ctx context.Context, cli *client.Client) (client.PingResult, error) {
-			return cli.Ping(ctx, client.PingOptions{})
+		if _, pingErr := s.dockerService.Call(reqCtx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.PingResult, error) {
+			return cli.Ping(ctx, mobyClient.PingOptions{})
 		}); pingErr != nil {
 			return "offline", fmt.Errorf("docker ping failed: %w", pingErr)
 		}

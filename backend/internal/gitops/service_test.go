@@ -21,12 +21,12 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
 	"github.com/libtnb/sqlite"
-	mobyclient "github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
@@ -82,7 +82,7 @@ var installBackupTestTransportOnce sync.Once
 
 func newGitOpsTestDockerService(t *testing.T, settingsService *settings.SettingsService) *dockerInternal.DockerClientService {
 	t.Helper()
-	cli, err := mobyclient.New(mobyclient.WithHost("tcp://127.0.0.1:1"), mobyclient.WithAPIVersion("1.41"))
+	cli, err := mobyClient.New(mobyClient.WithHost("tcp://127.0.0.1:1"), mobyClient.WithAPIVersion("1.41"))
 	require.NoError(t, err)
 	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(cli)
 }
@@ -2156,7 +2156,7 @@ func setupGitOpsDeleteSwarmStackTest(t *testing.T, gate *runs.Admission) (*GitOp
 	}))
 	t.Cleanup(dockerServer.Close)
 
-	cli, err := mobyclient.New(mobyclient.WithHost(dockerServer.URL), mobyclient.WithAPIVersion("1.41"), mobyclient.WithHTTPClient(dockerServer.Client()))
+	cli, err := mobyClient.New(mobyClient.WithHost(dockerServer.URL), mobyClient.WithAPIVersion("1.41"), mobyClient.WithHTTPClient(dockerServer.Client()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
 

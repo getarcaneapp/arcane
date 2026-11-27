@@ -20,12 +20,12 @@ import (
 
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
@@ -70,7 +70,7 @@ type (
 		LockProject        func(ctx context.Context, op, projectID string) (func(), error)
 		SoleDirectory      func(ctx context.Context, project types.Project) error
 		RunsArcane         func(ctx context.Context, projectID string) (bool, error)
-		ProjectContainers  func(ctx context.Context, projectID string) ([]container.Summary, error)
+		ProjectContainers  func(ctx context.Context, projectID string) ([]mobyContainer.Summary, error)
 		GitOpsOwned        func(ctx context.Context, projectID string) (bool, error)
 		Deploy             func(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error
 		RewriteComposeName func(ctx context.Context, projectID, name string) error
@@ -129,8 +129,8 @@ type (
 	}
 
 	checkpoint struct {
-		Stopped []container.Summary `json:"stopped,omitempty"`
-		Plan    plan                `json:",inline"`
+		Stopped []mobyContainer.Summary `json:"stopped,omitempty"`
+		Plan    plan                    `json:",inline"`
 	}
 
 	StartRestoreOptions struct {
@@ -577,7 +577,7 @@ func (s *Service) capture(ctx context.Context, entry *ProjectBackup, p plan, req
 }
 
 func (s *Service) captureStop(
-	entry *ProjectBackup, p plan, requester *types.BackupRequester, project types.Project, active []container.Summary,
+	entry *ProjectBackup, p plan, requester *types.BackupRequester, project types.Project, active []mobyContainer.Summary,
 ) func(context.Context) (func(context.Context) error, error) {
 	if !p.StopContainers || len(active) == 0 {
 		return nil
@@ -657,7 +657,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 		Rejected: reject,
 		Mounts:   projectMounts,
 		Volumes:  p.volumeNames(),
-	}, func(ctx context.Context, mounts []mount.Mount) error {
+	}, func(ctx context.Context, mounts []mobyMount.Mount) error {
 		var env []byte
 		var externalEnv bool
 		if p.Files {
@@ -689,7 +689,7 @@ func (s *Service) snapshot(ctx context.Context, entry *ProjectBackup, p plan, re
 	return confirmed, err
 }
 
-func (s *Service) projectFiles(ctx context.Context, dockerClient *client.Client, project types.Project, files bool) ([]mount.Mount, error) {
+func (s *Service) projectFiles(ctx context.Context, dockerClient *mobyClient.Client, project types.Project, files bool) ([]mobyMount.Mount, error) {
 	if !files {
 		return nil, nil
 	}
@@ -699,7 +699,7 @@ func (s *Service) projectFiles(ctx context.Context, dockerClient *client.Client,
 	return projectSourceMounts(ctx, dockerClient, backup.SourceMountOptions{ContainerPath: project.Path, Target: path.Join(backup.SnapshotRoot, "project")})
 }
 
-func (s *Service) containerUse(ctx context.Context, composeName string) (active []container.Summary, inUse map[string]bool, err error) {
+func (s *Service) containerUse(ctx context.Context, composeName string) (active []mobyContainer.Summary, inUse map[string]bool, err error) {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -752,7 +752,7 @@ func (s *Service) record(ctx context.Context, id string, recovery any) error {
 	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: backup.ProjectTargetType, ID: id, Status: types.RunStatusRunning, RecoveryData: data})
 }
 
-func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client, image string, manifest types.ProjectManifest, env []byte) (string, func(), error) {
+func (s *Service) writeManifest(ctx context.Context, dockerClient *mobyClient.Client, image string, manifest types.ProjectManifest, env []byte) (string, func(), error) {
 	data, err := json.Marshal(manifest, jsontext.WithIndent("  "))
 	if err != nil {
 		return "", nil, fmt.Errorf("encode project backup manifest: %w", err)
@@ -762,19 +762,19 @@ func (s *Service) writeManifest(ctx context.Context, dockerClient *client.Client
 		files[envName] = env
 	}
 	name := stagingPrefix + uuid.New().String()
-	if _, createErr := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name, Labels: volumes.Labels()}); createErr != nil {
+	if _, createErr := dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{Name: name, Labels: volumes.Labels()}); createErr != nil {
 		return "", nil, fmt.Errorf("create project backup manifest volume: %w", createErr)
 	}
 	remove := func() {
 		removeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerAPI)
 		defer cancel()
-		if _, removeErr := dockerClient.VolumeRemove(removeCtx, name, client.VolumeRemoveOptions{Force: true}); removeErr != nil {
+		if _, removeErr := dockerClient.VolumeRemove(removeCtx, name, mobyClient.VolumeRemoveOptions{Force: true}); removeErr != nil {
 			slog.WarnContext(ctx, "Failed to remove a project backup manifest volume", "volume", name, "error", removeErr)
 		}
 	}
-	holder, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     &container.Config{Image: image, Cmd: []string{"true"}, NetworkDisabled: true, Labels: volumes.Labels()},
-		HostConfig: &container.HostConfig{Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: name, Target: "/meta"}}},
+	holder, err := dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
+		Config:     &mobyContainer.Config{Image: image, Cmd: []string{"true"}, NetworkDisabled: true, Labels: volumes.Labels()},
+		HostConfig: &mobyContainer.HostConfig{Mounts: []mobyMount.Mount{{Type: mobyMount.TypeVolume, Source: name, Target: "/meta"}}},
 	})
 	if err != nil {
 		remove()
@@ -848,7 +848,7 @@ func (s *Service) removeStagingVolumes(ctx context.Context) {
 		slog.WarnContext(ctx, "Failed to connect to Docker to remove project backup staging volumes", "error", err)
 		return
 	}
-	staged, err := dockerClient.VolumeList(ctx, client.VolumeListOptions{Filters: make(client.Filters).Add("label", volumes.ContainerLabel).Add("dangling", "true")})
+	staged, err := dockerClient.VolumeList(ctx, mobyClient.VolumeListOptions{Filters: make(mobyClient.Filters).Add("label", volumes.ContainerLabel).Add("dangling", "true")})
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to list project backup staging volumes", "error", err)
 		return
@@ -857,7 +857,7 @@ func (s *Service) removeStagingVolumes(ctx context.Context) {
 		if !strings.HasPrefix(volume.Name, stagingPrefix) {
 			continue
 		}
-		if _, removeErr := dockerClient.VolumeRemove(ctx, volume.Name, client.VolumeRemoveOptions{}); removeErr != nil {
+		if _, removeErr := dockerClient.VolumeRemove(ctx, volume.Name, mobyClient.VolumeRemoveOptions{}); removeErr != nil {
 			slog.WarnContext(ctx, "Failed to remove a project backup staging volume", "volume", volume.Name, "error", removeErr)
 		}
 	}
@@ -1287,7 +1287,7 @@ func (s *Service) DiscoverAfterRestore(ctx context.Context) error {
 	return s.deps.Settings.UpdateSetting(ctx, backup.ProjectDiscoveryPendingKey, "false")
 }
 
-func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Client, found []foundSnapshot) (int, []string, error) {
+func (s *Service) importSnapshots(ctx context.Context, dockerClient *mobyClient.Client, found []foundSnapshot) (int, []string, error) {
 	groups := make(map[string][]foundSnapshot)
 	for _, snapshot := range found {
 		if backupID := snapshot.snapshot.RunID(); backupID != "" {
@@ -1412,7 +1412,7 @@ func (s *Service) importSnapshots(ctx context.Context, dockerClient *client.Clie
 	return recorded, warnings, importErr
 }
 
-func (s *Service) addFoundCopies(ctx context.Context, dockerClient *client.Client, entry ProjectBackup, localSnapshot, remoteSnapshot foundSnapshot, size int64) (int64, []string, error) {
+func (s *Service) addFoundCopies(ctx context.Context, dockerClient *mobyClient.Client, entry ProjectBackup, localSnapshot, remoteSnapshot foundSnapshot, size int64) (int64, []string, error) {
 	interrupted := entry.Status == types.VolumeBackupStatusFailed && (entry.Error == interruptedError || (entry.LocalSnapshotID == "" && entry.RemoteSnapshotID == ""))
 	if !interrupted && entry.Status != types.VolumeBackupStatusSucceeded {
 		return 0, nil, nil
@@ -1593,7 +1593,7 @@ func (p restorePlan) volumeNames() []string {
 func (p restorePlan) safetyVolumes() []types.ProjectBackupRestoreVolume {
 	existing := make([]types.ProjectBackupRestoreVolume, 0, len(p.Volumes))
 	for _, volume := range p.Volumes {
-		if !slices.ContainsFunc(p.Create, func(created client.VolumeCreateOptions) bool { return created.Name == volume.Name }) {
+		if !slices.ContainsFunc(p.Create, func(created mobyClient.VolumeCreateOptions) bool { return created.Name == volume.Name }) {
 			existing = append(existing, types.ProjectBackupRestoreVolume{Key: volume.Key, Snapshot: volume.Name, Name: volume.Name})
 		}
 	}
@@ -1758,7 +1758,7 @@ func (s *Service) checkInPlace(ctx context.Context, project types.Project, files
 		return fmt.Errorf("list containers: %w", err)
 	}
 	for _, c := range found {
-		if c.State == container.StatePaused {
+		if c.State == mobyContainer.StatePaused {
 			return common.Classify(common.ErrConflict, fmt.Errorf("container %s of project %s is paused; unpause or stop it before restoring", docker.ContainerNameFromNames(c.Names), project.Name))
 		}
 	}
@@ -1800,7 +1800,7 @@ func volumesFree(projectName string, names []string, inUse map[string]bool) erro
 	return nil
 }
 
-func (s *Service) missingVolumes(ctx context.Context, project types.Project, manifest types.ProjectManifest, targets []types.ProjectBackupRestoreVolume) ([]client.VolumeCreateOptions, error) {
+func (s *Service) missingVolumes(ctx context.Context, project types.Project, manifest types.ProjectManifest, targets []types.ProjectBackupRestoreVolume) ([]mobyClient.VolumeCreateOptions, error) {
 	resolved, _, err := projects.ResolveProjectVolumes(ctx, projects.ResolveProjectVolumesOptions{
 		Project:     project,
 		Inspect:     s.deps.Volume,
@@ -1809,11 +1809,11 @@ func (s *Service) missingVolumes(ctx context.Context, project types.Project, man
 	if err != nil {
 		return nil, err
 	}
-	var create []client.VolumeCreateOptions
+	var create []mobyClient.VolumeCreateOptions
 	for _, target := range targets {
 		current := resolved[slices.IndexFunc(resolved, func(volume types.ProjectVolume) bool { return volume.Key == target.Key })]
 		switch {
-		case slices.ContainsFunc(create, func(options client.VolumeCreateOptions) bool { return options.Name == target.Name }):
+		case slices.ContainsFunc(create, func(options mobyClient.VolumeCreateOptions) bool { return options.Name == target.Name }):
 			continue
 		case !current.Missing && !current.Included:
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("volume %s now keeps its data outside Docker, so it cannot be restored", target.Name))
@@ -2017,7 +2017,7 @@ func (s *Service) RestoreTo(ctx context.Context, opts types.ProjectBackupRestore
 		return err
 	}
 	envPath := filepath.Join(opts.ProjectPath, projects.EffectiveEnvFileName)
-	var projectMounts []mount.Mount
+	var projectMounts []mobyMount.Mount
 	var liveEnv string
 	var liveErr error
 	if opts.ProjectPath != "" {
@@ -2129,7 +2129,7 @@ func (s *Service) restorable(ctx context.Context, projectID, backupID string) (*
 	return entry, nil
 }
 
-func (s *Service) open(ctx context.Context, dockerClient *client.Client, entry *ProjectBackup) (snapshotSource, types.ProjectManifest, error) {
+func (s *Service) open(ctx context.Context, dockerClient *mobyClient.Client, entry *ProjectBackup) (snapshotSource, types.ProjectManifest, error) {
 	var errs []error
 	for _, remote := range []bool{false, true} {
 		id := kit.Ternary(remote, entry.RemoteSnapshotID, entry.LocalSnapshotID)
@@ -2156,14 +2156,14 @@ func (s *Service) open(ctx context.Context, dockerClient *client.Client, entry *
 	return snapshotSource{}, types.ProjectManifest{}, errors.Join(errs...)
 }
 
-func (s *Service) repository(ctx context.Context, dockerClient *client.Client, entry *ProjectBackup, remote bool) (backup.Repository, error) {
+func (s *Service) repository(ctx context.Context, dockerClient *mobyClient.Client, entry *ProjectBackup, remote bool) (backup.Repository, error) {
 	if remote {
 		return s.deps.Repository.Remote(ctx, entry.S3DestinationID, entry.RemoteInstanceID)
 	}
 	return s.deps.Repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{})
 }
 
-func (s *Service) readManifest(ctx context.Context, dockerClient *client.Client, source snapshotSource) (types.ProjectManifest, error) {
+func (s *Service) readManifest(ctx context.Context, dockerClient *mobyClient.Client, source snapshotSource) (types.ProjectManifest, error) {
 	text, err := s.deps.Engine.ReadSnapshotTextFile(ctx, dockerClient, source.repository, source.password, source.id, path.Join("meta", manifestName))
 	if err != nil {
 		return types.ProjectManifest{}, err

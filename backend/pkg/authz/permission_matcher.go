@@ -6,7 +6,7 @@ import (
 
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

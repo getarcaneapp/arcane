@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/common"

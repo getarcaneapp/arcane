@@ -5,14 +5,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/updater"
 )
 
 func TestAutoUpdateJob_ShouldSchedule_RequiresAutoUpdateAndPolling(t *testing.T) {
 	ctx := t.Context()
 	_, settingsSvc, _ := setupAnalyticsStateServices(t)
-	job := NewAutoUpdateJob(nil, &updater.UpdaterService{}, settingsSvc, &docker.DockerClientService{})
+	job := NewAutoUpdateJob(nil, &updater.UpdaterService{}, settingsSvc, &dockerInternal.DockerClientService{})
 
 	require.False(t, job.ShouldSchedule(ctx))
 

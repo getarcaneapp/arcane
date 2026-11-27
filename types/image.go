@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moby/moby/api/types/image"
+	mobyImage "github.com/moby/moby/api/types/image"
 )
 
 type (
@@ -271,7 +271,7 @@ const (
 	HardenedImageSupportUnknown HardenedImageSupportStatus = "unknown"
 )
 
-func NewImagePruneReport(src image.PruneReport) ImagePruneReport {
+func NewImagePruneReport(src mobyImage.PruneReport) ImagePruneReport {
 	var spaceReclaimed int64
 	if src.SpaceReclaimed > uint64(math.MaxInt64) {
 		spaceReclaimed = math.MaxInt64
@@ -313,7 +313,7 @@ func (p ImagePullOptions) GetCredentials() []ContainerRegistryCredential {
 	return nil
 }
 
-func NewImageDetailSummary(src *image.InspectResponse) ImageDetailSummary {
+func NewImageDetailSummary(src *mobyImage.InspectResponse) ImageDetailSummary {
 	var out ImageDetailSummary
 	if src == nil {
 		return out

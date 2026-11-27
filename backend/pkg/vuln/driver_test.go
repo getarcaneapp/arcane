@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	containertypes "github.com/moby/moby/api/types/container"
-	mounttypes "github.com/moby/moby/api/types/mount"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 
 	"getarcane.dev/arcane/v3/pkg/timeouts"
@@ -194,7 +194,7 @@ func TestCleanupTrivyLogTempFilesInternal_RemovesFiles(t *testing.T) {
 }
 
 func TestBuildTrivyHostConfig_ExcludesResourcesWhenLimitsDisabled(t *testing.T) {
-	resources := containertypes.Resources{
+	resources := mobyContainer.Resources{
 		NanoCPUs:   int64(2_000_000_000),
 		Memory:     int64(1_073_741_824),
 		MemorySwap: int64(1_073_741_824),
@@ -207,7 +207,7 @@ func TestBuildTrivyHostConfig_ExcludesResourcesWhenLimitsDisabled(t *testing.T) 
 			Resources: resources,
 		},
 	})
-	require.Equal(t, containertypes.NetworkMode("bridge"), hostConfig.NetworkMode)
+	require.Equal(t, mobyContainer.NetworkMode("bridge"), hostConfig.NetworkMode)
 	require.Equal(t, int64(0), hostConfig.NanoCPUs)
 	require.Equal(t, int64(0), hostConfig.Memory)
 	require.Equal(t, int64(0), hostConfig.MemorySwap)
@@ -216,7 +216,7 @@ func TestBuildTrivyHostConfig_ExcludesResourcesWhenLimitsDisabled(t *testing.T) 
 }
 
 func TestBuildTrivyHostConfig_IncludesResourcesWhenLimitsEnabled(t *testing.T) {
-	resources := containertypes.Resources{
+	resources := mobyContainer.Resources{
 		NanoCPUs:   int64(2_000_000_000),
 		Memory:     int64(1_073_741_824),
 		MemorySwap: int64(1_073_741_824),
@@ -230,14 +230,14 @@ func TestBuildTrivyHostConfig_IncludesResourcesWhenLimitsEnabled(t *testing.T) {
 			Apply:     true,
 		},
 	})
-	require.Equal(t, containertypes.NetworkMode("arcane-external"), hostConfig.NetworkMode)
+	require.Equal(t, mobyContainer.NetworkMode("arcane-external"), hostConfig.NetworkMode)
 	require.Equal(t, resources.NanoCPUs, hostConfig.NanoCPUs)
 	require.Equal(t, resources.Memory, hostConfig.Memory)
 	require.Equal(t, resources.MemorySwap, hostConfig.MemorySwap)
 }
 
 func TestBuildTrivyHostConfig_UsesCPUSetAndClearsNanoCPUs(t *testing.T) {
-	resources := containertypes.Resources{
+	resources := mobyContainer.Resources{
 		NanoCPUs:   int64(2_000_000_000),
 		Memory:     int64(1_073_741_824),
 		MemorySwap: int64(1_073_741_824),
@@ -252,7 +252,7 @@ func TestBuildTrivyHostConfig_UsesCPUSetAndClearsNanoCPUs(t *testing.T) {
 			Apply:     true,
 		},
 	})
-	require.Equal(t, containertypes.NetworkMode("bridge"), hostConfig.NetworkMode)
+	require.Equal(t, mobyContainer.NetworkMode("bridge"), hostConfig.NetworkMode)
 	require.Equal(t, int64(0), hostConfig.NanoCPUs)
 	require.Equal(t, "0-1", hostConfig.CpusetCpus)
 	require.Equal(t, resources.Memory, hostConfig.Memory)
@@ -278,15 +278,15 @@ func TestBuildTrivyHostConfig_SkipsCacheMountWhenVolumeEmpty(t *testing.T) {
 
 	require.Empty(t, hostConfig.Mounts)
 
-	socketMount := mounttypes.Mount{
-		Type:   mounttypes.TypeBind,
+	socketMount := mobyMount.Mount{
+		Type:   mobyMount.TypeBind,
 		Source: "/run/user/1000/podman/podman.sock",
 		Target: "/run/user/1000/podman/podman.sock",
 	}
 	hostConfig = BuildHostConfig(HostConfigOptions{
 		Runtime: RuntimeOptions{
 			NetworkMode: "bridge",
-			Mounts:      []mounttypes.Mount{socketMount},
+			Mounts:      []mobyMount.Mount{socketMount},
 		},
 	})
 
@@ -299,9 +299,9 @@ func TestBuildTrivyHostConfig_IncludesInheritedSocketMount(t *testing.T) {
 		CacheVolume: "cache-volume",
 		Runtime: RuntimeOptions{
 			NetworkMode: "bridge",
-			Mounts: []mounttypes.Mount{
+			Mounts: []mobyMount.Mount{
 				{
-					Type:   mounttypes.TypeBind,
+					Type:   mobyMount.TypeBind,
 					Source: "/run/user/1000/podman/podman.sock",
 					Target: "/run/user/1000/podman/podman.sock",
 				},
@@ -385,20 +385,20 @@ func TestBuildTrivyCPUSet(t *testing.T) {
 func TestTrivyMountSummaries(t *testing.T) {
 	require.Nil(t, MountSummaries(nil))
 
-	hostConfig := &containertypes.HostConfig{
-		Mounts: []mounttypes.Mount{
+	hostConfig := &mobyContainer.HostConfig{
+		Mounts: []mobyMount.Mount{
 			{
-				Type:   mounttypes.TypeBind,
+				Type:   mobyMount.TypeBind,
 				Source: "/var/run/docker.sock",
 				Target: "/var/run/docker.sock",
 			},
 			{
-				Type:   mounttypes.TypeVolume,
+				Type:   mobyMount.TypeVolume,
 				Source: "arcane-trivy-cache",
 				Target: "/root/.cache",
 			},
 			{
-				Type:   mounttypes.TypeTmpfs,
+				Type:   mobyMount.TypeTmpfs,
 				Target: "/tmp",
 			},
 		},
@@ -431,9 +431,9 @@ func TestTrivyContainerWaitTimeout(t *testing.T) {
 }
 
 func TestAwaitContainerWaitResponseInternal_Status(t *testing.T) {
-	statusCh := make(chan containertypes.WaitResponse, 1)
+	statusCh := make(chan mobyContainer.WaitResponse, 1)
 	errCh := make(chan error)
-	statusCh <- containertypes.WaitResponse{StatusCode: 12}
+	statusCh <- mobyContainer.WaitResponse{StatusCode: 12}
 
 	status, err := AwaitContainerWaitResponse(t.Context(), statusCh, errCh)
 	require.NoError(t, err)
@@ -441,7 +441,7 @@ func TestAwaitContainerWaitResponseInternal_Status(t *testing.T) {
 }
 
 func TestAwaitContainerWaitResponseInternal_Error(t *testing.T) {
-	statusCh := make(chan containertypes.WaitResponse)
+	statusCh := make(chan mobyContainer.WaitResponse)
 	errCh := make(chan error, 1)
 	errCh <- errors.New("boom")
 
@@ -452,11 +452,11 @@ func TestAwaitContainerWaitResponseInternal_Error(t *testing.T) {
 }
 
 func TestAwaitContainerWaitResponseInternal_ClosedErrorChannelStillReadsStatus(t *testing.T) {
-	statusCh := make(chan containertypes.WaitResponse, 1)
+	statusCh := make(chan mobyContainer.WaitResponse, 1)
 	errCh := make(chan error)
 
 	close(errCh)
-	statusCh <- containertypes.WaitResponse{StatusCode: 7}
+	statusCh <- mobyContainer.WaitResponse{StatusCode: 7}
 
 	status, err := AwaitContainerWaitResponse(t.Context(), statusCh, errCh)
 	require.NoError(t, err)
@@ -464,7 +464,7 @@ func TestAwaitContainerWaitResponseInternal_ClosedErrorChannelStillReadsStatus(t
 }
 
 func TestAwaitContainerWaitResponseInternal_ContextDone(t *testing.T) {
-	statusCh := make(chan containertypes.WaitResponse)
+	statusCh := make(chan mobyContainer.WaitResponse)
 	errCh := make(chan error)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
 	defer cancel()
@@ -476,7 +476,7 @@ func TestAwaitContainerWaitResponseInternal_ContextDone(t *testing.T) {
 }
 
 func TestAwaitContainerWaitResponseInternal_NoStatus(t *testing.T) {
-	statusCh := make(chan containertypes.WaitResponse)
+	statusCh := make(chan mobyContainer.WaitResponse)
 	errCh := make(chan error)
 	close(statusCh)
 	close(errCh)

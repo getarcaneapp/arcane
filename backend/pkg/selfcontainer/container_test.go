@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -123,15 +123,15 @@ func TestContainerDetection_TrueNASMountInfoAndSignals(t *testing.T) {
 	assert.True(t, runningInContainer(noEnv, noPath, func() (string, error) { return fullID, nil }))
 }
 
-func newTestDockerClient(t *testing.T, handler http.HandlerFunc) *client.Client {
+func newTestDockerClient(t *testing.T, handler http.HandlerFunc) *mobyClient.Client {
 	t.Helper()
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
-	dockerClient, err := client.New(
-		client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
-		client.WithAPIVersion("1.41"),
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")),
+		mobyClient.WithAPIVersion("1.41"),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })

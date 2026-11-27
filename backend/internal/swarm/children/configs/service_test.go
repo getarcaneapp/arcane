@@ -9,15 +9,15 @@ import (
 	"testing"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -26,11 +26,11 @@ import (
 )
 
 func TestService_UpdateConfig_KeepsDataAndReplacesLabels(t *testing.T) {
-	current := swarm.Config{
+	current := mobySwarm.Config{
 		ID:      "config-1",
-		Version: swarm.Version{Index: 4},
-		Spec: swarm.ConfigSpec{
-			Annotations: swarm.Annotations{
+		Version: mobySwarm.Version{Index: 4},
+		Spec: mobySwarm.ConfigSpec{
+			Annotations: mobySwarm.Annotations{
 				Name:   "nginx-conf",
 				Labels: map[string]string{"old": "label"},
 			},
@@ -55,10 +55,10 @@ func TestService_UpdateConfig_KeepsDataAndReplacesLabels(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
@@ -121,7 +121,7 @@ func TestAggregateMergesEnvironments(t *testing.T) {
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -136,5 +136,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

@@ -18,15 +18,15 @@ import (
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 	kitregistry "kit.getarcane.app/registry"
@@ -37,7 +37,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/imageupdate/children/releasenotes"
 	"getarcane.dev/arcane/v3/internal/imageupdate/children/tags"
@@ -59,7 +59,7 @@ type (
 		db                  *database.DB
 		settingsService     *settings.SettingsService
 		registryService     *registryInternal.ContainerRegistryService
-		dockerService       *docker.DockerClientService
+		dockerService       *dockerInternal.DockerClientService
 		eventService        *event.EventService
 		notificationService *notification.NotificationService
 		registryLimiter     *registry.RegistryRateLimiter
@@ -153,7 +153,7 @@ type (
 		DB                  *database.DB
 		SettingsService     *settings.SettingsService
 		RegistryService     *registryInternal.ContainerRegistryService
-		DockerService       *docker.DockerClientService
+		DockerService       *dockerInternal.DockerClientService
 		EventService        *event.EventService
 		NotificationService *notification.NotificationService
 		ActivityService     *activity.ActivityService
@@ -671,7 +671,7 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 	imageID = strings.TrimPrefix(imageID, "sha256:")
 
 	if imageRef, ok := func() (string, bool) {
-		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, imageID)
 		})
 		if inspectErr != nil {
@@ -728,7 +728,7 @@ func (s *ImageUpdateService) getAllImageRefs(ctx context.Context, limit int) ([]
 	return filterImageSummariesByContainerOptOut(images, containers, limit), nil
 }
 
-func newMonitoringEligibility(containers []container.Summary) monitoringEligibility {
+func newMonitoringEligibility(containers []mobyContainer.Summary) monitoringEligibility {
 	eligibility := monitoringEligibility{
 		byImageID:   map[string]bool{},
 		byRef:       map[string]bool{},
@@ -754,7 +754,7 @@ func (e monitoringEligibility) imageEligible(imageID, normalizedRef string) bool
 	return (!usedByID && !usedByRef) || eligibleByID || eligibleRef
 }
 
-func filterImageSummariesByContainerOptOut(images []image.Summary, containers []container.Summary, limit int) []string {
+func filterImageSummariesByContainerOptOut(images []mobyImage.Summary, containers []mobyContainer.Summary, limit int) []string {
 	eligibility := newMonitoringEligibility(containers)
 
 	seen := make(map[string]struct{})
@@ -802,7 +802,7 @@ func filterImageSummariesByContainerOptOut(images []image.Summary, containers []
 }
 
 func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imageRef string, composeBuildRefs map[string]struct{}) (*localImageSnapshot, error) {
-	inspectResponse, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	inspectResponse, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageRef)
 	})
 	if err != nil {
@@ -875,7 +875,7 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 	}
 	if len(result.ContainerUpdates) == 0 {
 		saveErr := func() error {
-			dockerImage, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			dockerImage, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 				return dockerClient.ImageInspect(ctx, imageID)
 			})
 			if inspectErr != nil {
@@ -912,7 +912,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 		if kit.FromPtr(snapshot).ImageID != "" {
 			return snapshot, nil
 		}
-		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, imageRef)
 		})
 		if inspectErr != nil {
@@ -978,7 +978,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 }
 
 // extractRepoAndTagFromImage reads the image's first usable tag; an untagged image uses fallback's tag when set.
-func extractRepoAndTagFromImage(dockerImage image.InspectResponse, fallback *ImageParts) (repo, tag string) {
+func extractRepoAndTagFromImage(dockerImage mobyImage.InspectResponse, fallback *ImageParts) (repo, tag string) {
 	untagged := cmp.Or(strings.TrimSpace(kit.FromPtr(fallback).Tag), "<none>")
 	primary := max(slices.IndexFunc(dockerImage.RepoTags, func(repoTag string) bool {
 		return repoTag != "<none>:<none>" && !refs.IsDigestPinnedReference(repoTag)
@@ -2256,7 +2256,7 @@ func (s *ImageUpdateService) checkContainerTagUpdates(
 	})
 }
 
-func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt container.Summary, result *types.ImageUpdateResponse) error {
+func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt mobyContainer.Summary, result *types.ImageUpdateResponse) error {
 	parsed, err := refs.NormalizeReference(cnt.Image)
 	if err != nil {
 		return err

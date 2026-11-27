@@ -15,7 +15,7 @@ import (
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	dockertypes "kit.getarcane.app/docker/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"

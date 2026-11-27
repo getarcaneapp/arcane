@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/types/v3"

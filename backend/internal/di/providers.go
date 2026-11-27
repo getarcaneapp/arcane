@@ -10,8 +10,8 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/moby/moby/api/types/events"
-	"github.com/moby/moby/client"
+	mobyEvents "github.com/moby/moby/api/types/events"
+	mobyClient "github.com/moby/moby/client"
 	"go.uber.org/fx"
 
 	"kit.getarcane.app/concurrency"
@@ -24,7 +24,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/image"
@@ -59,7 +59,7 @@ type (
 		ImageService *image.ImageService
 		Roles        *role.RoleService
 		Config       *config.Config
-		Docker       *docker.DockerClientService
+		Docker       *dockerInternal.DockerClientService
 		DB           *database.DB
 	}
 
@@ -67,7 +67,7 @@ type (
 		fx.In
 
 		Config         *config.Config
-		Docker         *docker.DockerClientService
+		Docker         *dockerInternal.DockerClientService
 		Engine         *backup.Engine
 		Settings       *settings.SettingsService
 		S3Destinations *s3.S3DestinationService
@@ -188,7 +188,7 @@ func projectGrantsVolume(ctx context.Context, p backupEngineParams, permissions 
 	if err != nil {
 		return false
 	}
-	inspected, err := dockerClient.VolumeInspect(ctx, requester.ResourceID, client.VolumeInspectOptions{})
+	inspected, err := dockerClient.VolumeInspect(ctx, requester.ResourceID, mobyClient.VolumeInspectOptions{})
 	if err != nil {
 		return false
 	}
@@ -214,7 +214,7 @@ func provideVolumeRepository(p volumeRepositoryParams) *backup.VolumeRepository 
 	})
 }
 
-func provideBackupContainers(dockerService *docker.DockerClientService, containers *container.ContainerService) *backup.Containers {
+func provideBackupContainers(dockerService *dockerInternal.DockerClientService, containers *container.ContainerService) *backup.Containers {
 	return &backup.Containers{Docker: dockerService, Stop: containers.StopContainer, Start: containers.StartContainer}
 }
 
@@ -314,9 +314,9 @@ func provideTunnelRegistry(lc fx.Lifecycle) *agent.TunnelRegistry {
 	return registry
 }
 
-func provideDockerClientService(p dockerClientServiceParams) *docker.DockerClientService {
-	service := docker.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, docker.ClientServiceOptions{
-		EventBus: bus.Config{OnDrop: func(message events.Message) {
+func provideDockerClientService(p dockerClientServiceParams) *dockerInternal.DockerClientService {
+	service := dockerInternal.NewDockerClientService(p.Ctx, p.DB, p.LocalSettings, dockerInternal.ClientServiceOptions{
+		EventBus: bus.Config{OnDrop: func(message mobyEvents.Message) {
 			// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
 			p.EventService.RecordDockerEvent(p.Ctx, message)
 		}},

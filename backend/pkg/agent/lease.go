@@ -9,7 +9,7 @@ import (
 	"slices"
 	"time"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/httpx"
 )

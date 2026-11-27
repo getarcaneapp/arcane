@@ -10,10 +10,10 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/swarm"
-	dockerclient "github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (
@@ -44,7 +44,7 @@ type (
 	fileResourceAdapter struct {
 		Inspect      func(context.Context, string) (resourceMeta, error)
 		Create       func(context.Context, managedFileResourceSpec) (resourceMeta, error)
-		List         func(context.Context, dockerclient.Filters) ([]staleManagedResource, error)
+		List         func(context.Context, mobyClient.Filters) ([]staleManagedResource, error)
 		Remove       func(context.Context, string) error
 		ResourceType string
 	}
@@ -105,7 +105,7 @@ func planManagedFileResources[T composeTypes.ConfigObjConfig | composeTypes.Secr
 	return result, nil
 }
 
-func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client, project *composeTypes.Project, ns namespace, stackLabels map[string]string) (map[string]string, error) {
+func ensureSwarmNetworks(ctx context.Context, dockerClient *mobyClient.Client, project *composeTypes.Project, ns namespace, stackLabels map[string]string) (map[string]string, error) {
 	result := planResourceNames(project.Networks, ns, func(c composeTypes.NetworkConfig) string { return c.Name })
 	for _, key := range slices.Sorted(maps.Keys(project.Networks)) {
 		cfg := project.Networks[key]
@@ -115,7 +115,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 			if networkName == "bridge" || networkName == "host" || networkName == "none" {
 				continue
 			}
-			inspected, err := dockerClient.NetworkInspect(ctx, networkName, dockerclient.NetworkInspectOptions{Scope: "swarm"})
+			inspected, err := dockerClient.NetworkInspect(ctx, networkName, mobyClient.NetworkInspectOptions{Scope: "swarm"})
 			if err != nil {
 				return nil, invalidStackError(fmt.Errorf("external network %s is unavailable: %w", networkName, err))
 			}
@@ -125,7 +125,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 			continue
 		}
 
-		_, err := dockerClient.NetworkInspect(ctx, networkName, dockerclient.NetworkInspectOptions{Scope: "swarm"})
+		_, err := dockerClient.NetworkInspect(ctx, networkName, mobyClient.NetworkInspectOptions{Scope: "swarm"})
 		if err == nil {
 			continue
 		}
@@ -136,7 +136,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 		driver := cmp.Or(strings.TrimSpace(cfg.Driver), "overlay")
 
 		labels := mergeLabels(cfg.Labels, stackLabels)
-		createOpts := dockerclient.NetworkCreateOptions{
+		createOpts := mobyClient.NetworkCreateOptions{
 			Driver:     driver,
 			Scope:      "swarm",
 			EnableIPv4: cfg.EnableIPv4,
@@ -156,7 +156,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 	return result, nil
 }
 
-func ensureSwarmVolumes(ctx context.Context, dockerClient *dockerclient.Client, project *composeTypes.Project, ns namespace, stackLabels map[string]string) error {
+func ensureSwarmVolumes(ctx context.Context, dockerClient *mobyClient.Client, project *composeTypes.Project, ns namespace, stackLabels map[string]string) error {
 	volumeNameByKey := planResourceNames(project.Volumes, ns, func(c composeTypes.VolumeConfig) string { return c.Name })
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
 		cfg := project.Volumes[key]
@@ -171,7 +171,7 @@ func ensureSwarmVolumes(ctx context.Context, dockerClient *dockerclient.Client, 
 
 		// If the volume already exists, leave it as-is to avoid disrupting
 		// running services that may be attached to it.
-		if _, err := dockerClient.VolumeInspect(ctx, name, dockerclient.VolumeInspectOptions{}); err == nil {
+		if _, err := dockerClient.VolumeInspect(ctx, name, mobyClient.VolumeInspectOptions{}); err == nil {
 			continue
 		} else if !cerrdefs.IsNotFound(err) {
 			return fmt.Errorf("failed to inspect volume %s: %w", name, err)
@@ -179,7 +179,7 @@ func ensureSwarmVolumes(ctx context.Context, dockerClient *dockerclient.Client, 
 
 		driver := cmp.Or(cfg.Driver, "local")
 		labels := mergeLabels(cfg.Labels, stackLabels)
-		if _, err := dockerClient.VolumeCreate(ctx, dockerclient.VolumeCreateOptions{
+		if _, err := dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{
 			Name:       name,
 			Driver:     driver,
 			DriverOpts: cfg.DriverOpts,
@@ -191,11 +191,11 @@ func ensureSwarmVolumes(ctx context.Context, dockerClient *dockerclient.Client, 
 	return nil
 }
 
-func configFileResourceAdapter(dockerClient *dockerclient.Client) fileResourceAdapter {
+func configFileResourceAdapter(dockerClient *mobyClient.Client) fileResourceAdapter {
 	return fileResourceAdapter{
 		ResourceType: "config",
 		Inspect: func(ctx context.Context, name string) (resourceMeta, error) {
-			configResult, err := dockerClient.ConfigInspect(ctx, name, dockerclient.ConfigInspectOptions{})
+			configResult, err := dockerClient.ConfigInspect(ctx, name, mobyClient.ConfigInspectOptions{})
 			if err != nil {
 				return resourceMeta{}, err
 			}
@@ -203,39 +203,39 @@ func configFileResourceAdapter(dockerClient *dockerclient.Client) fileResourceAd
 			return resourceMeta{ID: config.ID, Name: config.Spec.Name}, nil
 		},
 		Create: func(ctx context.Context, resource managedFileResourceSpec) (resourceMeta, error) {
-			spec := swarm.ConfigSpec{
+			spec := mobySwarm.ConfigSpec{
 				Name:       resource.Name,
 				Labels:     resource.Labels,
 				Data:       resource.Data,
-				Templating: kit.Ternary(resource.TemplateDriver != "", &swarm.Driver{Name: resource.TemplateDriver}, nil),
+				Templating: kit.Ternary(resource.TemplateDriver != "", &mobySwarm.Driver{Name: resource.TemplateDriver}, nil),
 			}
-			response, err := dockerClient.ConfigCreate(ctx, dockerclient.ConfigCreateOptions{Spec: spec})
+			response, err := dockerClient.ConfigCreate(ctx, mobyClient.ConfigCreateOptions{Spec: spec})
 			if err != nil {
 				return resourceMeta{}, fmt.Errorf("failed to create config %s: %w", resource.Name, err)
 			}
 			return resourceMeta{ID: response.ID, Name: resource.Name}, nil
 		},
-		List: func(ctx context.Context, filters dockerclient.Filters) ([]staleManagedResource, error) {
-			configsResult, err := dockerClient.ConfigList(ctx, dockerclient.ConfigListOptions{Filters: filters})
+		List: func(ctx context.Context, filters mobyClient.Filters) ([]staleManagedResource, error) {
+			configsResult, err := dockerClient.ConfigList(ctx, mobyClient.ConfigListOptions{Filters: filters})
 			if err != nil {
 				return nil, fmt.Errorf("failed to list stack configs: %w", err)
 			}
-			return collectStaleManagedResources(configsResult.Items, func(cfg swarm.Config) staleManagedResource {
+			return collectStaleManagedResources(configsResult.Items, func(cfg mobySwarm.Config) staleManagedResource {
 				return staleManagedResource{ID: cfg.ID, Name: cfg.Spec.Name}
 			}), nil
 		},
 		Remove: func(ctx context.Context, id string) error {
-			_, err := dockerClient.ConfigRemove(ctx, id, dockerclient.ConfigRemoveOptions{})
+			_, err := dockerClient.ConfigRemove(ctx, id, mobyClient.ConfigRemoveOptions{})
 			return err
 		},
 	}
 }
 
-func secretFileResourceAdapter(dockerClient *dockerclient.Client) fileResourceAdapter {
+func secretFileResourceAdapter(dockerClient *mobyClient.Client) fileResourceAdapter {
 	return fileResourceAdapter{
 		ResourceType: "secret",
 		Inspect: func(ctx context.Context, name string) (resourceMeta, error) {
-			secretResult, err := dockerClient.SecretInspect(ctx, name, dockerclient.SecretInspectOptions{})
+			secretResult, err := dockerClient.SecretInspect(ctx, name, mobyClient.SecretInspectOptions{})
 			if err != nil {
 				return resourceMeta{}, err
 			}
@@ -243,30 +243,30 @@ func secretFileResourceAdapter(dockerClient *dockerclient.Client) fileResourceAd
 			return resourceMeta{ID: secret.ID, Name: secret.Spec.Name}, nil
 		},
 		Create: func(ctx context.Context, resource managedFileResourceSpec) (resourceMeta, error) {
-			spec := swarm.SecretSpec{
+			spec := mobySwarm.SecretSpec{
 				Name:       resource.Name,
 				Labels:     resource.Labels,
 				Data:       resource.Data,
-				Driver:     kit.Ternary(resource.Driver != "", &swarm.Driver{Name: resource.Driver, Options: resource.DriverOpts}, nil),
-				Templating: kit.Ternary(resource.TemplateDriver != "", &swarm.Driver{Name: resource.TemplateDriver}, nil),
+				Driver:     kit.Ternary(resource.Driver != "", &mobySwarm.Driver{Name: resource.Driver, Options: resource.DriverOpts}, nil),
+				Templating: kit.Ternary(resource.TemplateDriver != "", &mobySwarm.Driver{Name: resource.TemplateDriver}, nil),
 			}
-			response, err := dockerClient.SecretCreate(ctx, dockerclient.SecretCreateOptions{Spec: spec})
+			response, err := dockerClient.SecretCreate(ctx, mobyClient.SecretCreateOptions{Spec: spec})
 			if err != nil {
 				return resourceMeta{}, fmt.Errorf("failed to create secret %s: %w", resource.Name, err)
 			}
 			return resourceMeta{ID: response.ID, Name: resource.Name}, nil
 		},
-		List: func(ctx context.Context, filters dockerclient.Filters) ([]staleManagedResource, error) {
-			secretsResult, err := dockerClient.SecretList(ctx, dockerclient.SecretListOptions{Filters: filters})
+		List: func(ctx context.Context, filters mobyClient.Filters) ([]staleManagedResource, error) {
+			secretsResult, err := dockerClient.SecretList(ctx, mobyClient.SecretListOptions{Filters: filters})
 			if err != nil {
 				return nil, fmt.Errorf("failed to list stack secrets: %w", err)
 			}
-			return collectStaleManagedResources(secretsResult.Items, func(secret swarm.Secret) staleManagedResource {
+			return collectStaleManagedResources(secretsResult.Items, func(secret mobySwarm.Secret) staleManagedResource {
 				return staleManagedResource{ID: secret.ID, Name: secret.Spec.Name}
 			}), nil
 		},
 		Remove: func(ctx context.Context, id string) error {
-			_, err := dockerClient.SecretRemove(ctx, id, dockerclient.SecretRemoveOptions{})
+			_, err := dockerClient.SecretRemove(ctx, id, mobyClient.SecretRemoveOptions{})
 			return err
 		},
 	}

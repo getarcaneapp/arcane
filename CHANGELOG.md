@@ -83,6 +83,7 @@
 - keep every backup schedule in the shared policy table ([\#5002](https://github.com/getarcaneapp/arcane/pull/5002) by @neurekadev)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v3.1.1...v3.2.0
+
 ## v3.1.1
 
 ### Bug fixes

@@ -14,17 +14,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/pagination"
@@ -33,9 +33,9 @@ import (
 
 type (
 	Service struct {
-		docker             *docker.DockerClientService
+		docker             *dockerInternal.DockerClientService
 		ensureManager      func(ctx context.Context) error
-		listTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		listTasks          func(ctx context.Context, filters mobyClient.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 		localJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
 		environmentService *environment.EnvironmentService
 		tunnels            *agent.TunnelRegistry
@@ -44,9 +44,9 @@ type (
 	}
 
 	ServiceParams struct {
-		DockerService      *docker.DockerClientService
+		DockerService      *dockerInternal.DockerClientService
 		EnsureManager      func(ctx context.Context) error
-		ListTasks          func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		ListTasks          func(ctx context.Context, filters mobyClient.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 		LocalJoinTokens    func(ctx context.Context) (*types.SwarmJoinTokensResponse, error)
 		EnvironmentService *environment.EnvironmentService
 		Tunnels            *agent.TunnelRegistry
@@ -126,8 +126,8 @@ func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, 
 		return nil, pagination.Response{}, err
 	}
 
-	nodesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeListResult, error) {
-		return dockerClient.NodeList(ctx, client.NodeListOptions{})
+	nodesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NodeListResult, error) {
+		return dockerClient.NodeList(ctx, mobyClient.NodeListOptions{})
 	})
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm nodes: %w", err)
@@ -179,8 +179,8 @@ func (s *Service) inspectNode(ctx context.Context, environmentID, nodeID string)
 		return nil, err
 	}
 
-	nodeResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeInspectResult, error) {
-		return dockerClient.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
+	nodeResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NodeInspectResult, error) {
+		return dockerClient.NodeInspect(ctx, nodeID, mobyClient.NodeInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm node: %w", err)
@@ -329,15 +329,15 @@ func (s *Service) enrollNodeAgent(ctx context.Context, p EnrollNodeAgentParams) 
 }
 
 func (s *Service) GetLocalNodeIdentity(ctx context.Context) (*SwarmNodeIdentity, error) {
-	infoResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-		return dockerClient.Info(ctx, client.InfoOptions{})
+	infoResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, mobyClient.InfoOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect local Docker engine: %w", err)
 	}
 
 	swarmInfo := infoResult.Info
-	swarmActive := swarmInfo.Swarm.LocalNodeState == swarm.LocalNodeStateActive && strings.TrimSpace(swarmInfo.Swarm.NodeID) != ""
+	swarmActive := swarmInfo.Swarm.LocalNodeState == mobySwarm.LocalNodeStateActive && strings.TrimSpace(swarmInfo.Swarm.NodeID) != ""
 	role := ""
 	if swarmActive {
 		role = kit.Ternary(swarmInfo.Swarm.ControlAvailable, "manager", "worker")
@@ -720,22 +720,22 @@ func (s *Service) UpdateNode(ctx context.Context, nodeID string, update types.Sw
 		return err
 	}
 
-	nodeResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeInspectResult, error) {
-		return dockerClient.NodeInspect(ctx, nodeID, client.NodeInspectOptions{})
+	nodeResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NodeInspectResult, error) {
+		return dockerClient.NodeInspect(ctx, nodeID, mobyClient.NodeInspectOptions{})
 	})
 	if err != nil {
 		return fmt.Errorf("failed to inspect swarm node: %w", err)
 	}
 
 	current := nodeResult.Node.Spec
-	if _, nodeUpdateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeUpdateResult, error) {
-		return dockerClient.NodeUpdate(ctx, nodeID, client.NodeUpdateOptions{
-			Version: swarm.Version{Index: cmp.Or(update.Version, nodeResult.Node.Version.Index)},
-			Spec: swarm.NodeSpec{
+	if _, nodeUpdateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NodeUpdateResult, error) {
+		return dockerClient.NodeUpdate(ctx, nodeID, mobyClient.NodeUpdateOptions{
+			Version: mobySwarm.Version{Index: cmp.Or(update.Version, nodeResult.Node.Version.Index)},
+			Spec: mobySwarm.NodeSpec{
 				Name:         kit.Ternary(submitted["name"], update.Name, current.Name),
 				Labels:       kit.Ternary(submitted["labels"], update.Labels, current.Labels),
-				Role:         kit.Ternary(submitted["role"], swarm.NodeRole(update.Role), current.Role),
-				Availability: kit.Ternary(submitted["availability"], swarm.NodeAvailability(update.Availability), current.Availability),
+				Role:         kit.Ternary(submitted["role"], mobySwarm.NodeRole(update.Role), current.Role),
+				Availability: kit.Ternary(submitted["availability"], mobySwarm.NodeAvailability(update.Availability), current.Availability),
 			},
 		})
 	}); nodeUpdateErr != nil {
@@ -750,8 +750,8 @@ func (s *Service) RemoveNode(ctx context.Context, nodeID string, force bool) err
 		return err
 	}
 
-	if _, nodeRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeRemoveResult, error) {
-		return dockerClient.NodeRemove(ctx, nodeID, client.NodeRemoveOptions{Force: force})
+	if _, nodeRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NodeRemoveResult, error) {
+		return dockerClient.NodeRemove(ctx, nodeID, mobyClient.NodeRemoveOptions{Force: force})
 	}); nodeRemoveErr != nil {
 		return fmt.Errorf("failed to remove swarm node: %w", nodeRemoveErr)
 	}
@@ -764,7 +764,7 @@ func (s *Service) ListNodeTasksPaginated(ctx context.Context, nodeID string, par
 		return nil, pagination.Response{}, err
 	}
 
-	filters := make(client.Filters)
+	filters := make(mobyClient.Filters)
 	filters.Add("node", nodeID)
 	return s.listTasks(ctx, filters, params)
 }

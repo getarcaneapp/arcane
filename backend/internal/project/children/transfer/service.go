@@ -18,7 +18,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/italypaleale/francis/builtin/workflow"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 

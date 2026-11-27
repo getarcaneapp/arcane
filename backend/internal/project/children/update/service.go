@@ -17,11 +17,11 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/template"
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.yaml.in/yaml/v4"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/updater"
@@ -30,9 +30,9 @@ import (
 	updatertypes "kit.getarcane.app/updater/types"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/kv"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/types/v3"
@@ -42,8 +42,8 @@ type (
 	// Project rows stay with the parent, which supplies their state through callbacks.
 	Service struct {
 		kv              *kv.KVService
-		dockerService   *docker.DockerClientService
-		registryService *registry.ContainerRegistryService
+		dockerService   *dockerInternal.DockerClientService
+		registryService *registryInternal.ContainerRegistryService
 		credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
 		projectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
 		restoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
@@ -53,8 +53,8 @@ type (
 
 	Params struct {
 		KVService       *kv.KVService
-		DockerService   *docker.DockerClientService
-		RegistryService *registry.ContainerRegistryService
+		DockerService   *dockerInternal.DockerClientService
+		RegistryService *registryInternal.ContainerRegistryService
 		Credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
 		ProjectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
 		RestoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
@@ -321,7 +321,7 @@ func (s *Service) RollbackFailedUpdate(
 
 func (s *Service) Operations() types.ProjectRenameRecoveryOperations {
 	return types.ProjectRenameRecoveryOperations{
-		Docker: func(ctx context.Context, dockerRequired bool) (*client.Client, error) {
+		Docker: func(ctx context.Context, dockerRequired bool) (*mobyClient.Client, error) {
 			if !dockerRequired {
 				return nil, nil
 			}

@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/metrics"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/arcane/v3/internal/database/migrations"

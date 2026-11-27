@@ -14,7 +14,7 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/pkg/agent"

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func ResolveDockerHost(host string, stat func(string) (fs.FileInfo, error)) string {

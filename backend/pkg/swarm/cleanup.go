@@ -9,10 +9,10 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/network"
-	dockerclient "github.com/moby/moby/client"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/types/v3"
@@ -35,7 +35,7 @@ var staleSwarmResourceRemoveBackoff = concurrency.Backoff{Base: 500 * time.Milli
 
 func cleanupStackResources(
 	ctx context.Context,
-	dockerClient *dockerclient.Client,
+	dockerClient *mobyClient.Client,
 	stackName string,
 	configMetaByKey map[string]resourceMeta,
 	secretMetaByKey map[string]resourceMeta,
@@ -83,7 +83,7 @@ func cleanupStaleManagedResources(
 	var resources []staleManagedResource
 	seenResourceIDs := make(map[string]struct{})
 	for _, typeLabel := range resourceTypeLabels {
-		filters := make(dockerclient.Filters)
+		filters := make(mobyClient.Filters)
 		filters.Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
 		if typeLabel != "" {
 			filters.Add("label", typeLabel+"="+adapter.ResourceType)
@@ -139,7 +139,7 @@ func removeStaleSwarmResource(ctx context.Context, tolerateInUse bool, remove fu
 	return kit.Ternary(tolerateInUse, nil, err)
 }
 
-func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client, stackName string) error {
+func RemoveStackResources(ctx context.Context, dockerClient *mobyClient.Client, stackName string) error {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return invalidStackError(errors.New("stack name is required"))
@@ -153,13 +153,13 @@ func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client
 		return err
 	}
 
-	filters := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
-	networksResult, err := dockerClient.NetworkList(ctx, dockerclient.NetworkListOptions{Filters: filters})
+	filters := make(mobyClient.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
+	networksResult, err := dockerClient.NetworkList(ctx, mobyClient.NetworkListOptions{Filters: filters})
 	if err != nil {
 		return fmt.Errorf("failed to list stack networks: %w", err)
 	}
 	networks := networksResult.Items
-	slices.SortFunc(networks, func(a, b network.Summary) int {
+	slices.SortFunc(networks, func(a, b mobyNetwork.Summary) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 	for _, stackNetwork := range networks {
@@ -167,7 +167,7 @@ func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client
 			continue
 		}
 		if removeStaleSwarmResourceErr := removeStaleSwarmResource(ctx, false, func(ctx context.Context) error {
-			_, networkRemoveErr := dockerClient.NetworkRemove(ctx, stackNetwork.ID, dockerclient.NetworkRemoveOptions{})
+			_, networkRemoveErr := dockerClient.NetworkRemove(ctx, stackNetwork.ID, mobyClient.NetworkRemoveOptions{})
 			return networkRemoveErr
 		}); removeStaleSwarmResourceErr != nil {
 			return fmt.Errorf("failed to remove stack network %s: %w", stackNetwork.Name, removeStaleSwarmResourceErr)

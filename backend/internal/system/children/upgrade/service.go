@@ -21,13 +21,13 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -46,7 +46,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -79,15 +79,15 @@ type (
 		eventService          *event.EventService
 		settingsService       *settings.SettingsService
 		projectService        *project.ProjectService
-		registryService       *registry.ContainerRegistryService
+		registryService       *registryInternal.ContainerRegistryService
 		resolveRuntimeOptions func(
 			ctx context.Context,
 			dockerHost string,
-			currentContainer *container.InspectResponse,
+			currentContainer *mobyContainer.InspectResponse,
 			discoverHostPath func(context.Context, string) (string, error),
 			isRunningInDocker func() bool,
-			selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
-		) ([]string, []mount.Mount, container.NetworkMode, error)
+			selectReachableNetwork func(context.Context, *mobyContainer.InspectResponse, string) string,
+		) ([]string, []mobyMount.Mount, mobyContainer.NetworkMode, error)
 		resultMu     sync.Mutex
 		agentSlotsMu sync.Mutex
 		activeAgents int
@@ -107,8 +107,8 @@ type (
 	}
 
 	preparedUpgrade struct {
-		current       container.InspectResponse
-		dockerClient  *client.Client
+		current       mobyContainer.InspectResponse
+		dockerClient  *mobyClient.Client
 		saveCompose   func(context.Context)
 		containerName string
 		binaryPath    string
@@ -133,15 +133,15 @@ type (
 		EventService          *event.EventService
 		SettingsService       *settings.SettingsService
 		ProjectService        *project.ProjectService
-		RegistryService       *registry.ContainerRegistryService
+		RegistryService       *registryInternal.ContainerRegistryService
 		ResolveRuntimeOptions func(
 			ctx context.Context,
 			dockerHost string,
-			currentContainer *container.InspectResponse,
+			currentContainer *mobyContainer.InspectResponse,
 			discoverHostPath func(context.Context, string) (string, error),
 			isRunningInDocker func() bool,
-			selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
-		) ([]string, []mount.Mount, container.NetworkMode, error)
+			selectReachableNetwork func(context.Context, *mobyContainer.InspectResponse, string) string,
+		) ([]string, []mobyMount.Mount, mobyContainer.NetworkMode, error)
 		KeepUpgrader bool
 	}
 
@@ -316,9 +316,9 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	runningUpgraders, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerListResult, error) {
-		return cli.ContainerList(ctx, client.ContainerListOptions{
-			Filters: make(client.Filters).Add("label", selfcontainer.LabelArcaneUpgrader+"=true").Add("status", "running"),
+	runningUpgraders, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+		return cli.ContainerList(ctx, mobyClient.ContainerListOptions{
+			Filters: make(mobyClient.Filters).Add("label", selfcontainer.LabelArcaneUpgrader+"=true").Add("status", "running"),
 		})
 	})
 	if err != nil {
@@ -327,35 +327,35 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 	if len(runningUpgraders.Items) > 0 {
 		return nil, common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrader container is already running"))
 	}
-	current, err := func() (container.InspectResponse, error) {
+	current, err := func() (mobyContainer.InspectResponse, error) {
 		containerID := strings.TrimSpace(target.ContainerID)
 		if containerID == "" {
 			self, inspectErr := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 			if inspectErr != nil {
-				return container.InspectResponse{}, errors.New("get current container: arcane is not running in a Docker container")
+				return mobyContainer.InspectResponse{}, errors.New("get current container: arcane is not running in a Docker container")
 			}
 			return *self, nil
 		}
-		inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, cli, containerID, client.ContainerInspectOptions{})
+		inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, cli, containerID, mobyClient.ContainerInspectOptions{})
 		})
 		if inspectErr == nil {
 			return inspect.Container, nil
 		}
-		containers, listErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerListResult, error) {
-			return cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+		containers, listErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+			return cli.ContainerList(ctx, mobyClient.ContainerListOptions{All: true})
 		})
 		if listErr != nil {
-			return container.InspectResponse{}, fmt.Errorf("inspect container: %w", listErr)
+			return mobyContainer.InspectResponse{}, fmt.Errorf("inspect container: %w", listErr)
 		}
-		idx := slices.IndexFunc(containers.Items, func(c container.Summary) bool { return strings.HasPrefix(c.ID, containerID) })
+		idx := slices.IndexFunc(containers.Items, func(c mobyContainer.Summary) bool { return strings.HasPrefix(c.ID, containerID) })
 		if idx < 0 {
-			return container.InspectResponse{}, fmt.Errorf("inspect container: %w", common.Classify(common.ErrNotFound, errors.New("could not find Arcane container")))
+			return mobyContainer.InspectResponse{}, fmt.Errorf("inspect container: %w", common.Classify(common.ErrNotFound, errors.New("could not find Arcane container")))
 		}
-		if inspect, inspectErr = s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, cli, containers.Items[idx].ID, client.ContainerInspectOptions{})
+		if inspect, inspectErr = s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, cli, containers.Items[idx].ID, mobyClient.ContainerInspectOptions{})
 		}); inspectErr != nil {
-			return container.InspectResponse{}, fmt.Errorf("inspect container: %w", inspectErr)
+			return mobyContainer.InspectResponse{}, fmt.Errorf("inspect container: %w", inspectErr)
 		}
 		return inspect.Container, nil
 	}()
@@ -436,7 +436,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to resolve registry credentials for upgrader image; pulling anonymously", "image", prepared.pullImage, "error", err)
 	}
-	pullReader, err := dockerClient.ImagePull(pullCtx, prepared.pullImage, client.ImagePullOptions{RegistryAuth: registryAuth})
+	pullReader, err := dockerClient.ImagePull(pullCtx, prepared.pullImage, mobyClient.ImagePullOptions{RegistryAuth: registryAuth})
 	if err != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 			return "", fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", prepared.pullImage)
@@ -475,7 +475,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
 		selfcontainer.RunningInContainer,
-		func(ctx context.Context, inspect *container.InspectResponse, dockerHost string) string {
+		func(ctx context.Context, inspect *mobyContainer.InspectResponse, dockerHost string) string {
 			return docker.SelectDockerHostReachableNetworkMode(ctx, dockerClient, inspect, dockerHost)
 		},
 	)
@@ -491,7 +491,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		upgradeCmd = append(upgradeCmd, "--pull-image", prepared.pullImage)
 	}
 
-	mounts := append([]mount.Mount{}, runtimeMounts...)
+	mounts := append([]mobyMount.Mount{}, runtimeMounts...)
 	if appDataMount != nil {
 		mounts = append(mounts, *appDataMount)
 	}
@@ -505,8 +505,8 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	// On SELinux-enforcing hosts the socket is container_var_run_t, so without a label opt the upgrader exits with EACCES.
 	if !kit.FromPtr(prepared.current.HostConfig).Privileged &&
 		!slices.ContainsFunc(securityOpt, func(opt string) bool { return strings.HasPrefix(strings.TrimSpace(opt), "label") }) {
-		infoResult, infoErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.SystemInfoResult, error) {
-			return cli.Info(ctx, client.InfoOptions{})
+		infoResult, infoErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+			return cli.Info(ctx, mobyClient.InfoOptions{})
 		})
 		if infoErr != nil {
 			slog.DebugContext(ctx, "Failed to query daemon info for SELinux detection", "error", infoErr)
@@ -516,9 +516,9 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	upgraderName := fmt.Sprintf("%s-upgrader-%d", prepared.containerName, time.Now().Unix())
-	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerCreateResult, error) {
-		return cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-			Config: &container.Config{
+	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
+		return cli.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
+			Config: &mobyContainer.Config{
 				Image: prepared.pullImage,
 				Cmd:   upgradeCmd,
 				// Root for the Docker socket: the short-lived upgrader never goes through the runtime-identity drop.
@@ -529,19 +529,19 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 					"com.getarcaneapp.arcane":         "true",
 				},
 			},
-			HostConfig: &container.HostConfig{
+			HostConfig: &mobyContainer.HostConfig{
 				AutoRemove:  !s.keepUpgrader,
 				Mounts:      mounts,
 				NetworkMode: networkMode,
 				SecurityOpt: securityOpt,
 				Privileged:  kit.FromPtr(prepared.current.HostConfig).Privileged,
 			},
-			NetworkingConfig: func() *network.NetworkingConfig {
+			NetworkingConfig: func() *mobyNetwork.NetworkingConfig {
 				if networkMode == "" || !networkMode.IsUserDefined() {
 					return nil
 				}
-				return &network.NetworkingConfig{
-					EndpointsConfig: map[string]*network.EndpointSettings{
+				return &mobyNetwork.NetworkingConfig{
+					EndpointsConfig: map[string]*mobyNetwork.EndpointSettings{
 						string(networkMode): {Aliases: []string{"arcane-upgrader"}},
 					},
 				}
@@ -553,11 +553,11 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		return "", fmt.Errorf("create upgrader container: %w", err)
 	}
 
-	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerStartResult, error) {
-		return cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return cli.ContainerStart(ctx, resp.ID, mobyClient.ContainerStartOptions{})
 	}); containerStartErr != nil {
-		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerRemoveResult, error) {
-			return cli.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, cli *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+			return cli.ContainerRemove(ctx, resp.ID, mobyClient.ContainerRemoveOptions{Force: true})
 		})
 		return "", fmt.Errorf("start upgrader container: %w", containerStartErr)
 	}
@@ -594,7 +594,7 @@ func (s *Service) followUpgrader(ctx context.Context, upgraderID string) {
 			if err != nil {
 				return err
 			}
-			logs, err := dockerClient.ContainerLogs(ctx, upgraderID, client.ContainerLogsOptions{
+			logs, err := dockerClient.ContainerLogs(ctx, upgraderID, mobyClient.ContainerLogsOptions{
 				ShowStdout: true,
 				ShowStderr: true,
 				Follow:     true,
@@ -628,7 +628,7 @@ func (s *Service) followUpgrader(ctx context.Context, upgraderID string) {
 }
 
 // A tag change also returns the Compose edit to save before the upgrader starts.
-func (s *Service) configuredTargetImage(ctx context.Context, current container.InspectResponse, targetImage string) (string, func(context.Context), error) {
+func (s *Service) configuredTargetImage(ctx context.Context, current mobyContainer.InspectResponse, targetImage string) (string, func(context.Context), error) {
 	// Digest targets cannot be written as Compose tags.
 	if refs.NormalizeImageUpdateRef(targetImage) == "" || current.Config == nil {
 		return targetImage, nil, nil
@@ -1267,7 +1267,7 @@ func (s *Service) waitForUpgrader(ctx context.Context, upgraderID string) (upgra
 		slog.WarnContext(ctx, "upgrade job: cannot watch upgrader container", "upgraderId", upgraderID, "error", err)
 	} else {
 		waitCtx, cancel := context.WithTimeout(ctx, upgradeJobManagerWatchTimeout)
-		wait := dockerClient.ContainerWait(waitCtx, upgraderID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+		wait := dockerClient.ContainerWait(waitCtx, upgraderID, mobyClient.ContainerWaitOptions{Condition: mobyContainer.WaitConditionNotRunning})
 		select {
 		case result, ok := <-wait.Result:
 			// A closed channel yields a zero response that looks like exit 0; a wait error comes with a filler code 0.

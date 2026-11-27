@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

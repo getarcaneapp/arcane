@@ -11,19 +11,19 @@ import (
 	"testing"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/updater"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/types/v3"
@@ -33,7 +33,7 @@ type (
 	unresolvedDigests struct{}
 )
 
-var neverDeferred = func(updater.ImageUpdateRecord, container.Summary) bool { return false }
+var neverDeferred = func(updater.ImageUpdateRecord, mobyContainer.Summary) bool { return false }
 
 func (unresolvedDigests) RemoteDigest(context.Context, string, []types.ContainerRegistryCredential) (string, error) {
 	return "", errors.New("registry digest unavailable")
@@ -41,7 +41,7 @@ func (unresolvedDigests) RemoteDigest(context.Context, string, []types.Container
 
 func newTestService(t *testing.T, server *httptest.Server, pending func(context.Context) ([]updater.ImageUpdateRecord, error)) *Service {
 	t.Helper()
-	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"), client.WithHTTPClient(server.Client()))
+	dockerClient, err := mobyClient.New(mobyClient.WithHost(server.URL), mobyClient.WithAPIVersion("1.41"), mobyClient.WithHTTPClient(server.Client()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
 	return NewService(ServiceParams{
@@ -71,7 +71,7 @@ func TestFrozenTargetsPreserveAllSelectedContainers(t *testing.T) {
 				t,
 				json.MarshalWrite(
 					w,
-					[]container.Summary{
+					[]mobyContainer.Summary{
 						{
 							ID:    "a",
 							Names: []string{"/a"},
@@ -95,12 +95,12 @@ func TestFrozenTargetsPreserveAllSelectedContainers(t *testing.T) {
 					t,
 					json.MarshalWrite(
 						w,
-						container.InspectResponse{
+						mobyContainer.InspectResponse{
 							ID:     id,
 							Name:   "/" + id,
 							Image:  "sha256:old",
-							Config: &container.Config{Image: "registry.example.com/app:latest"},
-							State:  &container.State{StartedAt: "baseline"},
+							Config: &mobyContainer.Config{Image: "registry.example.com/app:latest"},
+							State:  &mobyContainer.State{StartedAt: "baseline"},
 						},
 					),
 				) {
@@ -158,11 +158,11 @@ func TestFrozenTargetConfirmsReplacementAndRejectsUnknownEffect(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: test.id, Names: []string{"/app"}}})) {
+					if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{{ID: test.id, Names: []string{"/app"}}})) {
 						return
 					}
 				case strings.Contains(r.URL.Path, "/images/"):
-					if !assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: "sha256:desired"})) {
+					if !assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{ID: "sha256:desired"})) {
 						return
 					}
 				case strings.Contains(r.URL.Path, "/containers/"):
@@ -170,12 +170,12 @@ func TestFrozenTargetConfirmsReplacementAndRejectsUnknownEffect(t *testing.T) {
 						t,
 						json.MarshalWrite(
 							w,
-							container.InspectResponse{
+							mobyContainer.InspectResponse{
 								ID:     test.id,
 								Name:   "/app",
 								Image:  test.image,
-								Config: &container.Config{},
-								State:  &container.State{StartedAt: "baseline"},
+								Config: &mobyContainer.Config{},
+								State:  &mobyContainer.State{StartedAt: "baseline"},
 							},
 						),
 					) {
@@ -229,7 +229,7 @@ func TestFreezePendingExcludesFailedChecksAndIsolatesFreezeFailures(t *testing.T
 			LatestDigest: &desired,
 		},
 	}
-	running := []container.Summary{
+	running := []mobyContainer.Summary{
 		{
 			ID:    "app",
 			Names: []string{"/app"},
@@ -254,12 +254,12 @@ func TestFreezePendingExcludesFailedChecksAndIsolatesFreezeFailures(t *testing.T
 		}
 		for _, summary := range running {
 			if strings.HasSuffix(r.URL.Path, "/containers/"+summary.ID+"/json") {
-				assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+				assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 					ID:     summary.ID,
 					Name:   summary.Names[0],
 					Image:  "sha256:old",
-					Config: &container.Config{Image: summary.Image},
-					State:  &container.State{StartedAt: "baseline"},
+					Config: &mobyContainer.Config{Image: summary.Image},
+					State:  &mobyContainer.State{StartedAt: "baseline"},
 				}))
 				return
 			}
@@ -303,7 +303,7 @@ func TestFreezePendingSkipsDeferredCandidatesWithoutFailing(t *testing.T) {
 			LatestDigest: &desired,
 		},
 	}
-	running := []container.Summary{
+	running := []mobyContainer.Summary{
 		{
 			ID:    "app",
 			Names: []string{"/app"},
@@ -324,12 +324,12 @@ func TestFreezePendingSkipsDeferredCandidatesWithoutFailing(t *testing.T) {
 		}
 		for _, summary := range running {
 			if strings.HasSuffix(r.URL.Path, "/containers/"+summary.ID+"/json") {
-				assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+				assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 					ID:     summary.ID,
 					Name:   summary.Names[0],
 					Image:  "sha256:old",
-					Config: &container.Config{Image: summary.Image},
-					State:  &container.State{StartedAt: "baseline"},
+					Config: &mobyContainer.Config{Image: summary.Image},
+					State:  &mobyContainer.State{StartedAt: "baseline"},
 				}))
 				return
 			}
@@ -344,7 +344,7 @@ func TestFreezePendingSkipsDeferredCandidatesWithoutFailing(t *testing.T) {
 		return nil
 	})
 
-	frozenCtx, err := svc.FreezePending(ctx, types.SchedulerRun{ID: "run"}, nil, func(record updater.ImageUpdateRecord, candidate container.Summary) bool {
+	frozenCtx, err := svc.FreezePending(ctx, types.SchedulerRun{ID: "run"}, nil, func(record updater.ImageUpdateRecord, candidate mobyContainer.Summary) bool {
 		return record.ID == "young" && candidate.Labels["delay"] == "true"
 	})
 	require.NoError(t, err)
@@ -413,16 +413,16 @@ func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: test.id, Names: []string{"/app"}}}))
+					assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{{ID: test.id, Names: []string{"/app"}}}))
 				case strings.Contains(r.URL.Path, "/images/"):
-					assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: "sha256:desired"}))
+					assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{ID: "sha256:desired"}))
 				case strings.Contains(r.URL.Path, "/containers/"):
-					assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+					assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 						ID:     test.id,
 						Name:   "/app",
 						Image:  test.image,
-						Config: &container.Config{},
-						State:  &container.State{StartedAt: "baseline"},
+						Config: &mobyContainer.Config{},
+						State:  &mobyContainer.State{StartedAt: "baseline"},
 					}))
 				default:
 					http.NotFound(w, r)
@@ -451,19 +451,19 @@ func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
 func TestConfirmTargetRequiresRunningReplacementWhenBaselineRan(t *testing.T) {
 	for _, test := range []struct {
 		name      string
-		status    container.ContainerState
+		status    mobyContainer.ContainerState
 		running   bool
 		confirmed bool
 	}{
 		{
 			name:      "running replacement",
 			running:   true,
-			status:    container.StateRunning,
+			status:    mobyContainer.StateRunning,
 			confirmed: true,
 		},
 		{
 			name:   "exited replacement",
-			status: container.StateExited,
+			status: mobyContainer.StateExited,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -471,16 +471,16 @@ func TestConfirmTargetRequiresRunningReplacementWhenBaselineRan(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case strings.HasSuffix(r.URL.Path, "/containers/json"):
-					assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "new", Names: []string{"/app"}}}))
+					assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{{ID: "new", Names: []string{"/app"}}}))
 				case strings.Contains(r.URL.Path, "/images/"):
-					assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: "sha256:desired"}))
+					assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{ID: "sha256:desired"}))
 				case strings.Contains(r.URL.Path, "/containers/"):
-					assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+					assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 						ID:     "new",
 						Name:   "/app",
 						Image:  "sha256:desired",
-						Config: &container.Config{},
-						State: &container.State{
+						Config: &mobyContainer.Config{},
+						State: &mobyContainer.State{
 							Status:  test.status,
 							Running: test.running,
 						},
@@ -513,19 +513,19 @@ func TestConfirmTargetStartsCreatedReplacementWhenBaselineRan(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "new", Names: []string{"/app"}}}))
+			assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{{ID: "new", Names: []string{"/app"}}}))
 		case strings.HasSuffix(r.URL.Path, "/containers/new/start"):
 			started.Store(true)
 			w.WriteHeader(http.StatusNoContent)
 		case strings.Contains(r.URL.Path, "/images/"):
-			assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: "sha256:desired"}))
+			assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{ID: "sha256:desired"}))
 		case strings.Contains(r.URL.Path, "/containers/"):
-			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+			assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID:     "new",
 				Name:   "/app",
 				Image:  "sha256:desired",
-				Config: &container.Config{},
-				State:  &container.State{Status: container.StateCreated},
+				Config: &mobyContainer.Config{},
+				State:  &mobyContainer.State{Status: mobyContainer.StateCreated},
 			}))
 		default:
 			http.NotFound(w, r)
@@ -581,19 +581,19 @@ func TestResumePlanStartsStoppedOriginalAndPersistsNewBaseline(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "old", Names: []string{"/app"}}}))
+			assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{{ID: "old", Names: []string{"/app"}}}))
 		case strings.HasSuffix(r.URL.Path, "/containers/old/start"):
 			started.Store(true)
 			w.WriteHeader(http.StatusNoContent)
 		case strings.Contains(r.URL.Path, "/images/"):
-			assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: "sha256:desired"}))
+			assert.NoError(t, json.MarshalWrite(w, mobyImage.InspectResponse{ID: "sha256:desired"}))
 		case strings.Contains(r.URL.Path, "/containers/"):
-			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+			assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID:     "old",
 				Name:   "/app",
 				Image:  "sha256:baseline",
-				Config: &container.Config{},
-				State: &container.State{
+				Config: &mobyContainer.Config{},
+				State: &mobyContainer.State{
 					Running:   started.Load(),
 					StartedAt: kit.Ternary(started.Load(), "restarted", "baseline"),
 				},
@@ -624,7 +624,7 @@ func TestResumePlanStartsStoppedOriginalAndPersistsNewBaseline(t *testing.T) {
 	require.Equal(t, "restarted", saved.Targets[0].BaselineStartedAt)
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -639,5 +639,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

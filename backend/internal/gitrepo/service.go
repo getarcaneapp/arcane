@@ -9,7 +9,7 @@ import (
 
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/builds/pkg/contextsource"
 	"kit.getarcane.app/normalization"
 	"kit.getarcane.app/sys/crypto"

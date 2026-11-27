@@ -11,19 +11,19 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -142,7 +142,7 @@ func TestEnvironmentRecoveryKey(t *testing.T) {
 }
 
 func TestSnapshotCommand(t *testing.T) {
-	single, err := snapshotCommand("volume", RootSnapshotInput(mount.Mount{Type: mount.TypeVolume, Source: "data", Target: "/volume"}))
+	single, err := snapshotCommand("volume", RootSnapshotInput(mobyMount.Mount{Type: mobyMount.TypeVolume, Source: "data", Target: "/volume"}))
 	require.NoError(t, err)
 	require.Equal(t, []string{"backup", "--init", "--json", "--host", "arcane", "--label", "volume", "--as-path", "/", "--", "/volume"}, single)
 
@@ -289,57 +289,57 @@ func TestStorageMountFromMounts(t *testing.T) {
 	tests := []struct {
 		name         string
 		target       string
-		wantType     mount.Type
+		wantType     mobyMount.Type
 		wantSource   string
 		wantTarget   string
-		mounts       []container.MountPoint
+		mounts       []mobyContainer.MountPoint
 		readOnly     bool
 		wantResolved bool
 		wantReadOnly bool
 	}{
 		{
 			name: "mirrors bind mount",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/backups", Destination: "/backups"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/backups", Destination: "/backups"},
 			},
 			target:       "/volume",
 			readOnly:     true,
 			wantResolved: true,
-			wantType:     mount.TypeBind,
+			wantType:     mobyMount.TypeBind,
 			wantSource:   "/host/backups",
 			wantTarget:   "/volume",
 			wantReadOnly: true,
 		},
 		{
 			name: "writable request against read-only bind mount still resolves",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/backups", Destination: "/backups", RW: false},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/backups", Destination: "/backups", RW: false},
 			},
 			target:       "/volume",
 			readOnly:     false,
 			wantResolved: true,
-			wantType:     mount.TypeBind,
+			wantType:     mobyMount.TypeBind,
 			wantSource:   "/host/backups",
 			wantTarget:   "/volume",
 			wantReadOnly: false,
 		},
 		{
 			name: "mirrors named volume",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeVolume, Name: "arcane-backups", Destination: "/backups"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeVolume, Name: "arcane-backups", Destination: "/backups"},
 			},
 			target:       "/backups",
 			readOnly:     false,
 			wantResolved: true,
-			wantType:     mount.TypeVolume,
+			wantType:     mobyMount.TypeVolume,
 			wantSource:   "arcane-backups",
 			wantTarget:   "/backups",
 			wantReadOnly: false,
 		},
 		{
 			name: "ignores unsupported mount types",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeTmpfs, Destination: "/backups"},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeTmpfs, Destination: "/backups"},
 			},
 			target:       "/backups",
 			readOnly:     true,
@@ -374,17 +374,17 @@ func setupContainersTest(t *testing.T, handler http.Handler) *Containers {
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
+	dockerClient, err := mobyClient.New(mobyClient.WithHost(server.URL), mobyClient.WithAPIVersion("1.41"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
 	return &Containers{
 		Docker: newTestDockerService(t, dockerClient),
 		Stop: func(ctx context.Context, containerID string, _ types.Actor) error {
-			_, stopErr := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{})
+			_, stopErr := dockerClient.ContainerStop(ctx, containerID, mobyClient.ContainerStopOptions{})
 			return stopErr
 		},
 		Start: func(ctx context.Context, containerID string, _ types.Actor) error {
-			_, startErr := dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+			_, startErr := dockerClient.ContainerStart(ctx, containerID, mobyClient.ContainerStartOptions{})
 			return startErr
 		},
 	}
@@ -397,10 +397,10 @@ func TestContainersStopsAndRestartsOnlyRunningContainersUsingVolume(t *testing.T
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
-				{ID: "uses-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
-				{ID: "other-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "other-data"}}},
-				{ID: "arcane", Labels: map[string]string{"com.getarcaneapp.arcane": "true"}, Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
+			assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
+				{ID: "uses-volume", Mounts: []mobyContainer.MountPoint{{Type: mobyMount.TypeVolume, Name: "app-data"}}},
+				{ID: "other-volume", Mounts: []mobyContainer.MountPoint{{Type: mobyMount.TypeVolume, Name: "other-data"}}},
+				{ID: "arcane", Labels: map[string]string{"com.getarcaneapp.arcane": "true"}, Mounts: []mobyContainer.MountPoint{{Type: mobyMount.TypeVolume, Name: "app-data"}}},
 			}))
 		case strings.HasSuffix(r.URL.Path, "/containers/uses-volume/stop"):
 			mu.Lock()
@@ -437,9 +437,9 @@ func TestContainersRollsBackStoppedContainersOnStopFailure(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
-				{ID: "first", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
-				{ID: "second", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
+			assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
+				{ID: "first", Mounts: []mobyContainer.MountPoint{{Type: mobyMount.TypeVolume, Name: "app-data"}}},
+				{ID: "second", Mounts: []mobyContainer.MountPoint{{Type: mobyMount.TypeVolume, Name: "app-data"}}},
 			}))
 		case strings.HasSuffix(r.URL.Path, "/containers/first/stop"):
 			mu.Lock()
@@ -482,28 +482,28 @@ func TestContainersWaitsForRunningComposeReplacement(t *testing.T) {
 			call := listCalls
 			mu.Unlock()
 			if call == 1 {
-				assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+				assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
 					{
 						ID:     "old-id",
 						Names:  []string{"/old-name"},
-						State:  container.StateRunning,
+						State:  mobyContainer.StateRunning,
 						Labels: map[string]string{"com.docker.compose.project": "vault", "com.docker.compose.service": "vaultwarden", "com.docker.compose.container-number": "1"},
-						Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}},
+						Mounts: []mobyContainer.MountPoint{{Type: mobyMount.TypeVolume, Name: "app-data"}},
 					},
 				}))
 				return
 			}
 			if call == 2 {
-				assert.NoError(t, json.MarshalWrite(w, []container.Summary{}))
+				assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{}))
 				return
 			}
-			assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
 				{
 					ID:     "new-id",
 					Names:  []string{"/new-name"},
-					State:  container.StateRunning,
+					State:  mobyContainer.StateRunning,
 					Labels: map[string]string{"com.docker.compose.project": "vault", "com.docker.compose.service": "vaultwarden", "com.docker.compose.container-number": "1"},
-					Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}},
+					Mounts: []mobyContainer.MountPoint{{Type: mobyMount.TypeVolume, Name: "app-data"}},
 				},
 			}))
 		case strings.HasSuffix(r.URL.Path, "/containers/old-id/stop"):
@@ -534,7 +534,7 @@ func TestContainersWaitsForRunningComposeReplacement(t *testing.T) {
 	require.Equal(t, []string{"stop:old-id"}, operations)
 }
 
-func newTestDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newTestDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -549,7 +549,7 @@ func newTestDockerService(t *testing.T, dockerClient *client.Client) *docker.Doc
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }
 
 func TestVolumeRepositoryPasswordPrefersRecoveryKey(t *testing.T) {
@@ -572,28 +572,28 @@ func TestVolumeRepositoryPasswordPrefersRecoveryKey(t *testing.T) {
 }
 
 func TestSourceMounts(t *testing.T) {
-	mounts := []container.MountPoint{
-		{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-		{Type: mount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
-		{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
+	mounts := []mobyContainer.MountPoint{
+		{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
 	}
 	data, err := SourceMounts(SourceMountOptions{Mounts: mounts, ContainerPath: "/app/data", Target: "/data", InContainer: true})
 	require.NoError(t, err)
-	require.Equal(t, []mount.Mount{
-		{Type: mount.TypeVolume, Source: "arcane-data", Target: "/data", ReadOnly: true},
-		{Type: mount.TypeBind, Source: "/host/projects", Target: "/data/projects", ReadOnly: true},
+	require.Equal(t, []mobyMount.Mount{
+		{Type: mobyMount.TypeVolume, Source: "arcane-data", Target: "/data", ReadOnly: true},
+		{Type: mobyMount.TypeBind, Source: "/host/projects", Target: "/data/projects", ReadOnly: true},
 	}, data)
 
 	external, err := SourceMounts(SourceMountOptions{Mounts: mounts, ContainerPath: "/srv/projects", Target: "/projects", InContainer: true})
 	require.NoError(t, err)
-	require.Equal(t, []mount.Mount{{Type: mount.TypeBind, Source: "/host/external", Target: "/projects", ReadOnly: true}}, external)
+	require.Equal(t, []mobyMount.Mount{{Type: mobyMount.TypeBind, Source: "/host/external", Target: "/projects", ReadOnly: true}}, external)
 
 	_, err = SourceMounts(SourceMountOptions{Mounts: mounts, ContainerPath: "/opt/projects", Target: "/projects", InContainer: true})
 	require.ErrorContains(t, err, "/opt/projects must be mounted into the Arcane container")
 
 	host, err := SourceMounts(SourceMountOptions{ContainerPath: "/tmp/data", Target: "/data"})
 	require.NoError(t, err)
-	require.Equal(t, []mount.Mount{{Type: mount.TypeBind, Source: "/tmp/data", Target: "/data", ReadOnly: true}}, host)
+	require.Equal(t, []mobyMount.Mount{{Type: mobyMount.TypeBind, Source: "/tmp/data", Target: "/data", ReadOnly: true}}, host)
 }
 
 func TestRecordDiscoveredSkipsRecordedBackups(t *testing.T) {

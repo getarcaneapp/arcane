@@ -17,13 +17,13 @@ import (
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	"go.yaml.in/yaml/v4"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/updater/labels"
@@ -42,7 +42,7 @@ type (
 	}
 
 	VolumeMigrationPlanConfig struct {
-		DockerClient   *client.Client
+		DockerClient   *mobyClient.Client
 		UsageCache     *docker.VolumeUsageCache
 		ComposeProject *composeTypes.Project
 		OldComposeName string
@@ -86,7 +86,7 @@ func PlanVolumeMigration(ctx context.Context, cfg VolumeMigrationPlanConfig) (ty
 }
 
 func collectProjectRenameVolumeEntries(ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	localVolumes map[string]composeTypes.VolumeConfig,
 	explicitVolumeNames map[string]struct{},
 	oldComposeName,
@@ -107,7 +107,7 @@ func collectProjectRenameVolumeEntries(ctx context.Context,
 }
 
 func inspectProjectRenameVolumeEntry(ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	key string,
 	volumeConfig composeTypes.VolumeConfig,
 	explicitVolumeNames map[string]struct{},
@@ -130,7 +130,7 @@ func inspectProjectRenameVolumeEntry(ctx context.Context,
 		return types.VolumeRenameEntry{}, false, err
 	}
 
-	oldVolume, err := dockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
+	oldVolume, err := dockerClient.VolumeInspect(ctx, oldName, mobyClient.VolumeInspectOptions{})
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
 			return types.VolumeRenameEntry{}, false, nil
@@ -236,18 +236,18 @@ func ResolveProjectVolumes(ctx context.Context, opts ResolveProjectVolumesOption
 	return resolved, inspected, nil
 }
 
-func ProjectContainerUse(composeName string, containers []container.Summary) ([]container.Summary, map[string]bool) {
-	var active []container.Summary
+func ProjectContainerUse(composeName string, containers []mobyContainer.Summary) ([]mobyContainer.Summary, map[string]bool) {
+	var active []mobyContainer.Summary
 	inUse := map[string]bool{}
 	for _, c := range containers {
 		if composeName != "" && docker.ComposeProjectLabel(c.Labels) == composeName && !labels.IsArcaneContainer(c.Labels) {
-			if c.State == container.StateRunning || c.State == container.StateRestarting {
+			if c.State == mobyContainer.StateRunning || c.State == mobyContainer.StateRestarting {
 				active = append(active, c)
 			}
 			continue
 		}
 		for _, m := range c.Mounts {
-			if m.Type == mount.TypeVolume {
+			if m.Type == mobyMount.TypeVolume {
 				inUse[m.Name] = true
 			}
 		}
@@ -267,9 +267,9 @@ func NewComposeVolumeTarget(composeName string, volume types.ProjectVolume, reco
 }
 
 // ComposeVolumeTargetCreateOptions creates a restore target as Compose would, or as its own volume when it is external.
-func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (client.VolumeCreateOptions, error) {
+func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTarget) (mobyClient.VolumeCreateOptions, error) {
 	if target.External {
-		return client.VolumeCreateOptions{Name: name, Driver: target.Driver, Labels: target.Labels}, nil
+		return mobyClient.VolumeCreateOptions{Name: name, Driver: target.Driver, Labels: target.Labels}, nil
 	}
 	return ComposeVolumeCreateOptions(ComposeVolumeConfig(composeTypes.VolumeConfig{
 		Driver: target.Driver,
@@ -277,8 +277,8 @@ func ComposeVolumeTargetCreateOptions(name string, target types.ComposeVolumeTar
 	}, target.Key, name, target.Project), nil)
 }
 
-func CreateNewVolume(ctx context.Context, dockerClient *client.Client, options client.VolumeCreateOptions) error {
-	_, err := dockerClient.VolumeInspect(ctx, options.Name, client.VolumeInspectOptions{})
+func CreateNewVolume(ctx context.Context, dockerClient *mobyClient.Client, options mobyClient.VolumeCreateOptions) error {
+	_, err := dockerClient.VolumeInspect(ctx, options.Name, mobyClient.VolumeInspectOptions{})
 	if err == nil {
 		return common.Classify(common.ErrConflict, fmt.Errorf("volume %s already exists", options.Name))
 	}
@@ -291,7 +291,7 @@ func CreateNewVolume(ctx context.Context, dockerClient *client.Client, options c
 		owned = map[string]string{}
 	}
 	owned[restoreOwnerLabel] = owner
-	created, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{ //exhaustruct:enforce
+	created, err := dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{ //exhaustruct:enforce
 		Name:              options.Name,
 		Driver:            options.Driver,
 		DriverOpts:        options.DriverOpts,
@@ -318,7 +318,7 @@ func ComposeVolumeConfig(volumeConfig composeTypes.VolumeConfig, key, newName, n
 	return newConfig
 }
 
-func ComposeVolumeCreateOptions(config composeTypes.VolumeConfig, oldLabels map[string]string) (client.VolumeCreateOptions, error) {
+func ComposeVolumeCreateOptions(config composeTypes.VolumeConfig, oldLabels map[string]string) (mobyClient.VolumeCreateOptions, error) {
 	volumeLabels := map[string]string{}
 	maps.Copy(volumeLabels, oldLabels)
 	maps.Copy(volumeLabels, config.Labels)
@@ -331,10 +331,10 @@ func ComposeVolumeCreateOptions(config composeTypes.VolumeConfig, oldLabels map[
 		Labels:     config.Labels,
 	}, json.Deterministic(true), json.OmitZeroStructFields(true), jsontext.EscapeForHTML(true))
 	if err != nil {
-		return client.VolumeCreateOptions{}, fmt.Errorf("hash target volume %s: %w", config.Name, err)
+		return mobyClient.VolumeCreateOptions{}, fmt.Errorf("hash target volume %s: %w", config.Name, err)
 	}
 	volumeLabels[api.ConfigHashLabel] = digest.SHA256.FromBytes(raw).Encoded()
-	return client.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: volumeLabels}, nil
+	return mobyClient.VolumeCreateOptions{Name: config.Name, Driver: config.Driver, DriverOpts: config.DriverOpts, Labels: volumeLabels}, nil
 }
 
 func composeVolumeKeysWithExplicitName(ctx context.Context, composeFiles []string) (map[string]struct{}, error) {

@@ -3,7 +3,7 @@ package scheduler
 import (
 	"context"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
 	scheduleutil "getarcane.dev/arcane/v3/internal/scheduler/schedule"
@@ -16,7 +16,7 @@ const (
 	autoPatchDefaultCron = "0 3 * * *"
 )
 
-func NewAutoPatchJob(engine *flow.Engine, imageService *image.ImageService, settingsService *settings.SettingsService, dockerService *docker.DockerClientService) *flow.Job {
+func NewAutoPatchJob(engine *flow.Engine, imageService *image.ImageService, settingsService *settings.SettingsService, dockerService *dockerInternal.DockerClientService) *flow.Job {
 	return &flow.Job{
 		Engine:   engine,
 		Workflow: imageService.PatchWorkflow(),

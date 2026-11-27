@@ -20,8 +20,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/moby/buildkit/util/progress/progressui"
-	"github.com/moby/moby/client"
+	mobyBuildkitProgressUI "github.com/moby/buildkit/util/progress/progressui"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/samber/mo"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -30,15 +30,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
-	"getarcane.dev/arcane/v3/internal/registry"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/vulnerability"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
@@ -62,10 +62,10 @@ type (
 	// library and records each run in the image_patches table.
 	Service struct {
 		db                   *database.DB
-		dockerService        *docker.DockerClientService
+		dockerService        *dockerInternal.DockerClientService
 		settingsService      *settings.SettingsService
 		activityService      *activity.ActivityService
-		registryService      *registry.ContainerRegistryService
+		registryService      *registryInternal.ContainerRegistryService
 		vulnerabilityService *vulnerability.VulnerabilityService
 
 		// patchSlot serializes patch executions: one BuildKit patch at a time, and
@@ -75,10 +75,10 @@ type (
 
 	ServiceParams struct {
 		DB                   *database.DB
-		DockerService        *docker.DockerClientService
+		DockerService        *dockerInternal.DockerClientService
 		SettingsService      *settings.SettingsService
 		ActivityService      *activity.ActivityService
-		RegistryService      *registry.ContainerRegistryService
+		RegistryService      *registryInternal.ContainerRegistryService
 		VulnerabilityService *vulnerability.VulnerabilityService
 	}
 )
@@ -162,7 +162,7 @@ func (s *Service) startPatch(
 	if storeErr := s.requireContainerdImageStore(ctx); storeErr != nil {
 		return nil, nil, storeErr
 	}
-	imageInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	imageInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageID)
 	})
 	if err != nil {
@@ -379,7 +379,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 		Scanner:     kit.Ternary(reportPath != "", "trivy", ""),
 		Format:      kit.Ternary(vexOutputPath != "", "openvex", ""),
 		Output:      vexOutputPath,
-		Progress:    progressui.QuietMode,
+		Progress:    mobyBuildkitProgressUI.QuietMode,
 		BkAddr:      "docker://",
 		IgnoreError: opts.IgnoreErrors,
 		PkgTypes:    kit.Ternary(reportPath != "", "os", ""),
@@ -432,7 +432,7 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 // verifyPatchedImage warns when the expected tag is missing (copa may arch-suffix
 // multi-platform tags) and otherwise re-scans it to show whether the patch worked.
 func (s *Service) verifyPatchedImage(ctx context.Context, record *ImagePatchRecord, activityID string) {
-	if patchedInspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	if patchedInspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, record.PatchedRef)
 	}); inspectErr != nil {
 		slog.WarnContext(ctx, "patched image tag not found after patching", "patchedRef", record.PatchedRef, "error", inspectErr)
@@ -732,7 +732,7 @@ func (s *Service) ListPatchTargets(ctx context.Context, envID string, params pag
 		inspectGroup.Go(func() (workerErr error) {
 			defer concurrency.RecoverToError(&workerErr, "patch target inspect worker")
 
-			inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 				return dockerClient.ImageInspect(ctx, scans[i].ID)
 			})
 			localOnly[i] = inspectErr == nil && imageref.IsLocalImage(inspect.InspectResponse)
@@ -886,8 +886,8 @@ func (s *Service) Targets(ctx context.Context, envID string) ([]Target, error) {
 
 // Copa needs BuildKit's docker exporter, which dockerd only offers with the containerd image store.
 func (s *Service) requireContainerdImageStore(ctx context.Context) error {
-	info, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
-		return dockerClient.Info(ctx, client.InfoOptions{})
+	info, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, mobyClient.InfoOptions{})
 	})
 	if err != nil {
 		return fmt.Errorf("failed to inspect Docker: %w", err)

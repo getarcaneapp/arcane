@@ -10,13 +10,13 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
@@ -30,7 +30,7 @@ import (
 type (
 	VolumeHandler struct {
 		volumeService      *VolumeService
-		dockerService      *docker.DockerClientService
+		dockerService      *dockerInternal.DockerClientService
 		activityService    *activity.ActivityService
 		environmentService *environment.EnvironmentService
 		appCtx             context.Context
@@ -171,7 +171,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		return nil, err
 	}
 
-	options := client.VolumeCreateOptions{
+	options := mobyClient.VolumeCreateOptions{
 		Name:       input.Body.Name,
 		Driver:     input.Body.Driver,
 		Labels:     input.Body.Labels,

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -64,7 +64,7 @@ func TestCalculateProjectStatus(t *testing.T) {
 }
 
 func TestStatusCounts_FallsBackToStoredStatus(t *testing.T) {
-	svc := New(func(context.Context) ([]container.Summary, error) { return nil, errors.New("docker unavailable") }, nil, nil)
+	svc := New(func(context.Context) ([]mobyContainer.Summary, error) { return nil, errors.New("docker unavailable") }, nil, nil)
 
 	counts := StatusCounts([]types.ProjectRecord{
 		{Status: types.ProjectStatusRunning},
@@ -160,7 +160,8 @@ func TestMapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.labels[api.WorkingDirLabel] = projectPath
-			details := row([]types.ProjectsDirectoryStatus{{ContainerPath: filepath.Dir(projectPath)}}, iconcatalog.DefaultCatalog, proj, Snapshot{ContainerIndex: IndexComposeContainers([]container.Summary{
+			directories := []types.ProjectsDirectoryStatus{{ContainerPath: filepath.Dir(projectPath)}}
+			details := row(directories, iconcatalog.DefaultCatalog, proj, Snapshot{ContainerIndex: IndexComposeContainers([]mobyContainer.Summary{
 				{
 					ID:     tt.containerID,
 					Image:  "ghcr.io/getarcaneapp/arcane:latest",

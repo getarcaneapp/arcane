@@ -19,7 +19,7 @@ import (
 	charmLog "charm.land/log/v2"
 	"github.com/spf13/cobra"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	buildtypes "kit.getarcane.app/builds/types"
 

@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater/labels"
@@ -29,7 +29,7 @@ import (
 
 type (
 	Service struct {
-		containers    func(ctx context.Context) ([]container.Summary, error)
+		containers    func(ctx context.Context) ([]mobyContainer.Summary, error)
 		imageService  *image.ImageService
 		summarizeRuns func(imageRefs []string, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) *types.ProjectUpdateInfo
 	}
@@ -39,23 +39,23 @@ type (
 		Err                 error
 		currentContainerErr error
 		currentContainerID  string
-		Containers          []container.Summary
+		Containers          []mobyContainer.Summary
 	}
 
 	ContainerIndex struct {
-		byProject map[string][]container.Summary
+		byProject map[string][]mobyContainer.Summary
 		byPath    map[string]projectPathContainers
 	}
 
 	projectPathContainers struct {
 		projectName string
-		containers  []container.Summary
+		containers  []mobyContainer.Summary
 		ambiguous   bool
 	}
 )
 
 func New(
-	containers func(ctx context.Context) ([]container.Summary, error),
+	containers func(ctx context.Context) ([]mobyContainer.Summary, error),
 	imageService *image.ImageService,
 	summarizeRuns func(imageRefs []string, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) *types.ProjectUpdateInfo,
 ) *Service {
@@ -81,7 +81,7 @@ func (s *Service) Snapshot(ctx context.Context) Snapshot {
 	}
 }
 
-func (index ContainerIndex) ProjectContainers(p types.ProjectRecord) []container.Summary {
+func (index ContainerIndex) ProjectContainers(p types.ProjectRecord) []mobyContainer.Summary {
 	normName := projects.NormalizeProjectName(p.Name)
 	if c := index.byProject[normName]; len(c) > 0 {
 		return c
@@ -101,7 +101,7 @@ func (index ContainerIndex) ProjectContainers(p types.ProjectRecord) []container
 	return matched.containers
 }
 
-func RuntimeServiceFromContainer(catalog string, c container.Summary, meta projects.ArcaneComposeMetadata, currentContainerID string, currentContainerErr error) types.ProjectRuntimeService {
+func RuntimeServiceFromContainer(catalog string, c mobyContainer.Summary, meta projects.ArcaneComposeMetadata, currentContainerID string, currentContainerErr error) types.ProjectRuntimeService {
 	resolvedIcon := iconcatalog.Resolve(catalog, cmp.Or(projects.FindArcaneIconSet(c.Labels), meta.ServiceIconSets[docker.ComposeServiceLabel(c.Labels)], meta.ProjectIcon))
 	return types.ProjectRuntimeService{
 		Name:          docker.ComposeServiceLabel(c.Labels),
@@ -382,8 +382,8 @@ func KnownComposeProjectNames(records []types.ProjectRecord) map[string]struct{}
 	return known
 }
 
-func (s *Service) CountDiscoveredUpdates(ctx context.Context, allContainers []container.Summary, known map[string]struct{}, catalog string) int {
-	composeContainers := make([]container.Summary, 0, len(allContainers))
+func (s *Service) CountDiscoveredUpdates(ctx context.Context, allContainers []mobyContainer.Summary, known map[string]struct{}, catalog string) int {
+	composeContainers := make([]mobyContainer.Summary, 0, len(allContainers))
 	for _, c := range allContainers {
 		if docker.ComposeProjectLabel(c.Labels) != "" {
 			composeContainers = append(composeContainers, c)
@@ -398,11 +398,11 @@ func (s *Service) CountDiscoveredUpdates(ctx context.Context, allContainers []co
 
 func (s *Service) DiscoveredUpdateRows(
 	ctx context.Context,
-	composeContainers []container.Summary,
+	composeContainers []mobyContainer.Summary,
 	knownProjectNames map[string]struct{},
 	iconCatalog string,
 ) []types.Project {
-	containersByProject := make(map[string][]container.Summary)
+	containersByProject := make(map[string][]mobyContainer.Summary)
 	for _, c := range composeContainers {
 		if docker.ComposeServiceLabel(c.Labels) == "" || c.Labels[api.HookLabel] != "" || c.Labels[projects.JobRunLabel] != "" || c.Labels[api.OneoffLabel] == "True" {
 			continue
@@ -509,9 +509,9 @@ func ApplyProjectTagsDBFilter(query *gorm.DB, filterValue string) *gorm.DB {
 	return query.Where("EXISTS (SELECT 1 FROM project_tags WHERE project_tags.project_id = projects.id AND project_tags.name IN ?)", names)
 }
 
-func IndexComposeContainers(containers []container.Summary) ContainerIndex {
+func IndexComposeContainers(containers []mobyContainer.Summary) ContainerIndex {
 	index := ContainerIndex{
-		byProject: make(map[string][]container.Summary),
+		byProject: make(map[string][]mobyContainer.Summary),
 		byPath:    make(map[string]projectPathContainers),
 	}
 	for _, c := range containers {

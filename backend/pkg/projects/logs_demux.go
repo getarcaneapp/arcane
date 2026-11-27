@@ -11,10 +11,10 @@ import (
 	"sync"
 
 	"github.com/docker/cli/cli/command"
-	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/client"
+	mobyStdCopy "github.com/moby/moby/api/pkg/stdcopy"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 )
 
@@ -22,11 +22,11 @@ type (
 	logsDemuxCompatibleDockerCli struct {
 		command.Cli
 
-		apiClient client.APIClient
+		apiClient mobyClient.APIClient
 	}
 
 	logsDemuxDockerClient struct {
-		client.APIClient
+		mobyClient.APIClient
 
 		containerTty map[string]bool
 
@@ -46,7 +46,7 @@ const (
 	maxLogEntryBytes = 64 * 1024
 )
 
-func (c *logsDemuxCompatibleDockerCli) Client() client.APIClient {
+func (c *logsDemuxCompatibleDockerCli) Client() mobyClient.APIClient {
 	return c.apiClient
 }
 
@@ -63,7 +63,7 @@ func wrapDockerCLIWithLogsDemux(cli command.Cli) command.Cli {
 	}
 }
 
-func (c *logsDemuxDockerClient) ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
+func (c *logsDemuxDockerClient) ContainerInspect(ctx context.Context, containerID string, options mobyClient.ContainerInspectOptions) (mobyClient.ContainerInspectResult, error) {
 	result, err := c.APIClient.ContainerInspect(ctx, containerID, options)
 	if err == nil && result.Container.Config != nil {
 		c.recordContainerTTY(containerID, result.Container.Config.Tty)
@@ -71,7 +71,7 @@ func (c *logsDemuxDockerClient) ContainerInspect(ctx context.Context, containerI
 	return result, err
 }
 
-func (c *logsDemuxDockerClient) ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error) {
+func (c *logsDemuxDockerClient) ContainerLogs(ctx context.Context, containerID string, options mobyClient.ContainerLogsOptions) (mobyClient.ContainerLogsResult, error) {
 	resp, err := c.APIClient.ContainerLogs(ctx, containerID, options)
 	if err != nil {
 		return resp, err
@@ -125,12 +125,12 @@ func (s *stderrMarkedDemuxedStream) ingestFrame() {
 		s.finish(err)
 		return
 	}
-	if header[0] == byte(stdcopy.Systemerr) {
+	if header[0] == byte(mobyStdCopy.Systemerr) {
 		s.finish(fmt.Errorf("error from daemon in stream: %s", payload))
 		return
 	}
 
-	stream := kit.Ternary(header[0] == byte(stdcopy.Stderr), 1, 0)
+	stream := kit.Ternary(header[0] == byte(mobyStdCopy.Stderr), 1, 0)
 	s.pending[stream] = append(s.pending[stream], payload...)
 	buf := s.pending[stream]
 	for len(buf) > 0 {
@@ -165,7 +165,7 @@ func (s *stderrMarkedDemuxedStream) emitLine(stream int, line []byte) {
 		size += len(stderrLogLinePrefix)
 	}
 	var header [8]byte
-	header[0] = byte(stdcopy.Stdout)
+	header[0] = byte(mobyStdCopy.Stdout)
 	binary.BigEndian.PutUint32(header[4:], uint32(size)) //nolint:gosec // entries are capped at maxLogEntryBytes
 	s.out.Write(header[:])
 	if stream == 1 {

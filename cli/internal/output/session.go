@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

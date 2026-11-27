@@ -20,15 +20,15 @@ import (
 
 	"github.com/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/v1"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/internal/docker"
-	"getarcane.dev/arcane/v3/internal/registry"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/timeouts"
@@ -37,9 +37,9 @@ import (
 
 type (
 	Service struct {
-		docker        *docker.DockerClientService
+		docker        *dockerInternal.DockerClientService
 		settings      *settings.SettingsService
-		remoteConfig  func(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error)
+		remoteConfig  func(context.Context, string, registryInternal.ImageConfigOptions) (*v1.ConfigFile, error)
 		httpClient    *http.Client
 		releases      *cache.Cache[string, []githubRelease]
 		taggedRelease *cache.Cache[string, githubRelease]
@@ -101,9 +101,9 @@ var (
 )
 
 func NewService(
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	settingsService *settings.SettingsService,
-	remoteConfig func(context.Context, string, registry.ImageConfigOptions) (*v1.ConfigFile, error),
+	remoteConfig func(context.Context, string, registryInternal.ImageConfigOptions) (*v1.ConfigFile, error),
 ) *Service {
 	return &Service{
 		docker:       dockerService,
@@ -145,14 +145,14 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 		if strings.TrimSpace(req.Version) != "" || strings.TrimSpace(req.Digest) == "" {
 			return nil
 		}
-		cfg, cfgErr := s.remoteConfig(ctx, named.Name()+"@"+strings.TrimSpace(req.Digest), registry.ImageConfigOptions{})
+		cfg, cfgErr := s.remoteConfig(ctx, named.Name()+"@"+strings.TrimSpace(req.Digest), registryInternal.ImageConfigOptions{})
 		if cfgErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve remote image labels for release notes", "imageRef", imageRef, "digest", req.Digest, "error", cfgErr)
 		}
 		return kit.FromPtr(cfg).Config.Labels
 	}()
 
-	inspected, inspectErr := s.docker.Call(ctx, func(ctx context.Context, c *client.Client) (client.ImageInspectResult, error) {
+	inspected, inspectErr := s.docker.Call(ctx, func(ctx context.Context, c *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return c.ImageInspect(ctx, imageRef)
 	})
 	if inspectErr != nil {
@@ -161,12 +161,12 @@ func (s *Service) ReleaseNotes(ctx context.Context, req Request) (*types.ImageRe
 	localLabels := kit.FromPtr(inspected.Config).Labels
 	version := cmp.Or(
 		strings.TrimSpace(req.Version),
-		strings.TrimSpace(digestLabels[registry.OCIImageVersionLabel]),
-		kit.Ternary(strings.TrimSpace(req.Digest) == "", cmp.Or(strings.TrimSpace(localLabels[registry.OCIImageVersionLabel]), versionTag(named)), ""),
+		strings.TrimSpace(digestLabels[registryInternal.OCIImageVersionLabel]),
+		kit.Ternary(strings.TrimSpace(req.Digest) == "", cmp.Or(strings.TrimSpace(localLabels[registryInternal.OCIImageVersionLabel]), versionTag(named)), ""),
 	)
 	source := cmp.Or(sourceLabel(localLabels), sourceLabel(digestLabels))
 	if source == "" && version != "" {
-		cfg, cfgErr := s.remoteConfig(ctx, named.Name()+":"+version, registry.ImageConfigOptions{})
+		cfg, cfgErr := s.remoteConfig(ctx, named.Name()+":"+version, registryInternal.ImageConfigOptions{})
 		if cfgErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve remote image labels for release notes", "imageRef", imageRef, "version", version, "error", cfgErr)
 		}
@@ -222,7 +222,7 @@ func ReleaseLinkFromLabels(labels map[string]string) string {
 }
 
 func (s *Service) ReleaseLink(ctx context.Context, imageRef string) string {
-	inspected, err := s.docker.Call(ctx, func(ctx context.Context, c *client.Client) (client.ImageInspectResult, error) {
+	inspected, err := s.docker.Call(ctx, func(ctx context.Context, c *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return c.ImageInspect(ctx, strings.TrimSpace(imageRef))
 	})
 	if err != nil {
@@ -365,9 +365,9 @@ func (s *Service) githubGet(ctx context.Context, apiPath string, query url.Value
 
 func sourceLabel(labels map[string]string) string {
 	return cmp.Or(
-		strings.TrimSpace(labels[registry.OCIImageSourceLabel]),
-		strings.TrimSpace(labels[registry.OCIImageURLLabel]),
-		strings.TrimSpace(labels[registry.OCIImageDocumentationLabel]),
+		strings.TrimSpace(labels[registryInternal.OCIImageSourceLabel]),
+		strings.TrimSpace(labels[registryInternal.OCIImageURLLabel]),
+		strings.TrimSpace(labels[registryInternal.OCIImageDocumentationLabel]),
 	)
 }
 

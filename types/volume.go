@@ -6,16 +6,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moby/moby/api/types/volume"
-	"github.com/moby/moby/client"
+	mobyVolume "github.com/moby/moby/api/types/volume"
+	mobyClient "github.com/moby/moby/client"
 )
 
 type (
 	Volume struct {
-		Options    map[string]string `json:"options" required:"false"`
-		Labels     map[string]string `json:"labels" required:"false"`
-		UsageData  *volume.UsageData `json:"usageData,omitempty" readOnly:"true"`
-		ActivityID *string           `json:"activityId,omitempty" readOnly:"true"`
+		Options    map[string]string     `json:"options" required:"false"`
+		Labels     map[string]string     `json:"labels" required:"false"`
+		UsageData  *mobyVolume.UsageData `json:"usageData,omitempty" readOnly:"true"`
+		ActivityID *string               `json:"activityId,omitempty" readOnly:"true"`
 		EnvironmentTag
 		ID         string   `json:"id" readOnly:"true"`
 		Name       string   `json:"name" required:"false"`
@@ -146,8 +146,8 @@ type (
 	}
 
 	VolumeRenameEntry struct {
-		OldVolume     volume.Volume
-		CreateOptions client.VolumeCreateOptions
+		OldVolume     mobyVolume.Volume
+		CreateOptions mobyClient.VolumeCreateOptions
 		Key           string
 		OldName       string
 		NewName       string
@@ -243,7 +243,7 @@ const (
 	FileOpRestoreFile = "restore_file"
 )
 
-func NewVolume(v volume.Volume) Volume {
+func NewVolume(v mobyVolume.Volume) Volume {
 	mountpoint := v.Mountpoint
 	if v.Options["type"] == "none" && v.Options["device"] != "" {
 		mountpoint = v.Options["device"]

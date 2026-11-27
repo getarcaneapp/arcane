@@ -3,7 +3,7 @@ package imageref
 import (
 	"slices"
 
-	"github.com/moby/moby/api/types/image"
+	mobyImage "github.com/moby/moby/api/types/image"
 )
 
 // imageNameAnnotation is set on the descriptor of an image imported from an
@@ -18,7 +18,7 @@ const imageNameAnnotation = "io.containerd.image.name"
 // alone cannot tell a pull from a build. Docker 29+ records where an image came
 // from in Identity; images without it fall back to the descriptor annotation
 // an import leaves, then to the repo-digest rule of the classic image store.
-func IsLocalImage(img image.InspectResponse) bool {
+func IsLocalImage(img mobyImage.InspectResponse) bool {
 	switch {
 	case img.Identity != nil && len(img.Identity.Pull) > 0:
 		return false
