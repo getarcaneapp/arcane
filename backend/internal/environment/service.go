@@ -732,10 +732,6 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 	return nil
 }
 
-func (s *EnvironmentService) GetDB() *database.DB {
-	return s.db
-}
-
 func (s *EnvironmentService) ResolveEventEnvironmentByAccessToken(ctx context.Context, token string) (string, error) {
 	env, err := s.ResolveEnvironmentByAccessToken(ctx, token)
 	if err != nil {
@@ -924,18 +920,6 @@ func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]typ
 	}
 
 	return out, nil
-}
-
-func (s *EnvironmentService) ListRemoteEnvironmentIDs(ctx context.Context) ([]string, error) {
-	envs, err := s.ListActiveRemoteEnvironments(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(envs))
-	for _, env := range envs {
-		ids = append(ids, env.ID)
-	}
-	return ids, nil
 }
 
 func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]Environment, error) {
@@ -1596,21 +1580,6 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(ctx context.Context
 		return nil, fmt.Errorf("failed to create swarm node agent environment: %w", err)
 	}
 	return created, nil
-}
-
-func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID, swarmNodeID string) error {
-	updates := map[string]any{
-		"swarm_node_id": swarmNodeID,
-		"updated_at":    new(time.Now()),
-	}
-
-	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", envID).Updates(updates).Error; err != nil {
-		return fmt.Errorf("failed to update swarm node identity: %w", err)
-	}
-	s.invalidateEnvironmentCache(envID)
-	s.NotifyRuntimeStateChanged()
-
-	return nil
 }
 
 func (s *EnvironmentService) EnrollAgentEnvironment(ctx context.Context, p EnrollAgentEnvironmentParams) (*types.AgentEnrollResponse, error) {

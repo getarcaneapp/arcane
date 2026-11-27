@@ -56,7 +56,6 @@ type (
 		State        string    `json:"state"`
 		Nonce        string    `json:"nonce"`
 		CodeVerifier string    `json:"code_verifier"`
-		RedirectTo   string    `json:"redirect_to"`
 	}
 
 	OidcServiceParams struct {
@@ -185,7 +184,7 @@ func (s *OidcService) ValidateMobileRedirectURI(ctx context.Context, uri string)
 	return fmt.Errorf("mobile redirect URI %q is not in the configured allowlist", uri)
 }
 
-func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, mobileRedirectURI string) (string, string, error) {
+func (s *OidcService) GenerateAuthURL(ctx context.Context, origin, mobileRedirectURI string) (string, string, error) {
 	oidcConfig, err := s.effectiveConfig(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "GenerateAuthURL: failed to get OIDC config", "error", err)
@@ -221,7 +220,6 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, m
 		State:        state,
 		Nonce:        nonce,
 		CodeVerifier: codeVerifier,
-		RedirectTo:   redirectTo,
 		CreatedAt:    time.Now(),
 	})
 	if err != nil {
