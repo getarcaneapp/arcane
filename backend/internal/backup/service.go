@@ -129,11 +129,14 @@ type (
 	Engine struct {
 		imageService *image.ImageService
 		admission    *runs.Admission
+		db           *database.DB
 		repositories map[string]chan struct{}
+		queuedStats  map[string]*queuedStats
 		// held parks admission a manual start won until the run that won it takes it over.
 		held      map[types.SchedulerAdmissionKey]heldLease
 		Authorize func(context.Context, types.BackupRequester) error
 		mu        sync.Mutex
+		stopped   bool
 	}
 
 	heldLease struct {
@@ -349,12 +352,14 @@ func NewResourceRequester(ctx context.Context, requestedBy types.Actor, environm
 	}
 }
 
-func NewEngine(admission *runs.Admission, imageService *image.ImageService, authorize func(context.Context, types.BackupRequester) error) *Engine {
+func NewEngine(admission *runs.Admission, imageService *image.ImageService, db *database.DB, authorize func(context.Context, types.BackupRequester) error) *Engine {
 	return &Engine{
 		imageService: imageService,
 		admission:    admission,
+		db:           db,
 		Authorize:    authorize,
 		repositories: make(map[string]chan struct{}),
+		queuedStats:  make(map[string]*queuedStats),
 		held:         make(map[types.SchedulerAdmissionKey]heldLease),
 	}
 }
@@ -416,6 +421,11 @@ func (e *Engine) Stop(ctx context.Context) error {
 	e.mu.Lock()
 	held := e.held
 	e.held = make(map[types.SchedulerAdmissionKey]heldLease)
+	e.stopped = true
+	for id, queued := range e.queuedStats {
+		queued.timer.Stop()
+		delete(e.queuedStats, id)
+	}
 	e.mu.Unlock()
 	for _, held := range held {
 		held.lease.Release(ctx)
@@ -439,6 +449,7 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *mobyClient.Cl
 	if decoded.ID == "" {
 		return Snapshot{}, errors.New("rustic did not return a snapshot ID")
 	}
+	e.queueStats(ctx, dockerClient, repository, password)
 	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed}, nil
 }
 
@@ -806,8 +817,11 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *mobyClient.C
 		return nil
 	}
 	if len(listed) == 0 {
-		_, err = e.runContainer(ctx, dockerClient, repository, password, []string{"prune"})
-		return err
+		if _, err = e.runContainer(ctx, dockerClient, repository, password, []string{"prune"}); err != nil {
+			return err
+		}
+		e.queueStats(ctx, dockerClient, repository, password)
+		return nil
 	}
 	batches := slices.Collect(slices.Chunk(listed, DeletionBatchSize))
 	for i, batch := range batches {
@@ -816,6 +830,7 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *mobyClient.C
 			return err
 		}
 	}
+	e.queueStats(ctx, dockerClient, repository, password)
 	return nil
 }
 
@@ -1052,13 +1067,7 @@ func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) 
 	if ctx.Value(heldRepository{engine: e, id: id}) != nil {
 		return func() {}, nil
 	}
-	e.mu.Lock()
-	lock := e.repositories[id]
-	if lock == nil {
-		lock = make(chan struct{}, 1)
-		e.repositories[id] = lock
-	}
-	e.mu.Unlock()
+	lock := e.repositoryLock(id)
 	select {
 	case lock <- struct{}{}:
 	case <-ctx.Done():

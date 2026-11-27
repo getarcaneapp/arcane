@@ -170,6 +170,8 @@ var (
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/volumes/{volumeName}/backups/upload", CommandName: "volume.backup.import"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/volumes/backups/discover", CommandName: "volume.backup.discover"},
 		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/backups/history", CommandName: "backup.history.list"},
+		{Method: http.MethodGet, PathPattern: "/api/agents/{id}/backups/stats", CommandName: "backup.stats.get"},
+		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/backups/stats/refresh", CommandName: "backup.stats.refresh"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/backups/{backupId}", CommandName: "system.backup.action"},
 		{Method: http.MethodDelete, PathPattern: "/api/agents/{id}/backups/{backupId}", CommandName: "system.backup.delete"},
 		{Method: http.MethodPost, PathPattern: "/api/agents/{id}/backups/{backupId}/files/browse", CommandName: "system.backup.files_browse"},

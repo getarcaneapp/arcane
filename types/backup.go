@@ -154,6 +154,8 @@ type (
 
 	BackupManagementType string
 
+	BackupRepositoryKind string
+
 	SystemVolumeSelectionMode string
 
 	SystemVolumeBackupPolicy struct {
@@ -245,6 +247,24 @@ type (
 		Size              int64                   `json:"size" sortable:"true"`
 	}
 
+	BackupRepositoryStats struct {
+		UpdatedAt         time.Time               `json:"updatedAt"`
+		ID                string                  `json:"id"`
+		Kind              BackupRepositoryKind    `json:"kind" enum:"system,volumes"`
+		Destination       SystemBackupDestination `json:"destination" enum:"local,s3"`
+		S3DestinationID   string                  `json:"s3DestinationId,omitempty"`
+		S3DestinationName string                  `json:"s3DestinationName,omitempty"`
+		SnapshotCount     int64                   `json:"snapshotCount"`
+		StoredBytes       int64                   `json:"storedBytes" doc:"Bytes the repository occupies in storage"`
+		RawBytes          int64                   `json:"rawBytes" doc:"Uncompressed size of the unique data the repository holds"`
+		LogicalBytes      int64                   `json:"logicalBytes" doc:"Combined size of every snapshot before deduplication"`
+	}
+
+	BackupStorageStats struct {
+		LastBackup   *SystemVolumeBackupHistoryEntry `json:"lastBackup,omitempty"`
+		Repositories []BackupRepositoryStats         `json:"repositories"`
+	}
+
 	BackupRunAccepted struct {
 		ActivityID string `json:"activityId"`
 		Status     string `json:"status"`
@@ -280,6 +300,8 @@ const (
 	BackupManagementTypeSystem     BackupManagementType      = "system"
 	BackupManagementTypeVolume     BackupManagementType      = "volume"
 	BackupManagementTypeProject    BackupManagementType      = "project"
+	BackupRepositoryKindSystem     BackupRepositoryKind      = "system"
+	BackupRepositoryKindVolumes    BackupRepositoryKind      = "volumes"
 	SystemVolumePolicyPrefix                                 = "system-volume:"
 	GlobalProjectPolicyPrefix                                = "global-project:"
 	SystemVolumeManualSeriesOwner                            = "manual"

@@ -27,6 +27,15 @@ type (
 		S3Enabled       bool          `json:"s3Enabled" gorm:"column:s3_enabled;not null"`
 	}
 
+	RepositoryStats struct {
+		database.BaseModel
+
+		SnapshotCount int64 `gorm:"column:snapshot_count;not null"`
+		StoredBytes   int64 `gorm:"column:stored_bytes;not null"`
+		RawBytes      int64 `gorm:"column:raw_bytes;not null"`
+		LogicalBytes  int64 `gorm:"column:logical_bytes;not null"`
+	}
+
 	PolicyOptions struct {
 		Volumes         []string                        `json:"volumes"`
 		SelectionMode   types.SystemVolumeSelectionMode `json:"selectionMode"`
@@ -45,3 +54,5 @@ const (
 func (SystemBackupRecoveryConfig) TableName() string { return "system_backup_recovery_config" }
 
 func (Policy) TableName() string { return "backup_policies" }
+
+func (RepositoryStats) TableName() string { return "backup_repository_stats" }

@@ -171,6 +171,7 @@ export const queryKeys = {
 		history: (scope: string, options: SearchPaginationSortRequest) =>
 			['system-backups', 'history', scope, stableSerialize(options)] as const,
 		policies: () => ['system-backups', 'policies'] as const,
+		storageStats: (scope: string) => ['system-backups', 'storage-stats', scope] as const,
 		systemVolumeConfig: () => ['system-backups', 'system-volume-config'] as const,
 		systemVolumeOptions: () => ['system-backups', 'system-volume-options'] as const,
 		projectConfig: () => ['system-backups', 'project-config'] as const,

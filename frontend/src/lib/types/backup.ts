@@ -162,6 +162,24 @@ export type SystemVolumeBackupHistoryEntry = {
 	size: number;
 };
 
+export type BackupRepositoryStats = {
+	updatedAt: string;
+	id: string;
+	kind: 'system' | 'volumes';
+	destination: 'local' | 's3';
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	snapshotCount: number;
+	storedBytes: number;
+	rawBytes: number;
+	logicalBytes: number;
+};
+
+export type BackupStorageStats = {
+	lastBackup?: SystemVolumeBackupHistoryEntry;
+	repositories: BackupRepositoryStats[];
+};
+
 export type BackupRunAccepted = {
 	activityId: string;
 	status: string;

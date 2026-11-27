@@ -1779,3 +1779,22 @@ func TestMigration00126_GroupIdpMappingsUpDown(t *testing.T) {
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'group_idp_mappings'`).Scan(&count))
 	assert.Zero(t, count)
 }
+
+func TestMigration00127_BackupRepositoryStatsUpDown(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-backup-repository-stats.db")
+	rawDB.SetMaxOpenConns(1)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 127))
+	_, err := rawDB.ExecContext(ctx, `INSERT INTO backup_repository_stats (id, snapshot_count, stored_bytes, raw_bytes, logical_bytes) VALUES ('volumes:local', 3, 10, 25, 90)`)
+	require.NoError(t, err)
+	var stored, raw int64
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT stored_bytes, raw_bytes FROM backup_repository_stats WHERE id = 'volumes:local'`).Scan(&stored, &raw))
+	assert.Equal(t, int64(10), stored)
+	assert.Equal(t, int64(25), raw)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 126))
+	var count int
+	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'backup_repository_stats'`).Scan(&count))
+	assert.Zero(t, count)
+}

@@ -51,6 +51,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/system/children/backup/children/snapshots"
+	"getarcane.dev/arcane/v3/internal/system/children/backup/children/stats"
 	"getarcane.dev/arcane/v3/internal/system/children/backup/children/volumes"
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
@@ -133,6 +134,7 @@ type (
 		resolveRuntimeOptions RuntimeOptionsResolver
 		jobs                  *entityjobs.Registry
 		snapshots             *snapshots.Service
+		stats                 *stats.Service
 		volumes               *volumes.Service
 		environments          *environment.EnvironmentService
 		flow                  *flow.Engine
@@ -208,6 +210,20 @@ func NewService(deps Dependencies) *Service {
 			ProjectRoots:        deps.ProjectFolders,
 			RecoveryEnvironment: func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
 			GitWorkDirectory:    kit.FromPtr(deps.Config).GitWorkDir,
+		}),
+		stats: stats.NewService(stats.Dependencies{
+			Engine:         deps.Engine,
+			Docker:         deps.Docker,
+			Repository:     deps.Repository,
+			S3Destinations: deps.S3Destinations,
+			RecoveryKeys:   deps.RecoveryKeys,
+			LocalRepository: func(ctx context.Context, dockerClient *mobyClient.Client, readOnly bool) (backup.Repository, error) {
+				return service.localRepository(ctx, dockerClient, readOnly)
+			},
+			RemoteRepository: func(ctx context.Context, destinationID string) (backup.Repository, error) {
+				return service.remoteRepository(ctx, destinationID)
+			},
+			History: deps.Store.ListHistory,
 		}),
 		volumes: volumes.NewService(volumes.Dependencies{
 			DB:             deps.DB,

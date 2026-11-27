@@ -98,7 +98,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	gate := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, gate.Register(harness.Runtime))
-	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
+	engine := backup.NewEngine(gate, nil, nil, func(context.Context, types.BackupRequester) error {
 		return nil
 	})
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
