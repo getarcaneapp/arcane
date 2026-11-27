@@ -102,11 +102,11 @@
 		available: boolean;
 	};
 
-	// Projects are selected by ID, volumes by name, and project volumes by projectVolumeValue.
 	const items = $derived.by((): ScopeItem[] => {
 		if (kind === 'projectVolume') {
-			return (options as GlobalProjectBackupOption[]).flatMap((project) =>
-				project.volumes.map((volume) => ({
+			const saved = selected.map(parseProjectVolumeValue);
+			return (options as GlobalProjectBackupOption[]).flatMap((project) => [
+				...project.volumes.map((volume) => ({
 					value: projectVolumeValue({ projectId: project.id, key: volume.key }),
 					label: volume.key,
 					detail: volume.name === volume.key ? undefined : volume.name,
@@ -114,8 +114,18 @@
 					anonymous: false,
 					missing: volume.missing ?? false,
 					available: true
-				}))
-			);
+				})),
+				...saved
+					.filter((volume) => volume.projectId === project.id && !project.volumes.some((live) => live.key === volume.key))
+					.map((volume) => ({
+						value: projectVolumeValue(volume),
+						label: volume.key,
+						group: project.name,
+						anonymous: false,
+						missing: false,
+						available: false
+					}))
+			]);
 		}
 		return options.map((option) =>
 			'id' in option

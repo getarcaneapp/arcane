@@ -561,12 +561,14 @@ func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBacku
 				ID:        project.ID,
 				Name:      project.Name,
 				Volumes:   slices.DeleteFunc(volumes, func(volume types.ProjectVolume) bool { return !volume.Included && !volume.Missing }),
-				Available: true,
+				Available: volumeErr == nil,
 			}
-			return nil
+			return ctx.Err()
 		})
 	}
-	_ = group.Wait()
+	if waitErr := group.Wait(); waitErr != nil {
+		return nil, waitErr
+	}
 	for _, policy := range policies {
 		for _, projectID := range policy.Options.ProjectIDs {
 			if !slices.ContainsFunc(options, func(option types.GlobalProjectBackupOption) bool { return option.ID == projectID }) {

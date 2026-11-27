@@ -80,9 +80,7 @@
 	let volumeSelectionMode = $state<SystemVolumeSelectionMode>(initialProjectPolicy?.volumeSelectionMode ?? 'all');
 	let selectedVolumes = $state<string[]>((initialProjectPolicy?.volumes ?? []).map(projectVolumeValue));
 	const projectOptionsQuery = createQuery(() => ({ ...projectBackupOptionsQuery(), enabled: backupType === 'project' }));
-	const projectVolumeOptions = $derived(
-		(projectOptionsQuery.data ?? []).filter((project) => project.volumes.length > 0 && projectSelected(project.id))
-	);
+	const projectVolumeOptions = $derived((projectOptionsQuery.data ?? []).filter((project) => projectSelected(project.id)));
 	const typeOptions = $derived([
 		{ label: m.system(), value: 'system', description: m.arcane_only_backup_description() },
 		{ label: m.project(), value: 'project', description: m.back_up_selected_projects() },
