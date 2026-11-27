@@ -1263,9 +1263,9 @@ func registryOperationWithCredentials[T any](
 	}
 
 	matchedCredentials := make([]resolvedRegistryCredential, 0, len(matchingCreds)+len(matchingEntries))
-	coveredHosts := make(map[string]bool, len(matchingCreds))
+	coveredRegistries := make(map[string]bool, len(matchingCreds))
 	for _, cred := range matchingCreds {
-		coveredHosts[kitregistry.Normalize(cred.URL)] = true
+		coveredRegistries[arcaneregistry.NormalizeRegistryURL(cred.URL)] = true
 		matchedCredentials = append(matchedCredentials, resolvedRegistryCredential{
 			Username:      strings.TrimSpace(cred.Username),
 			Token:         strings.TrimSpace(cred.Token),
@@ -1273,9 +1273,9 @@ func registryOperationWithCredentials[T any](
 		})
 	}
 	for _, entry := range matchingEntries {
-		// A caller credential covers its registry host, so the stored credential of that host is not consulted; the
-		// registries the caller left uncovered still need theirs.
-		if coveredHosts[kitregistry.Normalize(entry.registry.URL)] {
+		// A caller credential covers the registry it names, so the stored credential of that registry is not consulted;
+		// the registries the caller left uncovered still need theirs.
+		if coveredRegistries[arcaneregistry.NormalizeRegistryURL(entry.registry.URL)] {
 			continue
 		}
 		credential, resolveErr := s.resolveCachedCredential(ctx, entry)
@@ -1348,8 +1348,10 @@ func (s *ContainerRegistryService) credentialForRegistry(ctx context.Context, re
 // ecrCredentialForRegistry resolves the ECR authorization token once per registry and reuses it while it stays valid,
 // so a scan over many images asks AWS for a token once instead of once per image.
 func (s *ContainerRegistryService) ecrCredentialForRegistry(ctx context.Context, reg *ContainerRegistry) (*resolvedRegistryCredential, error) {
-	if credential, found, _ := s.ecrCredentials.Get(reg.ID); found {
-		return &credential, nil
+	if reg.ID != "" {
+		if credential, found, _ := s.ecrCredentials.Get(reg.ID); found {
+			return &credential, nil
+		}
 	}
 
 	ecrUser, ecrPass, err := s.GetOrRefreshECRToken(ctx, reg)
@@ -1361,11 +1363,13 @@ func (s *ContainerRegistryService) ecrCredentialForRegistry(ctx context.Context,
 		Token:         ecrPass,
 		ServerAddress: normalizeRegistryServerAddress(reg.URL),
 	}
-	s.ecrCredentials.Set(cache.Entry[string, resolvedRegistryCredential]{
-		Key:   reg.ID,
-		Value: credential,
-		TTL:   remainingECRTokenLife(reg),
-	})
+	if reg.ID != "" {
+		s.ecrCredentials.Set(cache.Entry[string, resolvedRegistryCredential]{
+			Key:   reg.ID,
+			Value: credential,
+			TTL:   remainingECRTokenLife(reg),
+		})
+	}
 	return &credential, nil
 }
 

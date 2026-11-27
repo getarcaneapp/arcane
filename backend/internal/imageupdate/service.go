@@ -192,9 +192,11 @@ func NewImageUpdateService(p ImageUpdateServiceParams) *ImageUpdateService {
 		tags:                tags.NewService(p.RegistryService, p.DockerService, p.SettingsService, registryLimiter),
 		releaseNotes:        releasenotes.NewService(p.DockerService, p.SettingsService, p.RegistryService.ImageConfig),
 		activityService:     p.ActivityService,
+		// They outlive the longest check: its slot wait plus its workflow timeout. The stored credentials are resolved
+		// once per scan, so an ECR registry asks AWS for one authorization token per scan rather than one per minute.
 		credentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
 			Capacity: 8,
-			TTL:      time.Minute,
+			TTL:      timeouts.DefaultActivitySlotWait + timeouts.DefaultImageUpdateScan,
 		},
 		// They outlive the longest check: its slot wait plus its workflow timeout.
 		requestCredentials: &cache.Cache[string, []types.ContainerRegistryCredential]{
@@ -1531,20 +1533,20 @@ func (s *ImageUpdateService) resolveBatchCredentials(ctx context.Context, t flow
 	return mergeBatchCredentials(credentials, supplied)
 }
 
-// mergeBatchCredentials puts the caller's credentials first and drops the stored ones for the registry hosts they cover.
-// A caller credential that cannot authenticate covers nothing, so the stored credential of its host stays in the batch.
+// mergeBatchCredentials puts the caller's credentials first and drops the stored ones for the registries they cover.
+// A caller credential that cannot authenticate covers nothing, so the stored credential of its registry stays in the batch.
 func mergeBatchCredentials(stored, supplied []types.ContainerRegistryCredential) []types.ContainerRegistryCredential {
 	covered := make(map[string]bool, len(supplied))
 	for _, credential := range supplied {
 		if strings.TrimSpace(credential.Username) == "" || strings.TrimSpace(credential.Token) == "" {
 			continue
 		}
-		covered[kitregistry.Normalize(credential.URL)] = true
+		covered[registry.NormalizeRegistryURL(credential.URL)] = true
 	}
 	merged := make([]types.ContainerRegistryCredential, 0, len(supplied)+len(stored))
 	merged = append(merged, supplied...)
 	for _, credential := range stored {
-		if covered[kitregistry.Normalize(credential.URL)] {
+		if covered[registry.NormalizeRegistryURL(credential.URL)] {
 			continue
 		}
 		merged = append(merged, credential)
