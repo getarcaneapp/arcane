@@ -142,7 +142,12 @@ func (e *Engine) refreshQueuedStats(id string) {
 	err := e.RefreshStats(ctx, queued.client, queued.repository, queued.password)
 	switch {
 	case errors.Is(err, ErrRepositoryBusy):
-		e.queueStats(queued.ctx, queued.client, queued.repository, queued.password)
+		e.mu.Lock()
+		if e.ctx.Err() == nil && e.queuedStats[id] == nil {
+			queued.timer.Reset(statsRefreshDelay)
+			e.queuedStats[id] = queued
+		}
+		e.mu.Unlock()
 	case err != nil && !errors.Is(err, ErrRepositoryMissing):
 		slog.WarnContext(queued.ctx, "Failed to refresh backup repository stats", "repositoryId", id, "error", err)
 	}

@@ -849,8 +849,11 @@ func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *mob
 	if strings.TrimSpace(newPassword) == "" {
 		return errors.New("new repository password is required")
 	}
-	_, err := e.run(ctx, dockerClient, repository, currentPassword, []string{"key", "password", "--new-password", newPassword})
-	return err
+	if _, err := e.run(ctx, dockerClient, repository, currentPassword, []string{"key", "password", "--new-password", newPassword}); err != nil {
+		return err
+	}
+	e.queueStats(ctx, dockerClient, repository, newPassword)
+	return nil
 }
 
 func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, newPassword string, currentPasswords ...string) (string, error) {
