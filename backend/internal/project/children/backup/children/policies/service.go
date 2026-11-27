@@ -12,6 +12,7 @@ import (
 
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
+	"golang.org/x/sync/errgroup"
 
 	kit "kit.getarcane.app"
 
@@ -78,7 +79,10 @@ type (
 	}
 )
 
-const globalAdmissionScope = "global-project-backup"
+const (
+	globalAdmissionScope     = "global-project-backup"
+	optionVolumesConcurrency = 8
+)
 
 var (
 	errPolicyGone     = errors.New("backup policy disabled or deleted")
@@ -544,20 +548,26 @@ func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBacku
 	if err != nil {
 		return nil, err
 	}
-	options := make([]types.GlobalProjectBackupOption, 0, len(references))
-	for _, project := range references {
-		volumes, volumeErr := s.deps.ProjectVolumes(ctx, project.ID, nil)
-		if volumeErr != nil {
-			slog.WarnContext(ctx, "Failed to list the volumes of a project for backup selection", "projectId", project.ID, "error", volumeErr)
-		}
-		options = append(options, types.GlobalProjectBackupOption{ //exhaustruct:enforce
-			ID:   project.ID,
-			Name: project.Name,
-			// Volumes not created yet stay selectable so a policy can exclude them before the first deploy.
-			Volumes:   slices.DeleteFunc(volumes, func(volume types.ProjectVolume) bool { return !volume.Included && !volume.Missing }),
-			Available: true,
+	options := make([]types.GlobalProjectBackupOption, len(references))
+	var group errgroup.Group
+	group.SetLimit(optionVolumesConcurrency)
+	for i, project := range references {
+		group.Go(func() error {
+			volumes, volumeErr := s.deps.ProjectVolumes(ctx, project.ID, nil)
+			if volumeErr != nil {
+				slog.WarnContext(ctx, "Failed to list the volumes of a project for backup selection", "projectId", project.ID, "error", volumeErr)
+			}
+			options[i] = types.GlobalProjectBackupOption{ //exhaustruct:enforce
+				ID:   project.ID,
+				Name: project.Name,
+				// Volumes not created yet stay selectable so a policy can exclude them before the first deploy.
+				Volumes:   slices.DeleteFunc(volumes, func(volume types.ProjectVolume) bool { return !volume.Included && !volume.Missing }),
+				Available: true,
+			}
+			return nil
 		})
 	}
+	_ = group.Wait()
 	for _, policy := range policies {
 		for _, projectID := range policy.Options.ProjectIDs {
 			if !slices.ContainsFunc(options, func(option types.GlobalProjectBackupOption) bool { return option.ID == projectID }) {
