@@ -252,7 +252,12 @@ func LegacyMultipartMiddleware(api huma.API, service *UploadService, kind string
 					return
 				}
 			}
-			writeErr(http.StatusInternalServerError, err.Error())
+			status := http.StatusInternalServerError
+			// The stream has no declared size, so the free-space rejection surfaces mid-write; keep the legacy 422.
+			if errors.Is(err, common.ErrInsufficientStorage) {
+				status = http.StatusUnprocessableEntity
+			}
+			writeErr(status, err.Error())
 			return
 		}
 

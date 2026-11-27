@@ -122,8 +122,13 @@ func TestIngestLimitedRejectsOversizedStreamAndRemovesPartialData(t *testing.T) 
 	service := &UploadService{root: filepath.Join(t.TempDir(), "uploads")}
 	ctx := t.Context()
 
-	if _, err := service.ingestLimited(ctx, types.UploadKindBuildWorkspace, "big.bin", bytes.NewReader(make([]byte, 1<<20)), 4); !errors.Is(err, common.ErrUploadSessionInvalid) {
+	const limit, total = 4, 1 << 20
+	source := bytes.NewReader(make([]byte, total))
+	if _, err := service.ingestLimited(ctx, types.UploadKindBuildWorkspace, "big.bin", source, limit); !errors.Is(err, common.ErrUploadSessionInvalid) {
 		t.Fatalf("oversized stream error = %v, want ErrUploadSessionInvalid", err)
+	}
+	if consumed := total - source.Len(); consumed > limit+1 {
+		t.Fatalf("oversized stream consumed %d bytes, want at most %d", consumed, limit+1)
 	}
 	entries, err := os.ReadDir(service.root)
 	if err != nil || len(entries) != 0 {
