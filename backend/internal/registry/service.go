@@ -603,26 +603,40 @@ func (s *ContainerRegistryService) GetDecryptedToken(ctx context.Context, id str
 }
 
 func (s *ContainerRegistryService) GetRegistryAuthForImage(ctx context.Context, imageRef string) (string, error) {
+	auths, err := s.GetRegistryAuthsForImage(ctx, imageRef)
+	if err != nil || len(auths) == 0 {
+		return "", err
+	}
+	return auths[0], nil
+}
+
+func (s *ContainerRegistryService) GetRegistryAuthsForImage(ctx context.Context, imageRef string) ([]string, error) {
 	entries, err := s.loadEnabledRegistryEntries(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	candidates, err := arcaneregistry.MatchingForImage(imageRef, entries, func(entry cachedEnabledRegistry) string { return entry.registry.URL })
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
+	auths := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		credential, credErr := s.resolveCachedCredential(ctx, candidate)
 		if credErr != nil {
 			slog.WarnContext(ctx, "failed to resolve registry credential, skipping", "registry", candidate.registry.URL, "error", credErr)
 			continue
 		}
-		if credential != nil {
-			return arcaneregistry.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
+		if credential == nil {
+			continue
 		}
+		auth, encodeErr := arcaneregistry.EncodeAuthHeader(credential.Username, credential.Token, credential.ServerAddress)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		auths = append(auths, auth)
 	}
-	return "", nil
+	return auths, nil
 }
 
 func (s *ContainerRegistryService) GetAllRegistryAuthConfigs(ctx context.Context) (map[string]mobyRegistry.AuthConfig, error) {

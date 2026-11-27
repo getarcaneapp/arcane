@@ -450,7 +450,7 @@ func TestGetPullOptionsWithAuth_DBRegistrySkipsEmptyToken(t *testing.T) {
 
 	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil)
 	require.NoError(t, err)
-	assert.Empty(t, pullOptions.RegistryAuth)
+	assert.Empty(t, pullOptions)
 }
 
 func TestGetPullOptionsWithAuth_DBRegistrySkipsEmptyUsername(t *testing.T) {
@@ -459,7 +459,7 @@ func TestGetPullOptionsWithAuth_DBRegistrySkipsEmptyUsername(t *testing.T) {
 
 	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil)
 	require.NoError(t, err)
-	assert.Empty(t, pullOptions.RegistryAuth)
+	assert.Empty(t, pullOptions)
 }
 
 func TestGetPullOptionsWithAuth_DBRegistryUsesValidCredentials(t *testing.T) {
@@ -468,9 +468,9 @@ func TestGetPullOptionsWithAuth_DBRegistryUsesValidCredentials(t *testing.T) {
 
 	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "docker.io/library/nginx:latest", nil)
 	require.NoError(t, err)
-	require.NotEmpty(t, pullOptions.RegistryAuth)
+	require.NotEmpty(t, pullOptions)
 
-	authCfg := decodeRegistryAuth(t, pullOptions.RegistryAuth)
+	authCfg := decodeRegistryAuth(t, pullOptions[0].RegistryAuth)
 	assert.Equal(t, "docker-user", authCfg.Username)
 	assert.Equal(t, "docker-token", authCfg.Password)
 	assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
@@ -489,9 +489,9 @@ func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistry(t *testing
 		},
 	})
 	require.NoError(t, err)
-	require.NotEmpty(t, pullOptions.RegistryAuth)
+	require.NotEmpty(t, pullOptions)
 
-	authCfg := decodeRegistryAuth(t, pullOptions.RegistryAuth)
+	authCfg := decodeRegistryAuth(t, pullOptions[0].RegistryAuth)
 	assert.Equal(t, "external-user", authCfg.Username)
 	assert.Equal(t, "external-token", authCfg.Password)
 	assert.Equal(t, "registry.example.com", authCfg.ServerAddress)
