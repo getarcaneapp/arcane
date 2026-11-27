@@ -188,7 +188,9 @@ export async function createVolumeViaApi(page: Page, volumeName: string) {
 		data: { name: volumeName, driver: 'local' }
 	});
 	if (!response.ok()) {
-		throw new Error(`Failed to create volume ${volumeName}: ${response.status()}`);
+		throw new Error(
+			`Failed to create volume ${volumeName}: ${response.status()} ${await response.text()}`
+		);
 	}
 }
 
@@ -226,19 +228,29 @@ export async function requestWithTransientRetry(
 
 // Backups run Rustic in a helper container, so the request returns before the
 // snapshot finishes. Poll the record until it leaves the running state.
-export async function waitForBackup(page: Page, volumeName: string, backupId: string) {
-	let last: VolumeBackup | undefined;
+export async function waitForCompletion<T extends { status: string; error?: string }>(
+	read: () => Promise<T | undefined>,
+	what: string
+): Promise<T> {
+	let last: T | undefined;
 	await expect
 		.poll(
 			async () => {
-				last = (await listBackups(page, volumeName)).find((entry) => entry.id === backupId);
+				last = await read();
 				return last?.status ?? 'missing';
 			},
 			{ timeout: 180_000, intervals: [1000] }
 		)
 		.not.toBe('running');
-	expect(last?.status, `backup failed: ${last?.error ?? 'unknown error'}`).toBe('succeeded');
-	return last as VolumeBackup;
+	expect(last?.status, `${what} failed: ${last?.error ?? 'unknown error'}`).toBe('succeeded');
+	return last as T;
+}
+
+export async function waitForBackup(page: Page, volumeName: string, backupId: string) {
+	return waitForCompletion(
+		async () => (await listBackups(page, volumeName)).find((entry) => entry.id === backupId),
+		'backup'
+	);
 }
 
 export async function createBackupViaApi(

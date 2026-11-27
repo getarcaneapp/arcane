@@ -1197,20 +1197,6 @@ test.describe('System and volume restore', () => {
 		};
 	}
 
-	async function createVolumeViaApi(page: Page, volumeName: string) {
-		const response = await page.request.post('/api/agents/0/volumes', {
-			data: { name: volumeName, driver: 'local' }
-		});
-		expect(response.ok(), await response.text()).toBeTruthy();
-	}
-
-	async function removeVolumeViaApi(page: Page, volumeName: string) {
-		await removeApiResource(
-			page,
-			`/api/agents/0/volumes/${encodeURIComponent(volumeName)}?force=true`
-		);
-	}
-
 	async function mockSystemBackupPage(
 		page: Page,
 		collection: SystemVolumeBackupPolicyCollection,

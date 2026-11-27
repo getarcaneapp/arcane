@@ -6,6 +6,7 @@ import { NetworkSummary, NetworkUsageCounts } from 'types/networks.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { VolumeUsageCounts } from 'types/volumes.type';
 import { ApiKey } from 'types/api-key.type';
+import { Activity } from 'types/activity.type';
 
 export type Paginated<T> = { data: T[]; pagination?: { totalItems?: number } };
 
@@ -278,6 +279,32 @@ export async function removeApiResource(
 	} catch (error) {
 		vitestExpect.soft(false, `DELETE ${path}: ${String(error)}`).toBe(true);
 	}
+}
+
+export async function waitForActivity(
+	page: Page,
+	activityId: string,
+	timeout: number
+): Promise<Activity> {
+	let last: Activity | undefined;
+	await expect
+		.poll(
+			async () => {
+				last = (
+					await readApiData<{ activity: Activity }>(
+						await page.request.get(`/api/agents/0/activities/${activityId}`),
+						`Read activity ${activityId}`
+					)
+				).activity;
+				return last.status;
+			},
+			{ timeout }
+		)
+		.toMatch(/^(success|failed|cancelled)$/);
+	expect(last?.status, `activity ${activityId} failed: ${last?.error ?? last?.latestMessage}`).toBe(
+		'success'
+	);
+	return last as Activity;
 }
 
 export async function removeCreatedEnvironments(

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '../fixtures/test.fixture';
-import { readApiData, removeApiResource } from '../utils/fetch.util';
+import { readApiData, removeApiResource, waitForActivity } from '../utils/fetch.util';
 import { composeFile } from '../utils/report';
 import {
 	createBackupViaApi,
@@ -18,6 +18,7 @@ import {
 	runInSource,
 	seedFixture,
 	waitForBackup,
+	waitForCompletion,
 	withoutMtime,
 	type FixtureSource,
 	type Manifest
@@ -31,7 +32,6 @@ type SnapshotRecord = {
 	localSnapshotId?: string;
 	remoteSnapshotId?: string;
 };
-type Activity = { status: string; error?: string; latestMessage?: string };
 
 const PROJECTS_DIR = fileURLToPath(new URL('../setup/projects/', import.meta.url));
 const SYSTEM_BACKUPS_SUPPORTED = !readFileSync(composeFile, 'utf8').includes(
@@ -74,43 +74,6 @@ function rootListing(manifest: Manifest) {
 		.filter(([entry]) => entry !== '.' && entry.split('/').length === 2)
 		.map(([entry, { type }]) => ({ path: entry.slice(2), isDirectory: type === 'dir' }))
 		.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-async function waitFor<T extends { status: string; error?: string }>(
-	read: () => Promise<T | undefined>,
-	what: string
-) {
-	let last: T | undefined;
-	await expect
-		.poll(
-			async () => {
-				last = await read();
-				return last?.status ?? 'missing';
-			},
-			{ timeout: 180_000, intervals: [1000] }
-		)
-		.not.toBe('running');
-	expect(last?.status, `${what} failed: ${last?.error}`).toBe('succeeded');
-	return last as T;
-}
-
-async function waitForActivity(page: Page, activityId: string) {
-	let last: Activity | undefined;
-	await expect
-		.poll(
-			async () => {
-				last = (
-					await readApiData<{ activity: Activity }>(
-						await page.request.get(`/api/agents/0/activities/${activityId}`),
-						`Read activity ${activityId}`
-					)
-				).activity;
-				return last.status;
-			},
-			{ timeout: 180_000, intervals: [1000] }
-		)
-		.toMatch(/^(success|failed|cancelled)$/);
-	expect(last?.status, `activity failed: ${last?.error ?? last?.latestMessage}`).toBe('success');
 }
 
 test.describe('Volume backup and restore', () => {
@@ -258,8 +221,15 @@ test.describe('Volume backup and restore', () => {
 					s3DestinationId: destination.id
 				});
 				const backup = await waitForBackup(page, volume, created.id);
+				expect(backup.destination).toBe('s3');
+				expect(backup.format).toBe('rustic');
 				expect(backup.remoteSnapshotId).toBeTruthy();
 				expect(backup.localSnapshotId ?? '').toBe('');
+				const files = await requestWithTransientRetry(() =>
+					page.request.get(`/api/agents/0/volumes/backups/${backup.id}/files`)
+				);
+				expect(files.status(), await files.text()).toBe(200);
+				expect(JSON.stringify((await files.json())?.data ?? [])).toContain('text.txt');
 
 				const mutated = mutate(volume);
 				await restore(page, volume, backup.id, { selectAll: true, search: 'star' });
@@ -354,7 +324,7 @@ test.describe('Project backup and restore', () => {
 			}),
 			`Back up project ${projectId}`
 		);
-		return waitFor(
+		return waitForCompletion(
 			async () =>
 				readApiData<SnapshotRecord>(
 					await page.request.get(`/api/agents/0/projects/${projectId}/backups/${created.id}`),
@@ -377,7 +347,7 @@ test.describe('Project backup and restore', () => {
 			}),
 			`Restore project backup ${backupId}`
 		);
-		await waitForActivity(page, started.activityId);
+		await waitForActivity(page, started.activityId, 180_000);
 	}
 
 	async function removeProject(page: Page, project: CreatedProject) {
@@ -541,7 +511,7 @@ test.describe.skipIf(!SYSTEM_BACKUPS_SUPPORTED)('System backup and restore', () 
 		const response = await page.request.post('/api/backups', { data, timeout: 180_000 });
 		expect(response.status(), await response.text()).toBe(202);
 		const created = (await response.json()) as SnapshotRecord;
-		return waitFor(
+		return waitForCompletion(
 			async () =>
 				(
 					await readApiData<SnapshotRecord[]>(
@@ -628,7 +598,7 @@ test.describe.skipIf(!SYSTEM_BACKUPS_SUPPORTED)('System backup and restore', () 
 					ownedByArcane(original)
 				);
 			} finally {
-				removeFixture(dataVolume());
+				removeFixture(volume);
 				if (kept) await deleteDestinationViaApi(page, kept);
 				if (dropped) await deleteDestinationViaApi(page, dropped);
 			}
