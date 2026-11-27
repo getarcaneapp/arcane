@@ -1,7 +1,7 @@
 package types
 
 import (
-	"github.com/moby/moby/api/types/system"
+	mobySystem "github.com/moby/moby/api/types/system"
 )
 
 type (
@@ -12,7 +12,7 @@ type (
 		Os         string `json:"os"`
 		Arch       string `json:"arch"`
 		BuildTime  string `json:"buildTime"`
-		system.Info
+		mobySystem.Info
 		Success bool `json:"success"`
 	}
 )

@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/swarm"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
 
 	"kit.getarcane.app/acfs"
 
@@ -34,64 +34,64 @@ func convertServiceMounts(
 	ns namespace,
 	projectVolumes composeTypes.Volumes,
 	stackLabels map[string]string,
-) ([]mount.Mount, error) {
+) ([]mobyMount.Mount, error) {
 	if len(volumes) == 0 {
 		return nil, nil
 	}
-	result := make([]mount.Mount, 0, len(volumes))
+	result := make([]mobyMount.Mount, 0, len(volumes))
 	for _, vol := range volumes {
 		mountType := mapVolumeType(vol.Type)
 		source, projectVolume, err := resolveServiceMountSource(vol.Source, mountType, ns, projectVolumes)
 		if err != nil {
 			return nil, err
 		}
-		var bindOptions *mount.BindOptions
+		var bindOptions *mobyMount.BindOptions
 		if vol.Bind != nil {
-			bindOptions = &mount.BindOptions{
-				Propagation:      mount.Propagation(vol.Bind.Propagation),
+			bindOptions = &mobyMount.BindOptions{
+				Propagation:      mobyMount.Propagation(vol.Bind.Propagation),
 				CreateMountpoint: bool(vol.Bind.CreateHostPath),
 			}
 		}
-		var volumeOptions *mount.VolumeOptions
-		if vol.Volume != nil || (mountType == mount.TypeVolume && vol.Source != "") {
+		var volumeOptions *mobyMount.VolumeOptions
+		if vol.Volume != nil || (mountType == mobyMount.TypeVolume && vol.Source != "") {
 			var noCopy bool
 			var labels map[string]string
 			var subpath string
 			if vol.Volume != nil {
 				noCopy, labels, subpath = vol.Volume.NoCopy, vol.Volume.Labels, vol.Volume.Subpath
 			}
-			var driverConfig *mount.Driver
-			if mountType == mount.TypeVolume && vol.Source != "" && !projectVolume.External {
+			var driverConfig *mobyMount.Driver
+			if mountType == mobyMount.TypeVolume && vol.Source != "" && !projectVolume.External {
 				labels = mergeLabels(labels, mergeLabels(projectVolume.Labels, stackLabels))
-				driverConfig = &mount.Driver{
+				driverConfig = &mobyMount.Driver{
 					Name:    projectVolume.Driver,
 					Options: projectVolume.DriverOpts,
 				}
 			}
-			volumeOptions = &mount.VolumeOptions{
+			volumeOptions = &mobyMount.VolumeOptions{
 				NoCopy:       noCopy,
 				Labels:       labels,
 				Subpath:      subpath,
 				DriverConfig: driverConfig,
 			}
 		}
-		var tmpfsOptions *mount.TmpfsOptions
+		var tmpfsOptions *mobyMount.TmpfsOptions
 		if vol.Tmpfs != nil {
-			tmpfsOptions = &mount.TmpfsOptions{
+			tmpfsOptions = &mobyMount.TmpfsOptions{
 				SizeBytes: int64(vol.Tmpfs.Size),
 				Mode:      os.FileMode(vol.Tmpfs.Mode),
 			}
 		}
-		var imageOptions *mount.ImageOptions
+		var imageOptions *mobyMount.ImageOptions
 		if vol.Image != nil {
-			imageOptions = &mount.ImageOptions{Subpath: vol.Image.SubPath}
+			imageOptions = &mobyMount.ImageOptions{Subpath: vol.Image.SubPath}
 		}
-		result = append(result, mount.Mount{
+		result = append(result, mobyMount.Mount{
 			Type:          mountType,
 			Source:        source,
 			Target:        vol.Target,
 			ReadOnly:      vol.ReadOnly,
-			Consistency:   mount.Consistency(vol.Consistency),
+			Consistency:   mobyMount.Consistency(vol.Consistency),
 			BindOptions:   bindOptions,
 			VolumeOptions: volumeOptions,
 			TmpfsOptions:  tmpfsOptions,
@@ -103,14 +103,14 @@ func convertServiceMounts(
 
 func resolveServiceMountSource(
 	source string,
-	mountType mount.Type,
+	mountType mobyMount.Type,
 	ns namespace,
 	projectVolumes composeTypes.Volumes,
 ) (string, composeTypes.VolumeConfig, error) {
 	if source == "" {
 		return "", composeTypes.VolumeConfig{}, nil
 	}
-	if mountType != mount.TypeVolume && (mountType != mount.TypeCluster || strings.HasPrefix(source, "group:")) {
+	if mountType != mobyMount.TypeVolume && (mountType != mobyMount.TypeCluster || strings.HasPrefix(source, "group:")) {
 		return source, composeTypes.VolumeConfig{}, nil
 	}
 
@@ -173,12 +173,12 @@ func convertServiceFileRefs[S composeTypes.ServiceSecretConfig | composeTypes.Se
 	return result, nil
 }
 
-func convertServiceSecretRefs(secrets []composeTypes.ServiceSecretConfig, secretMetaByKey map[string]resourceMeta) ([]*swarm.SecretReference, error) {
-	return convertServiceFileRefs(secrets, secretMetaByKey, "secret", func(reference resolvedFileReference) *swarm.SecretReference {
-		return &swarm.SecretReference{
+func convertServiceSecretRefs(secrets []composeTypes.ServiceSecretConfig, secretMetaByKey map[string]resourceMeta) ([]*mobySwarm.SecretReference, error) {
+	return convertServiceFileRefs(secrets, secretMetaByKey, "secret", func(reference resolvedFileReference) *mobySwarm.SecretReference {
+		return &mobySwarm.SecretReference{
 			SecretID:   reference.meta.ID,
 			SecretName: reference.meta.Name,
-			File: &swarm.SecretReferenceFileTarget{
+			File: &mobySwarm.SecretReferenceFileTarget{
 				Name: reference.target,
 				UID:  reference.uid,
 				GID:  reference.gid,
@@ -188,12 +188,12 @@ func convertServiceSecretRefs(secrets []composeTypes.ServiceSecretConfig, secret
 	})
 }
 
-func convertServiceConfigRefs(configs []composeTypes.ServiceConfigObjConfig, configMetaByKey map[string]resourceMeta) ([]*swarm.ConfigReference, error) {
-	return convertServiceFileRefs(configs, configMetaByKey, "config", func(reference resolvedFileReference) *swarm.ConfigReference {
-		return &swarm.ConfigReference{
+func convertServiceConfigRefs(configs []composeTypes.ServiceConfigObjConfig, configMetaByKey map[string]resourceMeta) ([]*mobySwarm.ConfigReference, error) {
+	return convertServiceFileRefs(configs, configMetaByKey, "config", func(reference resolvedFileReference) *mobySwarm.ConfigReference {
+		return &mobySwarm.ConfigReference{
 			ConfigID:   reference.meta.ID,
 			ConfigName: reference.meta.Name,
-			File: &swarm.ConfigReferenceFileTarget{
+			File: &mobySwarm.ConfigReferenceFileTarget{
 				Name: reference.target,
 				UID:  reference.uid,
 				GID:  reference.gid,
@@ -239,21 +239,21 @@ func fileModeOrDefault(mode *composeTypes.FileMode) (os.FileMode, error) {
 	return os.FileMode(uint32(*mode)), nil
 }
 
-func mapVolumeType(value string) mount.Type {
+func mapVolumeType(value string) mobyMount.Type {
 	switch strings.ToLower(value) {
 	case "bind":
-		return mount.TypeBind
+		return mobyMount.TypeBind
 	case "tmpfs":
-		return mount.TypeTmpfs
+		return mobyMount.TypeTmpfs
 	case "npipe":
-		return mount.TypeNamedPipe
+		return mobyMount.TypeNamedPipe
 	case "cluster":
-		return mount.TypeCluster
+		return mobyMount.TypeCluster
 	case "image":
-		return mount.TypeImage
+		return mobyMount.TypeImage
 	case "volume", "":
-		return mount.TypeVolume
+		return mobyMount.TypeVolume
 	default:
-		return mount.TypeVolume
+		return mobyMount.TypeVolume
 	}
 }

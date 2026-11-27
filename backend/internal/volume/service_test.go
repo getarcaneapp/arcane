@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/volume"
-	"github.com/moby/moby/client"
+	mobyVolume "github.com/moby/moby/api/types/volume"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -39,24 +39,24 @@ import (
 
 func TestEnrichVolumesWithUsageData(t *testing.T) {
 	tests := []struct {
-		assertions   func(t *testing.T, got []volume.Volume)
+		assertions   func(t *testing.T, got []mobyVolume.Volume)
 		name         string
-		volumes      []volume.Volume
-		usageVolumes []volume.Volume
+		volumes      []mobyVolume.Volume
+		usageVolumes []mobyVolume.Volume
 		wantLen      int
 	}{
 		{
 			name: "attaches usage by name",
-			volumes: []volume.Volume{
+			volumes: []mobyVolume.Volume{
 				{Name: "vol-a"},
 				{Name: "vol-b"},
 			},
-			usageVolumes: []volume.Volume{
-				{Name: "vol-a", UsageData: &volume.UsageData{Size: 100, RefCount: 2}},
-				{Name: "vol-c", UsageData: &volume.UsageData{Size: 50, RefCount: 1}},
+			usageVolumes: []mobyVolume.Volume{
+				{Name: "vol-a", UsageData: &mobyVolume.UsageData{Size: 100, RefCount: 2}},
+				{Name: "vol-c", UsageData: &mobyVolume.UsageData{Size: 50, RefCount: 1}},
 			},
 			wantLen: 2,
-			assertions: func(t *testing.T, got []volume.Volume) {
+			assertions: func(t *testing.T, got []mobyVolume.Volume) {
 				require.NotNil(t, got[0].UsageData)
 				require.EqualValues(t, 100, got[0].UsageData.Size)
 				require.EqualValues(t, 2, got[0].UsageData.RefCount)
@@ -65,15 +65,15 @@ func TestEnrichVolumesWithUsageData(t *testing.T) {
 		},
 		{
 			name: "keeps first usage entry when duplicate usage names exist",
-			volumes: []volume.Volume{
+			volumes: []mobyVolume.Volume{
 				{Name: "vol-dup"},
 			},
-			usageVolumes: []volume.Volume{
-				{Name: "vol-dup", UsageData: &volume.UsageData{Size: 10, RefCount: 1}},
-				{Name: "vol-dup", UsageData: &volume.UsageData{Size: 20, RefCount: 3}},
+			usageVolumes: []mobyVolume.Volume{
+				{Name: "vol-dup", UsageData: &mobyVolume.UsageData{Size: 10, RefCount: 1}},
+				{Name: "vol-dup", UsageData: &mobyVolume.UsageData{Size: 20, RefCount: 3}},
 			},
 			wantLen: 1,
-			assertions: func(t *testing.T, got []volume.Volume) {
+			assertions: func(t *testing.T, got []mobyVolume.Volume) {
 				require.NotNil(t, got[0].UsageData)
 				require.EqualValues(t, 10, got[0].UsageData.Size)
 				require.EqualValues(t, 1, got[0].UsageData.RefCount)
@@ -172,14 +172,14 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	}
 }
 
-func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
 	dialer := &net.Dialer{}
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
-		client.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
+		mobyClient.WithDialContext(func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp", server.Listener.Addr().String())
 		}),
 	)
@@ -228,7 +228,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local"})
+			_ = json.MarshalWrite(w, mobyVolume.Volume{Name: "workspace-volume", Driver: "local"})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper/json"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.MarshalWrite(w, map[string]any{
@@ -315,7 +315,7 @@ func TestGetVolumeWorkspaceListsRequestedFolderUpToEntryLimit(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local"})
+			_ = json.MarshalWrite(w, mobyVolume.Volume{Name: "workspace-volume", Driver: "local"})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper/json"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.MarshalWrite(w, map[string]any{
@@ -378,7 +378,7 @@ func TestUpdateVolumeWorkspaceRejectsChangedFileBeforeStaging(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/workspace-volume"):
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.MarshalWrite(w, volume.Volume{Name: "workspace-volume", Driver: "local"})
+			_ = json.MarshalWrite(w, mobyVolume.Volume{Name: "workspace-volume", Driver: "local"})
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.MarshalWrite(w, map[string]string{"Id": "tools-image"})

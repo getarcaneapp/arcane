@@ -9,7 +9,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/config"
 )

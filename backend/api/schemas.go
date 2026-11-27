@@ -4,37 +4,37 @@ import (
 	"encoding/json/jsontext"
 	"reflect"
 
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/api/types/swarm"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
 )
 
 type (
-	dockerMountDriver                  mount.Driver
-	dockerNetworkConfigReference       network.ConfigReference
-	dockerRegistryServiceConfig        registry.ServiceConfig
-	dockerSwarmConfigReference         swarm.ConfigReference
-	dockerSwarmDiscreteGenericResource swarm.DiscreteGenericResource
-	dockerSwarmDriver                  swarm.Driver
-	dockerSwarmGenericResource         swarm.GenericResource
-	dockerSwarmPlacement               swarm.Placement
-	dockerSwarmResources               swarm.Resources
-	dockerSwarmRestartPolicy           swarm.RestartPolicy
-	dockerSwarmUpdateConfig            swarm.UpdateConfig
+	dockerMountDriver                  mobyMount.Driver
+	dockerNetworkConfigReference       mobyNetwork.ConfigReference
+	dockerRegistryServiceConfig        mobyRegistry.ServiceConfig
+	dockerSwarmConfigReference         mobySwarm.ConfigReference
+	dockerSwarmDiscreteGenericResource mobySwarm.DiscreteGenericResource
+	dockerSwarmDriver                  mobySwarm.Driver
+	dockerSwarmGenericResource         mobySwarm.GenericResource
+	dockerSwarmPlacement               mobySwarm.Placement
+	dockerSwarmResources               mobySwarm.Resources
+	dockerSwarmRestartPolicy           mobySwarm.RestartPolicy
+	dockerSwarmUpdateConfig            mobySwarm.UpdateConfig
 )
 
 var schemaTypeAliases = map[reflect.Type]reflect.Type{
-	reflect.TypeFor[jsontext.Value]():                reflect.TypeFor[any](),
-	reflect.TypeFor[mount.Driver]():                  reflect.TypeFor[dockerMountDriver](),
-	reflect.TypeFor[network.ConfigReference]():       reflect.TypeFor[dockerNetworkConfigReference](),
-	reflect.TypeFor[registry.ServiceConfig]():        reflect.TypeFor[dockerRegistryServiceConfig](),
-	reflect.TypeFor[swarm.ConfigReference]():         reflect.TypeFor[dockerSwarmConfigReference](),
-	reflect.TypeFor[swarm.DiscreteGenericResource](): reflect.TypeFor[dockerSwarmDiscreteGenericResource](),
-	reflect.TypeFor[swarm.Driver]():                  reflect.TypeFor[dockerSwarmDriver](),
-	reflect.TypeFor[swarm.GenericResource]():         reflect.TypeFor[dockerSwarmGenericResource](),
-	reflect.TypeFor[swarm.Placement]():               reflect.TypeFor[dockerSwarmPlacement](),
-	reflect.TypeFor[swarm.Resources]():               reflect.TypeFor[dockerSwarmResources](),
-	reflect.TypeFor[swarm.RestartPolicy]():           reflect.TypeFor[dockerSwarmRestartPolicy](),
-	reflect.TypeFor[swarm.UpdateConfig]():            reflect.TypeFor[dockerSwarmUpdateConfig](),
+	reflect.TypeFor[jsontext.Value]():                    reflect.TypeFor[any](),
+	reflect.TypeFor[mobyMount.Driver]():                  reflect.TypeFor[dockerMountDriver](),
+	reflect.TypeFor[mobyNetwork.ConfigReference]():       reflect.TypeFor[dockerNetworkConfigReference](),
+	reflect.TypeFor[mobyRegistry.ServiceConfig]():        reflect.TypeFor[dockerRegistryServiceConfig](),
+	reflect.TypeFor[mobySwarm.ConfigReference]():         reflect.TypeFor[dockerSwarmConfigReference](),
+	reflect.TypeFor[mobySwarm.DiscreteGenericResource](): reflect.TypeFor[dockerSwarmDiscreteGenericResource](),
+	reflect.TypeFor[mobySwarm.Driver]():                  reflect.TypeFor[dockerSwarmDriver](),
+	reflect.TypeFor[mobySwarm.GenericResource]():         reflect.TypeFor[dockerSwarmGenericResource](),
+	reflect.TypeFor[mobySwarm.Placement]():               reflect.TypeFor[dockerSwarmPlacement](),
+	reflect.TypeFor[mobySwarm.Resources]():               reflect.TypeFor[dockerSwarmResources](),
+	reflect.TypeFor[mobySwarm.RestartPolicy]():           reflect.TypeFor[dockerSwarmRestartPolicy](),
+	reflect.TypeFor[mobySwarm.UpdateConfig]():            reflect.TypeFor[dockerSwarmUpdateConfig](),
 }

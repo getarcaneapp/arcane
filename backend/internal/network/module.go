@@ -6,13 +6,13 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"getarcane.dev/arcane/v3/internal/activity"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 )
 
-func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docker.DockerClientService, activitySvc *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
+func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *dockerInternal.DockerClientService, activitySvc *activity.ActivityService, appCtx handlerutil.ActivityAppContext) {
 	h := &NetworkHandler{
 		networkService:  networkSvc,
 		dockerService:   dockerSvc,

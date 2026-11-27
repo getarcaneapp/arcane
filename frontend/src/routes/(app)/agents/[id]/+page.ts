@@ -19,7 +19,6 @@ export const load: PageLoad = async ({ params, parent }) => {
 		await featureStore.markUnavailable(params.id);
 		return { environment: environment.data, settings: null, swarmActive: false };
 	}
-	await featureStore.load([params.id]);
 	// An unknown status only leaves the Swarm toggle unlocked; nothing else depends on it.
 	let swarmActiveRequest = Promise.resolve(false);
 	if (userHasPermission(user, 'swarm:read', params.id)) {
@@ -27,14 +26,14 @@ export const load: PageLoad = async ({ params, parent }) => {
 			(result) => result.data?.enabled === true
 		);
 	}
-
-	const settings = await tryCatch(
+	const settingsRequest = tryCatch(
 		queryClient.query(environmentSettingsQuery(params.id, userHasPermission(user, 'environment-settings:read', params.id)))
 	);
+	const [settings, swarmActive] = await Promise.all([settingsRequest, swarmActiveRequest, featureStore.load([params.id])]);
 
 	return {
 		environment: environment.data,
 		settings: settings.data,
-		swarmActive: await swarmActiveRequest
+		swarmActive
 	};
 };

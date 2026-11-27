@@ -9,15 +9,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/refs"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/pkg/imageref"
 	"getarcane.dev/types/v3"
@@ -25,7 +25,7 @@ import (
 
 type (
 	Service struct {
-		dockerService  *docker.DockerClientService
+		dockerService  *dockerInternal.DockerClientService
 		images         remoteDigester
 		pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
 		activityID     func(ctx context.Context) string
@@ -50,7 +50,7 @@ type (
 	}
 
 	ServiceParams struct {
-		DockerService  *docker.DockerClientService
+		DockerService  *dockerInternal.DockerClientService
 		Images         remoteDigester
 		PendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
 		ActivityID     func(ctx context.Context) string
@@ -103,7 +103,7 @@ func (s *Service) VerifyResult(ctx context.Context, resourceID string) error {
 	return nil
 }
 
-func (s *Service) FreezePending(ctx context.Context, run types.SchedulerRun, excluded map[string]bool, deferred func(updater.ImageUpdateRecord, container.Summary) bool) (context.Context, error) {
+func (s *Service) FreezePending(ctx context.Context, run types.SchedulerRun, excluded map[string]bool, deferred func(updater.ImageUpdateRecord, mobyContainer.Summary) bool) (context.Context, error) {
 	if _, ok := ctx.Value(frozenPendingKey{}).(*frozenUpdatePlan); ok {
 		return ctx, nil
 	}
@@ -129,15 +129,15 @@ func (s *Service) FreezePending(ctx context.Context, run types.SchedulerRun, exc
 	selected := make([]updater.ImageUpdateRecord, 0, len(records))
 	var targets []types.FrozenUpdateTarget
 	if len(records) > 0 {
-		listed, listErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
+		listed, listErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+			return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{All: false})
 		})
 		if listErr != nil {
 			return ctx, listErr
 		}
 		candidateRefs := make(map[string]string, len(listed.Items))
 		for _, candidate := range listed.Items {
-			configured, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+			configured, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (string, error) {
 				return imageref.ConfiguredImage(ctx, dockerClient, candidate), nil
 			})
 			candidateRefs[candidate.ID] = refs.NormalizeImageUpdateRef(configured)
@@ -258,8 +258,8 @@ func (s *Service) freezeRecordTarget(
 }
 
 func (s *Service) FreezeContainer(ctx context.Context, id string) (*types.FrozenUpdateTarget, error) {
-	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, id, client.ContainerInspectOptions{})
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, id, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil {
 		return nil, err
@@ -285,8 +285,8 @@ func (s *Service) ResumeTarget(ctx context.Context, target types.FrozenUpdateTar
 	if !target.BaselineRunning || current.BaselineRunning {
 		return target, false, nil
 	}
-	if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, target.ContainerID, client.ContainerStartOptions{})
+	if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, target.ContainerID, mobyClient.ContainerStartOptions{})
 	}); startErr != nil {
 		return target, false, startErr
 	}
@@ -370,8 +370,8 @@ func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, err
 }
 
 func (s *Service) ConfirmTarget(ctx context.Context, target types.FrozenUpdateTarget) (bool, bool, error) {
-	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{All: true})
 	})
 	if err != nil {
 		return false, false, err
@@ -381,7 +381,7 @@ func (s *Service) ConfirmTarget(ctx context.Context, target types.FrozenUpdateTa
 		if imageErr != nil {
 			return ""
 		}
-		inspected, imageInspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		inspected, imageInspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 			return dockerClient.ImageInspect(ctx, immutable)
 		})
 		if imageInspectErr != nil {
@@ -393,8 +393,8 @@ func (s *Service) ConfirmTarget(ctx context.Context, target types.FrozenUpdateTa
 		if !slices.ContainsFunc(candidate.Names, func(name string) bool { return strings.TrimPrefix(name, "/") == target.ContainerName }) {
 			continue
 		}
-		result, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, candidate.ID, client.ContainerInspectOptions{})
+		result, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, candidate.ID, mobyClient.ContainerInspectOptions{})
 		})
 		if inspectErr != nil {
 			return false, false, inspectErr
@@ -411,9 +411,9 @@ func (s *Service) ConfirmTarget(ctx context.Context, target types.FrozenUpdateTa
 			switch {
 			case !target.BaselineRunning || kit.FromPtr(result.Container.State).Running:
 				return true, false, nil
-			case result.Container.ID != target.ContainerID && kit.FromPtr(result.Container.State).Status == container.StateCreated:
-				if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-					return dockerClient.ContainerStart(ctx, result.Container.ID, client.ContainerStartOptions{})
+			case result.Container.ID != target.ContainerID && kit.FromPtr(result.Container.State).Status == mobyContainer.StateCreated:
+				if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+					return dockerClient.ContainerStart(ctx, result.Container.ID, mobyClient.ContainerStartOptions{})
 				}); startErr != nil {
 					return false, false, startErr
 				}

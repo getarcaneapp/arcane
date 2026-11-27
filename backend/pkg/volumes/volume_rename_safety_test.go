@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -52,11 +52,11 @@ func TestEnsureProjectRenameSourceVolumeDetachedInternal_ReturnsConflictWhenCont
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/containers/json") {
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
 				{
 					ID: "stopped-container",
-					Mounts: []container.MountPoint{
-						{Type: mount.TypeVolume, Name: "nginx_data"},
+					Mounts: []mobyContainer.MountPoint{
+						{Type: mobyMount.TypeVolume, Name: "nginx_data"},
 					},
 				},
 			})) {
@@ -86,25 +86,25 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesArcaneAgentLabel(t *testing.T) 
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
 			if listCalls.Add(1) == 1 {
-				if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+				if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 					return
 				}
 				return
 			}
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
 				{
 					ID:    "agent-container",
 					Image: "arcane-agent:local",
-					State: container.StateRunning,
+					State: mobyContainer.StateRunning,
 				},
 			})) {
 				return
 			}
 		case strings.Contains(r.URL.Path, "/containers/agent-container/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID: "agent-container",
-				Config: &container.Config{
+				Config: &mobyContainer.Config{
 					Image: "arcane-agent:local",
 					Cmd:   []string{"./arcane-agent"},
 				},
@@ -186,7 +186,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhe
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -240,7 +240,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -290,7 +290,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenT
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -335,7 +335,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackRemovesTargetsWhenSo
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/copy-holder-"):
@@ -428,7 +428,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackAfterPartialCommitCl
 			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):

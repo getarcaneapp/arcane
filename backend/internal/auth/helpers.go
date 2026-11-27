@@ -11,7 +11,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/user"

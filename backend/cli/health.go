@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/config/schema"

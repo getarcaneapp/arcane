@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	tunnelpb "getarcane.dev/arcane/v3/proto/tunnel/v1"
 )

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -19,7 +19,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -43,9 +43,9 @@ const (
 ]`
 )
 
-func admissionTestSummaries(t *testing.T) []container.Summary {
+func admissionTestSummaries(t *testing.T) []mobyContainer.Summary {
 	t.Helper()
-	var containers []container.Summary
+	var containers []mobyContainer.Summary
 	require.NoError(t, json.Unmarshal([]byte(admissionTestContainers), &containers))
 	return containers
 }
@@ -186,7 +186,7 @@ func TestUpdaterService_AcquireUpdateFailureReleasesHeldKeys(t *testing.T) {
 	}
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -201,5 +201,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

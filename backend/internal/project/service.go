@@ -21,14 +21,14 @@ import (
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/errdefs"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 	"github.com/samber/mo"
 	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
@@ -59,7 +59,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/project/children/tags"
 	"getarcane.dev/arcane/v3/internal/project/children/update"
 	"getarcane.dev/arcane/v3/internal/project/children/workspace"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/upload"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -99,7 +99,7 @@ type (
 		statuses                    *projectstatus.Service
 		deployment                  *deployment.Service
 		updates                     *update.Service
-		containerRegistryService    *registry.ContainerRegistryService
+		containerRegistryService    *registryInternal.ContainerRegistryService
 		uploads                     *upload.UploadService
 		config                      *config.Config
 		RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
@@ -156,7 +156,7 @@ type (
 		DockerService               *dockerInternal.DockerClientService
 		BuildService                builder
 		LifecycleService            *LifecycleService
-		ContainerRegistryService    *registry.ContainerRegistryService
+		ContainerRegistryService    *registryInternal.ContainerRegistryService
 		Uploads                     *upload.UploadService
 		Config                      *config.Config
 		KVService                   *kv.KVService
@@ -415,7 +415,7 @@ func NewProjectService(p ProjectServiceParams) *ProjectService {
 		workspace:          workspace.New(p.SettingsService),
 		details:            projectdetails.New(p.DB, p.DockerService, p.ImageService, p.SettingsService),
 		listing: listing.New(
-			func(ctx context.Context) ([]container.Summary, error) { return s.details.ComposeContainers(ctx) },
+			func(ctx context.Context) ([]mobyContainer.Summary, error) { return s.details.ComposeContainers(ctx) },
 			p.ImageService,
 			func(imageRefs []string, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) *types.ProjectUpdateInfo {
 				return buildUpdateInfoSummary(imageRefs, projectdetails.MergeProjectContainerUpdateInfo(nil, services, scoped), nil)
@@ -2103,7 +2103,7 @@ func (s *ProjectService) runsArcane(ctx context.Context, proj *Project) bool {
 		return false
 	}
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	return slices.ContainsFunc(listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj)), func(c container.Summary) bool {
+	return slices.ContainsFunc(listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj)), func(c mobyContainer.Summary) bool {
 		return labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
 			CurrentErr:         currentContainerErr,
 			Labels:             c.Labels,
@@ -3057,7 +3057,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 	return result.Items, kit.Ternary(paginateInDB, paginationResp, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)), nil
 }
 
-func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, allContainers []container.Summary, allProjects []Project) int {
+func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, allContainers []mobyContainer.Summary, allProjects []Project) int {
 	activeProjects := make([]Project, 0, len(allProjects))
 	for _, proj := range allProjects {
 		if !proj.IsArchived {
@@ -3088,7 +3088,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 		}
 	}
 
-	visibleContainers := make([]container.Summary, 0, len(allContainers))
+	visibleContainers := make([]mobyContainer.Summary, 0, len(allContainers))
 	for _, c := range allContainers {
 		hidden, _ := kit.ParseBool(c.Labels[selfcontainer.HiddenResourceLabel])
 		if !hidden {
@@ -4326,7 +4326,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.Proj
 	if err != nil {
 		return types.ProjectStatusCounts{}, err
 	}
-	containers := make([]container.Summary, 0, len(snapshot.Containers))
+	containers := make([]mobyContainer.Summary, 0, len(snapshot.Containers))
 	for _, c := range snapshot.Containers {
 		if _, allowed := allowedCompose[strings.ToLower(docker.ComposeProjectLabel(c.Labels))]; unrestricted || allowed {
 			containers = append(containers, c)

@@ -24,14 +24,14 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/mapping"
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops/children/backup"
 	gitopssync "getarcane.dev/arcane/v3/internal/gitops/children/sync"
@@ -57,7 +57,7 @@ import (
 type (
 	GitOpsSyncService struct {
 		db              *database.DB
-		dockerService   *docker.DockerClientService
+		dockerService   *dockerInternal.DockerClientService
 		repoService     *gitrepo.GitRepositoryService
 		projectService  *projectpkg.ProjectService
 		swarmService    *swarm.SwarmService
@@ -98,7 +98,7 @@ type (
 
 		DB              *database.DB
 		RepoService     *gitrepo.GitRepositoryService
-		DockerService   *docker.DockerClientService
+		DockerService   *dockerInternal.DockerClientService
 		ProjectService  *projectpkg.ProjectService
 		SwarmService    *swarm.SwarmService
 		EventService    *event.EventService

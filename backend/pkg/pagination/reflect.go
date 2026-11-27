@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (Response, error) {

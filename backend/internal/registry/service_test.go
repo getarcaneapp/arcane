@@ -24,16 +24,16 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/pkg/authconfig"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	mobyAuthConfig "github.com/moby/moby/api/pkg/authconfig"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -46,8 +46,8 @@ import (
 
 type (
 	fakeRegistryDaemonClient struct {
-		registryLoginFn       func(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
-		distributionInspectFn func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error)
+		registryLoginFn       func(ctx context.Context, options mobyClient.RegistryLoginOptions) (mobyClient.RegistryLoginResult, error)
+		distributionInspectFn func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error)
 	}
 
 	roundTripFunc func(*http.Request) (*http.Response, error)
@@ -89,10 +89,10 @@ func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, t
 	require.NoError(t, db.WithContext(t.Context()).Create(record).Error)
 }
 
-func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
+func decodeRegistryAuth(t *testing.T, encoded string) mobyRegistry.AuthConfig {
 	t.Helper()
 
-	cfg, err := authconfig.Decode(encoded)
+	cfg, err := mobyAuthConfig.Decode(encoded)
 	require.NoError(t, err)
 	return *cfg
 }
@@ -101,16 +101,16 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func (f *fakeRegistryDaemonClient) RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
+func (f *fakeRegistryDaemonClient) RegistryLogin(ctx context.Context, options mobyClient.RegistryLoginOptions) (mobyClient.RegistryLoginResult, error) {
 	if f.registryLoginFn == nil {
-		return client.RegistryLoginResult{}, nil
+		return mobyClient.RegistryLoginResult{}, nil
 	}
 	return f.registryLoginFn(ctx, options)
 }
 
-func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+func (f *fakeRegistryDaemonClient) DistributionInspect(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 	if f.distributionInspectFn == nil {
-		return client.DistributionInspectResult{}, nil
+		return mobyClient.DistributionInspectResult{}, nil
 	}
 	return f.distributionInspectFn(ctx, imageRef, options)
 }
@@ -820,11 +820,11 @@ func TestContainerRegistryService_SyncRegistries_ClearsGenericTokenWhenManagerSe
 func TestContainerRegistryService_TestRegistry_UsesDockerDaemon(t *testing.T) {
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			registryLoginFn: func(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
+			registryLoginFn: func(ctx context.Context, options mobyClient.RegistryLoginOptions) (mobyClient.RegistryLoginResult, error) {
 				assert.Equal(t, "user", options.Username)
 				assert.Equal(t, "token", options.Password)
 				assert.Equal(t, "registry.example.com:5443", options.ServerAddress)
-				return client.RegistryLoginResult{}, nil
+				return mobyClient.RegistryLoginResult{}, nil
 			},
 		}, nil
 	})
@@ -837,8 +837,8 @@ func TestContainerRegistryService_TestRegistry_PropagatesDaemonError(t *testing.
 	expectedErr := errors.New("tls: failed to verify certificate: x509: certificate signed by unknown authority")
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			registryLoginFn: func(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
-				return client.RegistryLoginResult{}, expectedErr
+			registryLoginFn: func(ctx context.Context, options mobyClient.RegistryLoginOptions) (mobyClient.RegistryLoginResult, error) {
+				return mobyClient.RegistryLoginResult{}, expectedErr
 			},
 		}, nil
 	})
@@ -851,9 +851,9 @@ func TestContainerRegistryService_TestRegistry_PropagatesDaemonError(t *testing.
 func TestContainerRegistryService_TestRegistry_SkipsLoginForEmptyCredentials(t *testing.T) {
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			registryLoginFn: func(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
+			registryLoginFn: func(ctx context.Context, options mobyClient.RegistryLoginOptions) (mobyClient.RegistryLoginResult, error) {
 				require.FailNow(t, "RegistryLogin should not be called with empty credentials")
-				return client.RegistryLoginResult{}, nil
+				return mobyClient.RegistryLoginResult{}, nil
 			},
 		}, nil
 	})
@@ -870,10 +870,10 @@ func TestContainerRegistryService_InspectImageDigest_AnonymousSuccess(t *testing
 
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				assert.Equal(t, "registry.example.com:5443/team/app:1.2.3", imageRef)
 				assert.Empty(t, options.EncodedRegistryAuth)
-				return client.DistributionInspectResult{
+				return mobyClient.DistributionInspectResult{
 					Descriptor: ocispec.Descriptor{
 						Digest: digest.Digest(wantDigest),
 					},
@@ -893,13 +893,13 @@ func TestContainerRegistryService_GetImageDigest_HonorsCallerCancellation(t *tes
 	started := make(chan struct{}, 1)
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, _ string, _ client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, _ string, _ mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				select {
 				case started <- struct{}{}:
 				default:
 				}
 				<-ctx.Done()
-				return client.DistributionInspectResult{}, ctx.Err()
+				return mobyClient.DistributionInspectResult{}, ctx.Err()
 			},
 		}, nil
 	})
@@ -936,7 +936,7 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredenti
 	var calls int
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				calls++
 				assert.Equal(t, "docker.io/library/nginx:latest", imageRef)
 
@@ -945,7 +945,7 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredenti
 				assert.Equal(t, "docker-token", authCfg.Password)
 				assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
 
-				return client.DistributionInspectResult{
+				return mobyClient.DistributionInspectResult{
 					Descriptor: ocispec.Descriptor{
 						Digest: digest.Digest(wantDigest),
 					},
@@ -971,7 +971,7 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredenti
 	var calls int
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				calls++
 				assert.Equal(t, "docker.io/library/registry:3", imageRef)
 
@@ -980,7 +980,7 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredenti
 				assert.Equal(t, "docker-token", authCfg.Password)
 				assert.Equal(t, "https://index.docker.io/v1/", authCfg.ServerAddress)
 
-				return client.DistributionInspectResult{
+				return mobyClient.DistributionInspectResult{
 					Descriptor: ocispec.Descriptor{
 						Digest: digest.Digest(wantDigest),
 					},
@@ -1006,7 +1006,7 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsForNon
 	var calls int
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				calls++
 				assert.Equal(t, "ghcr.io/getarcaneapp/agent:latest", imageRef)
 
@@ -1014,7 +1014,7 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsForNon
 				assert.Equal(t, "ghcr-user", authCfg.Username)
 				assert.Equal(t, "ghcr-token", authCfg.Password)
 
-				return client.DistributionInspectResult{
+				return mobyClient.DistributionInspectResult{
 					Descriptor: ocispec.Descriptor{
 						Digest: digest.Digest(wantDigest),
 					},
@@ -1040,15 +1040,15 @@ func TestContainerRegistryService_InspectImageDigest_UsesStoredCredentialsInstea
 	var anonymousCalls int
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				if options.EncodedRegistryAuth == "" {
 					anonymousCalls++
-					return client.DistributionInspectResult{}, errors.New(
+					return mobyClient.DistributionInspectResult{}, errors.New(
 						"Error response from daemon: toomanyrequests: retry-after: 1.246809ms, allowed: 44000/minute",
 					)
 				}
 
-				return client.DistributionInspectResult{
+				return mobyClient.DistributionInspectResult{
 					Descriptor: ocispec.Descriptor{
 						Digest: digest.Digest(wantDigest),
 					},
@@ -1073,13 +1073,13 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackToAnonymousWhenSto
 	var anonymousCalls int
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				if options.EncodedRegistryAuth != "" {
-					return client.DistributionInspectResult{}, errors.New("Error response from daemon: unauthorized: authentication required")
+					return mobyClient.DistributionInspectResult{}, errors.New("Error response from daemon: unauthorized: authentication required")
 				}
 
 				anonymousCalls++
-				return client.DistributionInspectResult{
+				return mobyClient.DistributionInspectResult{
 					Descriptor: ocispec.Descriptor{
 						Digest: digest.Digest(wantDigest),
 					},
@@ -1104,11 +1104,11 @@ func TestContainerRegistryService_InspectImageDigest_DoesNotFallBackToAnonymousO
 	var anonymousCalls int
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				if options.EncodedRegistryAuth == "" {
 					anonymousCalls++
 				}
-				return client.DistributionInspectResult{}, errors.New(
+				return mobyClient.DistributionInspectResult{}, errors.New(
 					"Error response from daemon: toomanyrequests: retry-after: 1.246809ms, allowed: 44000/minute",
 				)
 			},
@@ -1132,8 +1132,8 @@ func TestContainerRegistryService_InspectImageDigest_FallbackUsesStoredCredentia
 	var anonymousCalls int
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+				return mobyClient.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
 			},
 		}, nil
 	}, &http.Client{
@@ -1189,11 +1189,11 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionNo
 	var calls int
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				calls++
 				assert.Equal(t, serverURL.Host+"/team/app:1.2.3", imageRef)
 				assert.Empty(t, options.EncodedRegistryAuth)
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+				return mobyClient.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
 			},
 		}, nil
 	}, server.Client())
@@ -1227,11 +1227,11 @@ func TestContainerRegistryService_InspectImageDigest_FallsBackWhenDistributionFo
 	var calls int
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				calls++
 				assert.Equal(t, serverURL.Host+"/team/app:1.2.3", imageRef)
 				assert.Empty(t, options.EncodedRegistryAuth)
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative r" +
+				return mobyClient.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative r" +
 					"ules. </body></html>")
 			},
 		}, nil
@@ -1306,8 +1306,8 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+				return mobyClient.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
 			},
 		}, nil
 	}, server.Client())
@@ -1324,10 +1324,10 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 func TestContainerRegistryService_InspectImageDigest_DoesNotFallbackOnTLSFailure(t *testing.T) {
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
 				assert.Equal(t, "registry.example.com/team/app:1.2.3", imageRef)
 				assert.Empty(t, options.EncodedRegistryAuth)
-				return client.DistributionInspectResult{}, errors.New("tls: failed to verify certificate: x509: certificate signed by unknown authority")
+				return mobyClient.DistributionInspectResult{}, errors.New("tls: failed to verify certificate: x509: certificate signed by unknown authority")
 			},
 		}, nil
 	})
@@ -1347,8 +1347,8 @@ func TestContainerRegistryService_InspectImageDigest_PreservesDaemonAndFallbackE
 
 	svc := newRegistryTestService(t, setupContainerRegistryTestDB(t), func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, daemonErr
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+				return mobyClient.DistributionInspectResult{}, daemonErr
 			},
 		}, nil
 	}, &http.Client{
@@ -1395,8 +1395,8 @@ func TestContainerRegistryService_InspectImageDigest_PreservesAnonymousUnauthori
 
 	svc := newRegistryTestService(t, db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
-			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+			distributionInspectFn: func(ctx context.Context, imageRef string, options mobyClient.DistributionInspectOptions) (mobyClient.DistributionInspectResult, error) {
+				return mobyClient.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
 			},
 		}, nil
 	}, server.Client())

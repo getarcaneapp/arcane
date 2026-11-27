@@ -9,18 +9,18 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	dockercontainer "github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyNetwork "github.com/moby/moby/api/types/network"
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	dockertypes "kit.getarcane.app/docker/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/container/children/stats"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -33,7 +33,7 @@ import (
 type (
 	ContainerHandler struct {
 		containerService *ContainerService
-		dockerService    *docker.DockerClientService
+		dockerService    *dockerInternal.DockerClientService
 		activityService  *activity.ActivityService
 		appCtx           context.Context
 	}
@@ -223,18 +223,18 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		return nil, err
 	}
 
-	exposedPorts := network.PortSet{}
-	portBindings := network.PortMap{}
+	exposedPorts := mobyNetwork.PortSet{}
+	portBindings := mobyNetwork.PortMap{}
 	for containerPort, hostPort := range input.Body.Ports {
-		port, parsePortErr := network.ParsePort(containerPort + "/tcp")
+		port, parsePortErr := mobyNetwork.ParsePort(containerPort + "/tcp")
 		if parsePortErr != nil {
 			return nil, huma.Error400BadRequest("Invalid port format: " + parsePortErr.Error())
 		}
 		exposedPorts[port] = struct{}{}
-		portBindings[port] = []network.PortBinding{{HostPort: hostPort}}
+		portBindings[port] = []mobyNetwork.PortBinding{{HostPort: hostPort}}
 	}
 	for portSpec := range input.Body.ExposedPorts {
-		port, parsePortErr := network.ParsePort(kit.Ternary(strings.Contains(portSpec, "/"), portSpec, portSpec+"/tcp"))
+		port, parsePortErr := mobyNetwork.ParsePort(kit.Ternary(strings.Contains(portSpec, "/"), portSpec, portSpec+"/tcp"))
 		if parsePortErr != nil {
 			return nil, huma.Error400BadRequest("Invalid port format: " + parsePortErr.Error())
 		}
@@ -253,17 +253,17 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		}
 	}
 
-	endpoints := map[string]*network.EndpointSettings{}
+	endpoints := map[string]*mobyNetwork.EndpointSettings{}
 	for name, endpoint := range kit.FromPtr(input.Body.NetworkingConfig).EndpointsConfig {
 		ipam, ipamErr := endpointIPAMFromCreate(endpoint)
 		if ipamErr != nil {
 			return nil, huma.Error400BadRequest("Invalid network configuration: " + ipamErr.Error())
 		}
-		endpoints[name] = &network.EndpointSettings{Aliases: endpoint.Aliases, IPAMConfig: ipam}
+		endpoints[name] = &mobyNetwork.EndpointSettings{Aliases: endpoint.Aliases, IPAMConfig: ipam}
 	}
 	if len(endpoints) == 0 {
 		for _, networkName := range input.Body.Networks {
-			endpoints[networkName] = &network.EndpointSettings{}
+			endpoints[networkName] = &mobyNetwork.EndpointSettings{}
 		}
 	}
 
@@ -272,7 +272,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 
 	containerJSON, err := h.containerService.CreateContainer(
 		ctx,
-		&dockercontainer.Config{
+		&mobyContainer.Config{
 			Image:           input.Body.Image,
 			Cmd:             kit.Ternary(len(input.Body.Command) > 0, input.Body.Command, input.Body.Cmd),
 			Entrypoint:      input.Body.Entrypoint,
@@ -292,12 +292,12 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 			StdinOnce:       input.Body.StdinOnce,
 			NetworkDisabled: input.Body.NetworkDisabled,
 		},
-		&dockercontainer.HostConfig{
+		&mobyContainer.HostConfig{
 			Binds:        kit.Ternary(len(hostConfig.Binds) > 0, hostConfig.Binds, input.Body.Volumes),
-			NetworkMode:  dockercontainer.NetworkMode(hostConfig.NetworkMode),
+			NetworkMode:  mobyContainer.NetworkMode(hostConfig.NetworkMode),
 			PortBindings: portBindings,
-			RestartPolicy: dockercontainer.RestartPolicy{
-				Name:              dockercontainer.RestartPolicyMode(kit.Ternary(hostConfig.RestartPolicy != nil, kit.FromPtr(hostConfig.RestartPolicy).Name, input.Body.RestartPolicy)),
+			RestartPolicy: mobyContainer.RestartPolicy{
+				Name:              mobyContainer.RestartPolicyMode(kit.Ternary(hostConfig.RestartPolicy != nil, kit.FromPtr(hostConfig.RestartPolicy).Name, input.Body.RestartPolicy)),
 				MaximumRetryCount: kit.FromPtr(hostConfig.RestartPolicy).MaximumRetryCount,
 			},
 			AutoRemove:      mo.PointerToOption(hostConfig.AutoRemove).OrElse(input.Body.AutoRemove),
@@ -312,11 +312,11 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 			CPUShares:       max(hostConfig.CPUShares, 0),
 			Mounts:          kit.Ternary(len(hostConfig.Mounts) > 0, mergeEditMounts(nil, hostConfig.Mounts), nil),
 		},
-		func() *network.NetworkingConfig {
+		func() *mobyNetwork.NetworkingConfig {
 			if len(endpoints) == 0 {
 				return nil
 			}
-			return &network.NetworkingConfig{EndpointsConfig: endpoints}
+			return &mobyNetwork.NetworkingConfig{EndpointsConfig: endpoints}
 		}(),
 		input.Body.Name,
 		*user,

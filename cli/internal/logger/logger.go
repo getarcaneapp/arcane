@@ -5,7 +5,7 @@ import (
 
 	charmLog "charm.land/log/v2"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/cli/v3/internal/output"
 )

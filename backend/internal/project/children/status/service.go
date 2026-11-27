@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/moby/moby/api/types/events"
+	mobyEvents "github.com/moby/moby/api/types/events"
 
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/streams/bus"
@@ -35,7 +35,7 @@ func New(dockerService *dockerInternal.DockerClientService, reconcile func(ctx c
 }
 
 func (s *Service) Run(ctx context.Context) error {
-	messages, unsubscribe := s.dockerService.EventBus().Subscribe(events.ContainerEventType, bus.SubscribeOptions{Buffer: new(eventBufferSize)})
+	messages, unsubscribe := s.dockerService.EventBus().Subscribe(mobyEvents.ContainerEventType, bus.SubscribeOptions{Buffer: new(eventBufferSize)})
 	defer unsubscribe()
 	connected := make(chan struct{}, 1)
 	defer s.dockerService.EventStreamConnected().Subscribe(func(struct{}) {
@@ -60,7 +60,7 @@ func (s *Service) Run(ctx context.Context) error {
 				continue
 			}
 			switch msg.Action {
-			case events.ActionCreate, events.ActionStart, events.ActionDie, events.ActionStop, events.ActionDestroy, events.ActionPause, events.ActionUnPause:
+			case mobyEvents.ActionCreate, mobyEvents.ActionStart, mobyEvents.ActionDie, mobyEvents.ActionStop, mobyEvents.ActionDestroy, mobyEvents.ActionPause, mobyEvents.ActionUnPause:
 				timer.Reset(reconcileDelay)
 				armed = true
 			}

@@ -9,7 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/moby/moby/api/types/events"
+	mobyEvents "github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/require"
 
 	"kit.getarcane.app/concurrency"
@@ -214,22 +214,22 @@ func TestImageUpdateWatcher_StartScansAtStartupAndCoalescesAllImageEvents(t *tes
 
 	require.Eventually(t, func() bool { return scanner.count() == 1 }, time.Second, 5*time.Millisecond)
 
-	actions := []events.Action{
-		events.ActionPull,
-		events.ActionCreate,
-		events.ActionCommit,
-		events.ActionImport,
-		events.ActionLoad,
-		events.ActionTag,
-		events.ActionUnTag,
-		events.ActionPrune,
-		events.ActionDelete,
-		events.ActionPush,
-		events.ActionSave,
-		events.Action("future-image-action"),
+	actions := []mobyEvents.Action{
+		mobyEvents.ActionPull,
+		mobyEvents.ActionCreate,
+		mobyEvents.ActionCommit,
+		mobyEvents.ActionImport,
+		mobyEvents.ActionLoad,
+		mobyEvents.ActionTag,
+		mobyEvents.ActionUnTag,
+		mobyEvents.ActionPrune,
+		mobyEvents.ActionDelete,
+		mobyEvents.ActionPush,
+		mobyEvents.ActionSave,
+		mobyEvents.Action("future-image-action"),
 	}
 	for _, action := range actions {
-		eventBus.Publish(events.Message{Type: events.ImageEventType, Action: action})
+		eventBus.Publish(mobyEvents.Message{Type: mobyEvents.ImageEventType, Action: action})
 	}
 
 	require.Eventually(t, func() bool { return scanner.count() == 2 }, time.Second, 5*time.Millisecond)
@@ -245,7 +245,7 @@ func TestImageUpdateWatcher_EventTriggersAreOptIn(t *testing.T) {
 	startImageUpdateWatcherForTest(t, watcher)
 
 	require.Eventually(t, func() bool { return scanner.count() == 1 }, time.Second, 5*time.Millisecond)
-	eventBus.Publish(events.Message{Type: events.ImageEventType, Action: events.ActionPull})
+	eventBus.Publish(mobyEvents.Message{Type: mobyEvents.ImageEventType, Action: mobyEvents.ActionPull})
 	require.Never(t, func() bool { return scanner.count() > 1 }, 50*time.Millisecond, 5*time.Millisecond)
 }
 
@@ -279,7 +279,7 @@ func TestImageUpdateWatcher_EventDuringScanQueuesOneSerializedFollowUp(t *testin
 
 	require.Equal(t, 1, <-scanner.startedCh)
 	for range 20 {
-		eventBus.Publish(events.Message{Type: events.ImageEventType, Action: events.ActionTag})
+		eventBus.Publish(mobyEvents.Message{Type: mobyEvents.ImageEventType, Action: mobyEvents.ActionTag})
 	}
 	close(releaseCh)
 
@@ -299,7 +299,7 @@ func TestImageUpdateWatcher_DisabledTriggersAreSkippedUntilEnabled(t *testing.T)
 	time.Sleep(30 * time.Millisecond)
 	require.Zero(t, scanner.count())
 
-	eventBus.Publish(events.Message{Type: events.ImageEventType, Action: events.ActionPull})
+	eventBus.Publish(mobyEvents.Message{Type: mobyEvents.ImageEventType, Action: mobyEvents.ActionPull})
 	time.Sleep(30 * time.Millisecond)
 	require.Zero(t, scanner.count())
 
@@ -316,7 +316,7 @@ func TestImageUpdateWatcher_ScanErrorDoesNotStopFutureEvents(t *testing.T) {
 	startImageUpdateWatcherForTest(t, watcher)
 
 	require.Eventually(t, func() bool { return scanner.count() == 1 }, time.Second, 5*time.Millisecond)
-	eventBus.Publish(events.Message{Type: events.ImageEventType, Action: events.ActionPull})
+	eventBus.Publish(mobyEvents.Message{Type: mobyEvents.ImageEventType, Action: mobyEvents.ActionPull})
 	require.Eventually(t, func() bool { return scanner.count() == 2 }, time.Second, 5*time.Millisecond)
 }
 
@@ -387,7 +387,7 @@ func TestImageUpdateWatcher_TriggeredScanRetriesAfterManualScanFinishes(t *testi
 		}
 	}()
 	require.Equal(t, 2, <-scanner.startedCh)
-	eventBus.Publish(events.Message{Type: events.ImageEventType, Action: events.ActionPull})
+	eventBus.Publish(mobyEvents.Message{Type: mobyEvents.ImageEventType, Action: mobyEvents.ActionPull})
 
 	time.Sleep(30 * time.Millisecond)
 	require.Equal(t, 2, scanner.count())

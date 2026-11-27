@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

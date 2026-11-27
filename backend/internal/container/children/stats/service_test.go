@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -82,16 +82,16 @@ func TestCollectMaxAge(t *testing.T) {
 				_, _ = io.WriteString(w, `{"read":"2026-01-01T00:00:00Z","memory_stats":{"usage":100,"limit":1000}}`)
 			}))
 			t.Cleanup(server.Close)
-			dockerClient, err := client.New(
-				client.WithHost(server.URL),
-				client.WithAPIVersion("1.41"),
-				client.WithHTTPClient(server.Client()),
+			dockerClient, err := mobyClient.New(
+				mobyClient.WithHost(server.URL),
+				mobyClient.WithAPIVersion("1.41"),
+				mobyClient.WithHTTPClient(server.Client()),
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = dockerClient.Close() })
 
 			svc := New(Params{
-				GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
+				GetClient:  func(context.Context) (*mobyClient.Client, error) { return dockerClient, nil },
 				DockerHost: func() (string, error) { return "test", nil },
 				CacheTTL:   tt.cacheTTL,
 			})
@@ -126,16 +126,16 @@ func TestCollectReportsIOAndPIDs(t *testing.T) {
 		}`)
 	}))
 	t.Cleanup(server.Close)
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
 
 	svc := New(Params{
-		GetClient:  func(context.Context) (*client.Client, error) { return dockerClient, nil },
+		GetClient:  func(context.Context) (*mobyClient.Client, error) { return dockerClient, nil },
 		DockerHost: func() (string, error) { return "test", nil },
 		CacheTTL:   ContainerResourceSampleTTL,
 	})

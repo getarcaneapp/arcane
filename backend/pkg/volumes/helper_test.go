@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -81,16 +81,16 @@ func TestResolveHelperImage_FallsBackToArcaneRuntimeWhenToolsPullFails(t *testin
 			http.Error(w, "pull failed", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{
-				{ID: "arcane-container", Image: "arcane:local", State: container.StateRunning},
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{
+				{ID: "arcane-container", Image: "arcane:local", State: mobyContainer.StateRunning},
 			})) {
 				return
 			}
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/containers/arcane-container/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+			if !assert.NoError(t, json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID: "arcane-container",
-				Config: &container.Config{
+				Config: &mobyContainer.Config{
 					Image: "arcane:local",
 				},
 			})) {
@@ -117,7 +117,7 @@ func TestResolveHelperImage_ReturnsPullErrorWhenNoFallbackExists(t *testing.T) {
 			http.Error(w, "pull failed", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			if !assert.NoError(t, json.MarshalWrite(w, []container.Summary{})) {
+			if !assert.NoError(t, json.MarshalWrite(w, []mobyContainer.Summary{})) {
 				return
 			}
 		default:
@@ -137,17 +137,17 @@ func TestResolveHelperImage_ReturnsPullErrorWhenNoFallbackExists(t *testing.T) {
 func TestIsHelperContainerUnlabeled(t *testing.T) {
 	tests := []struct {
 		name    string
-		summary container.Summary
+		summary mobyContainer.Summary
 		want    bool
 	}{
 		{
 			name: "unlabeled helper signature matches",
-			summary: container.Summary{
+			summary: mobyContainer.Summary{
 				Labels: map[string]string{
 					selfcontainer.InternalResourceLabel: "true",
 				},
 				Command: "sleep infinity",
-				Mounts: []container.MountPoint{
+				Mounts: []mobyContainer.MountPoint{
 					{Destination: "/volume"},
 				},
 			},
@@ -155,12 +155,12 @@ func TestIsHelperContainerUnlabeled(t *testing.T) {
 		},
 		{
 			name: "internal trivy-like helper is not treated as an unlabeled volume helper",
-			summary: container.Summary{
+			summary: mobyContainer.Summary{
 				Labels: map[string]string{
 					selfcontainer.InternalResourceLabel: "true",
 				},
 				Command: "trivy image --quiet alpine:latest",
-				Mounts: []container.MountPoint{
+				Mounts: []mobyContainer.MountPoint{
 					{Destination: "/var/run/docker.sock"},
 				},
 			},
@@ -178,12 +178,12 @@ func TestIsHelperContainerUnlabeled(t *testing.T) {
 func TestIsHelperContainerUsesExplicitHelperLabel(t *testing.T) {
 	tests := []struct {
 		name    string
-		summary container.Summary
+		summary mobyContainer.Summary
 		want    bool
 	}{
 		{
 			name: "new helper label matches",
-			summary: container.Summary{
+			summary: mobyContainer.Summary{
 				Labels: map[string]string{
 					selfcontainer.InternalResourceLabel: "true",
 					ContainerLabel:                      "true",
@@ -193,11 +193,11 @@ func TestIsHelperContainerUsesExplicitHelperLabel(t *testing.T) {
 		},
 		{
 			name: "generic internal volume mount does not match",
-			summary: container.Summary{
+			summary: mobyContainer.Summary{
 				Labels: map[string]string{
 					selfcontainer.InternalResourceLabel: "true",
 				},
-				Mounts: []container.MountPoint{
+				Mounts: []mobyContainer.MountPoint{
 					{Destination: "/volume"},
 				},
 			},
@@ -205,12 +205,12 @@ func TestIsHelperContainerUsesExplicitHelperLabel(t *testing.T) {
 		},
 		{
 			name: "unlabeled helper still matches",
-			summary: container.Summary{
+			summary: mobyContainer.Summary{
 				Labels: map[string]string{
 					selfcontainer.InternalResourceLabel: "true",
 				},
 				Command: "sleep infinity",
-				Mounts: []container.MountPoint{
+				Mounts: []mobyContainer.MountPoint{
 					{Destination: "/volume"},
 				},
 			},

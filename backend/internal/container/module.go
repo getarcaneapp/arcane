@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"getarcane.dev/arcane/v3/internal/activity"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -17,12 +17,12 @@ import (
 type (
 	Module struct {
 		service         *ContainerService
-		dockerService   *docker.DockerClientService
+		dockerService   *dockerInternal.DockerClientService
 		activityService *activity.ActivityService
 	}
 )
 
-func New(service *ContainerService, dockerService *docker.DockerClientService, activityService *activity.ActivityService) *Module {
+func New(service *ContainerService, dockerService *dockerInternal.DockerClientService, activityService *activity.ActivityService) *Module {
 	if err := service.stats.ObserveResources(otel.Meter(logging.InstrumentationName), service.dockerService.ListContainers); err != nil {
 		otel.Handle(err)
 	}
@@ -51,7 +51,7 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 func RegisterContainers(
 	api huma.API,
 	containerSvc *ContainerService,
-	dockerSvc *docker.DockerClientService,
+	dockerSvc *dockerInternal.DockerClientService,
 	activitySvc *activity.ActivityService,
 	appCtx handlerutil.ActivityAppContext,
 ) {

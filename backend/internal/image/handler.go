@@ -15,14 +15,14 @@ import (
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	buildtypes "kit.getarcane.app/builds/types"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -36,7 +36,7 @@ import (
 
 type (
 	ImageHandler struct {
-		dockerService      *docker.DockerClientService
+		dockerService      *dockerInternal.DockerClientService
 		imageService       *ImageService
 		imageUpdateService *imageupdate.ImageUpdateService
 		settingsService    *settings.SettingsService

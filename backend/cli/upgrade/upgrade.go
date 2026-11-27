@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/spf13/cobra"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/sys/cgroup"
@@ -70,13 +70,13 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		slog.InfoContext(ctx, "Upgrade log file created", "path", logFile.Name())
 	}
 
-	dockerClient, err := client.New(client.FromEnv)
+	dockerClient, err := mobyClient.New(mobyClient.FromEnv)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 	defer func() { _ = dockerClient.Close() }()
 
-	var targetContainer container.InspectResponse
+	var targetContainer mobyContainer.InspectResponse
 	if autoDetect || containerName == "" {
 		slog.InfoContext(ctx, "Auto-detecting Arcane container...")
 		targetContainer, err = findArcaneContainer(ctx, dockerClient)
@@ -86,7 +86,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		containerName = strings.TrimPrefix(targetContainer.Name, "/")
 		slog.InfoContext(ctx, "Found Arcane container", "name", containerName, "id", targetContainer.ID[:12])
 	} else {
-		inspectResult, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerName, client.ContainerInspectOptions{})
+		inspectResult, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerName, mobyClient.ContainerInspectOptions{})
 		if inspectErr != nil {
 			return fmt.Errorf("failed to inspect container %s: %w", containerName, inspectErr)
 		}
@@ -148,13 +148,13 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (container.InspectResponse, error) {
-	filter := make(client.Filters)
+func findArcaneContainer(ctx context.Context, dockerClient *mobyClient.Client) (mobyContainer.InspectResponse, error) {
+	filter := make(mobyClient.Filters)
 	filter = filter.Add("status", "running")
 
-	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{Filters: filter})
+	containers, err := dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{Filters: filter})
 	if err != nil {
-		return container.InspectResponse{}, err
+		return mobyContainer.InspectResponse{}, err
 	}
 
 	selfID, _ := cgroup.CurrentContainerID()
@@ -167,7 +167,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 			continue
 		}
 
-		inspectResult, containerInspectWithCompatibilityErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+		inspectResult, containerInspectWithCompatibilityErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, mobyClient.ContainerInspectOptions{})
 		if containerInspectWithCompatibilityErr != nil {
 			continue
 		}
@@ -196,7 +196,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		}
 	}
 
-	return container.InspectResponse{}, errors.New("no running Arcane container found")
+	return mobyContainer.InspectResponse{}, errors.New("no running Arcane container found")
 }
 
 func isLegacyServerLabel(containerLabels map[string]string) bool {
@@ -262,8 +262,8 @@ func refreshRecreatedImageLabels(containerLabels, previousImageLabels, imageLabe
 	return refreshed
 }
 
-func refreshRecreatedContainerLabels(ctx context.Context, dockerClient *client.Client, containerLabels map[string]string, previousImage, targetImage string) map[string]string {
-	imageInspect, imageInspectErr := dockerClient.ImageInspect(ctx, targetImage, client.ImageInspectWithManifests(true))
+func refreshRecreatedContainerLabels(ctx context.Context, dockerClient *mobyClient.Client, containerLabels map[string]string, previousImage, targetImage string) map[string]string {
+	imageInspect, imageInspectErr := dockerClient.ImageInspect(ctx, targetImage, mobyClient.ImageInspectWithManifests(true))
 	if imageInspectErr != nil {
 		imageInspect, imageInspectErr = dockerClient.ImageInspect(ctx, targetImage)
 	}
@@ -303,7 +303,7 @@ func hasOCIImageLabel(containerLabels map[string]string) bool {
 	return false
 }
 
-func isAgentContainer(inspect container.InspectResponse) bool {
+func isAgentContainer(inspect mobyContainer.InspectResponse) bool {
 	if inspect.Config == nil {
 		return false
 	}
@@ -320,7 +320,7 @@ func isAgentContainer(inspect container.InspectResponse) bool {
 	})
 }
 
-func shouldSkipContainer(ctx context.Context, c container.Summary, selfID string, now time.Time) bool {
+func shouldSkipContainer(ctx context.Context, c mobyContainer.Summary, selfID string, now time.Time) bool {
 	// Skip ourselves (the upgrader container) by ID
 	if selfID != "" && strings.HasPrefix(c.ID, selfID) {
 		slog.InfoContext(ctx, "Skipping self by ID", "id", c.ID[:12], "names", c.Names)
@@ -347,7 +347,7 @@ func shouldSkipContainer(ctx context.Context, c container.Summary, selfID string
 	return false
 }
 
-func determineImageName(ctx context.Context, dockerClient *client.Client, cont container.InspectResponse) string {
+func determineImageName(ctx context.Context, dockerClient *mobyClient.Client, cont mobyContainer.InspectResponse) string {
 	imageName, _, _ := strings.Cut(strings.TrimSpace(kit.FromPtr(cont.Config).Image), "@")
 
 	if !hasExplicitTag(imageName) {
@@ -372,7 +372,7 @@ func hasExplicitTag(ref string) bool {
 	return colon > slash
 }
 
-func inferImageNameFromDocker(ctx context.Context, dockerClient *client.Client, imageID string) string {
+func inferImageNameFromDocker(ctx context.Context, dockerClient *mobyClient.Client, imageID string) string {
 	ii, err := dockerClient.ImageInspect(ctx, imageID)
 	if err != nil {
 		return ""
@@ -399,7 +399,7 @@ func inferImageNameFromDocker(ctx context.Context, dockerClient *client.Client, 
 	return cmp.Or(arcaneNonLatest, arcaneAny)
 }
 
-func pulledImageAlreadyRunning(ctx context.Context, dockerClient *client.Client, imageRef, runningImageID string) (bool, string) {
+func pulledImageAlreadyRunning(ctx context.Context, dockerClient *mobyClient.Client, imageRef, runningImageID string) (bool, string) {
 	if runningImageID == "" {
 		return false, ""
 	}
@@ -411,8 +411,8 @@ func pulledImageAlreadyRunning(ctx context.Context, dockerClient *client.Client,
 	return inspect.ID == runningImageID, inspect.ID
 }
 
-func pullImage(ctx context.Context, dockerClient *client.Client, imageName string) error {
-	reader, err := dockerClient.ImagePull(ctx, imageName, client.ImagePullOptions{})
+func pullImage(ctx context.Context, dockerClient *mobyClient.Client, imageName string) error {
+	reader, err := dockerClient.ImagePull(ctx, imageName, mobyClient.ImagePullOptions{})
 	if err != nil {
 		return err
 	}
@@ -421,7 +421,7 @@ func pullImage(ctx context.Context, dockerClient *client.Client, imageName strin
 	return docker.RenderJSONMessageStream(reader, os.Stdout)
 }
 
-func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldContainer container.InspectResponse, newImage, expectedImageID string, environment map[string]string) error {
+func UpgradeContainer(ctx context.Context, dockerClient *mobyClient.Client, oldContainer mobyContainer.InspectResponse, newImage, expectedImageID string, environment map[string]string) error {
 	originalName := strings.TrimPrefix(oldContainer.Name, "/")
 	oldName := fmt.Sprintf("%s-old-%d", originalName, time.Now().UnixNano())
 
@@ -453,7 +453,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	// Pin every attached volume to its resolved name so the recreated container
 	// keeps its data instead of receiving fresh anonymous volumes (#3953).
 	if hostConfig == nil {
-		hostConfig = &container.HostConfig{}
+		hostConfig = &mobyContainer.HostConfig{}
 	}
 	hostConfig.Binds, hostConfig.Mounts, err = docker.PreserveVolumeMounts(ctx, hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
 	if err != nil {
@@ -479,7 +479,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	var (
 		apiVersion    string
-		networkConfig *network.NetworkingConfig
+		networkConfig *mobyNetwork.NetworkingConfig
 	)
 	if !nm.IsContainer() {
 		apiVersion = compat.DetectDockerAPIVersion(ctx, dockerClient)
@@ -490,19 +490,19 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 			)
 		}
 
-		var endpoints map[string]*network.EndpointSettings
+		var endpoints map[string]*mobyNetwork.EndpointSettings
 		if oldContainer.NetworkSettings != nil {
 			endpoints = oldContainer.NetworkSettings.Networks
 		}
 
-		networkConfig = &network.NetworkingConfig{
+		networkConfig = &mobyNetwork.NetworkingConfig{
 			EndpointsConfig: compat.SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints, apiVersion),
 		}
 	}
 
 	fmt.Println("PROGRESS:65:Renaming old container")
 	slog.InfoContext(ctx, "Renaming old container", "from", originalName, "to", oldName)
-	if _, containerRenameErr := dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: oldName}); containerRenameErr != nil {
+	if _, containerRenameErr := dockerClient.ContainerRename(ctx, oldContainer.ID, mobyClient.ContainerRenameOptions{NewName: oldName}); containerRenameErr != nil {
 		return fmt.Errorf("rename old container: %w", containerRenameErr)
 	}
 
@@ -510,15 +510,15 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	slog.InfoContext(ctx, "Stopping old container", "name", oldName)
 	// Allow graceful shutdown and longer finite timeouts, but never wait forever.
 	stopTimeout := max(40, kit.FromPtr(oldContainer.Config.StopTimeout))
-	if _, containerStopErr := dockerClient.ContainerStop(ctx, oldContainer.ID, client.ContainerStopOptions{Timeout: &stopTimeout}); containerStopErr != nil {
-		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
+	if _, containerStopErr := dockerClient.ContainerStop(ctx, oldContainer.ID, mobyClient.ContainerStopOptions{Timeout: &stopTimeout}); containerStopErr != nil {
+		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, mobyClient.ContainerRenameOptions{NewName: originalName})
 		return fmt.Errorf("stop old container: %w", containerStopErr)
 	}
 
 	fmt.Println("PROGRESS:75:Creating new container")
 	slog.InfoContext(ctx, "Creating new container", "name", originalName)
 	resp, err := compat.ContainerCreateWithCompatibility(ctx, dockerClient, compat.CreateRequest{
-		Options: client.ContainerCreateOptions{
+		Options: mobyClient.ContainerCreateOptions{
 			Config:           &containerConfig,
 			HostConfig:       hostConfig,
 			NetworkingConfig: networkConfig,
@@ -527,15 +527,15 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		APIVersion: apiVersion,
 	})
 	if err != nil {
-		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
-		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
+		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, mobyClient.ContainerStartOptions{})
+		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, mobyClient.ContainerRenameOptions{NewName: originalName})
 		return fmt.Errorf("create new container: %w", err)
 	}
 
 	// Docker resolves the tag at creation. Inspect the created container so a
 	// concurrent pull cannot cause an unselected image to start.
 	if expectedImageID != "" {
-		created, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
+		created, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, mobyClient.ContainerInspectOptions{})
 		if inspectErr != nil {
 			err = fmt.Errorf("inspect new container image: %w", inspectErr)
 		} else if created.Container.Image != expectedImageID {
@@ -545,18 +545,18 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	if err == nil {
 		fmt.Println("PROGRESS:80:Starting new container")
 		slog.InfoContext(ctx, "Starting new container", "id", resp.ID[:12])
-		if _, startErr := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); startErr != nil {
+		if _, startErr := dockerClient.ContainerStart(ctx, resp.ID, mobyClient.ContainerStartOptions{}); startErr != nil {
 			err = fmt.Errorf("start new container: %w", startErr)
 		}
 	}
 	if err != nil {
-		if _, removeErr := dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
+		if _, removeErr := dockerClient.ContainerRemove(ctx, resp.ID, mobyClient.ContainerRemoveOptions{Force: true}); removeErr != nil {
 			err = errors.Join(err, fmt.Errorf("remove new container: %w", removeErr))
 		}
-		if _, startErr := dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{}); startErr != nil {
+		if _, startErr := dockerClient.ContainerStart(ctx, oldContainer.ID, mobyClient.ContainerStartOptions{}); startErr != nil {
 			err = errors.Join(err, fmt.Errorf("restart old container: %w", startErr))
 		}
-		if _, renameErr := dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName}); renameErr != nil {
+		if _, renameErr := dockerClient.ContainerRename(ctx, oldContainer.ID, mobyClient.ContainerRenameOptions{NewName: originalName}); renameErr != nil {
 			err = errors.Join(err, fmt.Errorf("restore old container name: %w", renameErr))
 		}
 		return err
@@ -567,7 +567,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	fmt.Println("PROGRESS:90:Removing old container")
 	slog.InfoContext(ctx, "Removing old container", "id", oldContainer.ID[:12])
-	if _, containerRemoveErr := dockerClient.ContainerRemove(ctx, oldContainer.ID, client.ContainerRemoveOptions{}); containerRemoveErr != nil {
+	if _, containerRemoveErr := dockerClient.ContainerRemove(ctx, oldContainer.ID, mobyClient.ContainerRemoveOptions{}); containerRemoveErr != nil {
 		slog.WarnContext(ctx, "Failed to remove old container", "error", containerRemoveErr)
 	}
 

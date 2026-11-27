@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/pkg/authconfig"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/image"
-	dockerregistry "github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	mobyAuthConfig "github.com/moby/moby/api/pkg/authconfig"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -28,11 +28,11 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/kv"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -71,7 +71,7 @@ func setupImageProjectTestDB(t *testing.T) *database.DB {
 }
 
 func TestCollectPinnedReferencesByImageID(t *testing.T) {
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "c1",
 			ImageID: "sha256:image-pinned-1",
@@ -139,7 +139,7 @@ func TestMapDockerImagesToDTOs_PopulatesPinnedReferences(t *testing.T) {
 	pinnedRef := "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
 	const pinnedDigest = "ghcr.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
 	const regularDigest = "nginx@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
-	dockerImages := []image.Summary{
+	dockerImages := []mobyImage.Summary{
 		{
 			ID:          "sha256:pinned-image",
 			RepoTags:    []string{pinnedDigest},
@@ -153,7 +153,7 @@ func TestMapDockerImagesToDTOs_PopulatesPinnedReferences(t *testing.T) {
 			Size:        67890,
 		},
 	}
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{
 			ID:      "c-pinned",
 			ImageID: "sha256:pinned-image",
@@ -200,17 +200,17 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			_ = json.MarshalWrite(w, []image.Summary{
+			_ = json.MarshalWrite(w, []mobyImage.Summary{
 				{ID: pinnedID, Size: 2048},
 			})
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
-			_ = json.MarshalWrite(w, image.InspectResponse{
+			_ = json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:       pinnedID,
 				RepoTags: []string{pinnedDigest},
 				Size:     2048,
 			})
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			_ = json.MarshalWrite(w, []container.Summary{
+			_ = json.MarshalWrite(w, []mobyContainer.Summary{
 				{
 					ID:      "c-pinned-detail",
 					ImageID: pinnedID,
@@ -246,17 +246,17 @@ func TestImageService_GetImageDetail_IncludesUpdateInfo(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			_ = json.MarshalWrite(w, []image.Summary{
+			_ = json.MarshalWrite(w, []mobyImage.Summary{
 				{ID: testID, Size: 1024},
 			})
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
-			_ = json.MarshalWrite(w, image.InspectResponse{
+			_ = json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:       testID,
 				RepoTags: []string{"nginx:latest"},
 				Size:     1024,
 			})
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			_ = json.MarshalWrite(w, []container.Summary{})
+			_ = json.MarshalWrite(w, []mobyContainer.Summary{})
 		default:
 			http.NotFound(w, r)
 		}
@@ -305,11 +305,11 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			_ = json.MarshalWrite(w, []image.Summary{
+			_ = json.MarshalWrite(w, []mobyImage.Summary{
 				{ID: testID, Size: 1024},
 			})
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
-			_ = json.MarshalWrite(w, image.InspectResponse{
+			_ = json.MarshalWrite(w, mobyImage.InspectResponse{
 				ID:   testID,
 				Size: 1024,
 			})
@@ -412,7 +412,7 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}, &kv.KVEntry{}, &testProjectRow{}))
+	require.NoError(t, db.AutoMigrate(&registryInternal.ContainerRegistry{}, &kv.KVEntry{}, &testProjectRow{}))
 
 	crypto.InitEncryption(crypto.Config{
 		Environment:   string(config.AppEnvironmentTest),
@@ -421,7 +421,7 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 
 	dbWrap := &database.DB{DB: db}
 	return NewImageService(ImageServiceParams{
-		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		RegistryService: registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 			DB:        dbWrap,
 			KVService: kv.NewKVService(dbWrap),
 		}),
@@ -434,12 +434,12 @@ func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, t
 	encryptedToken, err := crypto.Encrypt(token)
 	require.NoError(t, err)
 
-	reg := &registry.ContainerRegistry{
+	reg := &registryInternal.ContainerRegistry{
 		URL:          localUrl,
 		Username:     username,
 		Token:        encryptedToken,
 		Enabled:      true,
-		RegistryType: registry.RegistryTypeGeneric,
+		RegistryType: registryInternal.RegistryTypeGeneric,
 	}
 	require.NoError(t, db.WithContext(t.Context()).Create(reg).Error)
 }
@@ -508,7 +508,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) 
 		}
 		assert.True(t, eventService.ShouldSuppressDaemonEvent("image", "", "registry.example.com/team/app:latest", ""))
 		assert.False(t, eventService.ShouldSuppressDaemonEvent("image", "", "registry.example.com/team/other:latest", ""))
-		authHeaders = append(authHeaders, r.Header.Get(dockerregistry.AuthHeader))
+		authHeaders = append(authHeaders, r.Header.Get(mobyRegistry.AuthHeader))
 		if len(authHeaders) == 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -520,7 +520,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) 
 	imageSvc := NewImageService(ImageServiceParams{
 		DB:            db,
 		DockerService: newImageTestDockerService(t, server),
-		RegistryService: registry.NewContainerRegistryService(registry.ContainerRegistryServiceParams{
+		RegistryService: registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
 			DB:        db,
 			KVService: kv.NewKVService(db),
 		}),
@@ -602,7 +602,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 
 func TestImageServiceSearchImagesRequiresTerm(t *testing.T) {
 	imageSvc := NewImageService(ImageServiceParams{
-		DockerService: &docker.DockerClientService{},
+		DockerService: &dockerInternal.DockerClientService{},
 	})
 
 	_, err := imageSvc.SearchImages(t.Context(), " ")
@@ -647,26 +647,26 @@ func TestImageServiceSearchImagesCallsDockerAPI(t *testing.T) {
 func TestShouldRetryAnonymousPull_UnauthorizedWithAuth(t *testing.T) {
 	err := errors.New(`error response from daemon: Head "registry-1.docker.io/v2/library/nginx/manifests/latest": unauthorized: incorrect username or password`)
 
-	assert.True(t, ShouldRetryAnonymousPull(client.ImagePullOptions{RegistryAuth: "encoded-auth"}, err))
+	assert.True(t, ShouldRetryAnonymousPull(mobyClient.ImagePullOptions{RegistryAuth: "encoded-auth"}, err))
 }
 
 func TestShouldRetryAnonymousPull_SkipsRetryWithoutUnauthorizedOrAuth(t *testing.T) {
 	nonAuthErr := errors.New("error response from daemon: i/o timeout")
 	unauthorizedErr := errors.New("unauthorized: authentication required")
 
-	assert.False(t, ShouldRetryAnonymousPull(client.ImagePullOptions{RegistryAuth: "encoded-auth"}, nonAuthErr))
-	assert.False(t, ShouldRetryAnonymousPull(client.ImagePullOptions{}, unauthorizedErr))
+	assert.False(t, ShouldRetryAnonymousPull(mobyClient.ImagePullOptions{RegistryAuth: "encoded-auth"}, nonAuthErr))
+	assert.False(t, ShouldRetryAnonymousPull(mobyClient.ImagePullOptions{}, unauthorizedErr))
 }
 
-func decodeRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
+func decodeRegistryAuth(t *testing.T, encoded string) mobyRegistry.AuthConfig {
 	t.Helper()
 
-	cfg, err := authconfig.Decode(encoded)
+	cfg, err := mobyAuthConfig.Decode(encoded)
 	require.NoError(t, err)
 	return *cfg
 }
 
-func newImageTestDockerService(t *testing.T, server *httptest.Server) *docker.DockerClientService {
+func newImageTestDockerService(t *testing.T, server *httptest.Server) *dockerInternal.DockerClientService {
 	t.Helper()
 	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -682,17 +682,17 @@ func newImageTestDockerService(t *testing.T, server *httptest.Server) *docker.Do
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), nil, settingsService, docker.ClientServiceOptions{}).WithClient(newTestDockerClient(t, server))
+	return dockerInternal.NewDockerClientService(t.Context(), nil, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(newTestDockerClient(t, server))
 }
 
-func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
 
 	httpClient := server.Client()
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(httpClient),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(httpClient),
 	)
 	require.NoError(t, err)
 
@@ -767,7 +767,7 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 	require.NoError(t, db.Create(&records).Error)
 	scoped, err := svc.GetUpdateInfoByContainers(
 		t.Context(),
-		[]container.Summary{
+		[]mobyContainer.Summary{
 			{
 				ID:     "first",
 				Image:  "example:3.1.0",
@@ -858,7 +858,7 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 	} {
 		checks, getUpdateInfoByContainersErr := svc.GetUpdateInfoByContainers(
 			t.Context(),
-			[]container.Summary{
+			[]mobyContainer.Summary{
 				{
 					ID:     "first",
 					Image:  "example:3.1.0",
@@ -882,7 +882,7 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 		"com.getarcaneapp.arcane.updater.constraint": "3.x",
 		"com.getarcaneapp.arcane.updater":            "false",
 	}
-	checks, err := svc.GetUpdateInfoByContainers(t.Context(), []container.Summary{
+	checks, err := svc.GetUpdateInfoByContainers(t.Context(), []mobyContainer.Summary{
 		{
 			ID:     "first",
 			Image:  "example:3.1.0",
@@ -906,7 +906,7 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 			CheckTime:      now,
 		}).Error,
 	)
-	digestContainers := []container.Summary{
+	digestContainers := []mobyContainer.Summary{
 		{
 			ID:      "moving",
 			Image:   "app:latest",

@@ -17,7 +17,7 @@ import (
 
 	"github.com/italypaleale/francis/actor"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/kv"

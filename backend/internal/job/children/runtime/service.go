@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/types/v3"

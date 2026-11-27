@@ -24,14 +24,14 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/updater/labels"
 
@@ -39,7 +39,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/container/children/stats"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	imagedomain "getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
@@ -57,12 +57,12 @@ import (
 
 type (
 	resourceStatsServer struct {
-		stats       map[string]container.StatsResponse
+		stats       map[string]mobyContainer.StatsResponse
 		statsStatus map[string]int
 		statsCalls  map[string]int
 		slowIDs     map[string]bool
 
-		containers []container.Summary
+		containers []mobyContainer.Summary
 		delay      time.Duration
 		mu         sync.Mutex
 
@@ -173,7 +173,7 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 			SettingsService: settingsService,
 		}),
 	})
-	dockerContainers := []container.Summary{
+	dockerContainers := []mobyContainer.Summary{
 		{ID: "app", Names: []string{"/app"}, Labels: map[string]string{
 			"com.docker.compose.project": "media",
 			projects.ArcaneIconLabel:     "immich",
@@ -314,13 +314,13 @@ func TestBuildContainerFilterAccessors_FiltersByStatus(t *testing.T) {
 }
 
 func TestBuildCleanNetworkingConfigPreservesEndpointSettings(t *testing.T) {
-	containerInspect := container.InspectResponse{
-		NetworkSettings: &container.NetworkSettings{
-			Networks: map[string]*network.EndpointSettings{
+	containerInspect := mobyContainer.InspectResponse{
+		NetworkSettings: &mobyContainer.NetworkSettings{
+			Networks: map[string]*mobyNetwork.EndpointSettings{
 				"bridge": {
 					Aliases:    []string{"svc"},
 					IPAddress:  netip.MustParseAddr("172.17.0.2"),
-					IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.17.0.5")},
+					IPAMConfig: &mobyNetwork.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.17.0.5")},
 				},
 			},
 		},
@@ -457,14 +457,14 @@ func dockerTestPath(path string) string {
 	return dockerAPIVersionPrefix.ReplaceAllString(path, "")
 }
 
-func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
 
 	httpClient := server.Client()
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(httpClient),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(httpClient),
 	)
 	require.NoError(t, err)
 
@@ -484,19 +484,19 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 }
 
 func TestApplyEditPreservesUnmanagedSettings(t *testing.T) {
-	cfg := container.Config{
+	cfg := mobyContainer.Config{
 		Image:        "nginx:1.25",
 		Env:          []string{"OLD=1"},
 		StopSignal:   "SIGQUIT",
-		ExposedPorts: network.PortSet{network.MustParsePort("80/tcp"): {}, network.MustParsePort("9000/tcp"): {}},
+		ExposedPorts: mobyNetwork.PortSet{mobyNetwork.MustParsePort("80/tcp"): {}, mobyNetwork.MustParsePort("9000/tcp"): {}},
 	}
-	hc := container.HostConfig{
+	hc := mobyContainer.HostConfig{
 		Binds:        []string{"/data:/data"},
-		PortBindings: network.PortMap{network.MustParsePort("80/tcp"): {{HostPort: "8080"}}},
+		PortBindings: mobyNetwork.PortMap{mobyNetwork.MustParsePort("80/tcp"): {{HostPort: "8080"}}},
 		Sysctls:      map[string]string{"net.core.somaxconn": "1024"},
-		LogConfig:    container.LogConfig{Type: "json-file", Config: map[string]string{"max-size": "5m"}},
+		LogConfig:    mobyContainer.LogConfig{Type: "json-file", Config: map[string]string{"max-size": "5m"}},
 
-		Ulimits: []*container.Ulimit{{Name: "nofile", Soft: 1024, Hard: 2048}},
+		Ulimits: []*mobyContainer.Ulimit{{Name: "nofile", Soft: 1024, Hard: 2048}},
 	}
 
 	env := []string{"NEW=1"}
@@ -512,18 +512,18 @@ func TestApplyEditPreservesUnmanagedSettings(t *testing.T) {
 	require.Equal(t, "json-file", hc.LogConfig.Type)
 	require.Len(t, hc.Ulimits, 1)
 	require.Equal(t, []string{"/data:/data"}, hc.Binds)
-	require.Contains(t, cfg.ExposedPorts, network.MustParsePort("80/tcp"))
+	require.Contains(t, cfg.ExposedPorts, mobyNetwork.MustParsePort("80/tcp"))
 }
 
 func TestMergeEditMountsPreservesMountOptions(t *testing.T) {
-	existing := []mount.Mount{
+	existing := []mobyMount.Mount{
 		{
-			Type:          mount.TypeVolume,
+			Type:          mobyMount.TypeVolume,
 			Source:        "data",
 			Target:        "/data",
-			VolumeOptions: &mount.VolumeOptions{NoCopy: true, Labels: map[string]string{"keep": "me"}},
+			VolumeOptions: &mobyMount.VolumeOptions{NoCopy: true, Labels: map[string]string{"keep": "me"}},
 		},
-		{Type: mount.TypeTmpfs, Target: "/tmp/scratch", TmpfsOptions: &mount.TmpfsOptions{SizeBytes: 1024}},
+		{Type: mobyMount.TypeTmpfs, Target: "/tmp/scratch", TmpfsOptions: &mobyMount.TmpfsOptions{SizeBytes: 1024}},
 	}
 
 	requested := []types.ContainerMountCreate{{Type: "volume", Source: "data", Target: "/data", ReadOnly: true}}
@@ -536,18 +536,18 @@ func TestMergeEditMountsPreservesMountOptions(t *testing.T) {
 }
 
 func TestMergeEditMountsAppliesSourceChange(t *testing.T) {
-	existing := []mount.Mount{
+	existing := []mobyMount.Mount{
 		{
-			Type:          mount.TypeVolume,
+			Type:          mobyMount.TypeVolume,
 			Source:        "old-volume",
 			Target:        "/data",
-			VolumeOptions: &mount.VolumeOptions{NoCopy: true, Labels: map[string]string{"keep": "me"}},
+			VolumeOptions: &mobyMount.VolumeOptions{NoCopy: true, Labels: map[string]string{"keep": "me"}},
 		},
 		{
-			Type:        mount.TypeBind,
+			Type:        mobyMount.TypeBind,
 			Source:      "/old/path",
 			Target:      "/config",
-			BindOptions: &mount.BindOptions{Propagation: mount.PropagationRPrivate},
+			BindOptions: &mobyMount.BindOptions{Propagation: mobyMount.PropagationRPrivate},
 		},
 	}
 
@@ -566,18 +566,18 @@ func TestMergeEditMountsAppliesSourceChange(t *testing.T) {
 	require.Equal(t, "/new/path", out[1].Source)
 	require.True(t, out[1].ReadOnly)
 	require.NotNil(t, out[1].BindOptions)
-	require.Equal(t, mount.PropagationRPrivate, out[1].BindOptions.Propagation)
+	require.Equal(t, mobyMount.PropagationRPrivate, out[1].BindOptions.Propagation)
 }
 
 func TestApplyEditRecomputesExposedPorts(t *testing.T) {
-	cfg := container.Config{
-		ExposedPorts: network.PortSet{
-			network.MustParsePort("80/tcp"):   {},
-			network.MustParsePort("9000/tcp"): {},
+	cfg := mobyContainer.Config{
+		ExposedPorts: mobyNetwork.PortSet{
+			mobyNetwork.MustParsePort("80/tcp"):   {},
+			mobyNetwork.MustParsePort("9000/tcp"): {},
 		},
 	}
-	hc := container.HostConfig{
-		PortBindings: network.PortMap{network.MustParsePort("80/tcp"): {{HostPort: "8080"}}},
+	hc := mobyContainer.HostConfig{
+		PortBindings: mobyNetwork.PortMap{mobyNetwork.MustParsePort("80/tcp"): {{HostPort: "8080"}}},
 	}
 
 	newBindings := map[string][]types.ContainerPortBindingCreate{"443/tcp": {{HostPort: "8443"}}}
@@ -588,15 +588,15 @@ func TestApplyEditRecomputesExposedPorts(t *testing.T) {
 	require.NoError(t, applyEditToHostConfig(&hc, req))
 
 	// new binding key + previously-exposed-but-unbound port survive; the old bound port is gone
-	require.Contains(t, cfg.ExposedPorts, network.MustParsePort("443/tcp"))
-	require.Contains(t, cfg.ExposedPorts, network.MustParsePort("9000/tcp"))
-	require.NotContains(t, cfg.ExposedPorts, network.MustParsePort("80/tcp"))
-	require.Contains(t, hc.PortBindings, network.MustParsePort("443/tcp"))
+	require.Contains(t, cfg.ExposedPorts, mobyNetwork.MustParsePort("443/tcp"))
+	require.Contains(t, cfg.ExposedPorts, mobyNetwork.MustParsePort("9000/tcp"))
+	require.NotContains(t, cfg.ExposedPorts, mobyNetwork.MustParsePort("80/tcp"))
+	require.Contains(t, hc.PortBindings, mobyNetwork.MustParsePort("443/tcp"))
 }
 
 func TestApplyEditHostname(t *testing.T) {
 	// nil preserves the existing hostname
-	cfg, err := applyEditToContainerConfig(container.Config{Hostname: "old-host"}, nil, types.ContainerEdit{})
+	cfg, err := applyEditToContainerConfig(mobyContainer.Config{Hostname: "old-host"}, nil, types.ContainerEdit{})
 	require.NoError(t, err)
 	require.Equal(t, "old-host", cfg.Hostname)
 
@@ -611,13 +611,13 @@ func TestApplyEditHostname(t *testing.T) {
 }
 
 func TestApplyEditRejectsInvalidChangedHostname(t *testing.T) {
-	_, err := applyEditToContainerConfig(container.Config{Hostname: "old-host"}, nil, types.ContainerEdit{Hostname: new("bad_host")})
+	_, err := applyEditToContainerConfig(mobyContainer.Config{Hostname: "old-host"}, nil, types.ContainerEdit{Hostname: new("bad_host")})
 	require.ErrorIs(t, err, common.ErrValidation)
 	fieldErr, ok := errors.AsType[*types.FieldError](err)
 	require.True(t, ok)
 	require.Equal(t, "hostname", fieldErr.Field)
 
-	cfg, err := applyEditToContainerConfig(container.Config{Hostname: "legacy_host"}, nil, types.ContainerEdit{Hostname: new("legacy_host")})
+	cfg, err := applyEditToContainerConfig(mobyContainer.Config{Hostname: "legacy_host"}, nil, types.ContainerEdit{Hostname: new("legacy_host")})
 	require.NoError(t, err)
 	require.Equal(t, "legacy_host", cfg.Hostname)
 }
@@ -637,7 +637,7 @@ func TestCreateContainerValidatesHostname(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := (&ContainerService{}).CreateContainer(t.Context(), &container.Config{Image: "nginx:latest", Hostname: test.hostname}, nil, nil, "web", types.Actor{}, nil)
+			_, err := (&ContainerService{}).CreateContainer(t.Context(), &mobyContainer.Config{Image: "nginx:latest", Hostname: test.hostname}, nil, nil, "web", types.Actor{}, nil)
 			require.ErrorIs(t, err, common.ErrValidation)
 			fieldErr, ok := errors.AsType[*types.FieldError](err)
 			require.True(t, ok)
@@ -651,10 +651,10 @@ func TestCreateContainerValidatesHostname(t *testing.T) {
 }
 
 func TestBuildEditNetworkingConfig(t *testing.T) {
-	containerInspect := container.InspectResponse{
-		HostConfig: &container.HostConfig{NetworkMode: "my-net"},
-		NetworkSettings: &container.NetworkSettings{
-			Networks: map[string]*network.EndpointSettings{
+	containerInspect := mobyContainer.InspectResponse{
+		HostConfig: &mobyContainer.HostConfig{NetworkMode: "my-net"},
+		NetworkSettings: &mobyContainer.NetworkSettings{
+			Networks: map[string]*mobyNetwork.EndpointSettings{
 				"my-net": {Aliases: []string{"svc"}, DNSNames: []string{"svc"}},
 			},
 		},
@@ -680,32 +680,32 @@ func TestBuildEditNetworkingConfig(t *testing.T) {
 	require.Equal(t, []string{"svc"}, out.EndpointsConfig["my-net"].DNSNames)
 
 	// host network mode: endpoint edits are skipped entirely
-	hostModeInspect := container.InspectResponse{HostConfig: &container.HostConfig{NetworkMode: "host"}}
+	hostModeInspect := mobyContainer.InspectResponse{HostConfig: &mobyContainer.HostConfig{NetworkMode: "host"}}
 	out, err = buildEditNetworkingConfig(hostModeInspect, req, "1.44")
 	require.NoError(t, err)
 	require.Nil(t, out)
 }
 
 func TestRetainedVolumeMountPoints(t *testing.T) {
-	original := container.HostConfig{
+	original := mobyContainer.HostConfig{
 		Binds: []string{"/cache", "removed:/removed", "kept:/kept"},
-		Mounts: []mount.Mount{
-			{Type: mount.TypeVolume, Target: "/anon-mount"},
+		Mounts: []mobyMount.Mount{
+			{Type: mobyMount.TypeVolume, Target: "/anon-mount"},
 		},
 	}
-	updated := container.HostConfig{
+	updated := mobyContainer.HostConfig{
 		Binds: []string{"/cache", "kept:/kept", "renamed:/image-volume"},
-		Mounts: []mount.Mount{
-			{Type: mount.TypeVolume, Target: "/anon-mount"},
+		Mounts: []mobyMount.Mount{
+			{Type: mobyMount.TypeVolume, Target: "/anon-mount"},
 		},
 	}
-	mountPoints := []container.MountPoint{
-		{Type: mount.TypeVolume, Name: "anon-cache", Destination: "/cache"},
-		{Type: mount.TypeVolume, Name: "removed", Destination: "/removed"},
-		{Type: mount.TypeVolume, Name: "kept", Destination: "/kept"},
-		{Type: mount.TypeVolume, Name: "anon-mount", Destination: "/anon-mount"},
-		{Type: mount.TypeVolume, Name: "image-data", Destination: "/data"},
-		{Type: mount.TypeVolume, Name: "image-other", Destination: "/image-volume"},
+	mountPoints := []mobyContainer.MountPoint{
+		{Type: mobyMount.TypeVolume, Name: "anon-cache", Destination: "/cache"},
+		{Type: mobyMount.TypeVolume, Name: "removed", Destination: "/removed"},
+		{Type: mobyMount.TypeVolume, Name: "kept", Destination: "/kept"},
+		{Type: mobyMount.TypeVolume, Name: "anon-mount", Destination: "/anon-mount"},
+		{Type: mobyMount.TypeVolume, Name: "image-data", Destination: "/data"},
+		{Type: mobyMount.TypeVolume, Name: "image-other", Destination: "/image-volume"},
 	}
 
 	retained := retainedVolumeMountPoints(original, updated, mountPoints)
@@ -782,10 +782,10 @@ func TestContainerServiceResizeExec(t *testing.T) {
 
 func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	tests := []struct {
-		hostConfig container.HostConfig
+		hostConfig mobyContainer.HostConfig
 		name       string
 		version    string
-		wantUserns container.UsernsMode
+		wantUserns mobyContainer.UsernsMode
 	}{
 		{
 			name:    "docker",
@@ -794,7 +794,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 		{
 			name:       "podman restores keep-id",
 			version:    `{"Platform":{"Name":"Podman Engine"}}`,
-			hostConfig: container.HostConfig{UsernsMode: "private"},
+			hostConfig: mobyContainer.HostConfig{UsernsMode: "private"},
 			wantUserns: "keep-id:uid=1000,gid=1000",
 		},
 	}
@@ -804,7 +804,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 			db := setupProjectTestDB(t)
 			events := event.NewEventService(db, &config.Config{}, nil)
 			observed := make(chan string, 8)
-			var createdUserns container.UsernsMode
+			var createdUserns mobyContainer.UsernsMode
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				path := dockerTestPath(r.URL.Path)
@@ -835,7 +835,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 				observed <- path
 				if path == "/containers/create" {
 					var body struct {
-						HostConfig container.HostConfig
+						HostConfig mobyContainer.HostConfig
 					}
 					if err := json.UnmarshalRead(r.Body, &body); err != nil {
 						t.Errorf("decode container creation request: %v", err)
@@ -850,9 +850,9 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			t.Cleanup(server.Close)
-			dockerClient, err := client.New(
-				client.WithHost("tcp://"+server.Listener.Addr().String()),
-				client.WithAPIVersion("1.41"),
+			dockerClient, err := mobyClient.New(
+				mobyClient.WithHost("tcp://"+server.Listener.Addr().String()),
+				mobyClient.WithAPIVersion("1.41"),
 			)
 			require.NoError(t, err)
 			t.Cleanup(func() {
@@ -864,11 +864,11 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 				DockerService: newSettingsDockerService(t, dockerClient),
 				KVService:     kvService,
 			})
-			info := container.InspectResponse{
+			info := mobyContainer.InspectResponse{
 				ID:         "old-id",
 				Name:       "/web",
-				State:      &container.State{Running: true},
-				Config:     &container.Config{Image: "app:latest"},
+				State:      &mobyContainer.State{Running: true},
+				Config:     &mobyContainer.Config{Image: "app:latest"},
 				HostConfig: &tt.hostConfig,
 			}
 			id, err := svc.recreateContainer(
@@ -950,12 +950,12 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 		DockerService: newSettingsDockerService(t, newTestDockerClient(t, server)),
 		KVService:     kvService,
 	})
-	info := container.InspectResponse{
+	info := mobyContainer.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
-		State:      &container.State{Running: true},
-		Config:     &container.Config{Image: "app:latest"},
-		HostConfig: &container.HostConfig{},
+		State:      &mobyContainer.State{Running: true},
+		Config:     &mobyContainer.Config{Image: "app:latest"},
+		HostConfig: &mobyContainer.HostConfig{},
 	}
 
 	_, err := svc.recreateContainer(ctx, info, "redeploy", "web", info.Config, info.HostConfig, nil, "1.41", event.EventTypeContainerDeploy, types.SystemUser)
@@ -984,10 +984,10 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 
 func TestRecoverInterruptedRedeploys(t *testing.T) {
 	backupName := "web" + redeployBackupInfix + "1700000000"
-	backup := container.Summary{
+	backup := mobyContainer.Summary{
 		ID:    "backup-id",
 		Names: []string{"/" + backupName},
-		State: container.StateExited,
+		State: mobyContainer.StateExited,
 	}
 	journal := RedeployJournal{
 		OriginalID:   "backup-id",
@@ -998,44 +998,44 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 	tests := []struct {
 		name         string
 		journals     []RedeployJournal
-		containers   []container.Summary
+		containers   []mobyContainer.Summary
 		want         []string
 		wantJournals int
 	}{
 		{
 			name:     "replacement running removes backup",
 			journals: []RedeployJournal{journal},
-			containers: []container.Summary{
+			containers: []mobyContainer.Summary{
 				backup,
-				{ID: "new-id", Names: []string{"/web"}, State: container.StateRunning},
+				{ID: "new-id", Names: []string{"/web"}, State: mobyContainer.StateRunning},
 			},
 			want: []string{"DELETE /containers/backup-id?force=1"},
 		},
 		{
 			name:       "missing replacement restores original name",
 			journals:   []RedeployJournal{journal},
-			containers: []container.Summary{backup},
+			containers: []mobyContainer.Summary{backup},
 			want:       []string{"POST /containers/backup-id/rename?name=web"},
 		},
 		{
 			name:     "stopped replacement leaves both",
 			journals: []RedeployJournal{journal},
-			containers: []container.Summary{
+			containers: []mobyContainer.Summary{
 				backup,
-				{ID: "new-id", Names: []string{"/web"}, State: container.StateExited},
+				{ID: "new-id", Names: []string{"/web"}, State: mobyContainer.StateExited},
 			},
 			wantJournals: 1,
 		},
 		{
 			name:     "backup with a different ID is skipped",
 			journals: []RedeployJournal{journal},
-			containers: []container.Summary{
-				{ID: "other-id", Names: []string{"/" + backupName}, State: container.StateExited},
+			containers: []mobyContainer.Summary{
+				{ID: "other-id", Names: []string{"/" + backupName}, State: mobyContainer.StateExited},
 			},
 		},
 		{
 			name:       "name-matching container without a journal is left alone",
-			containers: []container.Summary{backup},
+			containers: []mobyContainer.Summary{backup},
 		},
 	}
 
@@ -1093,7 +1093,7 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 		SettingsService: settingsService,
 	})
 	strategyLabel := "com.getarcaneapp.arcane.updater.strategy"
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{ID: "first", Image: "app:3.1.0", ImageID: "shared-image"},
 		{ID: "second", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "auto"}},
 		{ID: "unchecked", Image: "app:3.1.0", ImageID: "shared-image", Labels: map[string]string{strategyLabel: "tag"}},
@@ -1301,7 +1301,7 @@ func TestContainerServiceGetContainerProcessesPodmanFallback(t *testing.T) {
 
 func newResourceStatsServer() *resourceStatsServer {
 	return &resourceStatsServer{
-		stats:       map[string]container.StatsResponse{},
+		stats:       map[string]mobyContainer.StatsResponse{},
 		statsStatus: map[string]int{},
 		statsCalls:  map[string]int{},
 		slowIDs:     map[string]bool{},
@@ -1315,23 +1315,23 @@ func (f *resourceStatsServer) addContainer(id, name, state string, containerLabe
 	if len(containerLabels) > 0 {
 		l = containerLabels[0]
 	}
-	f.containers = append(f.containers, container.Summary{ID: id, Names: []string{"/" + name}, State: container.ContainerState(state), Image: "img:latest", Labels: l})
+	f.containers = append(f.containers, mobyContainer.Summary{ID: id, Names: []string{"/" + name}, State: mobyContainer.ContainerState(state), Image: "img:latest", Labels: l})
 }
 
 func (f *resourceStatsServer) setStats(id string, cpuPercent float64, memoryUsage, memoryLimit uint64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	// cpuPercent maps to cpuDelta/systemDelta*100 with a fixed systemDelta of 1000.
-	f.stats[id] = container.StatsResponse{
-		CPUStats: container.CPUStats{
-			CPUUsage:    container.CPUUsage{TotalUsage: uint64(1000 + cpuPercent*10)},
+	f.stats[id] = mobyContainer.StatsResponse{
+		CPUStats: mobyContainer.CPUStats{
+			CPUUsage:    mobyContainer.CPUUsage{TotalUsage: uint64(1000 + cpuPercent*10)},
 			SystemUsage: 2000,
 		},
-		PreCPUStats: container.CPUStats{
-			CPUUsage:    container.CPUUsage{TotalUsage: 1000},
+		PreCPUStats: mobyContainer.CPUStats{
+			CPUUsage:    mobyContainer.CPUUsage{TotalUsage: 1000},
 			SystemUsage: 1000,
 		},
-		MemoryStats: container.MemoryStats{
+		MemoryStats: mobyContainer.MemoryStats{
 			Usage: memoryUsage,
 			Limit: memoryLimit,
 		},
@@ -1351,7 +1351,7 @@ func (f *resourceStatsServer) handler() http.Handler {
 		switch {
 		case path == "/containers/json":
 			f.mu.Lock()
-			list := append([]container.Summary{}, f.containers...)
+			list := append([]mobyContainer.Summary{}, f.containers...)
 			f.mu.Unlock()
 			_ = json.MarshalWrite(w, list)
 		case strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/json"):
@@ -1360,15 +1360,15 @@ func (f *resourceStatsServer) handler() http.Handler {
 			defer f.mu.Unlock()
 			for _, summary := range f.containers {
 				if summary.ID == id {
-					inspect := container.InspectResponse{
+					inspect := mobyContainer.InspectResponse{
 						ID:    summary.ID,
 						Name:  summary.Names[0],
 						Image: summary.ImageID,
-						Config: &container.Config{
+						Config: &mobyContainer.Config{
 							Image:  summary.Image,
 							Labels: summary.Labels,
 						},
-						State: &container.State{Status: summary.State},
+						State: &mobyContainer.State{Status: summary.State},
 					}
 					if err := json.MarshalWrite(w, inspect); err != nil {
 						http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2009,12 +2009,12 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 		mu.Unlock()
 		if r.Method == http.MethodGet && path == "/containers/quadlet-id/json" {
 			w.Header().Set("Content-Type", "application/json")
-			if err := json.MarshalWrite(w, container.InspectResponse{
+			if err := json.MarshalWrite(w, mobyContainer.InspectResponse{
 				ID:         "quadlet-id",
 				Name:       "/web",
-				State:      &container.State{Running: true},
-				Config:     &container.Config{Image: "nginx:latest", Labels: map[string]string{types.PodmanSystemdUnitLabel: "web.service"}},
-				HostConfig: &container.HostConfig{},
+				State:      &mobyContainer.State{Running: true},
+				Config:     &mobyContainer.Config{Image: "nginx:latest", Labels: map[string]string{types.PodmanSystemdUnitLabel: "web.service"}},
+				HostConfig: &mobyContainer.HostConfig{},
 			}); err != nil {
 				t.Errorf("encode inspect response: %v", err)
 			}
@@ -2124,18 +2124,18 @@ func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 	service := &ContainerService{imageService: imagedomain.NewImageService(imagedomain.ImageServiceParams{
 		DB: db,
 	})}
-	containers := []container.Summary{
+	containers := []mobyContainer.Summary{
 		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
 		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
 	}
 	count, err := service.CountPendingUpdates(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
-	containers = append(containers, container.Summary{ID: "digest", Image: "app:latest", ImageID: "shared"})
+	containers = append(containers, mobyContainer.Summary{ID: "digest", Image: "app:latest", ImageID: "shared"})
 	count, err = service.CountPendingUpdates(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 2, count, "a digest record under another tag of the running image counts")
-	containers = append(containers, container.Summary{ID: "digest-twin", Image: "app:latest", ImageID: "shared"})
+	containers = append(containers, mobyContainer.Summary{ID: "digest-twin", Image: "app:latest", ImageID: "shared"})
 	count, err = service.CountPendingUpdates(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 3, count, "separate containers sharing one image each count once")
@@ -2188,7 +2188,7 @@ func TestAggregateContainerCountsSumsEnvironments(t *testing.T) {
 	require.Len(t, body.FailedEnvironments, 1)
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -2203,5 +2203,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

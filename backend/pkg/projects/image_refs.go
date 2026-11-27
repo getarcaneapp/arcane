@@ -11,10 +11,10 @@ import (
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/image"
-	"github.com/moby/moby/client"
+	mobyImage "github.com/moby/moby/api/types/image"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func ParseImageRefsJSON(raw string) []string {
@@ -144,11 +144,11 @@ func RefreshComposeImageLabel(labels map[string]string, imageDigest string) {
 	}
 }
 
-func ComposeImageDigest(inspect client.ImageInspectResult) string {
+func ComposeImageDigest(inspect mobyClient.ImageInspectResult) string {
 	matcher := platforms.Default()
-	var available []image.ManifestSummary
+	var available []mobyImage.ManifestSummary
 	for _, m := range inspect.Manifests {
-		if m.Kind == image.ManifestKindImage && m.Available {
+		if m.Kind == mobyImage.ManifestKindImage && m.Available {
 			available = append(available, m)
 		}
 	}

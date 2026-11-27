@@ -12,10 +12,10 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/docker"
 
@@ -25,7 +25,7 @@ import (
 
 type (
 	dockerProjectVolumeRenameMigration struct {
-		dockerClient   *client.Client
+		dockerClient   *mobyClient.Client
 		usageCache     *docker.VolumeUsageCache
 		oldComposeName string
 		newComposeName string
@@ -40,7 +40,7 @@ type (
 	}
 
 	MigrationConfig struct {
-		DockerClient *client.Client
+		DockerClient *mobyClient.Client
 		UsageCache   *docker.VolumeUsageCache
 		OldProject   string
 		NewProject   string
@@ -49,7 +49,7 @@ type (
 	}
 
 	PlanRenameConfig struct {
-		DockerClient *client.Client
+		DockerClient *mobyClient.Client
 		UsageCache   *docker.VolumeUsageCache
 		OldName      string
 		NewName      string
@@ -87,7 +87,7 @@ func PlanRename(ctx context.Context, cfg PlanRenameConfig) (types.VolumeMigratio
 		return nil, errors.New("source and target volume names must differ")
 	}
 
-	oldVolume, err := cfg.DockerClient.VolumeInspect(ctx, oldName, client.VolumeInspectOptions{})
+	oldVolume, err := cfg.DockerClient.VolumeInspect(ctx, oldName, mobyClient.VolumeInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("inspect source volume %s: %w", oldName, err)
 	}
@@ -102,7 +102,7 @@ func PlanRename(ctx context.Context, cfg PlanRenameConfig) (types.VolumeMigratio
 		OldName:   oldName,
 		NewName:   newName,
 		OldVolume: oldVolume.Volume,
-		CreateOptions: client.VolumeCreateOptions{
+		CreateOptions: mobyClient.VolumeCreateOptions{
 			Name:       newName,
 			Driver:     oldVolume.Volume.Driver,
 			DriverOpts: cloneStringMap(oldVolume.Volume.Options),
@@ -160,7 +160,7 @@ func (m *dockerProjectVolumeRenameMigration) Commit(ctx context.Context) error {
 	}
 
 	for _, entry := range m.entries {
-		if err := removeProjectVolumeWithRetry(ctx, dockerClient, entry.OldName, client.VolumeRemoveOptions{Force: false}); err != nil {
+		if err := removeProjectVolumeWithRetry(ctx, dockerClient, entry.OldName, mobyClient.VolumeRemoveOptions{Force: false}); err != nil {
 			return NewSourceCleanupError(entry.OldName, err)
 		}
 		m.removedOld = append(m.removedOld, entry)
@@ -252,7 +252,7 @@ func (m *dockerProjectVolumeRenameMigration) Rollback(ctx context.Context) error
 	return rollbackErr
 }
 
-func (m *dockerProjectVolumeRenameMigration) rollbackCreatedTargetsPreserving(ctx context.Context, dockerClient *client.Client, preservedTargets map[string]struct{}) error {
+func (m *dockerProjectVolumeRenameMigration) rollbackCreatedTargetsPreserving(ctx context.Context, dockerClient *mobyClient.Client, preservedTargets map[string]struct{}) error {
 	var rollbackErr error
 	remainingCreated := make([]types.VolumeRenameEntry, 0, len(preservedTargets))
 	for _, entry := range slices.Backward(m.createdNew) {
@@ -265,7 +265,7 @@ func (m *dockerProjectVolumeRenameMigration) rollbackCreatedTargetsPreserving(ct
 			remainingCreated = append(remainingCreated, entry)
 			continue
 		}
-		if err := removeProjectVolumeWithRetry(ctx, dockerClient, entry.NewName, client.VolumeRemoveOptions{Force: true}); err != nil {
+		if err := removeProjectVolumeWithRetry(ctx, dockerClient, entry.NewName, mobyClient.VolumeRemoveOptions{Force: true}); err != nil {
 			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove target volume %s: %w", entry.NewName, err))
 			remainingCreated = append(remainingCreated, entry)
 		}
@@ -275,8 +275,8 @@ func (m *dockerProjectVolumeRenameMigration) rollbackCreatedTargetsPreserving(ct
 	return rollbackErr
 }
 
-func EnsureRenameTargetAbsent(ctx context.Context, dockerClient *client.Client, newName string) error {
-	_, err := dockerClient.VolumeInspect(ctx, newName, client.VolumeInspectOptions{})
+func EnsureRenameTargetAbsent(ctx context.Context, dockerClient *mobyClient.Client, newName string) error {
+	_, err := dockerClient.VolumeInspect(ctx, newName, mobyClient.VolumeInspectOptions{})
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
 			return nil
@@ -286,7 +286,7 @@ func EnsureRenameTargetAbsent(ctx context.Context, dockerClient *client.Client, 
 	return common.Classify(common.ErrConflict, &types.ProjectVolumeRenameConflictError{VolumeName: newName})
 }
 
-func EnsureRenameSourceDetached(ctx context.Context, dockerClient *client.Client, oldName string) error {
+func EnsureRenameSourceDetached(ctx context.Context, dockerClient *mobyClient.Client, oldName string) error {
 	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, oldName)
 	if err != nil {
 		return fmt.Errorf("inspect containers using source volume %s: %w", oldName, err)
@@ -297,15 +297,15 @@ func EnsureRenameSourceDetached(ctx context.Context, dockerClient *client.Client
 	return nil
 }
 
-func removeProjectVolumeHelperContainers(ctx context.Context, dockerClient *client.Client, volumeName string) error {
-	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+func removeProjectVolumeHelperContainers(ctx context.Context, dockerClient *mobyClient.Client, volumeName string) error {
+	containers, err := dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("list containers for helper cleanup: %w", err)
 	}
 
 	var removeErr error
 	for _, c := range containers.Items {
-		if !IsHelperContainer(c) || !slices.ContainsFunc(c.Mounts, func(m container.MountPoint) bool {
+		if !IsHelperContainer(c) || !slices.ContainsFunc(c.Mounts, func(m mobyContainer.MountPoint) bool {
 			return m.Name == volumeName || m.Source == volumeName
 		}) {
 			continue
@@ -317,7 +317,7 @@ func removeProjectVolumeHelperContainers(ctx context.Context, dockerClient *clie
 	return removeErr
 }
 
-func removeProjectVolumeWithRetry(ctx context.Context, dockerClient *client.Client, volumeName string, options client.VolumeRemoveOptions) error {
+func removeProjectVolumeWithRetry(ctx context.Context, dockerClient *mobyClient.Client, volumeName string, options mobyClient.VolumeRemoveOptions) error {
 	var err error
 	for attempt := range 3 {
 		_, err = dockerClient.VolumeRemove(ctx, volumeName, options)
@@ -334,7 +334,7 @@ func removeProjectVolumeWithRetry(ctx context.Context, dockerClient *client.Clie
 	return err
 }
 
-func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, copyRuntime projectVolumeCopyRuntime, sourceVolume, targetVolume string) error {
+func copyProjectVolumeData(ctx context.Context, dockerClient *mobyClient.Client, copyRuntime projectVolumeCopyRuntime, sourceVolume, targetVolume string) error {
 	sourceID, cleanupSource, err := createProjectVolumeCopyHolderContainer(ctx, dockerClient, copyRuntime, sourceVolume, true)
 	if err != nil {
 		return err
@@ -347,7 +347,7 @@ func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, cop
 	}
 	defer cleanupTarget()
 
-	copyResult, err := dockerClient.CopyFromContainer(ctx, sourceID, client.CopyFromContainerOptions{
+	copyResult, err := dockerClient.CopyFromContainer(ctx, sourceID, mobyClient.CopyFromContainerOptions{
 		SourcePath: projectVolumeCopyMountPath + "/.",
 	})
 	if err != nil {
@@ -355,7 +355,7 @@ func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, cop
 	}
 	defer func() { _ = copyResult.Content.Close() }()
 
-	_, err = dockerClient.CopyToContainer(ctx, targetID, client.CopyToContainerOptions{
+	_, err = dockerClient.CopyToContainer(ctx, targetID, mobyClient.CopyToContainerOptions{
 		DestinationPath: projectVolumeCopyMountPath,
 		Content:         copyResult.Content,
 	})
@@ -374,7 +374,7 @@ func copyProjectVolumeData(ctx context.Context, dockerClient *client.Client, cop
 }
 
 func createProjectVolumeCopyHolderContainer(ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	copyRuntime projectVolumeCopyRuntime,
 	volumeName string,
 	readOnly bool) (string,
@@ -386,8 +386,8 @@ func createProjectVolumeCopyHolderContainer(ctx context.Context,
 		bind += ":ro"
 	}
 
-	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
+	resp, err := dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
+		Config: &mobyContainer.Config{
 			Image:           copyRuntime.Image,
 			Cmd:             []string{"sleep", "infinity"},
 			NetworkDisabled: true,
@@ -414,7 +414,7 @@ func createProjectVolumeCopyHolderContainer(ctx context.Context,
 	return resp.ID, cleanup, nil
 }
 
-func getProjectVolumeCopyRuntime(ctx context.Context, dockerClient *client.Client, toolsImage string) (projectVolumeCopyRuntime, error) {
+func getProjectVolumeCopyRuntime(ctx context.Context, dockerClient *mobyClient.Client, toolsImage string) (projectVolumeCopyRuntime, error) {
 	image, err := ResolveHelperImage(ctx, dockerClient, toolsImage)
 	if err != nil {
 		return projectVolumeCopyRuntime{}, err
@@ -435,7 +435,7 @@ func isProjectVolumeCopyNoSpaceError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "no space left on device")
 }
 
-func EnsureTargetsReadyForCleanup(ctx context.Context, dockerClient *client.Client, volumes []types.VolumeJournalVolume) error {
+func EnsureTargetsReadyForCleanup(ctx context.Context, dockerClient *mobyClient.Client, volumes []types.VolumeJournalVolume) error {
 	if len(volumes) == 0 {
 		return nil
 	}
@@ -475,16 +475,16 @@ func EnsureTargetsReadyForCleanup(ctx context.Context, dockerClient *client.Clie
 	return nil
 }
 
-func RemoveSourceVolumes(ctx context.Context, dockerClient *client.Client, volumes []types.VolumeJournalVolume) error {
+func RemoveSourceVolumes(ctx context.Context, dockerClient *mobyClient.Client, volumes []types.VolumeJournalVolume) error {
 	for _, vol := range volumes {
-		if err := removeProjectVolumeWithRetry(ctx, dockerClient, vol.OldName, client.VolumeRemoveOptions{Force: false}); err != nil {
+		if err := removeProjectVolumeWithRetry(ctx, dockerClient, vol.OldName, mobyClient.VolumeRemoveOptions{Force: false}); err != nil {
 			return NewSourceCleanupError(vol.OldName, err)
 		}
 	}
 	return nil
 }
 
-func RollbackVolumes(ctx context.Context, dockerClient *client.Client, volumes []types.VolumeJournalVolume) error {
+func RollbackVolumes(ctx context.Context, dockerClient *mobyClient.Client, volumes []types.VolumeJournalVolume) error {
 	var rollbackErr error
 	for _, vol := range slices.Backward(volumes) {
 		if err := reconcileRollbackTargetVolume(ctx, dockerClient, vol, true); err != nil {
@@ -494,7 +494,7 @@ func RollbackVolumes(ctx context.Context, dockerClient *client.Client, volumes [
 	return rollbackErr
 }
 
-func CleanupRollbackTargetVolumes(ctx context.Context, dockerClient *client.Client, volumes []types.VolumeJournalVolume) error {
+func CleanupRollbackTargetVolumes(ctx context.Context, dockerClient *mobyClient.Client, volumes []types.VolumeJournalVolume) error {
 	var cleanupErr error
 	for _, vol := range slices.Backward(volumes) {
 		if err := reconcileRollbackTargetVolume(ctx, dockerClient, vol, false); err != nil {
@@ -504,7 +504,7 @@ func CleanupRollbackTargetVolumes(ctx context.Context, dockerClient *client.Clie
 	return cleanupErr
 }
 
-func reconcileRollbackTargetVolume(ctx context.Context, dockerClient *client.Client, vol types.VolumeJournalVolume, preserveInspectErrors bool) error {
+func reconcileRollbackTargetVolume(ctx context.Context, dockerClient *mobyClient.Client, vol types.VolumeJournalVolume, preserveInspectErrors bool) error {
 	phase := kit.Ternary(preserveInspectErrors, "rollback", "cleanup")
 	wrapInspectErr := func(role, name string, err error) error {
 		wrapped := fmt.Errorf("inspect %s %s volume %s: %w", role, phase, name, err)
@@ -528,7 +528,7 @@ func reconcileRollbackTargetVolume(ctx context.Context, dockerClient *client.Cli
 		if removeHelpersErr := removeProjectVolumeHelperContainers(ctx, dockerClient, vol.NewName); removeHelpersErr != nil {
 			return removeHelpersErr
 		}
-		if removeVolErr := removeProjectVolumeWithRetry(ctx, dockerClient, vol.NewName, client.VolumeRemoveOptions{Force: true}); removeVolErr != nil {
+		if removeVolErr := removeProjectVolumeWithRetry(ctx, dockerClient, vol.NewName, mobyClient.VolumeRemoveOptions{Force: true}); removeVolErr != nil {
 			return fmt.Errorf("remove rollback target volume %s: %w", vol.NewName, removeVolErr)
 		}
 	case !oldExists && newExists:
@@ -539,8 +539,8 @@ func reconcileRollbackTargetVolume(ctx context.Context, dockerClient *client.Cli
 	return nil
 }
 
-func VolumeExists(ctx context.Context, dockerClient *client.Client, name string) (bool, error) {
-	_, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+func VolumeExists(ctx context.Context, dockerClient *mobyClient.Client, name string) (bool, error) {
+	_, err := dockerClient.VolumeInspect(ctx, name, mobyClient.VolumeInspectOptions{})
 	if err == nil {
 		return true, nil
 	}

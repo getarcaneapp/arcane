@@ -10,7 +10,7 @@ import (
 
 	"github.com/italypaleale/francis/actor"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/types/v3"

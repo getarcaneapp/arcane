@@ -8,7 +8,7 @@ import (
 
 	"github.com/italypaleale/francis/actor"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/types/v3"
 )

@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	ref "github.com/distribution/reference"
-	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
-	dockerregistry "github.com/moby/moby/api/types/registry"
+	mobyAuthConfig "github.com/moby/moby/api/pkg/authconfig"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func GetRegistryAddress(imageRef string) (string, error) {
@@ -92,7 +92,7 @@ func NormalizeRegistryURL(url string) string {
 }
 
 func EncodeAuthHeader(username, password, serverAddress string) (string, error) {
-	auth, err := dockerauthconfig.Encode(dockerregistry.AuthConfig{
+	auth, err := mobyAuthConfig.Encode(mobyRegistry.AuthConfig{
 		Username:      username,
 		Password:      password,
 		ServerAddress: serverAddress,
@@ -103,13 +103,13 @@ func EncodeAuthHeader(username, password, serverAddress string) (string, error) 
 	return auth, nil
 }
 
-func DecodeAuthHeader(authEncoded string) (dockerregistry.AuthConfig, error) {
-	cfg, err := dockerauthconfig.Decode(strings.TrimSpace(authEncoded))
+func DecodeAuthHeader(authEncoded string) (mobyRegistry.AuthConfig, error) {
+	cfg, err := mobyAuthConfig.Decode(strings.TrimSpace(authEncoded))
 	if err != nil {
-		return dockerregistry.AuthConfig{}, fmt.Errorf("decode registry auth header: %w", err)
+		return mobyRegistry.AuthConfig{}, fmt.Errorf("decode registry auth header: %w", err)
 	}
 	if cfg == nil {
-		return dockerregistry.AuthConfig{}, nil
+		return mobyRegistry.AuthConfig{}, nil
 	}
 	return *cfg, nil
 }

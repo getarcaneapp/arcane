@@ -16,9 +16,9 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/sys/cgroup"
 	"kit.getarcane.app/updater/labels"
@@ -53,12 +53,12 @@ func New(db *database.DB, dockerService *dockerInternal.DockerClientService, ima
 	}
 }
 
-func (s *Service) ComposeContainers(ctx context.Context) ([]container.Summary, error) {
+func (s *Service) ComposeContainers(ctx context.Context) ([]mobyContainer.Summary, error) {
 	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	composeContainers := make([]container.Summary, 0, len(containers))
+	composeContainers := make([]mobyContainer.Summary, 0, len(containers))
 	for _, c := range containers {
 		if _, compose := c.Labels[api.ProjectLabel]; compose {
 			composeContainers = append(composeContainers, c)
@@ -67,7 +67,7 @@ func (s *Service) ComposeContainers(ctx context.Context) ([]container.Summary, e
 	return composeContainers, nil
 }
 
-func RuntimeProjectName(fallback string, runtimeContainers []container.Summary) string {
+func RuntimeProjectName(fallback string, runtimeContainers []mobyContainer.Summary) string {
 	if len(runtimeContainers) == 0 {
 		return fallback
 	}
@@ -77,7 +77,7 @@ func RuntimeProjectName(fallback string, runtimeContainers []container.Summary) 
 func (s *Service) ComposeServices(
 	ctx context.Context,
 	composeProject *composeTypes.Project,
-	runtimeContainers []container.Summary,
+	runtimeContainers []mobyContainer.Summary,
 	meta projects.ArcaneComposeMetadata,
 	catalog string,
 ) ([]types.ProjectRuntimeService, error) {
@@ -189,10 +189,10 @@ func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []types.
 }
 
 func (s *Service) ContainerUpdateInfo(ctx context.Context, services []types.ProjectRuntimeService) map[string]*types.ImageUpdateInfo {
-	var containers []container.Summary
+	var containers []mobyContainer.Summary
 	for _, service := range services {
 		if service.ContainerID != "" {
-			containers = append(containers, container.Summary{
+			containers = append(containers, mobyContainer.Summary{
 				ID:      service.ContainerID,
 				Image:   service.Image,
 				ImageID: service.ImageID,
@@ -344,7 +344,7 @@ func (s *Service) ConfiguredRuntimeServices(ctx context.Context, services []type
 	}
 	resolved := slices.Clone(services)
 	for i := range resolved {
-		resolved[i].Image = imageref.ConfiguredImage(ctx, cli, container.Summary{
+		resolved[i].Image = imageref.ConfiguredImage(ctx, cli, mobyContainer.Summary{
 			ID:    resolved[i].ContainerID,
 			Image: resolved[i].Image,
 		})

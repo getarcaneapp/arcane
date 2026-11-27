@@ -26,12 +26,12 @@ import (
 	"uuid"
 
 	"github.com/italypaleale/francis/actor"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
@@ -60,7 +60,7 @@ type (
 	Repository struct {
 		ID          string
 		Environment []string
-		Mounts      []mount.Mount
+		Mounts      []mobyMount.Mount
 	}
 
 	Snapshot struct {
@@ -91,7 +91,7 @@ type (
 		// container; the target mount's path is used when empty.
 		DestinationPath string
 		// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
-		ExtraMounts   []mount.Mount
+		ExtraMounts   []mobyMount.Mount
 		Globs         []string
 		DeleteExtra   bool
 		TrustExisting bool
@@ -100,7 +100,7 @@ type (
 	SourceMountOptions struct {
 		ContainerPath string
 		Target        string
-		Mounts        []container.MountPoint
+		Mounts        []mobyContainer.MountPoint
 		InContainer   bool
 		Writable      bool
 	}
@@ -119,7 +119,7 @@ type (
 	}
 
 	CreateSnapshotInput struct {
-		Mounts  []mount.Mount
+		Mounts  []mobyMount.Mount
 		Sources []string
 		AsPath  string
 		Tags    []string
@@ -307,8 +307,8 @@ var (
 	VolumeRepositoryTables = []string{"volume_backups", "project_backups"}
 )
 
-func RootSnapshotInput(source mount.Mount, tags ...string) CreateSnapshotInput {
-	return CreateSnapshotInput{Mounts: []mount.Mount{source}, Sources: []string{source.Target}, AsPath: "/", Tags: tags}
+func RootSnapshotInput(source mobyMount.Mount, tags ...string) CreateSnapshotInput {
+	return CreateSnapshotInput{Mounts: []mobyMount.Mount{source}, Sources: []string{source.Target}, AsPath: "/", Tags: tags}
 }
 
 func snapshotCommand(label string, input CreateSnapshotInput) ([]string, error) {
@@ -423,7 +423,7 @@ func (e *Engine) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, label string, input CreateSnapshotInput) (Snapshot, error) {
+func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password, label string, input CreateSnapshotInput) (Snapshot, error) {
 	command, err := snapshotCommand(label, input)
 	if err != nil {
 		return Snapshot{}, err
@@ -442,9 +442,9 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *client.Client
 	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed}, nil
 }
 
-func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID string, target mount.Mount, options RestoreOptions) error {
+func (e *Engine) RestoreSnapshot(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password, snapshotID string, target mobyMount.Mount, options RestoreOptions) error {
 	command := RestoreCommand(snapshotID, cmp.Or(options.DestinationPath, target.Target), options)
-	mounts := append([]mount.Mount{target}, options.ExtraMounts...)
+	mounts := append([]mobyMount.Mount{target}, options.ExtraMounts...)
 	_, err := e.run(ctx, dockerClient, repository, password, command, mounts...)
 	return err
 }
@@ -463,7 +463,7 @@ func RestoreCommand(snapshotID, destination string, options RestoreOptions) []st
 	return append(command, "--", snapshotID+":/"+strings.TrimPrefix(options.SourcePath, "/"), destination)
 }
 
-func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
+func (e *Engine) ListSnapshotFiles(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password, snapshotID, filePath string, recursive bool) ([]string, error) {
 	command := []string{"ls", "--json"}
 	if recursive {
 		command = append(command, "--recursive")
@@ -533,7 +533,7 @@ func markSnapshotDirectories(files []string, longOutput string) ([]string, error
 	return marked, nil
 }
 
-func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *client.Client, repository Repository, password, snapshotID, filePath string) (string, error) {
+func (e *Engine) ReadSnapshotTextFile(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password, snapshotID, filePath string) (string, error) {
 	output, err := e.run(ctx, dockerClient, repository, password, []string{
 		"dump", "--archive", "content", "--", snapshotID + ":/" + strings.TrimPrefix(filePath, "/"),
 	})
@@ -636,7 +636,7 @@ func RecordDiscovered[T any](ctx context.Context, records DiscoveredRecords[T]) 
 	return created, nil
 }
 
-func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, error) {
+func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password, runID, snapshotID string) (Snapshot, error) {
 	if !fullSnapshotID(snapshotID) {
 		return Snapshot{}, errors.New("a full snapshot ID is required")
 	}
@@ -655,7 +655,7 @@ func (e *Engine) ConfirmRunSnapshot(ctx context.Context, dockerClient *client.Cl
 	return snapshot, nil
 }
 
-func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Client, repository Repository, password, runID, snapshotID string) (Snapshot, bool, error) {
+func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password, runID, snapshotID string) (Snapshot, bool, error) {
 	snapshots, err := e.ListSnapshots(ctx, dockerClient, repository, password, kit.Ternary(snapshotID == "", nil, []string{snapshotID})...)
 	if err != nil && snapshotID != "" {
 		return Snapshot{}, false, fmt.Errorf("recorded backup snapshot is unavailable: %w", err)
@@ -683,7 +683,7 @@ func (e *Engine) FindRunSnapshot(ctx context.Context, dockerClient *client.Clien
 	return found, found.ID != "", nil
 }
 
-func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string, ids ...string) ([]DiscoveredSnapshot, error) {
+func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password string, ids ...string) ([]DiscoveredSnapshot, error) {
 	output, err := e.run(ctx, dockerClient, repository, password, append([]string{"snapshots", "--json", "--"}, ids...))
 	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
 		return nil, fmt.Errorf("%w: %w", ErrRepositoryMissing, err)
@@ -766,7 +766,7 @@ func fullSnapshotID(id string) bool {
 	return err == nil
 }
 
-func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Client, repository Repository, password string, snapshotIDs []string) error {
+func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password string, snapshotIDs []string) error {
 	requested := make([]string, 0, len(snapshotIDs))
 	for _, id := range snapshotIDs {
 		if !fullSnapshotID(id) {
@@ -819,7 +819,7 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 	return nil
 }
 
-func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *client.Client, repository Repository, currentPassword, newPassword string) error {
+func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, currentPassword, newPassword string) error {
 	if strings.TrimSpace(newPassword) == "" {
 		return errors.New("new repository password is required")
 	}
@@ -827,7 +827,7 @@ func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *cli
 	return err
 }
 
-func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *client.Client, repository Repository, newPassword string, currentPasswords ...string) (string, error) {
+func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, newPassword string, currentPasswords ...string) (string, error) {
 	_, err := e.ListSnapshots(ctx, dockerClient, repository, newPassword)
 	if err == nil || errors.Is(err, ErrRepositoryMissing) {
 		return "", nil
@@ -843,7 +843,7 @@ func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *client.Clien
 	return "", fmt.Errorf("backup repository %s does not open with the recovery key: %w", repository.ID, err)
 }
 
-func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *client.Client, repositories []Repository, newPassword string, currentPasswords ...string) error {
+func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *mobyClient.Client, repositories []Repository, newPassword string, currentPasswords ...string) error {
 	type rekeyed struct {
 		previous   string
 		repository Repository
@@ -883,23 +883,23 @@ func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *client.Cli
 	return nil
 }
 
-func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, from Repository, fromSnapshotID string, to Repository, password, label string, tags ...string) (Snapshot, error) {
+func (e *Engine) Replicate(ctx context.Context, dockerClient *mobyClient.Client, from Repository, fromSnapshotID string, to Repository, password, label string, tags ...string) (Snapshot, error) {
 	temporaryVolume := "arcane-rustic-copy-" + uuid.New().String()
-	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: temporaryVolume, Labels: volumes.Labels()}); err != nil {
+	if _, err := dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{Name: temporaryVolume, Labels: volumes.Labels()}); err != nil {
 		return Snapshot{}, fmt.Errorf("failed to create temporary Rustic copy volume: %w", err)
 	}
 	defer func() {
-		_, _ = dockerClient.VolumeRemove(context.WithoutCancel(ctx), temporaryVolume, client.VolumeRemoveOptions{Force: true})
+		_, _ = dockerClient.VolumeRemove(context.WithoutCancel(ctx), temporaryVolume, mobyClient.VolumeRemoveOptions{Force: true})
 	}()
-	if err := e.RestoreSnapshot(ctx, dockerClient, from, password, fromSnapshotID, mount.Mount{
-		Type:   mount.TypeVolume,
+	if err := e.RestoreSnapshot(ctx, dockerClient, from, password, fromSnapshotID, mobyMount.Mount{
+		Type:   mobyMount.TypeVolume,
 		Source: temporaryVolume,
 		Target: "/volume",
 	}, RestoreOptions{DeleteExtra: true}); err != nil {
 		return Snapshot{}, fmt.Errorf("failed to load Rustic snapshot for replication: %w", err)
 	}
-	snapshot, err := e.CreateSnapshot(ctx, dockerClient, to, password, label, RootSnapshotInput(mount.Mount{
-		Type:     mount.TypeVolume,
+	snapshot, err := e.CreateSnapshot(ctx, dockerClient, to, password, label, RootSnapshotInput(mobyMount.Mount{
+		Type:     mobyMount.TypeVolume,
 		Source:   temporaryVolume,
 		Target:   "/volume",
 		ReadOnly: true,
@@ -910,7 +910,7 @@ func (e *Engine) Replicate(ctx context.Context, dockerClient *client.Client, fro
 	return snapshot, nil
 }
 
-func (e *Engine) run(ctx context.Context, dockerClient *client.Client, repository Repository, password string, command []string, extraMounts ...mount.Mount) (string, error) {
+func (e *Engine) run(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password string, command []string, extraMounts ...mobyMount.Mount) (string, error) {
 	unlock, err := e.lockRepository(ctx, repository.ID)
 	if err != nil {
 		return "", err
@@ -919,7 +919,7 @@ func (e *Engine) run(ctx context.Context, dockerClient *client.Client, repositor
 	return e.runContainer(ctx, dockerClient, repository, password, command, extraMounts...)
 }
 
-func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, repository Repository, password string, command []string, extraMounts ...mount.Mount) (string, error) {
+func (e *Engine) runContainer(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password string, command []string, extraMounts ...mobyMount.Mount) (string, error) {
 	if _, err := dockerClient.ImageInspect(ctx, rustic.DefaultImage); err != nil {
 		if pullErr := e.imageService.PullImage(ctx, rustic.DefaultImage, io.Discard, types.SystemUser, nil); pullErr != nil {
 			return "", fmt.Errorf("failed to pull official Rustic image: %w", pullErr)
@@ -940,7 +940,7 @@ func (e *Engine) runContainer(ctx context.Context, dockerClient *client.Client, 
 		command,
 		repository.Environment,
 		slices.Concat(repository.Mounts, extraMounts, trust),
-		container.NetworkMode(kit.Ternary(kit.FromPtr(arcane).ID == "", "", "container:"+kit.FromPtr(arcane).ID)),
+		mobyContainer.NetworkMode(kit.Ternary(kit.FromPtr(arcane).ID == "", "", "container:"+kit.FromPtr(arcane).ID)),
 	)
 }
 
@@ -1545,33 +1545,33 @@ func NewVolumeRepository(deps VolumeRepositoryDependencies) *VolumeRepository {
 	return &VolumeRepository{deps: deps, legacyPassword: kit.SHA256Hex(legacyVolumePasswordSalt + cmp.Or(deps.EncryptionKey, legacyEncryptionKey))}
 }
 
-func (r *VolumeRepository) StorageMount(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error) {
+func (r *VolumeRepository) StorageMount(ctx context.Context, dockerClient *mobyClient.Client, target string, readOnly bool) (mobyMount.Mount, error) {
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil {
 		slog.WarnContext(ctx, "backup: failed to inspect arcane container for backup mount resolution, falling back to named volume", "error", err.Error())
 	} else if mirrored := storageMountFromMounts(ctx, inspect.Mounts, target, readOnly); mirrored != nil {
 		return *mirrored, nil
 	}
-	if _, inspectErr := r.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, r.deps.BackupVolumeName, client.VolumeInspectOptions{})
+	if _, inspectErr := r.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, r.deps.BackupVolumeName, mobyClient.VolumeInspectOptions{})
 	}); inspectErr != nil {
-		if _, createErr := r.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
-			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
+		if _, createErr := r.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeCreateResult, error) {
+			return dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{
 				Name:   r.deps.BackupVolumeName,
 				Labels: map[string]string{selfcontainer.InternalResourceLabel: "true"},
 			})
 		}); createErr != nil {
-			return mount.Mount{}, fmt.Errorf("failed to create backup volume: %w", createErr)
+			return mobyMount.Mount{}, fmt.Errorf("failed to create backup volume: %w", createErr)
 		}
 	}
-	return mount.Mount{Type: mount.TypeVolume, Source: r.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
+	return mobyMount.Mount{Type: mobyMount.TypeVolume, Source: r.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
 }
 
 func (r *VolumeRepository) StorageVolume(ctx context.Context) string {
 	inspect, err := r.deps.Docker.Call(ctx, selfcontainer.InspectCurrentArcaneContainer)
 	if err == nil {
 		if mirrored := docker.MountForDestination(inspect.Mounts, "/backups", "/backups"); mirrored != nil {
-			if mirrored.Type != mount.TypeVolume {
+			if mirrored.Type != mobyMount.TypeVolume {
 				return ""
 			}
 			return mirrored.Source
@@ -1580,7 +1580,7 @@ func (r *VolumeRepository) StorageVolume(ctx context.Context) string {
 	return r.deps.BackupVolumeName
 }
 
-func storageMountFromMounts(ctx context.Context, mounts []container.MountPoint, target string, readOnly bool) *mount.Mount {
+func storageMountFromMounts(ctx context.Context, mounts []mobyContainer.MountPoint, target string, readOnly bool) *mobyMount.Mount {
 	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
 	if mirroredMount == nil {
 		return nil
@@ -1592,7 +1592,7 @@ func storageMountFromMounts(ctx context.Context, mounts []container.MountPoint, 
 	return mirroredMount
 }
 
-func (r *VolumeRepository) Local(ctx context.Context, dockerClient *client.Client, opts LocalRepositoryOptions) (Repository, error) {
+func (r *VolumeRepository) Local(ctx context.Context, dockerClient *mobyClient.Client, opts LocalRepositoryOptions) (Repository, error) {
 	storage, err := r.StorageMount(ctx, dockerClient, "/repository", opts.ReadOnly)
 	if err != nil {
 		return Repository{}, err
@@ -1600,11 +1600,11 @@ func (r *VolumeRepository) Local(ctx context.Context, dockerClient *client.Clien
 	return Repository{
 		ID:          localVolumeRepositoryID,
 		Environment: []string{"RUSTIC_REPOSITORY=" + volumeRepositoryPath},
-		Mounts:      []mount.Mount{storage},
+		Mounts:      []mobyMount.Mount{storage},
 	}, nil
 }
 
-func (r *VolumeRepository) LocalInitialized(ctx context.Context, dockerClient *client.Client) bool {
+func (r *VolumeRepository) LocalInitialized(ctx context.Context, dockerClient *mobyClient.Client) bool {
 	inspect, err := selfcontainer.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
 		return true
@@ -1628,7 +1628,7 @@ func (r *VolumeRepository) Remote(ctx context.Context, destinationID, instanceID
 	}, nil
 }
 
-func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Client, repositories ...Repository) (string, error) {
+func (r *VolumeRepository) Password(ctx context.Context, dockerClient *mobyClient.Client, repositories ...Repository) (string, error) {
 	key, err := r.deps.RecoveryKeys.Get(ctx, RecoveryKeyConfigID)
 	if errors.Is(err, ErrRecoveryKeyNotConfigured) {
 		return r.legacyPassword, nil
@@ -1661,7 +1661,7 @@ func (r *VolumeRepository) Password(ctx context.Context, dockerClient *client.Cl
 	return key, nil
 }
 
-func (r *VolumeRepository) RepositoryPassword(ctx context.Context, dockerClient *client.Client, repository Repository, opts PasswordOptions) (string, error) {
+func (r *VolumeRepository) RepositoryPassword(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, opts PasswordOptions) (string, error) {
 	if !opts.ReadOnly {
 		return r.Password(ctx, dockerClient, repository)
 	}
@@ -1713,7 +1713,7 @@ func (r *VolumeRepository) HoldLocal(ctx context.Context) (context.Context, func
 	return r.deps.Engine.HoldRepository(ctx, localVolumeRepositoryID)
 }
 
-func (r *VolumeRepository) WriteRunSnapshots(ctx context.Context, dockerClient *client.Client, run SnapshotRun, write SnapshotWrite) error {
+func (r *VolumeRepository) WriteRunSnapshots(ctx context.Context, dockerClient *mobyClient.Client, run SnapshotRun, write SnapshotWrite) error {
 	if run.Local && *run.Snapshots.LocalID == "" {
 		local, err := r.Local(ctx, dockerClient, LocalRepositoryOptions{})
 		if err != nil {
@@ -1753,7 +1753,7 @@ func (r *VolumeRepository) WriteRunSnapshots(ctx context.Context, dockerClient *
 	}, remote)
 }
 
-func (r *VolumeRepository) writeRunSnapshot(ctx context.Context, dockerClient *client.Client, run SnapshotRun, write SnapshotWrite, repository Repository) error {
+func (r *VolumeRepository) writeRunSnapshot(ctx context.Context, dockerClient *mobyClient.Client, run SnapshotRun, write SnapshotWrite, repository Repository) error {
 	remote := repository.ID != localVolumeRepositoryID
 	password, err := r.Password(ctx, dockerClient, repository)
 	if err != nil {
@@ -1776,7 +1776,7 @@ func (r *VolumeRepository) writeRunSnapshot(ctx context.Context, dockerClient *c
 	return jobcontext.Progress(ctx, target)
 }
 
-func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *client.Client, run SnapshotRun, previous types.SchedulerRun) error {
+func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *mobyClient.Client, run SnapshotRun, previous types.SchedulerRun) error {
 	snapshots := run.Snapshots
 	var local, remote Repository
 	var repositories []Repository
@@ -1831,7 +1831,7 @@ func (r *VolumeRepository) AdoptRunSnapshots(ctx context.Context, dockerClient *
 	return nil
 }
 
-func (r *VolumeRepository) ForgetRunSnapshots(ctx context.Context, dockerClient *client.Client, entries []RunSnapshots, includeRemote bool) error {
+func (r *VolumeRepository) ForgetRunSnapshots(ctx context.Context, dockerClient *mobyClient.Client, entries []RunSnapshots, includeRemote bool) error {
 	ownInstance := strings.TrimSpace(r.deps.Settings.GetSettingsConfig().InstanceID.Value)
 	var localIDs []string
 	remoteGroups := make(map[remoteRepositoryKey][]RunSnapshots)
@@ -1884,7 +1884,7 @@ func (r *VolumeRepository) ForgetRunSnapshots(ctx context.Context, dockerClient 
 	return forgetErr
 }
 
-func (r *VolumeRepository) Forget(ctx context.Context, dockerClient *client.Client, repository Repository, snapshotIDs []string) error {
+func (r *VolumeRepository) Forget(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, snapshotIDs []string) error {
 	password, err := r.Password(ctx, dockerClient, repository)
 	if err != nil {
 		return err
@@ -1909,16 +1909,16 @@ func (r *VolumeRepository) DescribeRemote(ctx context.Context) func(destinationI
 	}
 }
 
-func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, user types.Actor) ([]container.Summary, error) {
-	containers, err := c.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, user types.Actor) ([]mobyContainer.Summary, error) {
+	containers, err := c.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list running containers before backup: %w", err)
 	}
 
-	eligible := make([]container.Summary, 0, len(containers.Items))
-	arcaneOwned := make([]container.Summary, 0, 2)
+	eligible := make([]mobyContainer.Summary, 0, len(containers.Items))
+	arcaneOwned := make([]mobyContainer.Summary, 0, 2)
 	for _, candidate := range containers.Items {
 		if strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane"], "true") || strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane.agent"], "true") {
 			arcaneOwned = append(arcaneOwned, candidate)
@@ -1936,7 +1936,7 @@ func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, u
 		}
 		selected = append(selected, docker.FilterContainersUsingVolume(eligible, volumeName)...)
 	}
-	stopped := make([]container.Summary, 0, len(selected))
+	stopped := make([]mobyContainer.Summary, 0, len(selected))
 	for _, candidate := range eligible {
 		if !slices.Contains(selected, candidate.ID) {
 			continue
@@ -1951,17 +1951,17 @@ func (c *Containers) StopContainers(ctx context.Context, scope ContainerScope, u
 }
 
 //nolint:gocognit // recovery retries must reconcile IDs, names, and Compose identities in one bounded loop
-func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []container.Summary, user types.Actor) ([]container.Summary, error) {
+func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []mobyContainer.Summary, user types.Actor) ([]mobyContainer.Summary, error) {
 	recoveryCtx, cancel := context.WithTimeout(ctx, containerRecoveryTimeout)
 	defer cancel()
 
-	remaining := append([]container.Summary(nil), stoppedContainers...)
+	remaining := append([]mobyContainer.Summary(nil), stoppedContainers...)
 	lastErrors := make(map[string]error, len(stoppedContainers))
 	for len(remaining) > 0 {
 		currentContainers, listErr := c.Docker.ListContainers(recoveryCtx, true)
 		if listErr == nil {
-			currentByID := make(map[string]container.Summary, len(currentContainers))
-			currentByName := make(map[string]container.Summary, len(currentContainers))
+			currentByID := make(map[string]mobyContainer.Summary, len(currentContainers))
+			currentByName := make(map[string]mobyContainer.Summary, len(currentContainers))
 			for _, current := range currentContainers {
 				currentByID[current.ID] = current
 				if name := docker.ContainerNameFromNames(current.Names); name != "" {
@@ -1969,7 +1969,7 @@ func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []co
 				}
 			}
 
-			nextRemaining := make([]container.Summary, 0, len(remaining))
+			nextRemaining := make([]mobyContainer.Summary, 0, len(remaining))
 			for _, stopped := range remaining {
 				current, found := currentByID[stopped.ID]
 				if !found {
@@ -1983,7 +1983,7 @@ func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []co
 					nextRemaining = append(nextRemaining, stopped)
 					continue
 				}
-				if current.State == container.StateRunning || current.State == container.StateRestarting {
+				if current.State == mobyContainer.StateRunning || current.State == mobyContainer.StateRestarting {
 					if current.ID != stopped.ID {
 						slog.InfoContext(ctx, "backup: container was replaced during backup and is already running", "previousContainer", stopped.ID, "currentContainer", current.ID)
 					}
@@ -2030,7 +2030,7 @@ func (c *Containers) StartContainers(ctx context.Context, stoppedContainers []co
 	return nil, nil
 }
 
-func CurrentMounts(ctx context.Context, dockerClient *client.Client) (mounts []container.MountPoint, inContainer bool, err error) {
+func CurrentMounts(ctx context.Context, dockerClient *mobyClient.Client) (mounts []mobyContainer.MountPoint, inContainer bool, err error) {
 	if !selfcontainer.RunningInContainer() {
 		return nil, false, nil
 	}
@@ -2041,21 +2041,21 @@ func CurrentMounts(ctx context.Context, dockerClient *client.Client) (mounts []c
 	return inspect.Mounts, true, nil
 }
 
-func SourceMounts(opts SourceMountOptions) ([]mount.Mount, error) {
+func SourceMounts(opts SourceMountOptions) ([]mobyMount.Mount, error) {
 	if !opts.InContainer {
-		return []mount.Mount{{Type: mount.TypeBind, Source: opts.ContainerPath, Target: opts.Target, ReadOnly: !opts.Writable}}, nil
+		return []mobyMount.Mount{{Type: mobyMount.TypeBind, Source: opts.ContainerPath, Target: opts.Target, ReadOnly: !opts.Writable}}, nil
 	}
 	primary := docker.MountForSubpath(opts.Mounts, opts.ContainerPath, opts.Target)
 	if primary == nil {
 		return nil, fmt.Errorf("%s must be mounted into the Arcane container from a bind or named volume for backups", opts.ContainerPath)
 	}
 	nested := docker.NestedMounts(opts.Mounts, opts.ContainerPath, opts.Target)
-	result := make([]mount.Mount, 0, 1+len(nested))
-	for _, resolved := range append([]mount.Mount{*primary}, nested...) {
+	result := make([]mobyMount.Mount, 0, 1+len(nested))
+	for _, resolved := range append([]mobyMount.Mount{*primary}, nested...) {
 		if opts.Writable && resolved.ReadOnly {
 			return nil, common.Classify(common.ErrValidation, fmt.Errorf("%s, or a mount inside it, is mounted read-only into the Arcane container, so nothing can be restored into it", opts.ContainerPath))
 		}
-		result = append(result, mount.Mount{ //exhaustruct:enforce
+		result = append(result, mobyMount.Mount{ //exhaustruct:enforce
 			Type:           resolved.Type,
 			Source:         resolved.Source,
 			Target:         resolved.Target,

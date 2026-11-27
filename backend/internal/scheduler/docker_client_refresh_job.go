@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	scheduleutil "getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/types/v3"
@@ -12,7 +12,7 @@ import (
 
 type (
 	DockerClientRefreshJob struct {
-		dockerClientService *docker.DockerClientService
+		dockerClientService *dockerInternal.DockerClientService
 		settingsService     *settings.SettingsService
 	}
 )
@@ -22,7 +22,7 @@ const (
 	dockerClientRefreshDefaultSchedule = "*/5 * * * *"
 )
 
-func NewDockerClientRefreshJob(dockerClientService *docker.DockerClientService, settingsService *settings.SettingsService) *DockerClientRefreshJob {
+func NewDockerClientRefreshJob(dockerClientService *dockerInternal.DockerClientService, settingsService *settings.SettingsService) *DockerClientRefreshJob {
 	return &DockerClientRefreshJob{
 		dockerClientService: dockerClientService,
 		settingsService:     settingsService,

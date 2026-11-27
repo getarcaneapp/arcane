@@ -9,7 +9,7 @@ import (
 
 	"github.com/wneessen/go-mail"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

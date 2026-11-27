@@ -10,7 +10,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

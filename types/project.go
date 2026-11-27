@@ -13,8 +13,8 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/go-units"
-	"github.com/moby/moby/api/types/registry"
-	"github.com/moby/moby/client"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
+	mobyClient "github.com/moby/moby/client"
 
 	buildtypes "kit.getarcane.app/builds/types"
 )
@@ -537,7 +537,7 @@ type (
 	ComposeDeployment struct {
 		Progress          io.Writer
 		Options           *ProjectDeployOptions
-		AuthConfigs       map[string]registry.AuthConfig
+		AuthConfigs       map[string]mobyRegistry.AuthConfig
 		PreDeploy         func(context.Context) error
 		Load              func(context.Context) (*composeTypes.Project, error)
 		ResolveImages     func(context.Context) (ComposeImageOperations, error)
@@ -553,7 +553,7 @@ type (
 	ComposeServiceUpdate struct {
 		Progress              io.Writer
 		Project               *composeTypes.Project
-		AuthConfigs           map[string]registry.AuthConfig
+		AuthConfigs           map[string]mobyRegistry.AuthConfig
 		RestoreBeforeMutation func(context.Context)
 		Recover               func(context.Context)
 		Images                ComposeImageOperations
@@ -572,7 +572,7 @@ type (
 	}
 
 	ComposeUpOptions struct {
-		AuthConfigs map[string]registry.AuthConfig
+		AuthConfigs map[string]mobyRegistry.AuthConfig
 		ComposeTarget
 		WaitTimeout     time.Duration
 		RemoveOrphans   bool
@@ -581,7 +581,7 @@ type (
 	}
 
 	ComposeCreateOptions struct {
-		AuthConfigs map[string]registry.AuthConfig
+		AuthConfigs map[string]mobyRegistry.AuthConfig
 		ComposeTarget
 	}
 
@@ -596,7 +596,7 @@ type (
 	}
 
 	ComposeRunJobOptions struct {
-		AuthConfigs map[string]registry.AuthConfig
+		AuthConfigs map[string]mobyRegistry.AuthConfig
 		Project     *composeTypes.Project
 		DockerHost  string
 		Job         string
@@ -680,8 +680,8 @@ type (
 	}
 
 	ProjectRenameRecoveryOperations struct {
-		Docker                func(context.Context, bool) (*client.Client, error)
-		InvalidateVolumeUsage func(*client.Client)
+		Docker                func(context.Context, bool) (*mobyClient.Client, error)
+		InvalidateVolumeUsage func(*mobyClient.Client)
 		WriteJournal          func(context.Context, *ProjectRenameJournal, string) error
 		ClearJournal          func(context.Context, string) error
 		ClearRollbackCleanup  func(context.Context, string) error

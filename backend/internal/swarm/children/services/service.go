@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/client"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
@@ -27,7 +27,7 @@ type (
 	Service struct {
 		docker        *dockerInternal.DockerClientService
 		ensureManager func(ctx context.Context) error
-		listTasks     func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
+		listTasks     func(ctx context.Context, filters mobyClient.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error)
 	}
 )
 
@@ -63,7 +63,7 @@ var servicePagination = pagination.Config[types.SwarmServiceSummary]{
 func NewService(
 	dockerService *dockerInternal.DockerClientService,
 	ensureManager func(ctx context.Context) error,
-	listTasks func(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error),
+	listTasks func(ctx context.Context, filters mobyClient.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error),
 ) *Service {
 	return &Service{docker: dockerService, ensureManager: ensureManager, listTasks: listTasks}
 }
@@ -73,8 +73,8 @@ func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.Q
 		return nil, pagination.Response{}, err
 	}
 
-	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceListResult, error) {
-		return dockerClient.ServiceList(ctx, client.ServiceListOptions{Status: true})
+	servicesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceListResult, error) {
+		return dockerClient.ServiceList(ctx, mobyClient.ServiceListOptions{Status: true})
 	})
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
@@ -85,7 +85,7 @@ func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.Q
 
 func (s *Service) PaginateSummaries(
 	ctx context.Context,
-	services []swarm.Service,
+	services []mobySwarm.Service,
 	params pagination.QueryParams,
 ) ([]types.SwarmServiceSummary, pagination.Response, error) {
 	summaries, err := s.summarizeServices(ctx, services)
@@ -102,8 +102,8 @@ func (s *Service) GetService(ctx context.Context, serviceID string) (*types.Swar
 		return nil, err
 	}
 
-	serviceResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceInspectResult, error) {
-		return dockerClient.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
+	serviceResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceInspectResult, error) {
+		return dockerClient.ServiceInspect(ctx, serviceID, mobyClient.ServiceInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
@@ -119,8 +119,8 @@ func (s *Service) GetService(ctx context.Context, serviceID string) (*types.Swar
 }
 
 func (s *Service) resolveServiceNodeNames(ctx context.Context, serviceID string) []string {
-	nodesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeListResult, error) {
-		return dockerClient.NodeList(ctx, client.NodeListOptions{})
+	nodesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NodeListResult, error) {
+		return dockerClient.NodeList(ctx, mobyClient.NodeListOptions{})
 	})
 	if err != nil {
 		return nil
@@ -131,8 +131,8 @@ func (s *Service) resolveServiceNodeNames(ctx context.Context, serviceID string)
 		nodeNameByID[node.ID] = node.Description.Hostname
 	}
 
-	tasksResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.TaskListResult, error) {
-		return dockerClient.TaskList(ctx, client.TaskListOptions{})
+	tasksResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.TaskListResult, error) {
+		return dockerClient.TaskList(ctx, mobyClient.TaskListOptions{})
 	})
 	if err != nil {
 		return nil
@@ -140,7 +140,7 @@ func (s *Service) resolveServiceNodeNames(ctx context.Context, serviceID string)
 
 	nodeSet := make(map[string]struct{})
 	for _, task := range tasksResult.Items {
-		if task.ServiceID != serviceID || task.Status.State != swarm.TaskStateRunning {
+		if task.ServiceID != serviceID || task.Status.State != mobySwarm.TaskStateRunning {
 			continue
 		}
 		if name, ok := nodeNameByID[task.NodeID]; ok {
@@ -154,7 +154,7 @@ func (s *Service) resolveServiceNodeNames(ctx context.Context, serviceID string)
 
 func (s *Service) enrichServiceNetworkDetails(
 	ctx context.Context,
-	networkConfigs []swarm.NetworkAttachmentConfig,
+	networkConfigs []mobySwarm.NetworkAttachmentConfig,
 ) map[string]types.SwarmServiceNetworkDetail {
 	if len(networkConfigs) == 0 {
 		return nil
@@ -163,8 +163,8 @@ func (s *Service) enrichServiceNetworkDetails(
 	details := make(map[string]types.SwarmServiceNetworkDetail, len(networkConfigs))
 	for _, networkConfig := range networkConfigs {
 		networkID := networkConfig.Target
-		netInspectResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
-			return dockerClient.NetworkInspect(ctx, networkID, client.NetworkInspectOptions{})
+		netInspectResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkInspectResult, error) {
+			return dockerClient.NetworkInspect(ctx, networkID, mobyClient.NetworkInspectOptions{})
 		})
 		if err != nil {
 			continue
@@ -191,8 +191,8 @@ func (s *Service) enrichServiceNetworkDetails(
 		}
 
 		if detail.ConfigFrom != "" {
-			configInspectResult, networkInspectErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
-				return dockerClient.NetworkInspect(ctx, detail.ConfigFrom, client.NetworkInspectOptions{})
+			configInspectResult, networkInspectErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkInspectResult, error) {
+				return dockerClient.NetworkInspect(ctx, detail.ConfigFrom, mobyClient.NetworkInspectOptions{})
 			})
 			if networkInspectErr == nil {
 				configNetwork := configInspectResult.Network
@@ -224,7 +224,7 @@ func (s *Service) enrichServiceNetworkDetails(
 
 func (s *Service) enrichServiceMounts(
 	ctx context.Context,
-	containerSpec *swarm.ContainerSpec,
+	containerSpec *mobySwarm.ContainerSpec,
 ) []types.SwarmServiceMount {
 	if containerSpec == nil {
 		return nil
@@ -232,15 +232,15 @@ func (s *Service) enrichServiceMounts(
 
 	mounts := make([]types.SwarmServiceMount, 0, len(containerSpec.Mounts))
 	for _, serviceMount := range containerSpec.Mounts {
-		volumeInfo := func() client.VolumeInspectResult {
+		volumeInfo := func() mobyClient.VolumeInspectResult {
 			if serviceMount.Type != "volume" || serviceMount.Source == "" {
-				return client.VolumeInspectResult{}
+				return mobyClient.VolumeInspectResult{}
 			}
-			result, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-				return dockerClient.VolumeInspect(ctx, serviceMount.Source, client.VolumeInspectOptions{})
+			result, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+				return dockerClient.VolumeInspect(ctx, serviceMount.Source, mobyClient.VolumeInspectOptions{})
 			})
 			if err != nil {
-				return client.VolumeInspectResult{}
+				return mobyClient.VolumeInspectResult{}
 			}
 			return result
 		}().Volume
@@ -263,7 +263,7 @@ func (s *Service) CreateService(ctx context.Context, req types.SwarmServiceCreat
 		return nil, err
 	}
 
-	var spec swarm.ServiceSpec
+	var spec mobySwarm.ServiceSpec
 	// Docker encodes durations as integer nanoseconds.
 	if unmarshalErr := json.Unmarshal(req.Spec, &spec, jsonx.DurationNano); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse service spec: %w", unmarshalErr)
@@ -273,8 +273,8 @@ func (s *Service) CreateService(ctx context.Context, req types.SwarmServiceCreat
 
 	sanitizeServiceSpec(&spec)
 
-	resp, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceCreateResult, error) {
-		return dockerClient.ServiceCreate(ctx, client.ServiceCreateOptions{
+	resp, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceCreateResult, error) {
+		return dockerClient.ServiceCreate(ctx, mobyClient.ServiceCreateOptions{
 			Spec:                spec,
 			EncodedRegistryAuth: optionsPayload.EncodedRegistryAuth,
 			QueryRegistry:       optionsPayload.QueryRegistry,
@@ -297,8 +297,8 @@ func (s *Service) UpdateService(ctx context.Context, serviceID string, req types
 
 	versionIndex := req.Version
 	if versionIndex == 0 {
-		serviceResult, serviceInspectErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceInspectResult, error) {
-			return dockerClient.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
+		serviceResult, serviceInspectErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceInspectResult, error) {
+			return dockerClient.ServiceInspect(ctx, serviceID, mobyClient.ServiceInspectOptions{})
 		})
 		if serviceInspectErr != nil {
 			return nil, fmt.Errorf("failed to inspect swarm service: %w", serviceInspectErr)
@@ -310,9 +310,9 @@ func (s *Service) UpdateService(ctx context.Context, serviceID string, req types
 
 	sanitizeServiceSpec(&req.Spec)
 
-	resp, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceUpdateResult, error) {
-		return dockerClient.ServiceUpdate(ctx, serviceID, client.ServiceUpdateOptions{
-			Version:             swarm.Version{Index: versionIndex},
+	resp, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceUpdateResult, error) {
+		return dockerClient.ServiceUpdate(ctx, serviceID, mobyClient.ServiceUpdateOptions{
+			Version:             mobySwarm.Version{Index: versionIndex},
 			Spec:                req.Spec,
 			EncodedRegistryAuth: optionsPayload.EncodedRegistryAuth,
 			RegistryAuthFrom:    optionsPayload.RegistryAuthFrom,
@@ -334,8 +334,8 @@ func (s *Service) RemoveService(ctx context.Context, serviceID string) error {
 		return err
 	}
 
-	if _, serviceRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceRemoveResult, error) {
-		return dockerClient.ServiceRemove(ctx, serviceID, client.ServiceRemoveOptions{})
+	if _, serviceRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceRemoveResult, error) {
+		return dockerClient.ServiceRemove(ctx, serviceID, mobyClient.ServiceRemoveOptions{})
 	}); serviceRemoveErr != nil {
 		return fmt.Errorf("failed to remove swarm service: %w", serviceRemoveErr)
 	}
@@ -353,7 +353,7 @@ func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsC
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	options := client.ServiceLogsOptions{
+	options := mobyClient.ServiceLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     opts.Follow,
@@ -377,7 +377,7 @@ func (s *Service) ListServiceTasksPaginated(ctx context.Context, serviceID strin
 		return nil, pagination.Response{}, err
 	}
 
-	filters := make(client.Filters)
+	filters := make(mobyClient.Filters)
 	filters.Add("service", serviceID)
 	return s.listTasks(ctx, filters, params)
 }
@@ -387,15 +387,15 @@ func (s *Service) RollbackService(ctx context.Context, serviceID string) (*types
 		return nil, err
 	}
 
-	serviceResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceInspectResult, error) {
-		return dockerClient.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
+	serviceResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceInspectResult, error) {
+		return dockerClient.ServiceInspect(ctx, serviceID, mobyClient.ServiceInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
 	}
 
-	updateResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceUpdateResult, error) {
-		return dockerClient.ServiceUpdate(ctx, serviceID, client.ServiceUpdateOptions{
+	updateResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceUpdateResult, error) {
+		return dockerClient.ServiceUpdate(ctx, serviceID, mobyClient.ServiceUpdateOptions{
 			Version:  serviceResult.Service.Version,
 			Spec:     serviceResult.Service.Spec,
 			Rollback: "previous",
@@ -413,8 +413,8 @@ func (s *Service) ScaleService(ctx context.Context, serviceID string, replicas u
 		return nil, err
 	}
 
-	serviceResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceInspectResult, error) {
-		return dockerClient.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
+	serviceResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceInspectResult, error) {
+		return dockerClient.ServiceInspect(ctx, serviceID, mobyClient.ServiceInspectOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
@@ -430,8 +430,8 @@ func (s *Service) ScaleService(ctx context.Context, serviceID string, replicas u
 		return nil, fmt.Errorf("scale can only be used with replicated or replicated-job mode: %w", errdefs.ErrInvalidArgument)
 	}
 
-	updateResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceUpdateResult, error) {
-		return dockerClient.ServiceUpdate(ctx, serviceID, client.ServiceUpdateOptions{
+	updateResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ServiceUpdateResult, error) {
+		return dockerClient.ServiceUpdate(ctx, serviceID, mobyClient.ServiceUpdateOptions{
 			Version: service.Version,
 			Spec:    service.Spec,
 		})
@@ -443,9 +443,9 @@ func (s *Service) ScaleService(ctx context.Context, serviceID string, replicas u
 	return &types.SwarmServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
 }
 
-func (s *Service) summarizeServices(ctx context.Context, services []swarm.Service) ([]types.SwarmServiceSummary, error) {
-	nodesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NodeListResult, error) {
-		return dockerClient.NodeList(ctx, client.NodeListOptions{})
+func (s *Service) summarizeServices(ctx context.Context, services []mobySwarm.Service) ([]types.SwarmServiceSummary, error) {
+	nodesResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NodeListResult, error) {
+		return dockerClient.NodeList(ctx, mobyClient.NodeListOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list swarm nodes: %w", err)
@@ -456,8 +456,8 @@ func (s *Service) summarizeServices(ctx context.Context, services []swarm.Servic
 		nodeNameByID[node.ID] = node.Description.Hostname
 	}
 
-	networksResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkListResult, error) {
-		return dockerClient.NetworkList(ctx, client.NetworkListOptions{})
+	networksResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.NetworkListResult, error) {
+		return dockerClient.NetworkList(ctx, mobyClient.NetworkListOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list networks: %w", err)
@@ -473,8 +473,8 @@ func (s *Service) summarizeServices(ctx context.Context, services []swarm.Servic
 		serviceIDs[service.ID] = struct{}{}
 	}
 
-	tasksResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.TaskListResult, error) {
-		return dockerClient.TaskList(ctx, client.TaskListOptions{})
+	tasksResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.TaskListResult, error) {
+		return dockerClient.TaskList(ctx, mobyClient.TaskListOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list swarm tasks: %w", err)
@@ -504,7 +504,7 @@ func (s *Service) summarizeServices(ctx context.Context, services []swarm.Servic
 	return summaries, nil
 }
 
-func sanitizeServiceSpec(spec *swarm.ServiceSpec) {
+func sanitizeServiceSpec(spec *mobySwarm.ServiceSpec) {
 	if spec == nil || spec.TaskTemplate.ContainerSpec == nil {
 		return
 	}
@@ -528,7 +528,7 @@ func sanitizeServiceSpec(spec *swarm.ServiceSpec) {
 	}
 }
 
-func toServiceNetworkIPAMConfig(cfg network.IPAMConfig) types.SwarmServiceNetworkIPAMConfig {
+func toServiceNetworkIPAMConfig(cfg mobyNetwork.IPAMConfig) types.SwarmServiceNetworkIPAMConfig {
 	return types.SwarmServiceNetworkIPAMConfig{
 		Subnet:  kit.Ternary(cfg.Subnet.IsValid(), cfg.Subnet.String(), ""),
 		Gateway: kit.Ternary(cfg.Gateway.IsValid(), cfg.Gateway.String(), ""),

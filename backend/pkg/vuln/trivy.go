@@ -9,10 +9,10 @@ import (
 	"runtime"
 	"strings"
 
-	containertypes "github.com/moby/moby/api/types/container"
-	dockerregistry "github.com/moby/moby/api/types/registry"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyRegistry "github.com/moby/moby/api/types/registry"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/registry"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
@@ -142,7 +142,7 @@ func IgnoreUnfixedArgs(enabled bool) []string {
 	return nil
 }
 
-func BuildDockerConfigJSON(authConfigs map[string]dockerregistry.AuthConfig) ([]byte, error) {
+func BuildDockerConfigJSON(authConfigs map[string]mobyRegistry.AuthConfig) ([]byte, error) {
 	if len(authConfigs) == 0 {
 		return nil, nil
 	}
@@ -172,8 +172,8 @@ func BuildDockerConfigJSON(authConfigs map[string]dockerregistry.AuthConfig) ([]
 	}{Auths: auths})
 }
 
-func BuildContainerConfig(scannerImage string, cmdArgs, env []string) *containertypes.Config {
-	return &containertypes.Config{
+func BuildContainerConfig(scannerImage string, cmdArgs, env []string) *mobyContainer.Config {
+	return &mobyContainer.Config{
 		Image:      scannerImage,
 		Entrypoint: []string{"trivy"},
 		Cmd:        cmdArgs,

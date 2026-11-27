@@ -3,7 +3,7 @@ package registry
 import (
 	"testing"
 
-	dockerauthconfig "github.com/moby/moby/api/pkg/authconfig"
+	mobyAuthConfig "github.com/moby/moby/api/pkg/authconfig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +50,7 @@ func TestEncodeAuthHeader(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, encoded)
 
-	cfg, err := dockerauthconfig.Decode(encoded)
+	cfg, err := mobyAuthConfig.Decode(encoded)
 	require.NoError(t, err)
 	assert.Equal(t, "user", cfg.Username)
 	assert.Equal(t, "token", cfg.Password)

@@ -15,7 +15,7 @@ import (
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/host/local"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/types/v3"

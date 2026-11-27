@@ -24,7 +24,7 @@ import (
 	"go.uber.org/fx"
 	"golang.org/x/oauth2"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 
 	"getarcane.dev/arcane/v3/internal/auth"

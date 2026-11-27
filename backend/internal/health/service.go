@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/francis"
 	"getarcane.dev/types/v3"
 )
@@ -16,7 +16,7 @@ import (
 type (
 	Service struct {
 		db       *database.DB
-		docker   *docker.DockerClientService
+		docker   *dockerInternal.DockerClientService
 		shutdown <-chan struct{}
 	}
 )
@@ -29,7 +29,7 @@ const (
 	checkTimeout   = 2 * time.Second
 )
 
-func NewService(db *database.DB, dockerService *docker.DockerClientService, actors *francis.Runtime) *Service {
+func NewService(db *database.DB, dockerService *dockerInternal.DockerClientService, actors *francis.Runtime) *Service {
 	return &Service{
 		db:       db,
 		docker:   dockerService,
@@ -70,7 +70,7 @@ func (s *Service) Ready(ctx context.Context) types.ReadinessResponse {
 			if err != nil {
 				return fmt.Sprintf("connect to Docker: %v", err)
 			}
-			if _, pingErr := dockerClient.Ping(pingCtx, client.PingOptions{}); pingErr != nil {
+			if _, pingErr := dockerClient.Ping(pingCtx, mobyClient.PingOptions{}); pingErr != nil {
 				return pingErr.Error()
 			}
 			return checkOK

@@ -16,17 +16,17 @@ import (
 
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow"
@@ -71,7 +71,7 @@ type (
 		Store            Store
 		DB               *database.DB
 		Policies         *backup.Policies
-		Docker           *docker.DockerClientService
+		Docker           *dockerInternal.DockerClientService
 		Events           *event.EventService
 		Settings         *settings.SettingsService
 		Engine           *backup.Engine
@@ -455,7 +455,7 @@ func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, 
 	return ctx.Err()
 }
 
-func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor) error {
+func (s *Service) createSnapshots(ctx context.Context, dockerClient *mobyClient.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor) error {
 	var restartErr error
 	err := s.deps.Repository.WriteRunSnapshots(ctx, dockerClient, snapshotRun(entry, plan), backup.SnapshotWrite{
 		Capture: func(ctx context.Context, repository backup.Repository, password string) (backup.Snapshot, error) {
@@ -469,7 +469,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 }
 
 func (s *Service) captureSnapshot(
-	ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor, repository backup.Repository, password string,
+	ctx context.Context, dockerClient *mobyClient.Client, entry *types.VolumeBackup, plan backupPlan, user types.Actor, repository backup.Repository, password string,
 ) (backup.Snapshot, error, error) {
 	helperImage, err := s.deps.HelperImage(ctx)
 	if err != nil {
@@ -513,15 +513,15 @@ func (s *Service) captureSnapshot(
 			return start, stopErr
 		},
 		Rejected: reject,
-		Mounts: []mount.Mount{{
-			Type:     mount.TypeVolume,
+		Mounts: []mobyMount.Mount{{
+			Type:     mobyMount.TypeVolume,
 			Source:   entry.VolumeName,
 			Target:   "/volume",
 			ReadOnly: true,
 		}},
 		Volumes: []string{entry.VolumeName},
 	}
-	err = backup.Capture(held, capture, func(ctx context.Context, mounts []mount.Mount) error {
+	err = backup.Capture(held, capture, func(ctx context.Context, mounts []mobyMount.Mount) error {
 		containerID, remove, helperErr := backup.StartHelper(ctx, s.deps.Docker, helperImage, mounts[:1])
 		if helperErr != nil {
 			return helperErr
@@ -750,8 +750,8 @@ func (s *Service) backupsByID(ctx context.Context, ids []string) ([]*types.Volum
 }
 
 func (s *Service) expiredUnmanagedBackupIDs(ctx context.Context, sweep types.UnmanagedBackupSweep) ([]string, error) {
-	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeListResult, error) {
-		return dockerClient.VolumeList(ctx, client.VolumeListOptions{})
+	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeListResult, error) {
+		return dockerClient.VolumeList(ctx, mobyClient.VolumeListOptions{})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
@@ -875,14 +875,14 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 	} else {
 		archivePath = "/tmp/" + entry.ID + ".tar.gz"
 		scratchVolume := "arcane-rustic-download-" + uuid.New().String()
-		if _, volumeCreateErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
-			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: scratchVolume, Labels: volumes.Labels()})
+		if _, volumeCreateErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeCreateResult, error) {
+			return dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{Name: scratchVolume, Labels: volumes.Labels()})
 		}); volumeCreateErr != nil {
 			return nil, 0, fmt.Errorf("failed to create download scratch volume: %w", volumeCreateErr)
 		}
 		removeScratch := func() {
-			_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
-				return dockerClient.VolumeRemove(ctx, scratchVolume, client.VolumeRemoveOptions{Force: true})
+			_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeRemoveResult, error) {
+				return dockerClient.VolumeRemove(ctx, scratchVolume, mobyClient.VolumeRemoveOptions{Force: true})
 			})
 		}
 		if restoreErr := s.restore.RestoreSnapshot(ctx, dockerClient, entry, scratchVolume); restoreErr != nil {
@@ -890,7 +890,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *typ
 			return nil, 0, fmt.Errorf("failed to prepare Rustic snapshot for download: %w", restoreErr)
 		}
 		var removeContainer func()
-		if containerID, removeContainer, err = s.createBackupTempContainerWithMount(ctx, mount.Mount{Type: mount.TypeVolume, Source: scratchVolume, Target: "/volume"}); err != nil {
+		if containerID, removeContainer, err = s.createBackupTempContainerWithMount(ctx, mobyMount.Mount{Type: mobyMount.TypeVolume, Source: scratchVolume, Target: "/volume"}); err != nil {
 			removeScratch()
 			return nil, 0, err
 		}
@@ -920,7 +920,7 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 		return nil, err
 	}
 	defer unlock()
-	exists, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (bool, error) {
+	exists, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (bool, error) {
 		_, found, inspectErr := backup.InspectVolume(ctx, dockerClient, volumeName)
 		return found, inspectErr
 	})
@@ -936,7 +936,7 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 	}
 	var session *types.UploadSession
 	err = backup.ArchiveOutput{
-		Add: func(ctx context.Context, _ mount.Mount, size int64, body io.Reader) error {
+		Add: func(ctx context.Context, _ mobyMount.Mount, size int64, body io.Reader) error {
 			var ingestErr error
 			session, ingestErr = s.deps.Uploads.IngestSession(ctx, types.UploadKindVolumeBackup, volumeName+".tar.gz", size, body)
 			if ingestErr != nil {
@@ -946,7 +946,7 @@ func (s *Service) ExportVolumeArchive(ctx context.Context, volumeName string) (*
 		},
 		Exec:  s.deps.Exec,
 		Image: helperImage,
-		Parts: []mount.Mount{backup.VolumePart(volumeName)},
+		Parts: []mobyMount.Mount{backup.VolumePart(volumeName)},
 	}.Write(ctx, s.deps.Docker)
 	if err != nil {
 		return nil, fmt.Errorf("failed to package volume %s: %w", volumeName, err)
@@ -990,7 +990,7 @@ func (s *Service) RestoreFile(ctx context.Context, opts types.VolumeBackupFileRe
 	if err != nil {
 		return "", err
 	}
-	target := mount.Mount{Type: mount.TypeVolume, Source: opts.VolumeName, Target: "/volume"}
+	target := mobyMount.Mount{Type: mobyMount.TypeVolume, Source: opts.VolumeName, Target: "/volume"}
 	options := backup.RestoreOptions{SourcePath: cleaned, DestinationPath: path.Join(target.Target, cleaned)}
 	if restoreErr := s.deps.Engine.RestoreSnapshot(ctx, dockerClient, repository, password, snapshotID, target, options); restoreErr != nil {
 		return "", fmt.Errorf("failed to restore %s from Rustic snapshot: %w", cleaned, restoreErr)

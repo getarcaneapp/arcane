@@ -12,7 +12,7 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	dockertypes "kit.getarcane.app/docker/types"
 	"kit.getarcane.app/sys/crypto"
 

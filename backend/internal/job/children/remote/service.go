@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/kv"

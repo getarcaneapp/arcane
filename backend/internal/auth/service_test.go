@@ -14,7 +14,7 @@ import (
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -24,7 +24,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/ldap"
 	"getarcane.dev/arcane/v3/internal/role"
@@ -83,9 +83,9 @@ func newBootstrapTestVersionService(t *testing.T, db *database.DB) *version.Vers
 	require.NoError(t, versionSettings.SetBoolSetting(t.Context(), "updateCheckEnabled", false))
 	server := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(server.Close)
-	dockerClient, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
+	dockerClient, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -94,7 +94,7 @@ func newBootstrapTestVersionService(t *testing.T, db *database.DB) *version.Vers
 	return version.NewVersionService(version.VersionServiceParams{
 		AppVersion:      "1.2.3",
 		Revision:        "revision",
-		DockerService:   docker.NewDockerClientService(t.Context(), nil, versionSettings, docker.ClientServiceOptions{}).WithClient(dockerClient),
+		DockerService:   dockerInternal.NewDockerClientService(t.Context(), nil, versionSettings, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient),
 		SettingsService: versionSettings,
 	})
 }

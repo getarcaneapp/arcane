@@ -22,7 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
 	"getarcane.dev/arcane/v3/internal/middleware"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/settings"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
@@ -898,7 +898,7 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupActivityServiceTestDB(t)
-			require.NoError(t, db.AutoMigrate(&environment.Environment{}, &registry.ContainerRegistry{}, &gitrepo.GitRepository{}, &s3.S3Destination{}))
+			require.NoError(t, db.AutoMigrate(&environment.Environment{}, &registryInternal.ContainerRegistry{}, &gitrepo.GitRepository{}, &s3.S3Destination{}))
 			sqlDB, err := db.DB.DB()
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)

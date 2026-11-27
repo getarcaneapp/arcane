@@ -12,19 +12,19 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	"kit.getarcane.app/updater"
 	"kit.getarcane.app/updater/pkg/utils/tagpolicy"
 	"kit.getarcane.app/updater/refs"
 	updatertypes "kit.getarcane.app/updater/types"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/imageref"
@@ -37,7 +37,7 @@ type (
 	// Service evaluates container tag policies against registry listings.
 	Service struct {
 		registry *registryInternal.ContainerRegistryService
-		docker   *docker.DockerClientService
+		docker   *dockerInternal.DockerClientService
 		settings *settings.SettingsService
 		limiter  *registry.RegistryRateLimiter
 	}
@@ -47,15 +47,15 @@ type (
 		Wanted             map[string]bool
 		SeedDigests        map[string]string
 		ClearDigestTracked func(context.Context, []string) error
-		Save               func(context.Context, container.Summary, *types.ImageUpdateResponse) error
-		Listed             []container.Summary
+		Save               func(context.Context, mobyContainer.Summary, *types.ImageUpdateResponse) error
+		Listed             []mobyContainer.Summary
 		Credentials        []types.ContainerRegistryCredential
 	}
 
 	// tagRegistry shares listings and digests per scan so replicas cost one request and scan credentials skip service caches.
 	tagRegistry struct {
 		service         *registryInternal.ContainerRegistryService
-		docker          *docker.DockerClientService
+		docker          *dockerInternal.DockerClientService
 		dockerClient    *scanDockerClient
 		settings        *settings.SettingsService
 		limiter         *registry.RegistryRateLimiter
@@ -67,7 +67,7 @@ type (
 
 	// scanDockerClient shares one timeout-bounded Docker client across a tag scan.
 	scanDockerClient struct {
-		client *client.Client
+		client *mobyClient.Client
 		mu     sync.Mutex
 	}
 
@@ -87,7 +87,7 @@ const (
 
 func NewService(
 	registryService *registryInternal.ContainerRegistryService,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	settingsService *settings.SettingsService,
 	limiter *registry.RegistryRateLimiter,
 ) *Service {
@@ -101,7 +101,7 @@ func NewService(
 
 // Check evaluates each wanted container's tag policy and saves each result as soon as it finishes.
 func (s *Service) Check(ctx context.Context, req CheckRequest) (map[string]*types.ImageUpdateResponse, error) {
-	candidates := make([]container.Summary, 0, len(req.Listed))
+	candidates := make([]mobyContainer.Summary, 0, len(req.Listed))
 	var staleDigestContainerIDs []string
 	for _, cnt := range req.Listed {
 		if !req.Wanted[refs.NormalizeImageUpdateRef(cnt.Image)] || imageref.IsUpdateCheckDisabled(cnt.Labels) {
@@ -312,7 +312,7 @@ func (r tagRegistry) AcceptTag(ctx context.Context, candidate updatertypes.TagCa
 	})
 }
 
-func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service, digests tagRegistry, cnt container.Summary) *types.ImageUpdateResponse {
+func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service, digests tagRegistry, cnt mobyContainer.Summary) *types.ImageUpdateResponse {
 	start := time.Now()
 	failed := func(err error) *types.ImageUpdateResponse {
 		return &types.ImageUpdateResponse{
@@ -365,7 +365,7 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 	}
 }
 
-func (r tagRegistry) DockerClient(ctx context.Context) (*client.Client, error) {
+func (r tagRegistry) DockerClient(ctx context.Context) (*mobyClient.Client, error) {
 	r.dockerClient.mu.Lock()
 	defer r.dockerClient.mu.Unlock()
 	if r.dockerClient.client != nil {
@@ -376,14 +376,14 @@ func (r tagRegistry) DockerClient(ctx context.Context) (*client.Client, error) {
 		return nil, err
 	}
 	timeout := timeouts.GetDuration(r.settings.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
-	opts := []client.Opt{
-		client.WithHost(base.DaemonHost()),
-		client.WithTimeout(timeout),
+	opts := []mobyClient.Opt{
+		mobyClient.WithHost(base.DaemonHost()),
+		mobyClient.WithTimeout(timeout),
 	}
 	if version := base.ClientVersion(); version != "" {
-		opts = append(opts, client.WithAPIVersion(version))
+		opts = append(opts, mobyClient.WithAPIVersion(version))
 	}
-	cli, err := client.New(opts...)
+	cli, err := mobyClient.New(opts...)
 	if err != nil {
 		return nil, err
 	}

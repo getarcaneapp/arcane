@@ -7,14 +7,15 @@ import (
 	"log/slog"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
-	mounttypes "github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/types/v3"
@@ -68,7 +69,7 @@ func NewPathMapperFromMounts(mounts []HostMount) *PathMapper {
 	}
 }
 
-func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, defaultDir string, dockerClient *client.Client) *PathMapper {
+func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, defaultDir string, dockerClient *mobyClient.Client) *PathMapper {
 	configuredPath = cmp.Or(strings.TrimSpace(configuredPath), defaultDir)
 
 	containerDir := configuredPath
@@ -472,7 +473,7 @@ func IsWindowsDrivePath(candidate string) bool {
 		(candidate[2] == '/' || candidate[2] == '\\')
 }
 
-func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([]HostMount, error) {
+func GetCurrentContainerMounts(ctx context.Context, dockerCli *mobyClient.Client) ([]HostMount, error) {
 	if dockerCli == nil {
 		return nil, nil
 	}
@@ -485,7 +486,7 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 	mounts := make([]HostMount, 0, len(inspect.Mounts))
 	for i := range inspect.Mounts {
 		m := &inspect.Mounts[i]
-		if m.Type != mounttypes.TypeBind && m.Type != mounttypes.TypeVolume {
+		if m.Type != mobyMount.TypeBind && m.Type != mobyMount.TypeVolume {
 			continue
 		}
 		if strings.TrimSpace(m.Source) == "" || strings.TrimSpace(m.Destination) == "" {
@@ -493,10 +494,13 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 		}
 		mounts = append(mounts, HostMount{Destination: m.Destination, Source: m.Source})
 	}
+	slices.SortFunc(mounts, func(a, b HostMount) int {
+		return strings.Compare(a.Destination, b.Destination)
+	})
 	return mounts, nil
 }
 
-func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, containerPath string) (string, error) {
+func GetHostPathForContainerPath(ctx context.Context, dockerCli *mobyClient.Client, containerPath string) (string, error) {
 	mounts, err := GetCurrentContainerMounts(ctx, dockerCli)
 	if err != nil {
 		return "", err

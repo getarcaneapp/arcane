@@ -17,7 +17,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/mattn/go-runewidth"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 type (

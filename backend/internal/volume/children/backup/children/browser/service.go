@@ -7,13 +7,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/moby/moby/client"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/common"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/pkg/backupbrowser"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/types/v3"
@@ -21,11 +21,11 @@ import (
 
 type (
 	Dependencies struct {
-		Docker          *docker.DockerClientService
+		Docker          *dockerInternal.DockerClientService
 		Engine          *backup.Engine
 		Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
-		Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
-		Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
+		Repository      func(ctx context.Context, dockerClient *mobyClient.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
+		Password        func(ctx context.Context, dockerClient *mobyClient.Client, repositories ...backup.Repository) (string, error)
 		SanitizePath    func(input string) (string, error)
 		ArchiveFilename func(backupID string) (string, error)
 		TempContainer   func(ctx context.Context, target string, readOnly bool) (string, func(), error)

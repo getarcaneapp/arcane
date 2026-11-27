@@ -9,21 +9,21 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/sys/crypto"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
@@ -43,10 +43,10 @@ type (
 )
 
 func TestResolveSystemUpgraderRuntimeOptions_TCPDockerHost(t *testing.T) {
-	currentContainer := &container.InspectResponse{
-		HostConfig: &container.HostConfig{NetworkMode: "bridge"},
-		NetworkSettings: &container.NetworkSettings{
-			Networks: map[string]*network.EndpointSettings{
+	currentContainer := &mobyContainer.InspectResponse{
+		HostConfig: &mobyContainer.HostConfig{NetworkMode: "bridge"},
+		NetworkSettings: &mobyContainer.NetworkSettings{
+			Networks: map[string]*mobyNetwork.EndpointSettings{
 				"bridge":      {},
 				"arcane-test": {},
 			},
@@ -64,7 +64,7 @@ func TestResolveSystemUpgraderRuntimeOptions_TCPDockerHost(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"DOCKER_HOST=tcp://docker-socket-proxy:2375"}, containerEnv)
 	require.Empty(t, mounts)
-	require.Equal(t, container.NetworkMode("arcane-test"), networkMode)
+	require.Equal(t, mobyContainer.NetworkMode("arcane-test"), networkMode)
 }
 
 func TestResolveSystemUpgraderRuntimeOptions_UnixDockerHost(t *testing.T) {
@@ -80,10 +80,10 @@ func TestResolveSystemUpgraderRuntimeOptions_UnixDockerHost(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, []string{"DOCKER_HOST=unix:///var/run/docker.sock"}, containerEnv)
-	require.Equal(t, container.NetworkMode(""), networkMode)
-	require.Equal(t, []mount.Mount{
+	require.Equal(t, mobyContainer.NetworkMode(""), networkMode)
+	require.Equal(t, []mobyMount.Mount{
 		{
-			Type:   mount.TypeBind,
+			Type:   mobyMount.TypeBind,
 			Source: "/host/run/docker.sock",
 			Target: "/var/run/docker.sock",
 		},
@@ -103,9 +103,9 @@ func TestResolveSystemUpgraderRuntimeOptions_DefaultDockerHost(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Nil(t, containerEnv)
-	require.Equal(t, []mount.Mount{
+	require.Equal(t, []mobyMount.Mount{
 		{
-			Type:   mount.TypeBind,
+			Type:   mobyMount.TypeBind,
 			Source: "/var/run/docker.sock",
 			Target: "/var/run/docker.sock",
 		},
@@ -300,8 +300,8 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	gate := newSystemBackupAdmissionGateForTest(t)
 	jobScheduler := &systemBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
-	dockerService := newSettingsDockerService(t, func() *client.Client {
-		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
+	dockerService := newSettingsDockerService(t, func() *mobyClient.Client {
+		cli, _ := mobyClient.New(mobyClient.WithHost("tcp://127.0.0.1:1"), mobyClient.WithAPIVersion("1.41"))
 		return cli
 	}())
 	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
@@ -420,7 +420,7 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 	require.ErrorContains(t, err, "configure a recovery key")
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -435,5 +435,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

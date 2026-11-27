@@ -11,16 +11,16 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/swarm"
-	"github.com/moby/moby/api/types/system"
-	"github.com/moby/moby/client"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
+	mobySystem "github.com/moby/moby/api/types/system"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -28,12 +28,12 @@ import (
 	"getarcane.dev/types/v3"
 )
 
-func newSwarmTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
+func newSwarmTestDockerClient(t *testing.T, server *httptest.Server) *mobyClient.Client {
 	t.Helper()
-	cli, err := client.New(
-		client.WithHost(server.URL),
-		client.WithAPIVersion("1.41"),
-		client.WithHTTPClient(server.Client()),
+	cli, err := mobyClient.New(
+		mobyClient.WithHost(server.URL),
+		mobyClient.WithAPIVersion("1.41"),
+		mobyClient.WithHTTPClient(server.Client()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
@@ -46,7 +46,7 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 	maxConcurrent := uint64(2)
 
 	tests := []struct {
-		assertMode func(*testing.T, swarm.ServiceMode)
+		assertMode func(*testing.T, mobySwarm.ServiceMode)
 		name       string
 		modeJSON   string
 		wantErr    bool
@@ -54,7 +54,7 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 		{
 			name:     "replicated",
 			modeJSON: `{"Replicated":{}}`,
-			assertMode: func(t *testing.T, mode swarm.ServiceMode) {
+			assertMode: func(t *testing.T, mode mobySwarm.ServiceMode) {
 				t.Helper()
 				require.NotNil(t, mode.Replicated)
 				require.NotNil(t, mode.Replicated.Replicas)
@@ -65,7 +65,7 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 		{
 			name:     "replicated job",
 			modeJSON: `{"ReplicatedJob":{"MaxConcurrent":2}}`,
-			assertMode: func(t *testing.T, mode swarm.ServiceMode) {
+			assertMode: func(t *testing.T, mode mobySwarm.ServiceMode) {
 				t.Helper()
 				require.Nil(t, mode.Replicated)
 				require.NotNil(t, mode.ReplicatedJob)
@@ -90,16 +90,16 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			updateCalls := 0
-			var updatedSpec swarm.ServiceSpec
+			var updatedSpec mobySwarm.ServiceSpec
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 
 				switch {
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/info":
-					if !assert.NoError(t, json.MarshalWrite(w, system.Info{
-						Swarm: swarm.Info{
-							LocalNodeState:   swarm.LocalNodeStateActive,
+					if !assert.NoError(t, json.MarshalWrite(w, mobySystem.Info{
+						Swarm: mobySwarm.Info{
+							LocalNodeState:   mobySwarm.LocalNodeStateActive,
 							ControlAvailable: true,
 						},
 					})) {
@@ -186,7 +186,7 @@ func TestAggregateMergesEnvironments(t *testing.T) {
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -201,5 +201,5 @@ func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *docker
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	return docker.NewDockerClientService(t.Context(), db, settingsService, docker.ClientServiceOptions{}).WithClient(dockerClient)
+	return dockerInternal.NewDockerClientService(t.Context(), db, settingsService, dockerInternal.ClientServiceOptions{}).WithClient(dockerClient)
 }

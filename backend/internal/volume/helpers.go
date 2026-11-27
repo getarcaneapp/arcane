@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/compat"
@@ -75,7 +75,7 @@ func (s *VolumeService) getVolumeHelperImage(ctx context.Context) (string, error
 	slog.DebugContext(ctx, "volume service: resolve helper image")
 	toolsImage := volumes.ToolsImage(s.settingsService.GetSettingsConfig().ToolsImageRegistry.Value)
 
-	if _, imageInspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+	if _, imageInspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, toolsImage)
 	}); imageInspectErr == nil {
 		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-local", "image", toolsImage)
@@ -190,7 +190,7 @@ func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName str
 		return "", nil, err
 	}
 
-	config := &container.Config{
+	config := &mobyContainer.Config{
 		Image:           helperImage,
 		Cmd:             []string{"sleep", "infinity"},
 		NetworkDisabled: true,
@@ -199,8 +199,8 @@ func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName str
 
 	hostConfig := volumes.HostConfig(volumes.HelperHost{Image: helperImage, Binds: []string{volumeName + ":/volume"}})
 
-	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
 			Config:     config,
 			HostConfig: hostConfig,
 		})
@@ -209,11 +209,11 @@ func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName str
 		return "", nil, fmt.Errorf("failed to create temp container: %w", err)
 	}
 
-	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, mobyClient.ContainerStartOptions{})
 	}); containerStartErr != nil {
 		startErr := fmt.Errorf("failed to start temp container: %w", containerStartErr)
-		if _, cleanupErr := s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		if _, cleanupErr := s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		}); cleanupErr != nil && !errdefs.IsNotFound(cleanupErr) {
 			return "", nil, errors.Join(startErr, fmt.Errorf("failed to remove temp container after start failure: %w", cleanupErr))
@@ -222,7 +222,7 @@ func (s *VolumeService) startHelperContainer(ctx context.Context, volumeName str
 	}
 
 	cleanup := func() {
-		_, _ = s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		_, _ = s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 	}
@@ -238,15 +238,15 @@ func (s *VolumeService) getReusableHelper(ctx context.Context, volumeName string
 		return mo.None[string](), nil
 	}
 
-	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, helper.id, client.ContainerInspectOptions{})
+	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, helper.id, mobyClient.ContainerInspectOptions{})
 	})
 	if err != nil && !errdefs.IsNotFound(err) {
 		return mo.None[string](), fmt.Errorf("failed to inspect volume helper container: %w", err)
 	}
 	running := err == nil && kit.FromPtr(inspect.Container.State).Running
 	if err == nil && !running {
-		_, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		_, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, helper.id, volumes.RemoveOptions())
 		})
 		if removeErr != nil && !errdefs.IsNotFound(removeErr) {
@@ -287,7 +287,7 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 	s.helperMu.Unlock()
 
 	for _, containerID := range helperIDs {
-		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, containerID, volumes.RemoveOptions())
 		}); containerRemoveErr != nil {
 			slog.WarnContext(ctx, "failed to remove helper container", "containerId", containerID, "error", containerRemoveErr.Error())
@@ -304,7 +304,7 @@ func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Du
 
 	removed := 0
 	for _, containerID := range staleIDs {
-		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, containerID, volumes.RemoveOptions())
 		}); containerRemoveErr != nil {
 			slog.WarnContext(ctx, "failed to remove idle helper container", "containerId", containerID, "error", containerRemoveErr.Error())
@@ -348,7 +348,7 @@ func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error
 		return nil
 	}
 
-	if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+	if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 		return dockerClient.ContainerRemove(ctx, containerID, volumes.RemoveOptions())
 	}); containerRemoveErr != nil {
 		return fmt.Errorf("failed to remove helper container: %w", containerRemoveErr)
@@ -382,7 +382,7 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, 
 			continue
 		}
 
-		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, c.ID, volumes.RemoveOptions())
 		}); containerRemoveErr != nil {
 			slog.WarnContext(
@@ -413,7 +413,7 @@ func (s *VolumeService) execInContainer(ctx context.Context, containerID, execUs
 		Stdout:      &stdout,
 		Stderr:      &stderr,
 		ContainerID: containerID,
-		Options: client.ExecCreateOptions{
+		Options: mobyClient.ExecCreateOptions{
 			User:         execUser,
 			AttachStdout: true,
 			AttachStderr: true,

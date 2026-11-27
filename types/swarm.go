@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/moby/moby/api/types/swarm"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
 )
 
 type (
@@ -15,31 +15,31 @@ type (
 	}
 
 	SwarmInfo struct {
-		ID                     string     `json:"id"`
-		CreatedAt              time.Time  `json:"createdAt"`
-		UpdatedAt              time.Time  `json:"updatedAt"`
-		Spec                   swarm.Spec `json:"spec"`
-		RootRotationInProgress bool       `json:"rootRotationInProgress"`
+		ID                     string         `json:"id"`
+		CreatedAt              time.Time      `json:"createdAt"`
+		UpdatedAt              time.Time      `json:"updatedAt"`
+		Spec                   mobySwarm.Spec `json:"spec"`
+		RootRotationInProgress bool           `json:"rootRotationInProgress"`
 	}
 
 	SwarmConfig struct {
-		Spec      swarm.ConfigSpec `json:"spec" required:"false"`
-		CreatedAt time.Time        `json:"createdAt" readOnly:"true"`
-		UpdatedAt time.Time        `json:"updatedAt" readOnly:"true"`
+		Spec      mobySwarm.ConfigSpec `json:"spec" required:"false"`
+		CreatedAt time.Time            `json:"createdAt" readOnly:"true"`
+		UpdatedAt time.Time            `json:"updatedAt" readOnly:"true"`
 		EnvironmentTag
 
-		ID      string        `json:"id" readOnly:"true"`
-		Version swarm.Version `json:"version" readOnly:"true"`
+		ID      string            `json:"id" readOnly:"true"`
+		Version mobySwarm.Version `json:"version" readOnly:"true"`
 	}
 
 	SwarmSecret struct {
-		Spec      swarm.SecretSpec `json:"spec" required:"false"`
-		CreatedAt time.Time        `json:"createdAt" readOnly:"true"`
-		UpdatedAt time.Time        `json:"updatedAt" readOnly:"true"`
+		Spec      mobySwarm.SecretSpec `json:"spec" required:"false"`
+		CreatedAt time.Time            `json:"createdAt" readOnly:"true"`
+		UpdatedAt time.Time            `json:"updatedAt" readOnly:"true"`
 		EnvironmentTag
 
-		ID      string        `json:"id" readOnly:"true"`
-		Version swarm.Version `json:"version" readOnly:"true"`
+		ID      string            `json:"id" readOnly:"true"`
+		Version mobySwarm.Version `json:"version" readOnly:"true"`
 	}
 
 	SwarmConfigUpdateRequest struct {
@@ -53,16 +53,16 @@ type (
 	}
 
 	SwarmInitRequest struct {
-		ListenAddr       string                 `json:"listenAddr,omitempty" doc:"Manager listen address, host:port or interface; defaults to 0.0.0.0:2377"`
-		AdvertiseAddr    string                 `json:"advertiseAddr,omitempty" doc:"Address advertised to other nodes, host[:port] or interface; empty lets Docker detect it"`
-		DataPathAddr     string                 `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic; defaults to the advertised address"`
-		Spec             jsontext.Value         `json:"spec" doc:"Swarm specification"`
-		Availability     swarm.NodeAvailability `json:"availability,omitempty" doc:"active, pause or drain"`
-		DefaultAddrPool  []string               `json:"defaultAddrPool,omitempty" doc:"CIDR pools for overlay network subnets; empty uses Docker's default"`
-		DataPathPort     uint32                 `json:"dataPathPort,omitempty" doc:"UDP port for VXLAN data traffic; 0 uses Docker's default 4789"`
-		SubnetSize       uint32                 `json:"subnetSize,omitempty" doc:"Prefix length of subnets from defaultAddrPool; 0 uses Docker's default 24"`
-		ForceNewCluster  bool                   `json:"forceNewCluster,omitempty" doc:"Force a new single-manager cluster from this node's state, even if already in a swarm"`
-		AutoLockManagers bool                   `json:"autoLockManagers,omitempty" doc:"Restarted managers stay locked until unlocked with the unlock key"`
+		ListenAddr       string                     `json:"listenAddr,omitempty" doc:"Manager listen address, host:port or interface; defaults to 0.0.0.0:2377"`
+		AdvertiseAddr    string                     `json:"advertiseAddr,omitempty" doc:"Address advertised to other nodes, host[:port] or interface; empty lets Docker detect it"`
+		DataPathAddr     string                     `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic; defaults to the advertised address"`
+		Spec             jsontext.Value             `json:"spec" doc:"Swarm specification"`
+		Availability     mobySwarm.NodeAvailability `json:"availability,omitempty" doc:"active, pause or drain"`
+		DefaultAddrPool  []string                   `json:"defaultAddrPool,omitempty" doc:"CIDR pools for overlay network subnets; empty uses Docker's default"`
+		DataPathPort     uint32                     `json:"dataPathPort,omitempty" doc:"UDP port for VXLAN data traffic; 0 uses Docker's default 4789"`
+		SubnetSize       uint32                     `json:"subnetSize,omitempty" doc:"Prefix length of subnets from defaultAddrPool; 0 uses Docker's default 24"`
+		ForceNewCluster  bool                       `json:"forceNewCluster,omitempty" doc:"Force a new single-manager cluster from this node's state, even if already in a swarm"`
+		AutoLockManagers bool                       `json:"autoLockManagers,omitempty" doc:"Restarted managers stay locked until unlocked with the unlock key"`
 	}
 
 	SwarmInitResponse struct {
@@ -70,12 +70,12 @@ type (
 	}
 
 	SwarmJoinRequest struct {
-		ListenAddr    string                 `json:"listenAddr,omitempty" doc:"Manager listen address, host:port or interface; defaults to 0.0.0.0:2377"`
-		AdvertiseAddr string                 `json:"advertiseAddr,omitempty" doc:"Address advertised to other nodes, host[:port] or interface; empty lets Docker detect it"`
-		DataPathAddr  string                 `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic; defaults to the advertised address"`
-		JoinToken     string                 `json:"joinToken" doc:"Worker or manager join token of the swarm"`
-		Availability  swarm.NodeAvailability `json:"availability,omitempty" doc:"active, pause or drain"`
-		RemoteAddrs   []string               `json:"remoteAddrs" doc:"Manager addresses to join through, as host:port"`
+		ListenAddr    string                     `json:"listenAddr,omitempty" doc:"Manager listen address, host:port or interface; defaults to 0.0.0.0:2377"`
+		AdvertiseAddr string                     `json:"advertiseAddr,omitempty" doc:"Address advertised to other nodes, host[:port] or interface; empty lets Docker detect it"`
+		DataPathAddr  string                     `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic; defaults to the advertised address"`
+		JoinToken     string                     `json:"joinToken" doc:"Worker or manager join token of the swarm"`
+		Availability  mobySwarm.NodeAvailability `json:"availability,omitempty" doc:"active, pause or drain"`
+		RemoteAddrs   []string                   `json:"remoteAddrs" doc:"Manager addresses to join through, as host:port"`
 	}
 
 	SwarmLeaveRequest struct {
@@ -139,12 +139,12 @@ type (
 	}
 
 	SwarmJoinEnvironmentTarget struct {
-		EnvironmentID string                   `json:"environmentId" doc:"Environment whose Docker host joins the swarm"`
-		Role          SwarmJoinEnvironmentRole `json:"role" doc:"manager or worker"`
-		Availability  swarm.NodeAvailability   `json:"availability,omitempty" doc:"active, pause or drain"`
-		ListenAddr    string                   `json:"listenAddr,omitempty" doc:"Manager listen address on the target; defaults to 0.0.0.0:2377"`
-		AdvertiseAddr string                   `json:"advertiseAddr,omitempty" doc:"Address the target advertises; empty lets Docker detect it"`
-		DataPathAddr  string                   `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic on the target"`
+		EnvironmentID string                     `json:"environmentId" doc:"Environment whose Docker host joins the swarm"`
+		Role          SwarmJoinEnvironmentRole   `json:"role" doc:"manager or worker"`
+		Availability  mobySwarm.NodeAvailability `json:"availability,omitempty" doc:"active, pause or drain"`
+		ListenAddr    string                     `json:"listenAddr,omitempty" doc:"Manager listen address on the target; defaults to 0.0.0.0:2377"`
+		AdvertiseAddr string                     `json:"advertiseAddr,omitempty" doc:"Address the target advertises; empty lets Docker detect it"`
+		DataPathAddr  string                     `json:"dataPathAddr,omitempty" doc:"Address or interface for overlay data traffic on the target"`
 	}
 
 	SwarmJoinEnvironmentsRequest struct {
@@ -249,16 +249,16 @@ type (
 	}
 
 	SwarmServiceInspect struct {
-		Spec           swarm.ServiceSpec                    `json:"spec"`
+		Spec           mobySwarm.ServiceSpec                `json:"spec"`
 		CreatedAt      time.Time                            `json:"createdAt"`
 		UpdatedAt      time.Time                            `json:"updatedAt"`
-		UpdateStatus   *swarm.UpdateStatus                  `json:"updateStatus,omitempty"`
+		UpdateStatus   *mobySwarm.UpdateStatus              `json:"updateStatus,omitempty"`
 		NetworkDetails map[string]SwarmServiceNetworkDetail `json:"networkDetails,omitempty"`
 		ID             string                               `json:"id"`
-		Endpoint       swarm.Endpoint                       `json:"endpoint"`
+		Endpoint       mobySwarm.Endpoint                   `json:"endpoint"`
 		Nodes          []string                             `json:"nodes,omitempty"`
 		Mounts         []SwarmServiceMount                  `json:"mounts,omitempty"`
-		Version        swarm.Version                        `json:"version"`
+		Version        mobySwarm.Version                    `json:"version"`
 	}
 
 	SwarmServiceNetworkIPAMConfig struct {
@@ -301,7 +301,7 @@ type (
 	}
 
 	SwarmServiceUpdateRequest struct {
-		Spec    swarm.ServiceSpec          `json:"spec" doc:"Full service spec replacing the current one"`
+		Spec    mobySwarm.ServiceSpec      `json:"spec" doc:"Full service spec replacing the current one"`
 		Options *SwarmServiceUpdateOptions `json:"options,omitzero" doc:"Registry auth, registry query and rollback options"`
 		Version uint64                     `json:"version" doc:"Service version index to update; 0 uses the current one"`
 	}
@@ -321,10 +321,10 @@ type (
 	}
 
 	SwarmServiceUpdateOptions struct {
-		EncodedRegistryAuth string                   `json:"encodedRegistryAuth,omitempty"`
-		RegistryAuthFrom    swarm.RegistryAuthSource `json:"registryAuthFrom,omitempty"`
-		Rollback            string                   `json:"rollback,omitempty"`
-		QueryRegistry       bool                     `json:"queryRegistry,omitempty"`
+		EncodedRegistryAuth string                       `json:"encodedRegistryAuth,omitempty"`
+		RegistryAuthFrom    mobySwarm.RegistryAuthSource `json:"registryAuthFrom,omitempty"`
+		Rollback            string                       `json:"rollback,omitempty"`
+		QueryRegistry       bool                         `json:"queryRegistry,omitempty"`
 	}
 
 	SwarmServiceScaleRequest struct {
@@ -444,7 +444,7 @@ const (
 	SwarmStackNamespaceLabel = "com.docker.stack.namespace"
 )
 
-func NewSwarmInfo(s swarm.Swarm) SwarmInfo {
+func NewSwarmInfo(s mobySwarm.Swarm) SwarmInfo {
 	return SwarmInfo{
 		ID:                     s.ID,
 		CreatedAt:              s.CreatedAt,
@@ -454,7 +454,7 @@ func NewSwarmInfo(s swarm.Swarm) SwarmInfo {
 	}
 }
 
-func NewSwarmConfig(cfg swarm.Config) SwarmConfig {
+func NewSwarmConfig(cfg mobySwarm.Config) SwarmConfig {
 	return SwarmConfig{
 		ID:        cfg.ID,
 		Version:   cfg.Version,
@@ -464,7 +464,7 @@ func NewSwarmConfig(cfg swarm.Config) SwarmConfig {
 	}
 }
 
-func NewSwarmSecret(secret swarm.Secret) SwarmSecret {
+func NewSwarmSecret(secret mobySwarm.Secret) SwarmSecret {
 	return SwarmSecret{
 		ID:        secret.ID,
 		Version:   secret.Version,
@@ -474,7 +474,7 @@ func NewSwarmSecret(secret swarm.Secret) SwarmSecret {
 	}
 }
 
-func NewSwarmNode(node swarm.Node) SwarmNode {
+func NewSwarmNode(node mobySwarm.Node) SwarmNode {
 	managerStatus := ""
 	managerAddress := ""
 	reachability := ""
@@ -517,7 +517,7 @@ func NewSwarmNode(node swarm.Node) SwarmNode {
 	}
 }
 
-func NewSwarmServiceSummary(service swarm.Service, nodeNames []string, networkNameByID map[string]string) SwarmServiceSummary {
+func NewSwarmServiceSummary(service mobySwarm.Service, nodeNames []string, networkNameByID map[string]string) SwarmServiceSummary {
 	spec := service.Spec
 
 	mode := "unknown"
@@ -621,7 +621,7 @@ func NewSwarmServiceSummary(service swarm.Service, nodeNames []string, networkNa
 	}
 }
 
-func NewSwarmServiceInspect(service swarm.Service) SwarmServiceInspect {
+func NewSwarmServiceInspect(service mobySwarm.Service) SwarmServiceInspect {
 	return SwarmServiceInspect{
 		ID:           service.ID,
 		Version:      service.Version,
@@ -633,7 +633,7 @@ func NewSwarmServiceInspect(service swarm.Service) SwarmServiceInspect {
 	}
 }
 
-func NewSwarmTaskSummary(task swarm.Task, serviceName, nodeName string) SwarmTaskSummary {
+func NewSwarmTaskSummary(task mobySwarm.Task, serviceName, nodeName string) SwarmTaskSummary {
 	name := ""
 	if task.Name != "" {
 		name = task.Name

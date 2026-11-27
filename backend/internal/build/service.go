@@ -19,7 +19,7 @@ import (
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/builds/api"
@@ -36,7 +36,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
 	"getarcane.dev/arcane/v3/internal/middleware"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/gitutil"
@@ -50,7 +50,7 @@ type (
 		db              *database.DB
 		settings        *settings.SettingsService
 		dockerService   *dockerInternal.DockerClientService
-		registryService *registry.ContainerRegistryService
+		registryService *registryInternal.ContainerRegistryService
 		gitRepository   *gitrepo.GitRepositoryService
 		eventService    *event.EventService
 		workspace       *workspace.Service
@@ -66,7 +66,7 @@ type (
 		DB              *database.DB
 		LocalSettings   *settings.SettingsService
 		DockerService   *dockerInternal.DockerClientService
-		RegistryService *registry.ContainerRegistryService
+		RegistryService *registryInternal.ContainerRegistryService
 		GitRepository   *gitrepo.GitRepositoryService
 		EventService    *event.EventService
 	}

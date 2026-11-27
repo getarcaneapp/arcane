@@ -11,7 +11,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/container"
 	"getarcane.dev/arcane/v3/internal/middleware"

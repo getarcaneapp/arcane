@@ -16,7 +16,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/cli"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/acfs/types"
 	kitfs "kit.getarcane.app/fs"

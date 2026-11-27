@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/moby/moby/api/types/events"
+	mobyEvents "github.com/moby/moby/api/types/events"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/fx"
 
@@ -18,7 +18,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	"getarcane.dev/arcane/v3/internal/project"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
@@ -77,7 +77,7 @@ type (
 		Config             *config.Config
 		ImageUpdateService *imageupdate.ImageUpdateService
 		SettingsService    *settings.SettingsService
-		DockerService      *docker.DockerClientService
+		DockerService      *dockerInternal.DockerClientService
 		ProjectService     *project.ProjectService
 		Coordinator        *runs.Coordinator
 	}
@@ -132,7 +132,7 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 }
 
 func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
-	eventCh, unsubscribe := w.dockerService.EventBus().Subscribe(events.ImageEventType, bus.SubscribeOptions{Buffer: new(16)})
+	eventCh, unsubscribe := w.dockerService.EventBus().Subscribe(mobyEvents.ImageEventType, bus.SubscribeOptions{Buffer: new(16)})
 	defer unsubscribe()
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()

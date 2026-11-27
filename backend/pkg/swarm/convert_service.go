@@ -16,12 +16,12 @@ import (
 
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	dockeropts "github.com/docker/cli/opts"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/swarm"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobySwarm "github.com/moby/moby/api/types/swarm"
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 )
 
 func buildServiceSpec(
@@ -32,7 +32,7 @@ func buildServiceSpec(
 	configMetaByKey map[string]resourceMeta,
 	secretMetaByKey map[string]resourceMeta,
 	projectVolumes composeTypes.Volumes,
-) (swarm.ServiceSpec, error) {
+) (mobySwarm.ServiceSpec, error) {
 	serviceName := ns.Scope(service.Name)
 	serviceLabels := mergeLabels(nil, stackLabels)
 	if service.Deploy != nil {
@@ -41,57 +41,57 @@ func buildServiceSpec(
 
 	mounts, err := convertServiceMounts(service.Volumes, ns, projectVolumes, stackLabels)
 	if err != nil {
-		return swarm.ServiceSpec{}, err
+		return mobySwarm.ServiceSpec{}, err
 	}
 	secretRefs, err := convertServiceSecretRefs(service.Secrets, secretMetaByKey)
 	if err != nil {
-		return swarm.ServiceSpec{}, err
+		return mobySwarm.ServiceSpec{}, err
 	}
 	configRefs, err := convertServiceConfigRefs(service.Configs, configMetaByKey)
 	if err != nil {
-		return swarm.ServiceSpec{}, err
+		return mobySwarm.ServiceSpec{}, err
 	}
 	privileges, runtimeConfigRef, err := convertPrivileges(service.CredentialSpec, service.SecurityOpt, configMetaByKey)
 	if err != nil {
-		return swarm.ServiceSpec{}, err
+		return mobySwarm.ServiceSpec{}, err
 	}
 	if runtimeConfigRef != nil {
 		configRefs = append(configRefs, runtimeConfigRef)
-		slices.SortFunc(configRefs, func(a, b *swarm.ConfigReference) int {
+		slices.SortFunc(configRefs, func(a, b *mobySwarm.ConfigReference) int {
 			return strings.Compare(a.ConfigName, b.ConfigName)
 		})
 	}
 	healthcheck, err := convertHealthcheck(service.HealthCheck)
 	if err != nil {
-		return swarm.ServiceSpec{}, err
+		return mobySwarm.ServiceSpec{}, err
 	}
 	networks, err := buildServiceNetworks(service, networkNameByKey)
 	if err != nil {
-		return swarm.ServiceSpec{}, err
+		return mobySwarm.ServiceSpec{}, err
 	}
 	capabilityAdd, capabilityDrop := dockeropts.EffectiveCapAddCapDrop(service.CapAdd, service.CapDrop)
 
-	var logDriver *swarm.Driver
+	var logDriver *mobySwarm.Driver
 	if service.Logging != nil {
-		logDriver = &swarm.Driver{
+		logDriver = &mobySwarm.Driver{
 			Name:    service.Logging.Driver,
 			Options: service.Logging.Options,
 		}
 	}
-	var dnsConfig *swarm.DNSConfig
+	var dnsConfig *mobySwarm.DNSConfig
 	if len(service.DNS) > 0 || len(service.DNSSearch) > 0 || len(service.DNSOpts) > 0 {
-		dnsConfig = &swarm.DNSConfig{
+		dnsConfig = &mobySwarm.DNSConfig{
 			Nameservers: parseIPList(service.DNS),
 			Search:      service.DNSSearch,
 			Options:     service.DNSOpts,
 		}
 	}
 
-	spec := swarm.ServiceSpec{
+	spec := mobySwarm.ServiceSpec{
 		Name:   serviceName,
 		Labels: serviceLabels,
-		TaskTemplate: swarm.TaskSpec{
-			ContainerSpec: &swarm.ContainerSpec{
+		TaskTemplate: mobySwarm.TaskSpec{
+			ContainerSpec: &mobySwarm.ContainerSpec{
 				Image:           service.Image,
 				Command:         kit.Ternary(len(service.Entrypoint) == 0, nil, service.Entrypoint),
 				Args:            kit.Ternary(len(service.Command) == 0, nil, service.Command),
@@ -114,7 +114,7 @@ func buildServiceSpec(
 				DNSConfig:       dnsConfig,
 				Healthcheck:     healthcheck,
 				Privileges:      privileges,
-				Isolation:       container.Isolation(service.Isolation),
+				Isolation:       mobyContainer.Isolation(service.Isolation),
 				Sysctls:         map[string]string(service.Sysctls),
 				CapabilityAdd:   capabilityAdd,
 				CapabilityDrop:  capabilityDrop,
@@ -123,15 +123,15 @@ func buildServiceSpec(
 			},
 			LogDriver: logDriver,
 			Networks:  networks,
-			Runtime:   swarm.RuntimeType(service.Runtime),
+			Runtime:   mobySwarm.RuntimeType(service.Runtime),
 		},
 	}
 
 	if applyDeployConfigErr := applyDeployConfig(&spec, service.Deploy, service.Scale, service.Restart); applyDeployConfigErr != nil {
-		return swarm.ServiceSpec{}, applyDeployConfigErr
+		return mobySwarm.ServiceSpec{}, applyDeployConfigErr
 	}
 	if applyServicePortsErr := applyServicePorts(&spec, service.Ports); applyServicePortsErr != nil {
-		return swarm.ServiceSpec{}, applyServicePortsErr
+		return mobySwarm.ServiceSpec{}, applyServicePortsErr
 	}
 
 	return spec, nil
@@ -148,7 +148,7 @@ func convertExtraHosts(extraHosts composeTypes.HostsList) []string {
 	return hosts
 }
 
-func convertHealthcheck(healthcheck *composeTypes.HealthCheckConfig) (*container.HealthConfig, error) {
+func convertHealthcheck(healthcheck *composeTypes.HealthCheckConfig) (*mobyContainer.HealthConfig, error) {
 	if healthcheck == nil {
 		return nil, nil
 	}
@@ -161,10 +161,10 @@ func convertHealthcheck(healthcheck *composeTypes.HealthCheckConfig) (*container
 			healthcheck.StartInterval != nil {
 			return nil, errors.New("healthcheck disable cannot be combined with other healthcheck fields")
 		}
-		return &container.HealthConfig{Test: []string{"NONE"}}, nil
+		return &mobyContainer.HealthConfig{Test: []string{"NONE"}}, nil
 	}
 
-	result := &container.HealthConfig{Test: healthcheck.Test}
+	result := &mobyContainer.HealthConfig{Test: healthcheck.Test}
 	if healthcheck.Timeout != nil {
 		result.Timeout = time.Duration(*healthcheck.Timeout)
 	}
@@ -190,13 +190,13 @@ func convertPrivileges(
 	credentialSpec *composeTypes.CredentialSpecConfig,
 	securityOptions []string,
 	configMetaByKey map[string]resourceMeta,
-) (*swarm.Privileges, *swarm.ConfigReference, error) {
+) (*mobySwarm.Privileges, *mobySwarm.ConfigReference, error) {
 	convertedCredentialSpec, runtimeConfigRef, err := convertCredentialSpec(credentialSpec, configMetaByKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	privileges := &swarm.Privileges{CredentialSpec: convertedCredentialSpec}
+	privileges := &mobySwarm.Privileges{CredentialSpec: convertedCredentialSpec}
 	hasPrivileges := convertedCredentialSpec != nil
 	for _, securityOption := range securityOptions {
 		applied, applySecurityOptionErr := applySecurityOption(privileges, securityOption)
@@ -214,7 +214,7 @@ func convertPrivileges(
 func convertCredentialSpec(
 	credentialSpec *composeTypes.CredentialSpecConfig,
 	configMetaByKey map[string]resourceMeta,
-) (*swarm.CredentialSpec, *swarm.ConfigReference, error) {
+) (*mobySwarm.CredentialSpec, *mobySwarm.ConfigReference, error) {
 	if credentialSpec == nil {
 		return nil, nil, nil
 	}
@@ -236,7 +236,7 @@ func convertCredentialSpec(
 		return nil, nil, nil
 	}
 
-	converted := &swarm.CredentialSpec{
+	converted := &mobySwarm.CredentialSpec{
 		File:     credentialSpec.File,
 		Registry: credentialSpec.Registry,
 	}
@@ -249,14 +249,14 @@ func convertCredentialSpec(
 		return nil, nil, fmt.Errorf("undefined config %q for credential spec", credentialSpec.Config)
 	}
 	converted.Config = meta.ID
-	return converted, &swarm.ConfigReference{
+	return converted, &mobySwarm.ConfigReference{
 		ConfigID:   meta.ID,
 		ConfigName: meta.Name,
-		Runtime:    &swarm.ConfigReferenceRuntimeTarget{},
+		Runtime:    &mobySwarm.ConfigReferenceRuntimeTarget{},
 	}, nil
 }
 
-func applySecurityOption(privileges *swarm.Privileges, securityOption string) (bool, error) {
+func applySecurityOption(privileges *mobySwarm.Privileges, securityOption string) (bool, error) {
 	option := strings.TrimSpace(securityOption)
 	if option == "" {
 		return false, nil
@@ -282,18 +282,18 @@ func applySecurityOption(privileges *swarm.Privileges, securityOption string) (b
 	case "seccomp":
 		switch strings.ToLower(value) {
 		case "", "default":
-			privileges.Seccomp = &swarm.SeccompOpts{Mode: swarm.SeccompModeDefault}
+			privileges.Seccomp = &mobySwarm.SeccompOpts{Mode: mobySwarm.SeccompModeDefault}
 		case "unconfined":
-			privileges.Seccomp = &swarm.SeccompOpts{Mode: swarm.SeccompModeUnconfined}
+			privileges.Seccomp = &mobySwarm.SeccompOpts{Mode: mobySwarm.SeccompModeUnconfined}
 		default:
 			return false, fmt.Errorf("custom seccomp profile %q is not supported for swarm stacks", value)
 		}
 	case "apparmor":
 		switch strings.ToLower(value) {
 		case "", "default":
-			privileges.AppArmor = &swarm.AppArmorOpts{Mode: swarm.AppArmorModeDefault}
+			privileges.AppArmor = &mobySwarm.AppArmorOpts{Mode: mobySwarm.AppArmorModeDefault}
 		case "unconfined", "disabled":
-			privileges.AppArmor = &swarm.AppArmorOpts{Mode: swarm.AppArmorModeDisabled}
+			privileges.AppArmor = &mobySwarm.AppArmorOpts{Mode: mobySwarm.AppArmorModeDisabled}
 		default:
 			return false, fmt.Errorf("custom AppArmor profile %q is not supported for swarm stacks", value)
 		}
@@ -307,10 +307,10 @@ func applySecurityOption(privileges *swarm.Privileges, securityOption string) (b
 	return true, nil
 }
 
-func applySELinuxOption(privileges *swarm.Privileges, value, securityOption string) error {
+func applySELinuxOption(privileges *mobySwarm.Privileges, value, securityOption string) error {
 	selinux := privileges.SELinuxContext
 	if selinux == nil {
-		selinux = &swarm.SELinuxContext{}
+		selinux = &mobySwarm.SELinuxContext{}
 		privileges.SELinuxContext = selinux
 	}
 	labelKey, labelValue, hasLabelValue := strings.Cut(value, ":")
@@ -334,8 +334,8 @@ func applySELinuxOption(privileges *swarm.Privileges, value, securityOption stri
 	return nil
 }
 
-func convertUlimits(ulimits map[string]*composeTypes.UlimitsConfig) []*container.Ulimit {
-	result := make([]*container.Ulimit, 0, len(ulimits))
+func convertUlimits(ulimits map[string]*composeTypes.UlimitsConfig) []*mobyContainer.Ulimit {
+	result := make([]*mobyContainer.Ulimit, 0, len(ulimits))
 	for _, name := range slices.Sorted(maps.Keys(ulimits)) {
 		limit := ulimits[name]
 		if limit == nil {
@@ -346,15 +346,15 @@ func convertUlimits(ulimits map[string]*composeTypes.UlimitsConfig) []*container
 			soft = int64(limit.Single)
 			hard = int64(limit.Single)
 		}
-		result = append(result, &container.Ulimit{Name: name, Soft: soft, Hard: hard})
+		result = append(result, &mobyContainer.Ulimit{Name: name, Soft: soft, Hard: hard})
 	}
-	slices.SortFunc(result, func(a, b *container.Ulimit) int {
+	slices.SortFunc(result, func(a, b *mobyContainer.Ulimit) int {
 		return cmp.Compare(a.Name, b.Name)
 	})
 	return result
 }
 
-func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composeTypes.DeployConfig, scale *int, restart string) error {
+func applyDeployConfig(spec *mobySwarm.ServiceSpec, deploy *composeTypes.DeployConfig, scale *int, restart string) error {
 	if deploy == nil {
 		if err := applyServiceMode(spec, "", scale); err != nil {
 			return err
@@ -377,9 +377,9 @@ func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composeTypes.DeployConfi
 
 	if deploy.EndpointMode != "" {
 		if spec.EndpointSpec == nil {
-			spec.EndpointSpec = &swarm.EndpointSpec{}
+			spec.EndpointSpec = &mobySwarm.EndpointSpec{}
 		}
-		spec.EndpointSpec.Mode = swarm.ResolutionMode(strings.ToLower(deploy.EndpointMode))
+		spec.EndpointSpec.Mode = mobySwarm.ResolutionMode(strings.ToLower(deploy.EndpointMode))
 	}
 
 	spec.UpdateConfig = convertUpdateConfig(deploy.UpdateConfig)
@@ -392,33 +392,33 @@ func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composeTypes.DeployConfi
 	spec.TaskTemplate.RestartPolicy = restartPolicy
 
 	if deploy.Resources.Limits != nil || deploy.Resources.Reservations != nil {
-		spec.TaskTemplate.Resources = &swarm.ResourceRequirements{}
+		spec.TaskTemplate.Resources = &mobySwarm.ResourceRequirements{}
 	}
 	if deploy.Resources.Limits != nil {
-		spec.TaskTemplate.Resources.Limits = &swarm.Limit{
+		spec.TaskTemplate.Resources.Limits = &mobySwarm.Limit{
 			NanoCPUs:    int64(deploy.Resources.Limits.NanoCPUs * 1e9),
 			MemoryBytes: int64(deploy.Resources.Limits.MemoryBytes),
 			Pids:        deploy.Resources.Limits.Pids,
 		}
 	}
 	if deploy.Resources.Reservations != nil {
-		spec.TaskTemplate.Resources.Reservations = &swarm.Resources{
+		spec.TaskTemplate.Resources.Reservations = &mobySwarm.Resources{
 			NanoCPUs:    int64(deploy.Resources.Reservations.NanoCPUs * 1e9),
 			MemoryBytes: int64(deploy.Resources.Reservations.MemoryBytes),
 		}
 	}
 
 	if len(deploy.Placement.Constraints) > 0 || len(deploy.Placement.Preferences) > 0 || deploy.Placement.MaxReplicas > 0 {
-		spec.TaskTemplate.Placement = &swarm.Placement{
+		spec.TaskTemplate.Placement = &mobySwarm.Placement{
 			Constraints: deploy.Placement.Constraints,
 			MaxReplicas: deploy.Placement.MaxReplicas,
 		}
 		if len(deploy.Placement.Preferences) > 0 {
-			preferences := make([]swarm.PlacementPreference, 0, len(deploy.Placement.Preferences))
+			preferences := make([]mobySwarm.PlacementPreference, 0, len(deploy.Placement.Preferences))
 			for _, preference := range deploy.Placement.Preferences {
 				if spread := strings.TrimSpace(preference.Spread); spread != "" {
-					preferences = append(preferences, swarm.PlacementPreference{
-						Spread: &swarm.SpreadOver{SpreadDescriptor: spread},
+					preferences = append(preferences, mobySwarm.PlacementPreference{
+						Spread: &mobySwarm.SpreadOver{SpreadDescriptor: spread},
 					})
 				}
 			}
@@ -429,7 +429,7 @@ func applyDeployConfig(spec *swarm.ServiceSpec, deploy *composeTypes.DeployConfi
 	return nil
 }
 
-func convertUpdateConfig(source *composeTypes.UpdateConfig) *swarm.UpdateConfig {
+func convertUpdateConfig(source *composeTypes.UpdateConfig) *mobySwarm.UpdateConfig {
 	if source == nil {
 		return nil
 	}
@@ -437,20 +437,20 @@ func convertUpdateConfig(source *composeTypes.UpdateConfig) *swarm.UpdateConfig 
 	if source.Parallelism != nil {
 		parallelism = *source.Parallelism
 	}
-	return &swarm.UpdateConfig{
+	return &mobySwarm.UpdateConfig{
 		Parallelism:     parallelism,
 		Delay:           time.Duration(source.Delay),
-		FailureAction:   swarm.FailureAction(source.FailureAction),
+		FailureAction:   mobySwarm.FailureAction(source.FailureAction),
 		Monitor:         time.Duration(source.Monitor),
 		MaxFailureRatio: source.MaxFailureRatio,
-		Order:           swarm.UpdateOrder(source.Order),
+		Order:           mobySwarm.UpdateOrder(source.Order),
 	}
 }
 
-func convertRestartPolicy(restart string, deployPolicy *composeTypes.RestartPolicy) (*swarm.RestartPolicy, error) {
+func convertRestartPolicy(restart string, deployPolicy *composeTypes.RestartPolicy) (*mobySwarm.RestartPolicy, error) {
 	if deployPolicy != nil {
-		return &swarm.RestartPolicy{
-			Condition:   swarm.RestartPolicyCondition(deployPolicy.Condition),
+		return &mobySwarm.RestartPolicy{
+			Condition:   mobySwarm.RestartPolicyCondition(deployPolicy.Condition),
 			Delay:       convertDurationPtr(deployPolicy.Delay),
 			MaxAttempts: deployPolicy.MaxAttempts,
 			Window:      convertDurationPtr(deployPolicy.Window),
@@ -468,37 +468,37 @@ func convertRestartPolicy(restart string, deployPolicy *composeTypes.RestartPoli
 		return nil, errors.New("invalid restart policy: maximum retry count cannot be negative")
 	}
 	switch policy.Name {
-	case container.RestartPolicyDisabled, "":
+	case mobyContainer.RestartPolicyDisabled, "":
 		return nil, nil
-	case container.RestartPolicyAlways, container.RestartPolicyUnlessStopped:
-		return &swarm.RestartPolicy{Condition: swarm.RestartPolicyConditionAny}, nil
-	case container.RestartPolicyOnFailure:
+	case mobyContainer.RestartPolicyAlways, mobyContainer.RestartPolicyUnlessStopped:
+		return &mobySwarm.RestartPolicy{Condition: mobySwarm.RestartPolicyConditionAny}, nil
+	case mobyContainer.RestartPolicyOnFailure:
 		maxAttempts := uint64(policy.MaximumRetryCount)
-		return &swarm.RestartPolicy{Condition: swarm.RestartPolicyConditionOnFailure, MaxAttempts: &maxAttempts}, nil
+		return &mobySwarm.RestartPolicy{Condition: mobySwarm.RestartPolicyConditionOnFailure, MaxAttempts: &maxAttempts}, nil
 	default:
 		return nil, fmt.Errorf("invalid restart policy %q", policy.Name)
 	}
 }
 
-func applyServiceMode(spec *swarm.ServiceSpec, mode string, replicas *int) error {
+func applyServiceMode(spec *mobySwarm.ServiceSpec, mode string, replicas *int) error {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
 	case "global":
 		if replicas != nil {
 			return errors.New("replicas can only be used with replicated or replicated-job mode")
 		}
-		spec.Mode = swarm.ServiceMode{Global: &swarm.GlobalService{}}
+		spec.Mode = mobySwarm.ServiceMode{Global: &mobySwarm.GlobalService{}}
 	case "global-job":
 		if replicas != nil {
 			return errors.New("replicas can only be used with replicated or replicated-job mode")
 		}
-		spec.Mode = swarm.ServiceMode{GlobalJob: &swarm.GlobalJob{}}
+		spec.Mode = mobySwarm.ServiceMode{GlobalJob: &mobySwarm.GlobalJob{}}
 	case "replicated-job":
 		var replicaCount *uint64
 		if replicas != nil && *replicas >= 0 {
 			replicaCount = new(uint64(*replicas))
 		}
-		spec.Mode = swarm.ServiceMode{ReplicatedJob: &swarm.ReplicatedJob{
+		spec.Mode = mobySwarm.ServiceMode{ReplicatedJob: &mobySwarm.ReplicatedJob{
 			MaxConcurrent:    replicaCount,
 			TotalCompletions: replicaCount,
 		}}
@@ -511,36 +511,36 @@ func applyServiceMode(spec *swarm.ServiceSpec, mode string, replicas *int) error
 				replicaCount = uint64(*replicasInput)
 			}
 		}
-		spec.Mode = swarm.ServiceMode{Replicated: &swarm.ReplicatedService{Replicas: &replicaCount}}
+		spec.Mode = mobySwarm.ServiceMode{Replicated: &mobySwarm.ReplicatedService{Replicas: &replicaCount}}
 	default:
 		return fmt.Errorf("unknown service mode %q", mode)
 	}
 	return nil
 }
 
-func applyServicePorts(spec *swarm.ServiceSpec, ports []composeTypes.ServicePortConfig) error {
+func applyServicePorts(spec *mobySwarm.ServiceSpec, ports []composeTypes.ServicePortConfig) error {
 	if len(ports) == 0 {
 		return nil
 	}
 
 	endpoint := spec.EndpointSpec
 	if endpoint == nil {
-		endpoint = &swarm.EndpointSpec{}
+		endpoint = &mobySwarm.EndpointSpec{}
 	}
 
-	converted := make([]swarm.PortConfig, 0, len(ports))
+	converted := make([]mobySwarm.PortConfig, 0, len(ports))
 	for _, port := range ports {
 		if strings.TrimSpace(port.HostIP) != "" {
 			slog.WarnContext(context.Background(), "swarm ignores a compose port host IP", //nolint:forbidigo // Compose-to-swarm conversion is a pure transformation without a request context.
 				"hostIp", port.HostIP, "targetPort", port.Target)
 		}
-		entry := swarm.PortConfig{
+		entry := mobySwarm.PortConfig{
 			Name:       port.Name,
-			Protocol:   network.IPProtocol(strings.ToLower(port.Protocol)),
+			Protocol:   mobyNetwork.IPProtocol(strings.ToLower(port.Protocol)),
 			TargetPort: port.Target,
 		}
 		if port.Mode != "" {
-			entry.PublishMode = swarm.PortConfigPublishMode(strings.ToLower(port.Mode))
+			entry.PublishMode = mobySwarm.PortConfigPublishMode(strings.ToLower(port.Mode))
 		}
 		if port.Published != "" {
 			published, err := strconv.ParseUint(port.Published, 10, 32)
@@ -552,20 +552,20 @@ func applyServicePorts(spec *swarm.ServiceSpec, ports []composeTypes.ServicePort
 		converted = append(converted, entry)
 	}
 
-	slices.SortFunc(converted, swarm.PortConfig.Compare)
+	slices.SortFunc(converted, mobySwarm.PortConfig.Compare)
 	endpoint.Ports = converted
 	spec.EndpointSpec = endpoint
 	return nil
 }
 
-func buildServiceNetworks(service composeTypes.ServiceConfig, networkNameByKey map[string]string) ([]swarm.NetworkAttachmentConfig, error) {
-	var attachments []swarm.NetworkAttachmentConfig
+func buildServiceNetworks(service composeTypes.ServiceConfig, networkNameByKey map[string]string) ([]mobySwarm.NetworkAttachmentConfig, error) {
+	var attachments []mobySwarm.NetworkAttachmentConfig
 	if len(service.Networks) == 0 {
 		defaultNetwork, ok := networkNameByKey["default"]
 		if !ok {
 			return nil, errors.New("undefined network \"default\"")
 		}
-		return []swarm.NetworkAttachmentConfig{{
+		return []mobySwarm.NetworkAttachmentConfig{{
 			Target:  defaultNetwork,
 			Aliases: []string{service.Name},
 		}}, nil
@@ -578,34 +578,34 @@ func buildServiceNetworks(service composeTypes.ServiceConfig, networkNameByKey m
 		}
 		aliases := []string{service.Name}
 		if cfg == nil {
-			attachments = append(attachments, swarm.NetworkAttachmentConfig{Target: networkName, Aliases: aliases})
+			attachments = append(attachments, mobySwarm.NetworkAttachmentConfig{Target: networkName, Aliases: aliases})
 			continue
 		}
 		aliases = append(slices.Clone(cfg.Aliases), service.Name)
 		slices.Sort(aliases)
 		aliases = slices.Compact(aliases)
-		attachments = append(attachments, swarm.NetworkAttachmentConfig{
+		attachments = append(attachments, mobySwarm.NetworkAttachmentConfig{
 			Target:     networkName,
 			Aliases:    aliases,
 			DriverOpts: cfg.DriverOpts,
 		})
 	}
-	slices.SortFunc(attachments, func(a, b swarm.NetworkAttachmentConfig) int {
+	slices.SortFunc(attachments, func(a, b mobySwarm.NetworkAttachmentConfig) int {
 		return strings.Compare(a.Target, b.Target)
 	})
 	return attachments, nil
 }
 
-func convertIPAM(cfg composeTypes.IPAMConfig) *network.IPAM {
+func convertIPAM(cfg composeTypes.IPAMConfig) *mobyNetwork.IPAM {
 	if cfg.Driver == "" && len(cfg.Config) == 0 && len(cfg.Options) == 0 {
 		return nil
 	}
-	result := &network.IPAM{
+	result := &mobyNetwork.IPAM{
 		Driver:  cfg.Driver,
 		Options: cfg.Options,
 	}
 	if len(cfg.Config) > 0 {
-		pools := make([]network.IPAMConfig, 0, len(cfg.Config))
+		pools := make([]mobyNetwork.IPAMConfig, 0, len(cfg.Config))
 		for _, pool := range cfg.Config {
 			if pool == nil {
 				continue
@@ -613,7 +613,7 @@ func convertIPAM(cfg composeTypes.IPAMConfig) *network.IPAM {
 			subnet := parsePrefix(pool.Subnet)
 			ipRange := parsePrefix(pool.IPRange)
 			gateway := parseAddr(pool.Gateway).OrEmpty()
-			pools = append(pools, network.IPAMConfig{
+			pools = append(pools, mobyNetwork.IPAMConfig{
 				Subnet:     subnet,
 				Gateway:    gateway,
 				IPRange:    ipRange,

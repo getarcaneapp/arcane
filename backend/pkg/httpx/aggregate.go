@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 
 	"getarcane.dev/types/v3"
@@ -46,6 +46,8 @@ type (
 	}
 
 	environmentScopeKey struct{}
+
+	EnvironmentParentUserKey struct{}
 
 	environmentOutcome[R any] struct {
 		value R
@@ -194,7 +196,7 @@ func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id
 		RemoteAddr:    scope.Request.RemoteAddr,
 		RequestURI:    target.RequestURI(),
 		TLS:           scope.Request.TLS,
-	}).WithContext(WithEnvironmentScope(requestCtx, nil)))
+	}).WithContext(WithEnvironmentScope(context.WithValue(requestCtx, EnvironmentParentUserKey{}, ctx.Value(types.CurrentUserContextKey{})), nil)))
 	status := cmp.Or(writer.status, http.StatusOK)
 	switch {
 	case writer.overflow:

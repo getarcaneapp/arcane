@@ -15,7 +15,7 @@ import (
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/sys/cgroup"
 
 	"getarcane.dev/arcane/v3/pkg/httpx"

@@ -3,7 +3,7 @@ package types
 import (
 	"time"
 
-	"github.com/moby/moby/api/types/network"
+	mobyNetwork "github.com/moby/moby/api/types/network"
 )
 
 type (
@@ -37,25 +37,25 @@ type (
 	}
 
 	NetworkInspect struct {
-		ID             string                              `json:"id"`
-		Name           string                              `json:"name"`
-		Driver         string                              `json:"driver"`
-		Scope          string                              `json:"scope"`
-		Created        time.Time                           `json:"created"`
-		IPAM           NetworkIPAM                         `json:"ipam"`
-		ConfigFrom     network.ConfigReference             `json:"configFrom"`
-		Containers     map[string]network.EndpointResource `json:"containers"`
-		Options        map[string]string                   `json:"options"`
-		Labels         map[string]string                   `json:"labels"`
-		Peers          []network.PeerInfo                  `json:"peers,omitempty"`
-		Services       map[string]network.ServiceInfo      `json:"services,omitempty"`
-		ContainersList []NetworkContainerEndpoint          `json:"containersList"`
-		EnableIPv4     bool                                `json:"enableIPv4"`
-		EnableIPv6     bool                                `json:"enableIPv6"`
-		Internal       bool                                `json:"internal"`
-		Attachable     bool                                `json:"attachable"`
-		Ingress        bool                                `json:"ingress"`
-		ConfigOnly     bool                                `json:"configOnly"`
+		ID             string                                  `json:"id"`
+		Name           string                                  `json:"name"`
+		Driver         string                                  `json:"driver"`
+		Scope          string                                  `json:"scope"`
+		Created        time.Time                               `json:"created"`
+		IPAM           NetworkIPAM                             `json:"ipam"`
+		ConfigFrom     mobyNetwork.ConfigReference             `json:"configFrom"`
+		Containers     map[string]mobyNetwork.EndpointResource `json:"containers"`
+		Options        map[string]string                       `json:"options"`
+		Labels         map[string]string                       `json:"labels"`
+		Peers          []mobyNetwork.PeerInfo                  `json:"peers,omitempty"`
+		Services       map[string]mobyNetwork.ServiceInfo      `json:"services,omitempty"`
+		ContainersList []NetworkContainerEndpoint              `json:"containersList"`
+		EnableIPv4     bool                                    `json:"enableIPv4"`
+		EnableIPv6     bool                                    `json:"enableIPv6"`
+		Internal       bool                                    `json:"internal"`
+		Attachable     bool                                    `json:"attachable"`
+		Ingress        bool                                    `json:"ingress"`
+		ConfigOnly     bool                                    `json:"configOnly"`
 	}
 
 	NetworkCreateResponse struct {

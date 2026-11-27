@@ -15,14 +15,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/docker"
 	"kit.getarcane.app/docker/streams/stats"
@@ -36,10 +36,10 @@ import (
 type (
 	Service struct {
 		flight        singleflight.Group
-		getClient     func(context.Context) (*client.Client, error)
+		getClient     func(context.Context) (*mobyClient.Client, error)
 		dockerHost    func() (string, error)
 		cache         *cache.Cache[string, cachedStats]
-		inspectCache  *cache.Cache[string, container.InspectResponse]
+		inspectCache  *cache.Cache[string, mobyContainer.InspectResponse]
 		history       stats.Store
 		sampleTimeout time.Duration
 		batchTimeout  time.Duration
@@ -47,7 +47,7 @@ type (
 
 	cachedStats struct {
 		fetchedAt time.Time
-		stats     container.StatsResponse
+		stats     mobyContainer.StatsResponse
 	}
 
 	ioBytes struct {
@@ -55,8 +55,8 @@ type (
 	}
 
 	resourceSample struct {
-		inspect *container.InspectResponse
-		stats   container.StatsResponse
+		inspect *mobyContainer.InspectResponse
+		stats   mobyContainer.StatsResponse
 	}
 
 	resourceInstruments struct {
@@ -69,7 +69,7 @@ type (
 	}
 
 	Params struct {
-		GetClient     func(context.Context) (*client.Client, error)
+		GetClient     func(context.Context) (*mobyClient.Client, error)
 		DockerHost    func() (string, error)
 		CacheTTL      time.Duration
 		SampleTimeout time.Duration
@@ -96,7 +96,7 @@ func New(p Params) *Service {
 			JanitorInterval: p.CacheTTL,
 		},
 		// Restart count and start time only change on restart, so metrics reuse inspects for a minute.
-		inspectCache: &cache.Cache[string, container.InspectResponse]{
+		inspectCache: &cache.Cache[string, mobyContainer.InspectResponse]{
 			Capacity:        ContainerResourceSampleCacheSize,
 			TTL:             time.Minute,
 			JanitorInterval: time.Minute,
@@ -116,7 +116,7 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	statsResponse, err := dockerClient.ContainerStats(ctx, containerID, client.ContainerStatsOptions{Stream: true})
+	statsResponse, err := dockerClient.ContainerStats(ctx, containerID, mobyClient.ContainerStatsOptions{Stream: true})
 	if err != nil {
 		return fmt.Errorf("failed to start stats stream: %w", err)
 	}
@@ -130,7 +130,7 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 			return cancellationErr
 		}
 
-		var statsData container.StatsResponse
+		var statsData mobyContainer.StatsResponse
 		if unmarshalDecodeErr := json.UnmarshalDecode(decoder, &statsData); unmarshalDecodeErr != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -171,11 +171,11 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, maxAge time.Duration, waitForBaseline bool) (map[string]*types.ContainerResourceSample, error) {
 	ids := make([]string, 0, len(items))
 	for i := range items {
-		if items[i].State == string(container.StateRunning) {
+		if items[i].State == string(mobyContainer.StateRunning) {
 			ids = append(ids, items[i].ID)
 		}
 	}
-	raw, err := collect(ctx, s.batchTimeout, ids, func(ctx context.Context, id string) (container.StatsResponse, error) {
+	raw, err := collect(ctx, s.batchTimeout, ids, func(ctx context.Context, id string) (mobyContainer.StatsResponse, error) {
 		return s.fetch(ctx, id, maxAge, waitForBaseline)
 	})
 	if err != nil {
@@ -227,10 +227,10 @@ func collect[T any](ctx context.Context, timeout time.Duration, ids []string, fe
 	return results, g.Wait()
 }
 
-func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Duration, waitForBaseline bool) (container.StatsResponse, error) {
+func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Duration, waitForBaseline bool) (mobyContainer.StatsResponse, error) {
 	dockerHost, hostErr := s.dockerHost()
 	if hostErr != nil {
-		return container.StatsResponse{}, hostErr
+		return mobyContainer.StatsResponse{}, hostErr
 	}
 	key := dockerHost + "\x00" + containerID
 	if cached, ok, _ := s.cache.Get(key); ok && time.Since(cached.fetchedAt) < maxAge {
@@ -246,7 +246,7 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 		}
 		previous, hasPrevious, _ := s.cache.Get(key)
-		statsResponse, err := dockerClient.ContainerStats(flightCtx, containerID, client.ContainerStatsOptions{
+		statsResponse, err := dockerClient.ContainerStats(flightCtx, containerID, mobyClient.ContainerStatsOptions{
 			Stream:                false,
 			IncludePreviousSample: waitForBaseline && !hasPrevious,
 		})
@@ -255,7 +255,7 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 		}
 		defer func() { _ = statsResponse.Body.Close() }()
 
-		var statsData container.StatsResponse
+		var statsData mobyContainer.StatsResponse
 		if decodeErr := json.UnmarshalDecode(jsontext.NewDecoder(statsResponse.Body), &statsData); decodeErr != nil {
 			return nil, fmt.Errorf("failed to decode container stats: %w", decodeErr)
 		}
@@ -277,20 +277,20 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 	defer cancel()
 	select {
 	case <-fetchCtx.Done():
-		return container.StatsResponse{}, fetchCtx.Err()
+		return mobyContainer.StatsResponse{}, fetchCtx.Err()
 	case res := <-ch:
 		if res.Err != nil {
-			return container.StatsResponse{}, res.Err
+			return mobyContainer.StatsResponse{}, res.Err
 		}
-		statsData, ok := res.Val.(container.StatsResponse)
+		statsData, ok := res.Val.(mobyContainer.StatsResponse)
 		if !ok {
-			return container.StatsResponse{}, errors.New("resource sample flight returned unexpected type")
+			return mobyContainer.StatsResponse{}, errors.New("resource sample flight returned unexpected type")
 		}
 		return statsData, nil
 	}
 }
 
-func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context, bool) ([]container.Summary, error)) error {
+func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context, bool) ([]mobyContainer.Summary, error)) error {
 	cpuTime, cpuTimeErr := meter.Float64ObservableCounter("arcane.container.cpu.time",
 		metric.WithDescription("Cumulative CPU time consumed by a running container"), metric.WithUnit("s"))
 	cpuUtilization, cpuUtilizationErr := meter.Float64ObservableGauge("arcane.container.cpu.utilization",
@@ -330,9 +330,9 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 			slog.DebugContext(ctx, "Skipping container resource metrics", "error", err)
 			return nil
 		}
-		running := make(map[string]container.Summary, len(containers))
+		running := make(map[string]mobyContainer.Summary, len(containers))
 		for _, c := range containers {
-			if c.State == container.StateRunning {
+			if c.State == mobyContainer.StateRunning {
 				running[c.ID] = c
 			}
 		}
@@ -343,7 +343,7 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 			}
 			return resourceSample{
 				stats: statsData,
-				inspect: func() *container.InspectResponse {
+				inspect: func() *mobyContainer.InspectResponse {
 					if cached, ok, _ := s.inspectCache.Get(id); ok {
 						return &cached
 					}
@@ -351,11 +351,11 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 					if clientErr != nil {
 						return nil
 					}
-					inspect, inspectErr := dockerClient.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+					inspect, inspectErr := dockerClient.ContainerInspect(ctx, id, mobyClient.ContainerInspectOptions{})
 					if inspectErr != nil {
 						return nil
 					}
-					s.inspectCache.Set(cache.Entry[string, container.InspectResponse]{
+					s.inspectCache.Set(cache.Entry[string, mobyContainer.InspectResponse]{
 						Key:   id,
 						Value: inspect.Container,
 					})
@@ -374,7 +374,7 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 	return err
 }
 
-func (r *resourceInstruments) observe(o metric.Observer, c container.Summary, sample resourceSample) {
+func (r *resourceInstruments) observe(o metric.Observer, c mobyContainer.Summary, sample resourceSample) {
 	attrs := []attribute.KeyValue{
 		attribute.String("container.name", docker.ContainerNameFromNames(c.Names)),
 		attribute.String("container.image.name", c.Image),
@@ -413,7 +413,7 @@ func (r *resourceInstruments) observe(o metric.Observer, c container.Summary, sa
 	}
 }
 
-func ioTotals(statsData container.StatsResponse) ioBytes {
+func ioTotals(statsData mobyContainer.StatsResponse) ioBytes {
 	var totals ioBytes
 	for _, network := range statsData.Networks {
 		totals.rx += network.RxBytes

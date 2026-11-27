@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/cache"
 	"kit.getarcane.app/sys/crypto"
 
@@ -31,7 +31,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/environment/children/enrollment"
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
-	"getarcane.dev/arcane/v3/internal/registry"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
@@ -134,7 +134,7 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	require.NoError(t, db.AutoMigrate(
 		&Environment{},
 		&enrollment.Token{},
-		&registry.ContainerRegistry{},
+		&registryInternal.ContainerRegistry{},
 		&s3.S3Destination{},
 		&settings.SettingVariable{},
 		&user.User{},
@@ -418,7 +418,7 @@ func createTestRegistry(t *testing.T, db *database.DB, id string) {
 	require.NoError(t, err)
 
 	now := time.Now()
-	localRegistry := &registry.ContainerRegistry{
+	localRegistry := &registryInternal.ContainerRegistry{
 		BaseModel: database.BaseModel{
 			ID:        id,
 			CreatedAt: now,
@@ -429,7 +429,7 @@ func createTestRegistry(t *testing.T, db *database.DB, id string) {
 		Token:        encryptedToken,
 		Enabled:      true,
 		Insecure:     false,
-		RegistryType: registry.RegistryTypeGeneric,
+		RegistryType: registryInternal.RegistryTypeGeneric,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -444,7 +444,7 @@ func createTestECRRegistry(t *testing.T, db *database.DB, id string) {
 	require.NoError(t, err)
 
 	now := time.Now()
-	localRegistry := &registry.ContainerRegistry{
+	localRegistry := &registryInternal.ContainerRegistry{
 		BaseModel: database.BaseModel{
 			ID:        id,
 			CreatedAt: now,
@@ -452,7 +452,7 @@ func createTestECRRegistry(t *testing.T, db *database.DB, id string) {
 		},
 		URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
 		Enabled:            true,
-		RegistryType:       registry.RegistryTypeECR,
+		RegistryType:       registryInternal.RegistryTypeECR,
 		AWSAccessKeyID:     "AKIA1234567890EXAMPLE",
 		AWSSecretAccessKey: encryptedSecret,
 		AWSRegion:          "us-east-1",
@@ -594,7 +594,7 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 		}
 
 		syncedRegistry := syncReq.Registries[0]
-		if !assert.Equal(t, registry.RegistryTypeECR, syncedRegistry.RegistryType) {
+		if !assert.Equal(t, registryInternal.RegistryTypeECR, syncedRegistry.RegistryType) {
 			return
 		}
 		if !assert.Equal(t, "123456789012.dkr.ecr.us-east-1.amazonaws.com", syncedRegistry.URL) {
@@ -1619,7 +1619,7 @@ func setupSyncDB(t *testing.T) *database.DB {
 		t,
 		db.AutoMigrate(
 			&Environment{},
-			&registry.ContainerRegistry{},
+			&registryInternal.ContainerRegistry{},
 			&gitrepo.GitRepository{},
 			&s3.S3Destination{},
 		),
@@ -1659,11 +1659,11 @@ func TestSyncCredentialDecryptionAbortsSnapshot(t *testing.T) {
 			var syncResource func(context.Context, string) error
 			switch kind {
 			case "registry token", "ECR secret":
-				require.NoError(t, db.Create(&registry.ContainerRegistry{
+				require.NoError(t, db.Create(&registryInternal.ContainerRegistry{
 					ID:                 "bad-credential",
 					URL:                "registry.example.com",
 					Token:              "invalid-ciphertext",
-					RegistryType:       kit.Ternary(kind == "ECR secret", registry.RegistryTypeECR, registry.RegistryTypeGeneric),
+					RegistryType:       kit.Ternary(kind == "ECR secret", registryInternal.RegistryTypeECR, registryInternal.RegistryTypeGeneric),
 					AWSSecretAccessKey: kit.Ternary(kind == "ECR secret", "invalid-ciphertext", ""),
 				}).Error)
 				syncResource = service.SyncRegistriesToEnvironment
@@ -1749,12 +1749,12 @@ func TestSyncSkipsUnchangedPayloadUntilForgotten(t *testing.T) {
 	})
 	token, err := crypto.Encrypt("secret")
 	require.NoError(t, err)
-	require.NoError(t, db.Create(&registry.ContainerRegistry{
+	require.NoError(t, db.Create(&registryInternal.ContainerRegistry{
 		ID:           "ghcr",
 		URL:          "ghcr.io",
 		Username:     "user",
 		Token:        token,
-		RegistryType: registry.RegistryTypeGeneric,
+		RegistryType: registryInternal.RegistryTypeGeneric,
 	}).Error)
 	require.NoError(t, db.Create(&Environment{
 		ID:          "remote",
@@ -1773,7 +1773,7 @@ func TestSyncSkipsUnchangedPayloadUntilForgotten(t *testing.T) {
 	})
 	localSync := func() error { return service.SyncRegistriesToEnvironment(t.Context(), "remote") }
 	changeRegistry := func(url string) {
-		require.NoError(t, db.Model(&registry.ContainerRegistry{}).Where("id = ?", "ghcr").Update("url", url).Error)
+		require.NoError(t, db.Model(&registryInternal.ContainerRegistry{}).Where("id = ?", "ghcr").Update("url", url).Error)
 	}
 
 	require.NoError(t, localSync())

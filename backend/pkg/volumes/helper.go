@@ -11,12 +11,12 @@ import (
 	"strings"
 
 	ref "github.com/distribution/reference"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 
 	"getarcane.dev/arcane/v3/pkg/registry"
@@ -26,9 +26,9 @@ import (
 type (
 	HelperHost struct {
 		Image       string
-		NetworkMode container.NetworkMode
+		NetworkMode mobyContainer.NetworkMode
 		Binds       []string
-		Mounts      []mount.Mount
+		Mounts      []mobyMount.Mount
 		Keep        bool
 	}
 
@@ -41,8 +41,9 @@ type (
 )
 
 const (
-	toolsRepoPath  = "getarcaneapp/tools"
-	ContainerLabel = "com.getarcaneapp.volume-helper"
+	toolsRepoPath   = "getarcaneapp/tools"
+	ToolsImageLabel = "org.opencontainers.image.source=https://github.com/getarcaneapp/tools"
+	ContainerLabel  = "com.getarcaneapp.volume-helper"
 )
 
 func ToolsImage(registrySetting string) string {
@@ -56,11 +57,11 @@ func Labels() map[string]string {
 	}
 }
 
-func RemoveOptions() client.ContainerRemoveOptions {
-	return client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}
+func RemoveOptions() mobyClient.ContainerRemoveOptions {
+	return mobyClient.ContainerRemoveOptions{Force: true, RemoveVolumes: true}
 }
 
-func IsHelperContainer(c container.Summary) bool {
+func IsHelperContainer(c mobyContainer.Summary) bool {
 	if internal, _ := kit.ParseBool(c.Labels[selfcontainer.InternalResourceLabel]); !internal {
 		return false
 	}
@@ -68,20 +69,20 @@ func IsHelperContainer(c container.Summary) bool {
 		return true
 	}
 	command := strings.ToLower(c.Command)
-	return strings.Contains(command, "sleep") && strings.Contains(command, "infinity") && slices.ContainsFunc(c.Mounts, func(mounted container.MountPoint) bool {
+	return strings.Contains(command, "sleep") && strings.Contains(command, "infinity") && slices.ContainsFunc(c.Mounts, func(mounted mobyContainer.MountPoint) bool {
 		return mounted.Destination == "/volume"
 	})
 }
 
-func ListRunningContainers(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
-	running, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+func ListRunningContainers(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyContainer.Summary, error) {
+	running, err := dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
 	return slices.DeleteFunc(running.Items, IsHelperContainer), nil
 }
 
-func HostConfig(host HelperHost) *container.HostConfig {
+func HostConfig(host HelperHost) *mobyContainer.HostConfig {
 	var tmpfs map[string]string
 	if runtime.GOOS == "linux" {
 		if named, err := ref.ParseNormalizedNamed(strings.TrimSpace(host.Image)); err != nil || ref.Path(named) != toolsRepoPath {
@@ -91,7 +92,7 @@ func HostConfig(host HelperHost) *container.HostConfig {
 		}
 	}
 
-	return &container.HostConfig{
+	return &mobyContainer.HostConfig{
 		Binds:       host.Binds,
 		Mounts:      host.Mounts,
 		AutoRemove:  !host.Keep,
@@ -100,12 +101,12 @@ func HostConfig(host HelperHost) *container.HostConfig {
 	}
 }
 
-func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsImage string) (string, error) {
+func ResolveHelperImage(ctx context.Context, dockerClient *mobyClient.Client, toolsImage string) (string, error) {
 	if _, err := dockerClient.ImageInspect(ctx, toolsImage); err == nil {
 		return toolsImage, nil
 	}
 
-	pullReader, pullErr := dockerClient.ImagePull(ctx, toolsImage, client.ImagePullOptions{})
+	pullReader, pullErr := dockerClient.ImagePull(ctx, toolsImage, mobyClient.ImagePullOptions{})
 	if pullErr == nil {
 		if pullReader == nil {
 			pullErr = errors.New("helper image pull returned no response body")
@@ -126,21 +127,21 @@ func ResolveHelperImage(ctx context.Context, dockerClient *client.Client, toolsI
 	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found: %w", pullErr)
 }
 
-func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client) mo.Option[RuntimeImage] {
+func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *mobyClient.Client) mo.Option[RuntimeImage] {
 	hostname, _ := os.Hostname()
 	if hostname != "" {
 		if inspect,
 			err := compat.ContainerInspectWithCompatibility(ctx,
 			dockerClient,
 			hostname,
-			client.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
+			mobyClient.ContainerInspectOptions{}); err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
 			return mo.Some(buildRuntimeImage(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, "hostname"))
 		}
 	}
 
 	for _, label := range []string{"com.getarcaneapp.arcane=true", "com.getarcaneapp.arcane.agent=true"} {
-		containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{
-			Filters: client.Filters{}.Add("label", label),
+		containers, err := dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{
+			Filters: mobyClient.Filters{}.Add("label", label),
 			All:     true,
 		})
 		if err != nil || len(containers.Items) == 0 {
@@ -158,17 +159,17 @@ func ResolveArcaneRuntimeImage(ctx context.Context, dockerClient *client.Client)
 	return mo.None[RuntimeImage]()
 }
 
-func resolveRuntimeImageFromContainers(ctx context.Context, dockerClient *client.Client, containers []container.Summary, label string, runningOnly bool) mo.Option[RuntimeImage] {
+func resolveRuntimeImageFromContainers(ctx context.Context, dockerClient *mobyClient.Client, containers []mobyContainer.Summary, label string, runningOnly bool) mo.Option[RuntimeImage] {
 	source := kit.Ternary(strings.Contains(label, ".agent="), "arcane-agent-label", "arcane-label")
 
 	for _, c := range containers {
-		if runningOnly && c.State != container.StateRunning {
+		if runningOnly && c.State != mobyContainer.StateRunning {
 			continue
 		}
-		if !runningOnly && c.State == container.StateRunning {
+		if !runningOnly && c.State == mobyContainer.StateRunning {
 			continue
 		}
-		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
+		inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, mobyClient.ContainerInspectOptions{})
 		if err == nil && inspect.Container.Config != nil && strings.TrimSpace(inspect.Container.Config.Image) != "" {
 			return mo.Some(buildRuntimeImage(inspect.Container.Config.Image, inspect.Container.Config.Entrypoint, inspect.Container.Config.Cmd, source))
 		}

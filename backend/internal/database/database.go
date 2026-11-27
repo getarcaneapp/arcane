@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/metrics"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 
 	"getarcane.dev/arcane/v3/internal/database/migrations"
@@ -182,7 +182,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		return nil, fmt.Errorf("failed to register database instrumentation: %w", err)
 	}
 	if dbProvider == dbProviderPostgres {
-		sqlDB.SetMaxIdleConns(4)
+		sqlDB.SetMaxIdleConns(16)
 		sqlDB.SetMaxOpenConns(50)
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 		sqlDB.SetConnMaxIdleTime(3 * time.Minute)

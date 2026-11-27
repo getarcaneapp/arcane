@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
 	"kit.getarcane.app/docker"
 
@@ -23,12 +23,12 @@ import (
 
 type (
 	RestoreState struct {
-		Redeploy *bool                        `json:"redeploy,omitempty"`
-		SafetyID string                       `json:"safetyId,omitempty"`
-		Create   []client.VolumeCreateOptions `json:"create,omitempty"`
-		Created  []string                     `json:"created,omitempty"`
-		MayStop  bool                         `json:"mayStop"`
-		Running  bool                         `json:"running"`
+		Redeploy *bool                            `json:"redeploy,omitempty"`
+		SafetyID string                           `json:"safetyId,omitempty"`
+		Create   []mobyClient.VolumeCreateOptions `json:"create,omitempty"`
+		Created  []string                         `json:"created,omitempty"`
+		MayStop  bool                             `json:"mayStop"`
+		Running  bool                             `json:"running"`
 	}
 
 	RestoreSteps struct {
@@ -94,7 +94,7 @@ func (r RestoreSteps) Apply(ctx context.Context, state RestoreState) error {
 	}
 	r.report(held, "Restoring the backup")
 	for _, options := range state.Create {
-		if _, err = r.Docker.Call(held, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+		if _, err = r.Docker.Call(held, func(ctx context.Context, dockerClient *mobyClient.Client) (struct{}, error) {
 			return struct{}{}, projects.CreateNewVolume(ctx, dockerClient, options)
 		}); err != nil {
 			return r.Rollback(held, state, fmt.Errorf("create the missing volumes: %w", err))
@@ -208,8 +208,8 @@ func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string 
 	if len(created) == 0 {
 		return nil
 	}
-	listed, listErr := r.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	listed, listErr := r.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, mobyClient.ContainerListOptions{All: true})
 	})
 	if listErr != nil {
 		return []string{fmt.Sprintf("volumes %s (%v)", strings.Join(created, ", "), listErr)}
@@ -220,8 +220,8 @@ func (r RestoreSteps) removeAll(ctx context.Context, created []string) []string 
 	}
 	var leftovers []string
 	for _, id := range slices.Compact(slices.Sorted(slices.Values(users))) {
-		if _, removeErr := r.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
-			return dockerClient.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true})
+		if _, removeErr := r.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, id, mobyClient.ContainerRemoveOptions{Force: true})
 		}); removeErr != nil {
 			leftovers = append(leftovers, fmt.Sprintf("container %s (%v)", id, removeErr))
 		}
@@ -247,7 +247,7 @@ func (r RestoreSteps) report(ctx context.Context, message string) {
 	}
 }
 
-func RestoreLayout(projectMounts []mount.Mount, parts []RestorePart, captured []string) (mount.Mount, RestoreOptions, error) {
+func RestoreLayout(projectMounts []mobyMount.Mount, parts []RestorePart, captured []string) (mobyMount.Mount, RestoreOptions, error) {
 	mounts := slices.Clone(projectMounts)
 	globs := []string{"!/meta", "!/meta/**"}
 	if len(projectMounts) == 0 {
@@ -258,16 +258,16 @@ func RestoreLayout(projectMounts []mount.Mount, parts []RestorePart, captured []
 		into, seen := restored[part.Snapshot]
 		switch {
 		case !slices.Contains(captured, part.Snapshot):
-			return mount.Mount{}, RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("the backup holds no data for volume %s", part.Key))
+			return mobyMount.Mount{}, RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("the backup holds no data for volume %s", part.Key))
 		case seen && into != part.Target:
-			return mount.Mount{}, RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("the backup's volume %s cannot be restored into both %s and %s", part.Snapshot, into, part.Target))
+			return mobyMount.Mount{}, RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("the backup's volume %s cannot be restored into both %s and %s", part.Snapshot, into, part.Target))
 		case !seen && slices.Contains(slices.Collect(maps.Values(restored)), part.Target):
-			return mount.Mount{}, RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("two of the backup's volumes would be restored into %s", part.Target))
+			return mobyMount.Mount{}, RestoreOptions{}, common.Classify(common.ErrValidation, fmt.Errorf("two of the backup's volumes would be restored into %s", part.Target))
 		case seen:
 			continue
 		}
 		restored[part.Snapshot] = part.Target
-		mounts = append(mounts, mount.Mount{Type: mount.TypeVolume, Source: part.Target, Target: path.Join(RestoreRoot, "volumes", part.Snapshot)})
+		mounts = append(mounts, mobyMount.Mount{Type: mobyMount.TypeVolume, Source: part.Target, Target: path.Join(RestoreRoot, "volumes", part.Snapshot)})
 	}
 	for _, name := range captured {
 		if _, ok := restored[name]; !ok {
@@ -275,7 +275,7 @@ func RestoreLayout(projectMounts []mount.Mount, parts []RestorePart, captured []
 		}
 	}
 	if len(mounts) == 0 {
-		return mount.Mount{}, RestoreOptions{}, common.Classify(common.ErrValidation, errors.New("nothing to restore"))
+		return mobyMount.Mount{}, RestoreOptions{}, common.Classify(common.ErrValidation, errors.New("nothing to restore"))
 	}
 	return mounts[0], RestoreOptions{DestinationPath: RestoreRoot, ExtraMounts: mounts[1:], Globs: globs, DeleteExtra: true}, nil
 }

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
 	"kit.getarcane.app/docker"
 
@@ -20,8 +20,8 @@ import (
 	"getarcane.dev/arcane/v3/pkg/volumes"
 )
 
-func Run(ctx context.Context, dockerClient *client.Client, password string, command, environment []string, mounts []mount.Mount, networkMode container.NetworkMode) (string, error) {
-	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: CacheVolume, Labels: volumes.Labels()}); err != nil {
+func Run(ctx context.Context, dockerClient *mobyClient.Client, password string, command, environment []string, mounts []mobyMount.Mount, networkMode mobyContainer.NetworkMode) (string, error) {
+	if _, err := dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{Name: CacheVolume, Labels: volumes.Labels()}); err != nil {
 		return "", fmt.Errorf("failed to provision Rustic cache volume: %w", err)
 	}
 	env := append([]string{}, environment...)
@@ -31,10 +31,10 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 		"RUSTIC_LOG_LEVEL=error",
 		"RUSTIC_CACHE_DIR=/cache",
 	)
-	allMounts := append([]mount.Mount{}, mounts...)
-	allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: CacheVolume, Target: "/cache"})
-	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
+	allMounts := append([]mobyMount.Mount{}, mounts...)
+	allMounts = append(allMounts, mobyMount.Mount{Type: mobyMount.TypeVolume, Source: CacheVolume, Target: "/cache"})
+	created, err := dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
+		Config: &mobyContainer.Config{
 			Image:  DefaultImage,
 			Cmd:    command,
 			Env:    env,
@@ -65,11 +65,11 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 			time.Sleep(5 * time.Second)
 		}
 	}()
-	if _, containerStartErr := dockerClient.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); containerStartErr != nil {
+	if _, containerStartErr := dockerClient.ContainerStart(ctx, created.ID, mobyClient.ContainerStartOptions{}); containerStartErr != nil {
 		return "", fmt.Errorf("failed to start Rustic container: %w", containerStartErr)
 	}
-	wait := dockerClient.ContainerWait(ctx, created.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
-	var status container.WaitResponse
+	wait := dockerClient.ContainerWait(ctx, created.ID, mobyClient.ContainerWaitOptions{Condition: mobyContainer.WaitConditionNotRunning})
+	var status mobyContainer.WaitResponse
 	select {
 	case operationErr := <-wait.Error:
 		if operationErr != nil {
@@ -77,7 +77,7 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 		}
 	case status = <-wait.Result:
 	}
-	logs, err := dockerClient.ContainerLogs(ctx, created.ID, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
+	logs, err := dockerClient.ContainerLogs(ctx, created.ID, mobyClient.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
 	if err != nil {
 		return "", fmt.Errorf("failed to read Rustic output: %w", err)
 	}

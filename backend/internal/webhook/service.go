@@ -22,7 +22,7 @@ import (
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/concurrency"
 	dockertypes "kit.getarcane.app/docker/types"
 	"kit.getarcane.app/normalization"

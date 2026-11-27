@@ -7,17 +7,17 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	mobyNetwork "github.com/moby/moby/api/types/network"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/samber/mo"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/mapping"
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/database"
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
 	"getarcane.dev/arcane/v3/pkg/authz"
@@ -29,7 +29,7 @@ import (
 type (
 	NetworkHandler struct {
 		networkService  *NetworkService
-		dockerService   *docker.DockerClientService
+		dockerService   *dockerInternal.DockerClientService
 		activityService *activity.ActivityService
 		appCtx          context.Context
 	}
@@ -150,7 +150,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, err
 	}
 
-	dockerOptions, err := mapping.MapOne[types.NetworkCreateOptions, client.NetworkCreateOptions](input.Body.Options)
+	dockerOptions, err := mapping.MapOne[types.NetworkCreateOptions, mobyClient.NetworkCreateOptions](input.Body.Options)
 	if err != nil {
 		return nil, huma.Error400BadRequest("Invalid network options: " + err.Error())
 	}
@@ -158,7 +158,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		dockerOptions.EnableIPv6 = nil // keep: mapped options need nil to omit IPv6
 	}
 
-	var response *network.CreateResponse
+	var response *mobyNetwork.CreateResponse
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -184,7 +184,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
-	out, err := mapping.MapOne[network.CreateResponse, types.NetworkCreateResponse](*response)
+	out, err := mapping.MapOne[mobyNetwork.CreateResponse, types.NetworkCreateResponse](*response)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
@@ -227,7 +227,7 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve network: "+apiErr.Message)
 	}
 
-	out, err := mapping.MapOne[network.Inspect, types.NetworkInspect](*networkInspect)
+	out, err := mapping.MapOne[mobyNetwork.Inspect, types.NetworkInspect](*networkInspect)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}
@@ -380,7 +380,7 @@ func (h *NetworkHandler) RunNetworkAction(ctx context.Context, input *NetworkAct
 }
 
 func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkPruneReport], error) {
-	var report *network.PruneReport
+	var report *mobyNetwork.PruneReport
 	runtimeCtx := activitylib.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -399,7 +399,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *types.Environ
 		return nil, huma.Error500InternalServerError("Failed to prune networks: " + err.Error())
 	}
 
-	out, err := mapping.MapOne[network.PruneReport, types.NetworkPruneReport](*report)
+	out, err := mapping.MapOne[mobyNetwork.PruneReport, types.NetworkPruneReport](*report)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map network: " + err.Error())
 	}

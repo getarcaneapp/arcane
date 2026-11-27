@@ -15,7 +15,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/fs"
 
 	"getarcane.dev/arcane/v3/pkg/agent"

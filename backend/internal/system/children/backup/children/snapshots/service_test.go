@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -339,62 +339,62 @@ func TestNestedDataPath(t *testing.T) {
 		name          string
 		expected      string
 		errorContains string
-		mounts        []container.MountPoint
+		mounts        []mobyContainer.MountPoint
 		nested        bool
 	}{
 		{
 			name: "data directory inside projects bind on the host",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/volume4/docker/dsm/arcane/data", Destination: "/app/data", RW: true},
-				{Type: mount.TypeBind, Source: "/volume4/docker/dsm", Destination: "/volume4/docker/dsm", RW: true},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/volume4/docker/dsm/arcane/data", Destination: "/app/data", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/volume4/docker/dsm", Destination: "/volume4/docker/dsm", RW: true},
 			},
 			expected: "arcane/data",
 			nested:   true,
 		},
 		{
 			name: "same host directory",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/shared", Destination: "/app/data", RW: true},
-				{Type: mount.TypeBind, Source: "/host/shared/", Destination: "/volume4/docker/dsm", RW: true},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/shared", Destination: "/app/data", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/host/shared/", Destination: "/volume4/docker/dsm", RW: true},
 			},
 			nested:        true,
 			errorContains: "same host directory",
 		},
 		{
 			name: "sibling with shared prefix",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/projects-data", Destination: "/app/data", RW: true},
-				{Type: mount.TypeBind, Source: "/host/projects", Destination: "/volume4/docker/dsm", RW: true},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/projects-data", Destination: "/app/data", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/host/projects", Destination: "/volume4/docker/dsm", RW: true},
 			},
 		},
 		{
 			name: "unrelated binds",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/data", Destination: "/app/data", RW: true},
-				{Type: mount.TypeBind, Source: "/host/projects", Destination: "/volume4/docker/dsm", RW: true},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/data", Destination: "/app/data", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/host/projects", Destination: "/volume4/docker/dsm", RW: true},
 			},
 		},
 		{
 			name: "volume data mount beside bind projects",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-				{Type: mount.TypeBind, Source: "/host/projects", Destination: "/volume4/docker/dsm", RW: true},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/host/projects", Destination: "/volume4/docker/dsm", RW: true},
 			},
 		},
 		{
 			name: "data subpath inside the projects volume",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeVolume, Name: "shared", Destination: "/volume4/docker/dsm", RW: true},
-				{Type: mount.TypeVolume, Name: "shared", Destination: "/app/data", RW: true},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeVolume, Name: "shared", Destination: "/volume4/docker/dsm", RW: true},
+				{Type: mobyMount.TypeVolume, Name: "shared", Destination: "/app/data", RW: true},
 			},
 			nested:        true,
 			errorContains: "same host directory",
 		},
 		{
 			name: "different volumes",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-				{Type: mount.TypeVolume, Name: "projects", Destination: "/volume4/docker/dsm", RW: true},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+				{Type: mobyMount.TypeVolume, Name: "projects", Destination: "/volume4/docker/dsm", RW: true},
 			},
 		},
 		{name: "host development without mounts"},
@@ -414,23 +414,23 @@ func TestNestedDataPath(t *testing.T) {
 }
 
 func TestRestoreTarget(t *testing.T) {
-	mounts := []container.MountPoint{
-		{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-		{Type: mount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
-		{Type: mount.TypeBind, Source: "/host/templates", Destination: "/app/data/templates", RW: true},
-		{Type: mount.TypeBind, Source: "/host/ro", Destination: "/mnt/ro", RW: false},
+	mounts := []mobyContainer.MountPoint{
+		{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/templates", Destination: "/app/data/templates", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/ro", Destination: "/mnt/ro", RW: false},
 	}
 	target, err := restoreTarget(mounts, "/app/data/custom/projects", "/restore-projects", "")
 	require.NoError(t, err)
 	require.Equal(t, "/restore-projects/custom/projects", target.Path)
-	require.Equal(t, []mount.Mount{{Type: mount.TypeVolume, Source: "arcane-data", Target: "/restore-projects"}}, target.Mounts)
+	require.Equal(t, []mobyMount.Mount{{Type: mobyMount.TypeVolume, Source: "arcane-data", Target: "/restore-projects"}}, target.Mounts)
 
 	data, err := restoreTarget(mounts, "/app/data", "/restore", "/app/data/projects")
 	require.NoError(t, err)
 	require.Equal(t, "/restore", data.Path)
-	require.Equal(t, []mount.Mount{
-		{Type: mount.TypeVolume, Source: "arcane-data", Target: "/restore"},
-		{Type: mount.TypeBind, Source: "/host/templates", Target: "/restore/templates"},
+	require.Equal(t, []mobyMount.Mount{
+		{Type: mobyMount.TypeVolume, Source: "arcane-data", Target: "/restore"},
+		{Type: mobyMount.TypeBind, Source: "/host/templates", Target: "/restore/templates"},
 	}, data.Mounts)
 
 	_, err = restoreTarget(mounts, "/mnt/ro/projects", "/restore-projects", "")
@@ -440,14 +440,14 @@ func TestRestoreTarget(t *testing.T) {
 }
 
 func TestRestoreStages(t *testing.T) {
-	mounts := []container.MountPoint{
-		{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-		{Type: mount.TypeBind, Source: "/host/nested", Destination: "/app/data/projects", RW: true},
-		{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
+	mounts := []mobyContainer.MountPoint{
+		{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/nested", Destination: "/app/data/projects", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
 	}
 	repository := types.RecoveryRestoreRepository{Environment: []string{"RUSTIC_REPOSITORY=/repository"}}
-	dataVolume := mount.Mount{Type: mount.TypeVolume, Source: "arcane-data", Target: "/restore"}
-	nested := mount.Mount{Type: mount.TypeBind, Source: "/host/nested", Target: "/restore/projects"}
+	dataVolume := mobyMount.Mount{Type: mobyMount.TypeVolume, Source: "arcane-data", Target: "/restore"}
+	nested := mobyMount.Mount{Type: mobyMount.TypeBind, Source: "/host/nested", Target: "/restore/projects"}
 
 	t.Run("projects covered by data restore", func(t *testing.T) {
 		layout := snapshotLayout{dataPath: "/data", projectsPath: "/data/projects", databaseName: "arcane.db"}
@@ -461,7 +461,7 @@ func TestRestoreStages(t *testing.T) {
 					SnapshotID: "snap",
 					SourcePath: "/data",
 					Target: types.RecoveryRestoreTarget{
-						Mounts: []mount.Mount{
+						Mounts: []mobyMount.Mount{
 							dataVolume,
 							nested,
 						},
@@ -478,14 +478,14 @@ func TestRestoreStages(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, stages, 2)
 		require.Equal(t, "/data", stages[0].SourcePath)
-		require.Equal(t, []mount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
+		require.Equal(t, []mobyMount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
 		require.Equal(t, "/projects", stages[1].SourcePath)
 		require.Equal(
 			t,
 			types.RecoveryRestoreTarget{
-				Mounts: []mount.Mount{
+				Mounts: []mobyMount.Mount{
 					{
-						Type:   mount.TypeBind,
+						Type:   mobyMount.TypeBind,
 						Source: "/host/external",
 						Target: "/restore-projects",
 					},
@@ -500,19 +500,19 @@ func TestRestoreStages(t *testing.T) {
 		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/projects"}, repository, "snap", layout)
 		require.NoError(t, err)
 		require.Len(t, stages, 1)
-		require.Equal(t, []mount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
+		require.Equal(t, []mobyMount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
 
 		external := snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"}
 		stages, err = restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/projects"}, repository, "snap", external)
 		require.NoError(t, err)
 		require.Len(t, stages, 2)
-		require.Equal(t, []mount.Mount{dataVolume}, stages[0].Target.Mounts)
+		require.Equal(t, []mobyMount.Mount{dataVolume}, stages[0].Target.Mounts)
 		require.Equal(
 			t,
 			types.RecoveryRestoreTarget{
-				Mounts: []mount.Mount{
+				Mounts: []mobyMount.Mount{
 					{
-						Type:   mount.TypeBind,
+						Type:   mobyMount.TypeBind,
 						Source: "/host/nested",
 						Target: "/restore-projects",
 					},
@@ -525,13 +525,13 @@ func TestRestoreStages(t *testing.T) {
 		stages, err = restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/custom/projects"}, repository, "snap", external)
 		require.NoError(t, err)
 		require.Len(t, stages, 2)
-		require.Equal(t, []mount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
+		require.Equal(t, []mobyMount.Mount{dataVolume, nested}, stages[0].Target.Mounts)
 		require.Equal(
 			t,
 			types.RecoveryRestoreTarget{
-				Mounts: []mount.Mount{
+				Mounts: []mobyMount.Mount{
 					{
-						Type:   mount.TypeVolume,
+						Type:   mobyMount.TypeVolume,
 						Source: "arcane-data",
 						Target: "/restore-projects",
 					},
@@ -547,7 +547,7 @@ func TestRestoreStages(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []types.RecoveryRestoreStage{{
 			Swap:       &types.RecoveryRestoreSwap{Directory: "/app/data", ID: "snap", Preserve: []string{rustic.TrustBundleName, "projects"}},
-			Target:     types.RecoveryRestoreTarget{Mounts: []mount.Mount{dataVolume}, Path: "/restore/.arcane-snapshot-restore-snap"},
+			Target:     types.RecoveryRestoreTarget{Mounts: []mobyMount.Mount{dataVolume}, Path: "/restore/.arcane-snapshot-restore-snap"},
 			SnapshotID: "snap",
 			SourcePath: "/app/data",
 			Globs:      []string{"!/" + rustic.TrustBundleName, "!/" + rustic.TrustBundleName + "/**", "!/projects", "!/projects/**"},
@@ -568,9 +568,9 @@ func TestRestoreStages(t *testing.T) {
 		require.ErrorContains(t, err, "/opt/projects must be mounted")
 	})
 	t.Run("data directory inside projects on the host fails", func(t *testing.T) {
-		hostNested := []container.MountPoint{
-			{Type: mount.TypeBind, Source: "/volume4/docker/dsm/arcane/data", Destination: "/app/data", RW: true},
-			{Type: mount.TypeBind, Source: "/volume4/docker/dsm", Destination: "/volume4/docker/dsm", RW: true},
+		hostNested := []mobyContainer.MountPoint{
+			{Type: mobyMount.TypeBind, Source: "/volume4/docker/dsm/arcane/data", Destination: "/app/data", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/volume4/docker/dsm", Destination: "/volume4/docker/dsm", RW: true},
 		}
 		layout := snapshotLayout{dataPath: "/data", projectsPath: "/projects", databaseName: "arcane.db"}
 		_, err := restoreStages(RestoreTarget{Mounts: hostNested, DataDirectory: "/app/data"}, []string{"/volume4/docker/dsm"}, repository, "snap", layout)
@@ -580,17 +580,17 @@ func TestRestoreStages(t *testing.T) {
 
 func TestStagedRestoreStages(t *testing.T) {
 	repository := types.RecoveryRestoreRepository{Environment: []string{"RUSTIC_REPOSITORY=/repository"}}
-	dataVolume := mount.Mount{Type: mount.TypeVolume, Source: "arcane-data", Target: "/restore"}
+	dataVolume := mobyMount.Mount{Type: mobyMount.TypeVolume, Source: "arcane-data", Target: "/restore"}
 	layout := snapshotLayout{dataPath: "/data", projectsPath: "", databaseName: "arcane.db", excludedRoots: []string{"old-projects"}}
 
 	t.Run("preserves project roots and restores other nested mounts on their own", func(t *testing.T) {
-		mounts := []container.MountPoint{
-			{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-			{Type: mount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
-			{Type: mount.TypeBind, Source: "/host/project-data", Destination: "/app/data/projects/demo/data", RW: true},
-			{Type: mount.TypeBind, Source: "/host/templates", Destination: "/app/data/templates", RW: true},
-			{Type: mount.TypeBind, Source: "/host/templates-sub", Destination: "/app/data/templates/sub", RW: true},
-			{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
+		mounts := []mobyContainer.MountPoint{
+			{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/host/project-data", Destination: "/app/data/projects/demo/data", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/host/templates", Destination: "/app/data/templates", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/host/templates-sub", Destination: "/app/data/templates/sub", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
 		}
 		roots := []string{"/app/data/projects", "/app/data/stacks/[x]", "/srv/projects"}
 		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, roots, repository, "snap", layout)
@@ -602,7 +602,7 @@ func TestStagedRestoreStages(t *testing.T) {
 					ID:        "snap",
 					Preserve:  []string{rustic.TrustBundleName, "old-projects", "projects", "stacks/[x]", "templates"},
 				},
-				Target:     types.RecoveryRestoreTarget{Mounts: []mount.Mount{dataVolume}, Path: "/restore/.arcane-snapshot-restore-snap"},
+				Target:     types.RecoveryRestoreTarget{Mounts: []mobyMount.Mount{dataVolume}, Path: "/restore/.arcane-snapshot-restore-snap"},
 				SnapshotID: "snap",
 				SourcePath: "/data",
 				Globs: []string{
@@ -615,9 +615,9 @@ func TestStagedRestoreStages(t *testing.T) {
 			{
 				Swap: nil,
 				Target: types.RecoveryRestoreTarget{
-					Mounts: []mount.Mount{
-						{Type: mount.TypeBind, Source: "/host/templates", Target: "/restore"},
-						{Type: mount.TypeBind, Source: "/host/templates-sub", Target: "/restore/sub"},
+					Mounts: []mobyMount.Mount{
+						{Type: mobyMount.TypeBind, Source: "/host/templates", Target: "/restore"},
+						{Type: mobyMount.TypeBind, Source: "/host/templates-sub", Target: "/restore/sub"},
 					},
 					Path: "/restore",
 				},
@@ -629,18 +629,18 @@ func TestStagedRestoreStages(t *testing.T) {
 		}, stages)
 	})
 	t.Run("nested mount that contains a project root is refused", func(t *testing.T) {
-		mounts := []container.MountPoint{
-			{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-			{Type: mount.TypeBind, Source: "/host/stacks", Destination: "/app/data/stacks", RW: true},
+		mounts := []mobyContainer.MountPoint{
+			{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/host/stacks", Destination: "/app/data/stacks", RW: true},
 		}
 		_, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/app/data/stacks/projects"}, repository, "snap", layout)
 		require.ErrorContains(t, err, "/app/data/stacks is a separate mount that contains the projects folder /app/data/stacks/projects")
 	})
 	t.Run("mount that shows the projects host folder is preserved without its own stage", func(t *testing.T) {
-		mounts := []container.MountPoint{
-			{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-			{Type: mount.TypeBind, Source: "/opt/stacks", Destination: "/opt/stacks", RW: true},
-			{Type: mount.TypeBind, Source: "/opt/stacks", Destination: "/app/data/projects", RW: true},
+		mounts := []mobyContainer.MountPoint{
+			{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/opt/stacks", Destination: "/opt/stacks", RW: true},
+			{Type: mobyMount.TypeBind, Source: "/opt/stacks", Destination: "/app/data/projects", RW: true},
 		}
 		stages, err := restoreStages(RestoreTarget{Mounts: mounts, DataDirectory: "/app/data"}, []string{"/opt/stacks"}, repository, "snap", layout)
 		require.NoError(t, err)
@@ -650,27 +650,27 @@ func TestStagedRestoreStages(t *testing.T) {
 }
 
 func TestProjectRootsInData(t *testing.T) {
-	dataVolume := container.MountPoint{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true}
+	dataVolume := mobyContainer.MountPoint{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true}
 	tests := []struct {
 		name          string
 		errorContains string
-		mounts        []container.MountPoint
+		mounts        []mobyContainer.MountPoint
 		roots         []string
 		expected      []string
 	}{
 		{
 			name:          "main and extra roots inside the data folder",
 			errorContains: "",
-			mounts:        []container.MountPoint{dataVolume},
+			mounts:        []mobyContainer.MountPoint{dataVolume},
 			roots:         []string{"/app/data/projects", "/app/data/stacks/extra", "/srv/projects"},
 			expected:      []string{"projects", "stacks/extra"},
 		},
 		{
 			name:          "root mounted from a host folder inside the data folder",
 			errorContains: "",
-			mounts: []container.MountPoint{
-				{Type: mount.TypeBind, Source: "/host/arcane", Destination: "/app/data", RW: true},
-				{Type: mount.TypeBind, Source: "/host/arcane/compose", Destination: "/host/path/projects", RW: true},
+			mounts: []mobyContainer.MountPoint{
+				{Type: mobyMount.TypeBind, Source: "/host/arcane", Destination: "/app/data", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/host/arcane/compose", Destination: "/host/path/projects", RW: true},
 			},
 			roots:    []string{"/host/path/projects"},
 			expected: []string{"compose"},
@@ -678,12 +678,12 @@ func TestProjectRootsInData(t *testing.T) {
 		{
 			name:          "mount in the data folder that shows the projects host folder",
 			errorContains: "",
-			mounts: []container.MountPoint{
+			mounts: []mobyContainer.MountPoint{
 				dataVolume,
-				{Type: mount.TypeBind, Source: "/opt/stacks", Destination: "/opt/stacks", RW: true},
-				{Type: mount.TypeBind, Source: "/opt/stacks", Destination: "/app/data/projects", RW: true},
-				{Type: mount.TypeBind, Source: "/opt/stacks/traefik/certs", Destination: "/app/data/certs", RW: true},
-				{Type: mount.TypeBind, Source: "/opt/logs", Destination: "/app/data/logs", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/opt/stacks", Destination: "/opt/stacks", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/opt/stacks", Destination: "/app/data/projects", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/opt/stacks/traefik/certs", Destination: "/app/data/certs", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/opt/logs", Destination: "/app/data/logs", RW: true},
 			},
 			roots:    []string{"/opt/stacks"},
 			expected: []string{"certs", "projects"},
@@ -691,10 +691,10 @@ func TestProjectRootsInData(t *testing.T) {
 		{
 			name:          "mount in the data folder that holds the projects host folder",
 			errorContains: "",
-			mounts: []container.MountPoint{
+			mounts: []mobyContainer.MountPoint{
 				dataVolume,
-				{Type: mount.TypeBind, Source: "/opt/stacks", Destination: "/opt/stacks", RW: true},
-				{Type: mount.TypeBind, Source: "/opt", Destination: "/app/data/opt", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/opt/stacks", Destination: "/opt/stacks", RW: true},
+				{Type: mobyMount.TypeBind, Source: "/opt", Destination: "/app/data/opt", RW: true},
 			},
 			roots:    []string{"/opt/stacks"},
 			expected: []string{"opt/stacks"},
@@ -702,7 +702,7 @@ func TestProjectRootsInData(t *testing.T) {
 		{
 			name:          "root at the data folder",
 			errorContains: "the projects folder /app/data is Arcane's data folder",
-			mounts:        []container.MountPoint{dataVolume},
+			mounts:        []mobyContainer.MountPoint{dataVolume},
 			roots:         []string{"/app/data/projects", "/app/data"},
 			expected:      nil,
 		},
@@ -735,25 +735,25 @@ func TestProjectRootsInDataFollowsLinks(t *testing.T) {
 }
 
 func TestWithoutProjects(t *testing.T) {
-	mounts := []container.MountPoint{
-		{Type: mount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
-		{Type: mount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
-		{Type: mount.TypeBind, Source: "/host/project-db", Destination: "/app/data/projects/demo/db", RW: true},
-		{Type: mount.TypeBind, Source: "/host/templates", Destination: "/app/data/templates", RW: true},
-		{Type: mount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
-		{Type: mount.TypeBind, Source: "/host/external", Destination: "/app/data/legacy", RW: true},
+	mounts := []mobyContainer.MountPoint{
+		{Type: mobyMount.TypeVolume, Name: "arcane-data", Destination: "/app/data", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/projects", Destination: "/app/data/projects", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/project-db", Destination: "/app/data/projects/demo/db", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/templates", Destination: "/app/data/templates", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/external", Destination: "/srv/projects", RW: true},
+		{Type: mobyMount.TypeBind, Source: "/host/external", Destination: "/app/data/legacy", RW: true},
 	}
-	dataVolume := mount.Mount{Type: mount.TypeVolume, Source: "arcane-data", Target: "/data", ReadOnly: true}
-	templates := mount.Mount{Type: mount.TypeBind, Source: "/host/templates", Target: "/data/templates", ReadOnly: true}
+	dataVolume := mobyMount.Mount{Type: mobyMount.TypeVolume, Source: "arcane-data", Target: "/data", ReadOnly: true}
+	templates := mobyMount.Mount{Type: mobyMount.TypeBind, Source: "/host/templates", Target: "/data/templates", ReadOnly: true}
 	layout, err := withoutProjects(backupSourceLayout{
 		dataDirectory: "/app/data",
 		databaseName:  "arcane.db",
-		mounts: []mount.Mount{
+		mounts: []mobyMount.Mount{
 			dataVolume,
-			{Type: mount.TypeBind, Source: "/host/projects", Target: "/data/projects", ReadOnly: true},
-			{Type: mount.TypeBind, Source: "/host/project-db", Target: "/data/projects/demo/db", ReadOnly: true},
+			{Type: mobyMount.TypeBind, Source: "/host/projects", Target: "/data/projects", ReadOnly: true},
+			{Type: mobyMount.TypeBind, Source: "/host/project-db", Target: "/data/projects/demo/db", ReadOnly: true},
 			templates,
-			{Type: mount.TypeBind, Source: "/host/external", Target: "/data/legacy", ReadOnly: true},
+			{Type: mobyMount.TypeBind, Source: "/host/external", Target: "/data/legacy", ReadOnly: true},
 		},
 		sources:  []string{snapshotDataPath},
 		excludes: []string{".arcane-snapshot-*"},
@@ -765,7 +765,7 @@ func TestWithoutProjects(t *testing.T) {
 		databaseName:      "arcane.db",
 		projectsPath:      "",
 		nestedDataPath:    "",
-		mounts:            []mount.Mount{dataVolume, templates},
+		mounts:            []mobyMount.Mount{dataVolume, templates},
 		sources:           []string{snapshotDataPath},
 		excludes:          []string{".arcane-snapshot-*", `a\[b\]\*`, "legacy", "projects"},
 		excludedRoots:     []string{"a[b]*", "legacy", "projects"},

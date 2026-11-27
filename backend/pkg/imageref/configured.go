@@ -4,10 +4,10 @@ import (
 	"cmp"
 	"context"
 
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker/compat"
 	"kit.getarcane.app/updater/refs"
 )
@@ -15,11 +15,11 @@ import (
 // ConfiguredImage returns the image a container was created from. Docker lists
 // a container whose image lost its tag by image ID, so the configured image is
 // inspected only then; the listed name is the fallback.
-func ConfiguredImage(ctx context.Context, dockerClient *client.Client, summary container.Summary) string {
+func ConfiguredImage(ctx context.Context, dockerClient *mobyClient.Client, summary mobyContainer.Summary) string {
 	if !refs.IsImageIDLikeReference(summary.Image) {
 		return summary.Image
 	}
-	result, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, summary.ID, client.ContainerInspectOptions{})
+	result, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, summary.ID, mobyClient.ContainerInspectOptions{})
 	if err != nil {
 		return summary.Image
 	}

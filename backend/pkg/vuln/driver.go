@@ -19,11 +19,11 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	containertypes "github.com/moby/moby/api/types/container"
-	mounttypes "github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	"kit.getarcane.app/docker"
 
@@ -35,12 +35,12 @@ type (
 	RuntimeOptions struct {
 		NetworkMode  string
 		ContainerEnv []string
-		Mounts       []mounttypes.Mount
+		Mounts       []mobyMount.Mount
 	}
 
 	ResourceLimits struct {
 		CPUSet    string
-		Resources containertypes.Resources
+		Resources mobyContainer.Resources
 		Apply     bool
 	}
 
@@ -99,11 +99,11 @@ func NewOutputPath() string {
 	return outputPathPrefix + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
 }
 
-func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
-	mounts := append([]mounttypes.Mount{}, opts.Runtime.Mounts...)
+func BuildHostConfig(opts HostConfigOptions) *mobyContainer.HostConfig {
+	mounts := append([]mobyMount.Mount{}, opts.Runtime.Mounts...)
 	if strings.TrimSpace(opts.CacheVolume) != "" {
-		mounts = append(mounts, mounttypes.Mount{
-			Type:   mounttypes.TypeVolume,
+		mounts = append(mounts, mobyMount.Mount{
+			Type:   mobyMount.TypeVolume,
 			Source: opts.CacheVolume,
 			Target: CacheMountTarget,
 		})
@@ -115,14 +115,14 @@ func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
 		resources.CpusetCpus = opts.Limits.CPUSet
 	}
 
-	return &containertypes.HostConfig{
-		NetworkMode: containertypes.NetworkMode(cmp.Or(strings.TrimSpace(opts.Runtime.NetworkMode), DefaultNetworkMode)),
+	return &mobyContainer.HostConfig{
+		NetworkMode: mobyContainer.NetworkMode(cmp.Or(strings.TrimSpace(opts.Runtime.NetworkMode), DefaultNetworkMode)),
 		// Kept until explicit cleanup so completion and logs are reliable across Docker variants.
 		AutoRemove:  false,
 		Mounts:      mounts,
 		SecurityOpt: slices.Clone(opts.SecurityOpts),
 		Privileged:  opts.Privileged,
-		Resources:   kit.Ternary(opts.Limits.Apply, resources, containertypes.Resources{}),
+		Resources:   kit.Ternary(opts.Limits.Apply, resources, mobyContainer.Resources{}),
 	}
 }
 
@@ -168,7 +168,7 @@ func CleanupLogTempFiles(ctx context.Context, files ...*os.File) {
 	}
 }
 
-func MountSummaries(hostConfig *containertypes.HostConfig) []string {
+func MountSummaries(hostConfig *mobyContainer.HostConfig) []string {
 	if hostConfig == nil || len(hostConfig.Mounts) == 0 {
 		return nil
 	}
@@ -182,12 +182,12 @@ func MountSummaries(hostConfig *containertypes.HostConfig) []string {
 	return summaries
 }
 
-func LogContainerStartupRequest(ctx context.Context, scope string, config *containertypes.Config, hostConfig *containertypes.HostConfig) {
+func LogContainerStartupRequest(ctx context.Context, scope string, config *mobyContainer.Config, hostConfig *mobyContainer.HostConfig) {
 	if config == nil {
 		return
 	}
 
-	hc := cmp.Or(hostConfig, &containertypes.HostConfig{})
+	hc := cmp.Or(hostConfig, &mobyContainer.HostConfig{})
 	slog.DebugContext(ctx,
 		"preparing trivy container startup",
 		"scope", scope,
@@ -220,7 +220,7 @@ func TruncateLogOutput(content string, maxBytes int64) string {
 	return strings.TrimSpace(string(raw[:maxBytes])) + " ...<truncated>"
 }
 
-func ReadStartupLogs(ctx context.Context, dockerClient *client.Client, containerID string) (string, string) {
+func ReadStartupLogs(ctx context.Context, dockerClient *mobyClient.Client, containerID string) (string, string) {
 	if containerID == "" {
 		return "", ""
 	}
@@ -228,7 +228,7 @@ func ReadStartupLogs(ctx context.Context, dockerClient *client.Client, container
 	logsCtx, logsCancel := context.WithTimeout(ctx, timeouts.GetDuration(0, timeouts.DefaultDockerAPI))
 	defer logsCancel()
 
-	logs, err := dockerClient.ContainerLogs(logsCtx, containerID, client.ContainerLogsOptions{
+	logs, err := dockerClient.ContainerLogs(logsCtx, containerID, mobyClient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Tail:       "200",
@@ -254,7 +254,7 @@ func ReadStartupLogs(ctx context.Context, dockerClient *client.Client, container
 	return stdoutLog, stderrLog
 }
 
-func RemoveContainer(ctx context.Context, dockerClient *client.Client, containerID, purpose string) {
+func RemoveContainer(ctx context.Context, dockerClient *mobyClient.Client, containerID, purpose string) {
 	if containerID == "" {
 		return
 	}
@@ -263,7 +263,7 @@ func RemoveContainer(ctx context.Context, dockerClient *client.Client, container
 	cleanupCtx, cleanupCancel := context.WithTimeout(cleanupCtx, timeouts.GetDuration(0, timeouts.DefaultDockerAPI))
 	defer cleanupCancel()
 
-	if _, err := dockerClient.ContainerRemove(cleanupCtx, containerID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+	if _, err := dockerClient.ContainerRemove(cleanupCtx, containerID, mobyClient.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		slog.WarnContext(cleanupCtx, "failed to remove container", "purpose", purpose, "containerId", containerID, "error", err)
 	}
 }
@@ -368,7 +368,7 @@ func ReadTempFileExcerpt(file *os.File) string {
 	return strings.TrimSpace(string(content))
 }
 
-func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Client, containerID, outputPath string) ([]byte, error) {
+func ReadOutputFromContainerFile(ctx context.Context, dockerClient *mobyClient.Client, containerID, outputPath string) ([]byte, error) {
 	if containerID == "" {
 		return nil, errors.New("container id is empty")
 	}
@@ -406,7 +406,7 @@ func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Clien
 	return rawOutput, nil
 }
 
-func CleanupOutputFileInContainer(ctx context.Context, dockerClient *client.Client, containerID, outputPath string) {
+func CleanupOutputFileInContainer(ctx context.Context, dockerClient *mobyClient.Client, containerID, outputPath string) {
 	if containerID == "" || strings.TrimSpace(outputPath) == "" {
 		return
 	}
@@ -414,7 +414,7 @@ func CleanupOutputFileInContainer(ctx context.Context, dockerClient *client.Clie
 	execCtx, execCancel := context.WithTimeout(ctx, timeouts.GetDuration(0, timeouts.DefaultDockerAPI))
 	defer execCancel()
 
-	execResp, err := dockerClient.ExecCreate(execCtx, containerID, client.ExecCreateOptions{
+	execResp, err := dockerClient.ExecCreate(execCtx, containerID, mobyClient.ExecCreateOptions{
 		Cmd: []string{"rm", "-f", outputPath},
 	})
 	if err != nil {
@@ -427,7 +427,7 @@ func CleanupOutputFileInContainer(ctx context.Context, dockerClient *client.Clie
 		return
 	}
 
-	if _, execStartErr := dockerClient.ExecStart(execCtx, execResp.ID, client.ExecStartOptions{}); execStartErr != nil {
+	if _, execStartErr := dockerClient.ExecStart(execCtx, execResp.ID, mobyClient.ExecStartOptions{}); execStartErr != nil {
 		slog.DebugContext(ctx,
 			"failed to start cleanup exec for trivy output file",
 			"containerId", containerID,
@@ -602,7 +602,7 @@ func FormatExitError(exitCode int64, errMsg, imageName string) error {
 
 func AwaitContainerWaitResponse(
 	ctx context.Context,
-	statusCh <-chan containertypes.WaitResponse,
+	statusCh <-chan mobyContainer.WaitResponse,
 	errCh <-chan error,
 ) (int64, error) {
 	for statusCh != nil || errCh != nil {

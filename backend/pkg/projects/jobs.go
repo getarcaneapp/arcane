@@ -8,9 +8,9 @@ import (
 	composeTypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
-	"github.com/moby/moby/api/types/container"
+	mobyContainer "github.com/moby/moby/api/types/container"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/common"
@@ -22,7 +22,7 @@ const (
 )
 
 // ContainerServices returns the Compose service names of the service containers, de-duplicated in first-seen order.
-func ContainerServices(containers []container.Summary) []string {
+func ContainerServices(containers []mobyContainer.Summary) []string {
 	var services []string
 	for _, c := range containers {
 		service := docker.ComposeServiceLabel(c.Labels)

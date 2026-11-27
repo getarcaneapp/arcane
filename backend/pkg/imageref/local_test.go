@@ -3,7 +3,7 @@ package imageref
 import (
 	"testing"
 
-	"github.com/moby/moby/api/types/image"
+	mobyImage "github.com/moby/moby/api/types/image"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -12,48 +12,48 @@ func TestIsLocalImage(t *testing.T) {
 	imported := &ocispec.Descriptor{Annotations: map[string]string{imageNameAnnotation: "docker.io/library/app:dev"}}
 
 	tests := []struct {
-		img  image.InspectResponse
+		img  mobyImage.InspectResponse
 		name string
 		want bool
 	}{
 		{
 			name: "pulled image",
-			img: image.InspectResponse{
+			img: mobyImage.InspectResponse{
 				RepoDigests: []string{repoDigest},
-				Identity:    &image.Identity{Pull: []image.PullIdentity{{Repository: "docker.io/library/alpine"}}},
+				Identity:    &mobyImage.Identity{Pull: []mobyImage.PullIdentity{{Repository: "docker.io/library/alpine"}}},
 			},
 		},
 		{
 			name: "built then pushed image",
-			img: image.InspectResponse{
+			img: mobyImage.InspectResponse{
 				RepoDigests: []string{repoDigest},
 				Descriptor:  imported,
-				Identity: &image.Identity{
-					Pull:  []image.PullIdentity{{Repository: "docker.io/library/app"}},
-					Build: []image.BuildIdentity{{Ref: "build-ref"}},
+				Identity: &mobyImage.Identity{
+					Pull:  []mobyImage.PullIdentity{{Repository: "docker.io/library/app"}},
+					Build: []mobyImage.BuildIdentity{{Ref: "build-ref"}},
 				},
 			},
 		},
 		{
 			name: "image built on this daemon",
-			img: image.InspectResponse{
+			img: mobyImage.InspectResponse{
 				RepoDigests: []string{repoDigest},
-				Identity:    &image.Identity{Build: []image.BuildIdentity{{Ref: "build-ref"}}},
+				Identity:    &mobyImage.Identity{Build: []mobyImage.BuildIdentity{{Ref: "build-ref"}}},
 			},
 			want: true,
 		},
 		{
 			name: "loaded or BuildKit-exported image",
-			img:  image.InspectResponse{RepoDigests: []string{repoDigest}, Descriptor: imported},
+			img:  mobyImage.InspectResponse{RepoDigests: []string{repoDigest}, Descriptor: imported},
 			want: true,
 		},
 		{
 			name: "image pulled before Docker recorded identity",
-			img:  image.InspectResponse{RepoDigests: []string{repoDigest}, Descriptor: &ocispec.Descriptor{}},
+			img:  mobyImage.InspectResponse{RepoDigests: []string{repoDigest}, Descriptor: &ocispec.Descriptor{}},
 		},
 		{
 			name: "classic store image without repo digests",
-			img:  image.InspectResponse{RepoDigests: []string{"<none>@<none>"}},
+			img:  mobyImage.InspectResponse{RepoDigests: []string{"<none>@<none>"}},
 			want: true,
 		},
 	}

@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/libtnb/sqlite"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -37,8 +37,8 @@ import (
 func newUnreachableDockerService(t *testing.T) *dockerInternal.DockerClientService {
 	t.Helper()
 
-	return newSettingsDockerService(t, func() *client.Client {
-		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
+	return newSettingsDockerService(t, func() *mobyClient.Client {
+		cli, _ := mobyClient.New(mobyClient.WithHost("tcp://127.0.0.1:1"), mobyClient.WithAPIVersion("1.41"))
 		return cli
 	}())
 }
@@ -226,7 +226,7 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 					DockerService:   newUnreachableDockerService(t),
 				}),
 			})
-			current := container.InspectResponse{Config: &container.Config{
+			current := mobyContainer.InspectResponse{Config: &mobyContainer.Config{
 				Image:  tt.runtime,
 				Labels: map[string]string{"com.docker.compose.project": "arcane", "com.docker.compose.service": "server"},
 			}}
@@ -826,7 +826,7 @@ func TestAcquireAgentSlotHonorsParallelSetting(t *testing.T) {
 	second()
 }
 
-func newSettingsDockerService(t *testing.T, dockerClient *client.Client) *dockerInternal.DockerClientService {
+func newSettingsDockerService(t *testing.T, dockerClient *mobyClient.Client) *dockerInternal.DockerClientService {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

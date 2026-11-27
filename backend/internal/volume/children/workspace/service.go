@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyMount "github.com/moby/moby/api/types/mount"
+	mobyClient "github.com/moby/moby/client"
 
-	"kit.getarcane.app"
+	kit "kit.getarcane.app"
 	"kit.getarcane.app/acfs"
 	acfstypes "kit.getarcane.app/acfs/types"
 	"kit.getarcane.app/concurrency"
@@ -50,7 +50,7 @@ type (
 		RequireACFS        func(ctx context.Context, volumeName, containerID string) (bool, error)
 		Exec               func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 		HelperImage        func(ctx context.Context) (string, error)
-		BackupStorageMount func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
+		BackupStorageMount func(ctx context.Context, dockerClient *mobyClient.Client, target string, readOnly bool) (mobyMount.Mount, error)
 		RestoreFile        func(ctx context.Context, opts types.VolumeBackupFileRestoreOptions) (string, error)
 		Settings           *settings.SettingsService
 	}
@@ -227,7 +227,7 @@ func (s *Service) listVolumeWorkspaceFolder(ctx context.Context, containerID, re
 			Stdout:      pipeWriter,
 			Stderr:      &stderr,
 			ContainerID: containerID,
-			Options: client.ExecCreateOptions{
+			Options: mobyClient.ExecCreateOptions{
 				AttachStdout: true,
 				AttachStderr: true,
 				Cmd:          slices.Concat([]string{"acfs", "list", "--root", "/volume", "--path", "/" + relativePath}, kit.Ternary(listLimit, []string{"--limit", strconv.Itoa(maxEntries)}, nil)),
@@ -414,7 +414,7 @@ func (s *Service) startVolumeWorkspaceRead(ctx context.Context, containerID, rel
 			Stdout:      pipeWriter,
 			Stderr:      &stderr,
 			ContainerID: containerID,
-			Options: client.ExecCreateOptions{
+			Options: mobyClient.ExecCreateOptions{
 				AttachStdout: true,
 				AttachStderr: true,
 				Cmd:          cmd,
@@ -464,8 +464,8 @@ func (s *Service) startVolumeWorkspaceRead(ctx context.Context, containerID, rel
 }
 
 func (s *Service) validateVolumeHelperSupport(ctx context.Context, volumeName string) error {
-	result, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
-		return dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
+	result, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, volumeName, mobyClient.VolumeInspectOptions{})
 	})
 	if err != nil {
 		return fmt.Errorf("failed to inspect volume: %w", err)
@@ -680,7 +680,7 @@ func volumeWorkspaceWriteIdentityFromConfigUser(configUser string) volumeWorkspa
 }
 
 func (s *Service) resolveVolumeWorkspaceWriteIdentity(ctx context.Context, containerID, volumeName string) volumeWorkspaceWriteIdentity {
-	consumerIDs, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]string, error) {
+	consumerIDs, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) ([]string, error) {
 		return docker.GetContainersUsingVolume(ctx, dockerClient, volumeName)
 	})
 	if err != nil {
@@ -689,8 +689,8 @@ func (s *Service) resolveVolumeWorkspaceWriteIdentity(ctx context.Context, conta
 	identity := volumeWorkspaceWriteIdentity{}
 	identitySource := ""
 	for _, consumerID := range consumerIDs {
-		inspect, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, consumerID, client.ContainerInspectOptions{})
+		inspect, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, consumerID, mobyClient.ContainerInspectOptions{})
 		})
 		if inspectErr != nil || inspect.Container.Config == nil {
 			// An uninspectable consumer could declare a conflicting user, so the identity is
@@ -743,7 +743,7 @@ func (s *Service) resolveVolumeWorkspaceWriteIdentity(ctx context.Context, conta
 
 func (s *Service) stageVolumeWorkspaceChanges(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	containerID string,
 	changes []types.VolumeWorkspaceFileChange,
 	uploads map[int][]byte,
@@ -781,7 +781,7 @@ func (s *Service) stageVolumeWorkspaceChanges(
 
 func (s *Service) applyVolumeWorkspaceChanges(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	containerID string,
 	volumeName string,
 	changes []types.VolumeWorkspaceFileChange,
@@ -832,7 +832,7 @@ func (s *Service) applyVolumeWorkspaceChanges(
 
 func (s *Service) executeVolumeWorkspaceACFSBatch(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	containerID string,
 	changes []types.VolumeWorkspaceFileChange,
 	stagedFiles map[int]volumeWorkspaceStagedFile,
@@ -931,7 +931,7 @@ func mapVolumeWorkspaceChangeToACFS(change types.VolumeWorkspaceFileChange, stag
 
 func (s *Service) copyVolumeWorkspaceFilesToContainer(
 	ctx context.Context,
-	dockerClient *client.Client,
+	dockerClient *mobyClient.Client,
 	containerID string,
 	contents []volumeWorkspaceStagedContent,
 	identity volumeWorkspaceWriteIdentity,
@@ -955,7 +955,7 @@ func (s *Service) copyVolumeWorkspaceFilesToContainer(
 		_ = pipeWriter.CloseWithError(err)
 		archiveDone <- err
 	}()
-	_, copyErr := dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{DestinationPath: "/tmp/arcane-workspace", Content: pipeReader, CopyUIDGID: identity.execUser != ""})
+	_, copyErr := dockerClient.CopyToContainer(ctx, containerID, mobyClient.CopyToContainerOptions{DestinationPath: "/tmp/arcane-workspace", Content: pipeReader, CopyUIDGID: identity.execUser != ""})
 	_ = pipeReader.Close()
 	archiveErr := <-archiveDone
 	for _, stagedContent := range contents {
@@ -986,23 +986,23 @@ func (s *Service) createVolumeWorkspaceMutationContainer(ctx context.Context, vo
 	if err != nil {
 		return "", nil, err
 	}
-	config := &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()}
+	config := &mobyContainer.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumes.Labels()}
 	hostConfig := volumes.HostConfig(volumes.HelperHost{
 		Image:  helperImage,
 		Binds:  []string{volumeName + ":/volume"},
-		Mounts: []mount.Mount{backupMount},
+		Mounts: []mobyMount.Mount{backupMount},
 	})
-	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
-		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig})
+	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{Config: config, HostConfig: hostConfig})
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("create volume workspace helper: %w", err)
 	}
-	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
-		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, mobyClient.ContainerStartOptions{})
 	}); containerStartErr != nil {
 		startErr := fmt.Errorf("start volume workspace helper: %w", containerStartErr)
-		if _, cleanupErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		if _, cleanupErr := s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		}); cleanupErr != nil && !errdefs.IsNotFound(cleanupErr) {
 			return "", nil, errors.Join(startErr, fmt.Errorf("remove volume workspace helper after start failure: %w", cleanupErr))
@@ -1010,7 +1010,7 @@ func (s *Service) createVolumeWorkspaceMutationContainer(ctx context.Context, vo
 		return "", nil, startErr
 	}
 	return resp.ID, func() {
-		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *mobyClient.Client) (mobyClient.ContainerRemoveResult, error) {
 			return dockerClient.ContainerRemove(ctx, resp.ID, volumes.RemoveOptions())
 		})
 	}, nil

@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"getarcane.dev/arcane/v3/internal/docker"
+	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
 	"getarcane.dev/arcane/v3/internal/notification"
 	scheduleutil "getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
@@ -15,7 +15,7 @@ import (
 
 type (
 	ScheduledPruneJob struct {
-		dockerService       *docker.DockerClientService
+		dockerService       *dockerInternal.DockerClientService
 		systemService       *system.SystemService
 		settingsService     *settings.SettingsService
 		notificationService *notification.NotificationService
@@ -30,7 +30,7 @@ func NewScheduledPruneJob(
 	systemService *system.SystemService,
 	settingsService *settings.SettingsService,
 	notificationService *notification.NotificationService,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 ) *ScheduledPruneJob {
 	return &ScheduledPruneJob{
 		dockerService:       dockerService,
