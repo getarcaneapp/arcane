@@ -4901,5 +4901,7 @@
   "oidc_ldap_group_claim_placeholder": "e.g. platform-eng or cn=platform,ou=groups",
   "add_claim_mapping": "Add Mapping",
   "no_oidc_ldap_group_mappings": "No OIDC or LDAP group claim mappings configured.",
-  "group_details": "Group details"
+  "group_details": "Group details",
+  "loading_backups": "Loading backups",
+  "loading_backups_description": "Checking stored snapshots, which can take a while for S3 destinations. The rest of the page is ready to use."
 }

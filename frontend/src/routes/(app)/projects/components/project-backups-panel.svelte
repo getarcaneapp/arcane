@@ -19,7 +19,7 @@
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import ProjectVolumeChecklist from '#lib/components/project-volume-checklist.svelte';
-	import { EmptyState } from '#lib/components/states/index.js';
+	import { EmptyState, LoadingState } from '#lib/components/states/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -497,6 +497,10 @@
 	/>
 {/snippet}
 
+{#snippet BackupsLoadingState()}
+	<LoadingState icon={BackupIcon} title={m.loading_backups()} description={m.loading_backups_description()} />
+{/snippet}
+
 {#snippet BackupsEmptyState()}
 	<EmptyState icon={BackupIcon} title={m.system_backups_empty_title()} description={m.project_backups_empty_description()} />
 {/snippet}
@@ -590,6 +594,8 @@
 		rowActions={RowActions}
 		mobileCard={BackupMobileCard}
 		emptyState={BackupsEmptyState}
+		loadingState={BackupsLoadingState}
+		loading={backupsQuery.isPending}
 		onRetry={() => backupsQuery.refetch()}
 		refreshError={backupsQuery.error}
 	/>
