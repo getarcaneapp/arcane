@@ -20,6 +20,17 @@ import (
 	"getarcane.dev/arcane/v3/pkg/volumes"
 )
 
+type ExitError struct {
+	Message string
+	Code    int64
+}
+
+const ExitIncompleteSnapshot int64 = 3
+
+func (e *ExitError) Error() string {
+	return fmt.Sprintf("rustic exited with code %d: %s", e.Code, e.Message)
+}
+
 func Run(ctx context.Context, dockerClient *mobyClient.Client, password string, command, environment []string, mounts []mobyMount.Mount, networkMode mobyContainer.NetworkMode) (string, error) {
 	if _, err := dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{Name: CacheVolume, Labels: volumes.Labels()}); err != nil {
 		return "", fmt.Errorf("failed to provision Rustic cache volume: %w", err)
@@ -88,8 +99,10 @@ func Run(ctx context.Context, dockerClient *mobyClient.Client, password string, 
 		return "", fmt.Errorf("failed to decode Rustic output: %w", stdCopyErr)
 	}
 	if status.StatusCode != 0 {
-		message := cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String()))
-		return "", fmt.Errorf("rustic exited with code %d: %s", status.StatusCode, message)
+		return stdout.String(), &ExitError{
+			Message: cmp.Or(strings.TrimSpace(stderr.String()), strings.TrimSpace(stdout.String())),
+			Code:    status.StatusCode,
+		}
 	}
 	return stdout.String(), nil
 }

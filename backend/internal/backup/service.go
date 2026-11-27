@@ -429,6 +429,10 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *mobyClient.Cl
 		return Snapshot{}, err
 	}
 	output, err := e.run(ctx, dockerClient, repository, password, command, input.Mounts...)
+	if exitErr, ok := errors.AsType[*rustic.ExitError](err); ok && exitErr.Code == rustic.ExitIncompleteSnapshot {
+		slog.WarnContext(ctx, "Rustic created an incomplete snapshot because some source files could not be read", "label", label, "rusticMessage", exitErr.Message)
+		err = nil
+	}
 	if err != nil {
 		return Snapshot{}, err
 	}
