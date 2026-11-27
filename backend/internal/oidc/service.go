@@ -3,6 +3,8 @@ package oidc
 import (
 	"cmp"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json/v2"
@@ -228,9 +230,46 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo, origin, m
 		slog.ErrorContext(ctx, "GenerateAuthURL: failed to marshal state", "error", err)
 		return "", "", fmt.Errorf("failed to encode state: %w", err)
 	}
+	key, err := s.settingsService.EnsureBrowserSessionSigningKey(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "GenerateAuthURL: failed to load state signing key", "error", err)
+		return "", "", fmt.Errorf("failed to sign state: %w", err)
+	}
+	payload := base64.RawURLEncoding.EncodeToString(stateJSON)
 
 	slog.DebugContext(ctx, "GenerateAuthURL: generated authorization URL", "issuer", oidcConfig.IssuerURL, "scopes", oauth2Config.Scopes)
-	return authURL, base64.URLEncoding.EncodeToString(stateJSON), nil
+	return authURL, payload + "." + base64.RawURLEncoding.EncodeToString(oidcStateMAC(key, payload)), nil
+}
+
+func oidcStateMAC(key []byte, payload string) []byte {
+	mac := hmac.New(sha256.New, key)
+	// Domain-separate from other uses of the browser session key.
+	mac.Write([]byte("arcane.oidc_state." + payload))
+	return mac.Sum(nil)
+}
+
+func (s *OidcService) decodeOidcState(ctx context.Context, stored string) (OidcState, error) {
+	key, err := s.settingsService.EnsureBrowserSessionSigningKey(ctx)
+	if err != nil {
+		return OidcState{}, fmt.Errorf("failed to load state signing key: %w", err)
+	}
+	payload, sig, _ := strings.Cut(stored, ".")
+	gotMAC, err := base64.RawURLEncoding.DecodeString(sig)
+	if err != nil || !hmac.Equal(gotMAC, oidcStateMAC(key, payload)) {
+		return OidcState{}, errors.New("state signature is invalid")
+	}
+	stateJSON, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return OidcState{}, fmt.Errorf("failed to decode state: %w", err)
+	}
+	var stateData OidcState
+	if err = json.Unmarshal(stateJSON, &stateData); err != nil {
+		return OidcState{}, fmt.Errorf("failed to decode state: %w", err)
+	}
+	if stateData.Nonce == "" {
+		return OidcState{}, errors.New("state is missing nonce")
+	}
+	return stateData, nil
 }
 
 func (s *OidcService) getOrDiscoverProvider(ctx context.Context, cfg *settings.OidcConfig) (*oidc.Provider, error) {
@@ -288,11 +327,7 @@ func (s *OidcService) HandleCallback(ctx context.Context, req CallbackRequest) (
 	defer func() { logging.EndSpan(span, err) }()
 	slog.DebugContext(ctx, "HandleCallback: processing callback", "codePresent", req.Code != "", "statePresent", req.State != "")
 
-	var stateData OidcState
-	stateJSON, err := base64.URLEncoding.DecodeString(req.StoredState)
-	if err == nil {
-		err = json.Unmarshal(stateJSON, &stateData)
-	}
+	stateData, err := s.decodeOidcState(ctx, req.StoredState)
 	if err != nil {
 		slog.ErrorContext(ctx, "HandleCallback: failed to decode stored state", "error", err)
 		return nil, nil, fmt.Errorf("invalid state parameter: %w", err)
@@ -377,18 +412,16 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 		return nil, "", fmt.Errorf("failed to verify ID token: %w", err)
 	}
 
-	if nonce != "" {
-		var claims struct {
-			Nonce string `json:"nonce"`
-		}
-		if claimsErr := idToken.Claims(&claims); claimsErr != nil {
-			slog.ErrorContext(ctx, "HandleCallback: failed to extract nonce from ID token", "error", claimsErr)
-			return nil, "", fmt.Errorf("failed to verify nonce: %w", claimsErr)
-		}
-		if claims.Nonce != nonce {
-			slog.ErrorContext(ctx, "HandleCallback: nonce mismatch", "expected", nonce, "got", claims.Nonce)
-			return nil, "", errors.New("nonce verification failed")
-		}
+	var claims struct {
+		Nonce string `json:"nonce"`
+	}
+	if claimsErr := idToken.Claims(&claims); claimsErr != nil {
+		slog.ErrorContext(ctx, "HandleCallback: failed to extract nonce from ID token", "error", claimsErr)
+		return nil, "", fmt.Errorf("failed to verify nonce: %w", claimsErr)
+	}
+	if nonce == "" || claims.Nonce != nonce {
+		slog.ErrorContext(ctx, "HandleCallback: nonce mismatch", "expected", nonce, "got", claims.Nonce)
+		return nil, "", errors.New("nonce verification failed")
 	}
 
 	slog.DebugContext(ctx, "HandleCallback: ID token verified successfully", "subject", idToken.Subject, "issuer", idToken.Issuer)
