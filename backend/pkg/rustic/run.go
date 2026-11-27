@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,13 +25,33 @@ func Run(ctx context.Context, dockerClient *mobyClient.Client, password string, 
 	if _, err := dockerClient.VolumeCreate(ctx, mobyClient.VolumeCreateOptions{Name: CacheVolume, Labels: volumes.Labels()}); err != nil {
 		return "", fmt.Errorf("failed to provision Rustic cache volume: %w", err)
 	}
-	env := append([]string{}, environment...)
-	env = append(env,
-		"RUSTIC_PASSWORD="+password,
+	// Secrets go in files copied into the container: inspect exposes Config.Env to any containers:read user.
+	env := []string{
+		"RUSTIC_PASSWORD_FILE=/" + secretsDir + "/password",
 		"RUSTIC_NO_PROGRESS=true",
 		"RUSTIC_LOG_LEVEL=error",
 		"RUSTIC_CACHE_DIR=/cache",
-	)
+	}
+	secrets := map[string][]byte{secretsDir + "/password": []byte(password)}
+	var credentials strings.Builder
+	for _, entry := range environment {
+		switch name, value, _ := strings.Cut(entry, "="); name {
+		case "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY":
+			fmt.Fprintf(&credentials, "%s = %s\n", strings.ToLower(name), value)
+		default:
+			env = append(env, entry)
+		}
+	}
+	// Config.Cmd is as readable as Config.Env, so a replacement password moves to a file too.
+	command = slices.Clone(command)
+	if i := slices.Index(command, "--new-password"); i >= 0 && i+1 < len(command) {
+		secrets[secretsDir+"/new-password"] = []byte(command[i+1])
+		command[i], command[i+1] = "--new-password-file", "/"+secretsDir+"/new-password"
+	}
+	if credentials.Len() > 0 {
+		env = append(env, "AWS_SHARED_CREDENTIALS_FILE=/"+secretsDir+"/credentials")
+		secrets[secretsDir+"/credentials"] = []byte("[default]\n" + credentials.String())
+	}
 	allMounts := append([]mobyMount.Mount{}, mounts...)
 	allMounts = append(allMounts, mobyMount.Mount{Type: mobyMount.TypeVolume, Source: CacheVolume, Target: "/cache"})
 	created, err := dockerClient.ContainerCreate(ctx, mobyClient.ContainerCreateOptions{
@@ -65,6 +86,9 @@ func Run(ctx context.Context, dockerClient *mobyClient.Client, password string, 
 			time.Sleep(5 * time.Second)
 		}
 	}()
+	if copyErr := docker.CopyToContainer(ctx, dockerClient, created.ID, "/", secrets); copyErr != nil {
+		return "", fmt.Errorf("failed to provide Rustic secrets: %w", copyErr)
+	}
 	if _, containerStartErr := dockerClient.ContainerStart(ctx, created.ID, mobyClient.ContainerStartOptions{}); containerStartErr != nil {
 		return "", fmt.Errorf("failed to start Rustic container: %w", containerStartErr)
 	}
