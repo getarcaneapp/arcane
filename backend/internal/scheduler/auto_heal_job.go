@@ -65,7 +65,7 @@ type (
 		inspectContainerFn func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) (mobyContainer.InspectResponse, error)
 		restartContainerFn func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) error
 		getSelfContainerID func() (string, error)
-		updatingContainers func() []string
+		updaterStatus      func() types.UpdaterStatus
 		selfID             string
 
 		selfIDOnce sync.Once
@@ -104,7 +104,7 @@ func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
 		listContainers:      listUnhealthyContainers,
 		inspectContainerFn:  inspectAutoHealContainer,
 		restartContainerFn:  restartAutoHealContainer,
-		updatingContainers:  func() []string { return p.UpdaterService.GetStatus().ContainerIds },
+		updaterStatus:       p.UpdaterService.GetStatus,
 	}, nil
 }
 
@@ -274,8 +274,10 @@ func (j *AutoHealJob) processCandidate(
 		return target, nil
 	}
 
-	// The updater is recreating this container; a restart would race it.
-	if slices.Contains(j.updatingContainers(), containerID) {
+	// The updater is recreating this container or its Compose project; a restart would race it.
+	// The project check covers dependents recreated without their own ID being claimed.
+	updating := j.updaterStatus()
+	if slices.Contains(updating.ContainerIds, containerID) || slices.Contains(updating.ProjectIds, docker.ComposeProjectLabel(candidate.Labels)) {
 		slog.DebugContext(ctx, "auto-heal skipping container that is being updated", "container", containerName)
 		target.Message = "container is being updated"
 		return target, nil

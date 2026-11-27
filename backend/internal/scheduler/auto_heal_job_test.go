@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +13,8 @@ import (
 	mobyClient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+
+	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/internal/apns"
 	"getarcane.dev/arcane/v3/internal/config"
@@ -204,12 +207,14 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	})
 	require.NoError(t, err)
 	job.getDockerClientFn = func(context.Context) (*mobyClient.Client, error) { return nil, nil }
-	job.updatingContainers = func() []string { return []string{"c4"} }
+	job.updaterStatus = func() types.UpdaterStatus {
+		return types.UpdaterStatus{ContainerIds: []string{"c4"}, ProjectIds: []string{"stack"}}
+	}
 	job.listContainers = func(ctx context.Context, dockerClient *mobyClient.Client) ([]mobyContainer.Summary, error) {
 		return []mobyContainer.Summary{
 			{ID: "c1", Names: []string{"/one"}},
 			{ID: "c2", Names: []string{"/two"}},
-			{ID: "c3", Names: []string{"/three"}},
+			{ID: "c3", Names: []string{"/three"}, Labels: map[string]string{docker.ComposeProjectLabelKey: "stack"}},
 			{ID: "c4", Names: []string{"/four"}},
 			{ID: "c5", Names: []string{"/five"}},
 			{ID: "c6", Names: []string{"/six"}},
@@ -219,7 +224,8 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 
 	var current atomic.Int32
 	var maxConcurrent atomic.Int32
-	var restarts atomic.Int32
+	var restartMu sync.Mutex
+	var restarted []string
 
 	job.inspectContainerFn = func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) (mobyContainer.InspectResponse, error) {
 		active := current.Add(1)
@@ -243,7 +249,9 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 		}
 	}
 	job.restartContainerFn = func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) error {
-		restarts.Add(1)
+		restartMu.Lock()
+		defer restartMu.Unlock()
+		restarted = append(restarted, containerID)
 		return nil
 	}
 
@@ -252,6 +260,6 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 
 	require.Greater(t, maxConcurrent.Load(), int32(1))
 	require.LessOrEqual(t, maxConcurrent.Load(), int32(autoHealInspectConcurrency))
-	// c4 is unhealthy but mid-update, so it is left to the updater.
-	require.Equal(t, int32(3), restarts.Load())
+	// c4 is mid-update and c3 belongs to a project being updated, so both are left to the updater.
+	require.ElementsMatch(t, []string{"c1", "c2"}, restarted)
 }
