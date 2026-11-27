@@ -29,6 +29,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	scheduleutil "getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
+	"getarcane.dev/arcane/v3/internal/updater"
 	"getarcane.dev/arcane/v3/pkg/projects"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/types/v3"
@@ -64,6 +65,7 @@ type (
 		inspectContainerFn func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) (mobyContainer.InspectResponse, error)
 		restartContainerFn func(ctx context.Context, dockerClient *mobyClient.Client, containerID string) error
 		getSelfContainerID func() (string, error)
+		updaterStatus      func() types.UpdaterStatus
 		selfID             string
 
 		selfIDOnce sync.Once
@@ -79,6 +81,7 @@ type (
 		EventService        *event.EventService
 		NotificationService *notification.NotificationService
 		AdmissionGate       *runs.Admission
+		UpdaterService      *updater.UpdaterService
 	}
 )
 
@@ -101,6 +104,7 @@ func NewAutoHealJob(p AutoHealJobParams) (*AutoHealJob, error) {
 		listContainers:      listUnhealthyContainers,
 		inspectContainerFn:  inspectAutoHealContainer,
 		restartContainerFn:  restartAutoHealContainer,
+		updaterStatus:       p.UpdaterService.GetStatus,
 	}, nil
 }
 
@@ -267,6 +271,15 @@ func (j *AutoHealJob) processCandidate(
 	}
 
 	if kit.FromPtr(kit.FromPtr(inspect.State).Health).Status != mobyContainer.Unhealthy {
+		return target, nil
+	}
+
+	// The updater is recreating this container or its Compose project; a restart would race it.
+	// The project check covers dependents recreated without their own ID being claimed.
+	updating := j.updaterStatus()
+	if slices.Contains(updating.ContainerIds, containerID) || slices.Contains(updating.ProjectIds, docker.ComposeProjectLabel(candidate.Labels)) {
+		slog.DebugContext(ctx, "auto-heal skipping container that is being updated", "container", containerName)
+		target.Message = "container is being updated"
 		return target, nil
 	}
 

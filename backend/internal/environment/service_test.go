@@ -1027,6 +1027,14 @@ func TestEnvironmentService_ResolveAgentEnvironmentByToken_CachesAndInvalidatesO
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid agent token")
 
+	// An in-flight resolve re-caches the old token after the rotation.
+	svc.agentTokens.sync("agent-auth", oldToken)
+	_, err = svc.ResolveAgentEnvironmentByToken(ctx, oldToken)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid agent token")
+	_, tokenStillCached := svc.agentTokens.byToken.Peek(oldToken)
+	require.False(t, tokenStillCached)
+
 	envID, err = svc.ResolveAgentEnvironmentByToken(ctx, newToken)
 	require.NoError(t, err)
 	require.Equal(t, "agent-auth", envID)

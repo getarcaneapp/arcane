@@ -219,10 +219,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}
 
 	if input.Body.Password != "" {
-		caller, _ := handlerutil.CurrentUserFromContext(ctx)
-		currentSessionID, _ := middleware.GetCurrentSessionIDFromContext(ctx)
-		exceptSessionID := kit.Ternary(caller != nil && caller.ID == updatedUser.ID, currentSessionID, "")
-		if _, setPasswordErr := h.userService.SetPasswordAndRevokeSessionsExcept(ctx, updatedUser, input.Body.Password, exceptSessionID, callerPerms); setPasswordErr != nil {
+		if _, setPasswordErr := h.userService.SetPasswordAndRevokeSessionsExcept(ctx, updatedUser, input.Body.Password, "", callerPerms); setPasswordErr != nil {
 			if errors.Is(setPasswordErr, ErrLdapManaged) {
 				return nil, handlerutil.APIError(setPasswordErr)
 			}
@@ -303,6 +300,9 @@ func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInp
 func (h *UserHandler) checkUpdateUserPrivileges(ctx context.Context, input *UpdateUserInput, targetID string) (*authz.PermissionSet, error) {
 	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	caller, _ := handlerutil.CurrentUserFromContext(ctx)
+	if input.Body.Password != "" && caller != nil && caller.ID == targetID {
+		return nil, huma.Error403Forbidden("use /auth/password to change your own password")
+	}
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() {
 		if input.Body.Password != "" && caller != nil && caller.ID != targetID {
 			return nil, huma.Error403Forbidden(ErrInsufficientPrivilege.Error())

@@ -34,6 +34,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/internal/scheduler/schedule"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/httpx"
@@ -192,7 +193,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates types.JobSc
 		if !submitted[field.key] || field.update == "" {
 			continue
 		}
-		if _, err := cron.ParseStandard(field.update); err != nil {
+		if _, err := schedule.Normalize(field.update, field.key); err != nil {
 			return types.JobScheduleConfig{}, common.Classify(common.ErrValidation, &types.FieldError{Field: field.key, Err: fmt.Errorf("invalid cron expression for %s: %w", field.key, err)})
 		}
 	}
@@ -316,7 +317,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 	for _, jobMeta := range allMetadata {
 		// Local Docker jobs do not run when local Docker is off, whatever the saved settings say.
 		localDockerOff := !s.cfg.LocalDockerEnabled && requiresLocalDocker(jobMeta.ID)
-		schedule := func() string {
+		spec := func() string {
 			switch {
 			case localDockerOff:
 				return ""
@@ -339,12 +340,12 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 		useRuntimeState := !localDockerOff && registered && (jobMeta.SettingsKey != "" || jobMeta.ID == "upgrade-log-cleanup") && jobMeta.ID != "environment-health"
 		nextRun, nextRunErr := s.runs.NextRun(ctx, kit.Ternary(useRuntimeState, record, types.SchedulerQueueRecord{}))
 		jobs = append(jobs, jobMeta.ToJobStatus(
-			cmp.Or(kit.Ternary(useRuntimeState && nextRunErr == nil, record.Schedule, ""), schedule),
+			cmp.Or(kit.Ternary(useRuntimeState && nextRunErr == nil, record.Schedule, ""), spec),
 			kit.Ternary(useRuntimeState, nextRun, func() *time.Time {
-				if schedule == "" || schedule == "continuous" {
+				if spec == "" || spec == "continuous" {
 					return nil
 				}
-				sched, parseErr := cron.ParseStandard("CRON_TZ=" + s.location.String() + " " + schedule)
+				sched, parseErr := cron.ParseStandard("CRON_TZ=" + s.location.String() + " " + spec)
 				if parseErr != nil {
 					return nil
 				}
