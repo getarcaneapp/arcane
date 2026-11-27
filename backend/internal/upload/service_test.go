@@ -118,6 +118,24 @@ func TestIngestSessionCreatesCompleteSession(t *testing.T) {
 	}
 }
 
+func TestIngestLimitedRejectsOversizedStreamAndRemovesPartialData(t *testing.T) {
+	service := &UploadService{root: filepath.Join(t.TempDir(), "uploads")}
+	ctx := t.Context()
+
+	if _, err := service.ingestLimited(ctx, types.UploadKindBuildWorkspace, "big.bin", bytes.NewReader(make([]byte, 1<<20)), 4); !errors.Is(err, common.ErrUploadSessionInvalid) {
+		t.Fatalf("oversized stream error = %v, want ErrUploadSessionInvalid", err)
+	}
+	entries, err := os.ReadDir(service.root)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("partial sessions left behind: %v (err %v)", entries, err)
+	}
+
+	session, err := service.ingestLimited(ctx, types.UploadKindBuildWorkspace, "ok.bin", bytes.NewReader([]byte("abcd")), 4)
+	if err != nil || session.Size != 4 || !session.Complete {
+		t.Fatalf("stream at the limit: session %+v, err %v", session, err)
+	}
+}
+
 func TestPurgeExpiredSessionsRemovesOnlyStaleSessions(t *testing.T) {
 	service := &UploadService{root: filepath.Join(t.TempDir(), "uploads")}
 	ctx := t.Context()
