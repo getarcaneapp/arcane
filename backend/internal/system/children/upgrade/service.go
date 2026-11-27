@@ -23,7 +23,6 @@ import (
 	"github.com/italypaleale/francis/builtin/workflow"
 	mobyContainer "github.com/moby/moby/api/types/container"
 	mobyMount "github.com/moby/moby/api/types/mount"
-	mobyNetwork "github.com/moby/moby/api/types/network"
 	mobyClient "github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 
@@ -536,17 +535,8 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 				SecurityOpt: securityOpt,
 				Privileged:  kit.FromPtr(prepared.current.HostConfig).Privileged,
 			},
-			NetworkingConfig: func() *mobyNetwork.NetworkingConfig {
-				if networkMode == "" || !networkMode.IsUserDefined() {
-					return nil
-				}
-				return &mobyNetwork.NetworkingConfig{
-					EndpointsConfig: map[string]*mobyNetwork.EndpointSettings{
-						string(networkMode): {Aliases: []string{"arcane-upgrader"}},
-					},
-				}
-			}(),
-			Name: upgraderName,
+			NetworkingConfig: selfcontainer.UpgraderNetworking(networkMode),
+			Name:             upgraderName,
 		})
 	})
 	if err != nil {

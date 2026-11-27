@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	mobyContainer "github.com/moby/moby/api/types/container"
+	mobyNetwork "github.com/moby/moby/api/types/network"
 	mobyClient "github.com/moby/moby/client"
 
 	kit "kit.getarcane.app"
@@ -23,8 +24,20 @@ const (
 	InternalResourceLabel = "com.getarcaneapp.internal.resource"
 	HiddenResourceLabel   = "com.getarcaneapp.arcane.hidden"
 	LabelArcaneUpgrader   = "com.getarcaneapp.arcane.upgrader"
+	UpgraderAlias         = "arcane-upgrader"
 	mountInfoPath         = "/proc/self/mountinfo"
 )
+
+func UpgraderNetworking(networkMode mobyContainer.NetworkMode) *mobyNetwork.NetworkingConfig {
+	if networkMode == "" || !networkMode.IsUserDefined() {
+		return nil
+	}
+	return &mobyNetwork.NetworkingConfig{
+		EndpointsConfig: map[string]*mobyNetwork.EndpointSettings{
+			string(networkMode): {Aliases: []string{UpgraderAlias}},
+		},
+	}
+}
 
 func CurrentContainerID() (string, error) {
 	return currentContainerID(cgroup.CurrentContainerID, func() (string, error) {

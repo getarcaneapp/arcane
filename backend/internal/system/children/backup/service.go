@@ -1248,7 +1248,8 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 				SecurityOpt: slices.Clone(kit.FromPtr(current.HostConfig).SecurityOpt),
 				Privileged:  kit.FromPtr(current.HostConfig).Privileged,
 			},
-			Name: fmt.Sprintf("%s-recovery-%d", strings.TrimPrefix(current.Name, "/"), time.Now().Unix()),
+			NetworkingConfig: selfcontainer.UpgraderNetworking(networkMode),
+			Name:             fmt.Sprintf("%s-recovery-%d", strings.TrimPrefix(current.Name, "/"), time.Now().Unix()),
 		})
 	})
 	if err != nil {
