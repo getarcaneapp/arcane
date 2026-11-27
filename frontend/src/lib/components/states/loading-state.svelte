@@ -14,7 +14,7 @@
 	let { icon: Icon, title, description, class: className }: Props = $props();
 </script>
 
-<Empty.Root class={className} role="status" aria-live="polite" aria-busy="true">
+<Empty.Root class={className} role="status" aria-live="polite">
 	<Empty.Header>
 		<Empty.Media class="relative size-16">
 			<span class="absolute inset-0 rounded-full border-2 border-primary-tint/15"></span>
