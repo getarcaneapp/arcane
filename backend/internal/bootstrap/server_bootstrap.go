@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -199,6 +200,10 @@ func newAgentHealthServer(lc fx.Lifecycle, p HTTPServerParams) *http.Server {
 	}
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
+			if mkdirErr := os.MkdirAll(filepath.Dir(config.AgentHealthSocket), cmp.Or(p.Config.DirPerm, 0o755)); mkdirErr != nil {
+				slog.ErrorContext(ctx, "Failed to create agent health socket directory", "path", config.AgentHealthSocket, "error", mkdirErr)
+				return nil
+			}
 			_ = os.Remove(config.AgentHealthSocket)
 			listener, err := new(net.ListenConfig).Listen(ctx, "unix", config.AgentHealthSocket)
 			if err != nil {

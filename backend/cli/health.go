@@ -78,10 +78,6 @@ func buildHealthURL(cfg *config.Config) (string, error) {
 	return u.String(), nil
 }
 
-func dialAgentHealthSocket(ctx context.Context, _, _ string) (net.Conn, error) {
-	return new(net.Dialer).DialContext(ctx, "unix", config.AgentHealthSocket)
-}
-
 func runHealthCommand(ctx context.Context, cfg *config.Config, timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = defaultHealthTimeout
@@ -103,7 +99,9 @@ func runHealthCommand(ctx context.Context, cfg *config.Config, timeout time.Dura
 		client = &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
-				DialContext: dialAgentHealthSocket,
+				DialContext: func(dialCtx context.Context, _, _ string) (net.Conn, error) {
+					return new(net.Dialer).DialContext(dialCtx, "unix", config.AgentHealthSocket)
+				},
 			},
 		}
 	case cfg.TLSEnabled:
