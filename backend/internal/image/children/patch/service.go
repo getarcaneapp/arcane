@@ -3,6 +3,7 @@ package patch
 import (
 	"cmp"
 	"context"
+	"database/sql"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -598,7 +599,8 @@ func (s *Service) RecoverInterruptedPatches(ctx context.Context) error {
 }
 
 // PruneHistory deletes finished patch records older than retentionDays, keeping each image's latest record
-// (as latestPatchesByImage picks it) and each patched ref's latest completed record, which PatchedRefs relies on.
+// (as latestPatchesByImage picks it) and the latest completed record per image and per patched ref,
+// which Targets and PatchedRefs rely on.
 func (s *Service) PruneHistory(ctx context.Context, retentionDays int) (int64, error) {
 	if retentionDays <= 0 {
 		return 0, nil
@@ -609,10 +611,13 @@ func (s *Service) PruneHistory(ctx context.Context, retentionDays int) (int64, e
 		Where(`EXISTS (SELECT 1 FROM image_patches newer WHERE newer.environment_id = image_patches.environment_id
 			AND newer.original_image_id = image_patches.original_image_id
 			AND (newer.created_at > image_patches.created_at OR (newer.created_at = image_patches.created_at AND newer.id < image_patches.id)))`).
-		Where(`(image_patches.status <> ? OR EXISTS (SELECT 1 FROM image_patches newer WHERE newer.environment_id = image_patches.environment_id
-			AND newer.patched_ref = image_patches.patched_ref AND newer.status = ?
-			AND (newer.created_at > image_patches.created_at OR (newer.created_at = image_patches.created_at AND newer.id < image_patches.id))))`,
-			string(types.PatchStatusCompleted), string(types.PatchStatusCompleted)).
+		Where(`(image_patches.status <> @completed OR (EXISTS (SELECT 1 FROM image_patches newer WHERE newer.environment_id = image_patches.environment_id
+			AND newer.patched_ref = image_patches.patched_ref AND newer.status = @completed
+			AND (newer.created_at > image_patches.created_at OR (newer.created_at = image_patches.created_at AND newer.id < image_patches.id)))
+			AND EXISTS (SELECT 1 FROM image_patches newer WHERE newer.environment_id = image_patches.environment_id
+			AND newer.original_image_id = image_patches.original_image_id AND newer.status = @completed
+			AND (newer.created_at > image_patches.created_at OR (newer.created_at = image_patches.created_at AND newer.id < image_patches.id)))))`,
+			sql.Named("completed", string(types.PatchStatusCompleted))).
 		Delete(&ImagePatchRecord{})
 	if result.Error != nil {
 		return 0, fmt.Errorf("failed to prune image patch history: %w", result.Error)

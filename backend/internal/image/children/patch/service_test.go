@@ -320,12 +320,69 @@ func TestPruneHistoryKeepsLatestAndUnfinishedRecords(t *testing.T) {
 		id, imageID, patchedRef string
 		status                  types.PatchStatus
 	}{
-		{id: "a-old-failed", imageID: "a", patchedRef: "a:patched", status: types.PatchStatusFailed, createdAt: old.Add(-time.Hour)},
-		{id: "a-old-patching", imageID: "a", patchedRef: "a:patched", status: types.PatchStatusPatching, createdAt: old.Add(-time.Hour)},
-		{id: "a-recent-failed", imageID: "a", patchedRef: "a:patched", status: types.PatchStatusFailed, createdAt: recent},
-		{id: "b-old-completed", imageID: "b", patchedRef: "b:patched", status: types.PatchStatusCompleted, createdAt: old.Add(-2 * time.Hour)},
-		{id: "b-older-completed", imageID: "b", patchedRef: "b:patched", status: types.PatchStatusCompleted, createdAt: old.Add(-3 * time.Hour)},
-		{id: "b-latest-failed", imageID: "b", patchedRef: "b:patched", status: types.PatchStatusFailed, createdAt: old},
+		{
+			id:         "a-old-failed",
+			imageID:    "a",
+			patchedRef: "a:patched",
+			status:     types.PatchStatusFailed,
+			createdAt:  old.Add(-time.Hour),
+		},
+		{
+			id:         "a-old-patching",
+			imageID:    "a",
+			patchedRef: "a:patched",
+			status:     types.PatchStatusPatching,
+			createdAt:  old.Add(-time.Hour),
+		},
+		{
+			id:         "a-recent-failed",
+			imageID:    "a",
+			patchedRef: "a:patched",
+			status:     types.PatchStatusFailed,
+			createdAt:  recent,
+		},
+		{
+			id:         "b-old-completed",
+			imageID:    "b",
+			patchedRef: "b:patched",
+			status:     types.PatchStatusCompleted,
+			createdAt:  old.Add(-2 * time.Hour),
+		},
+		{
+			id:         "b-older-completed",
+			imageID:    "b",
+			patchedRef: "b:patched",
+			status:     types.PatchStatusCompleted,
+			createdAt:  old.Add(-3 * time.Hour),
+		},
+		{
+			id:         "b-latest-failed",
+			imageID:    "b",
+			patchedRef: "b:patched",
+			status:     types.PatchStatusFailed,
+			createdAt:  old,
+		},
+		{
+			id:         "c-old-completed",
+			imageID:    "c",
+			patchedRef: "shared:patched",
+			status:     types.PatchStatusCompleted,
+			createdAt:  old.Add(-3 * time.Hour),
+		},
+		{
+			id:         "c-latest-failed",
+			imageID:    "c",
+			patchedRef: "shared:patched",
+			status:     types.PatchStatusFailed,
+			createdAt:  old.Add(-2 * time.Hour),
+		},
+		{
+			id:         "d-old-completed",
+			imageID:    "d",
+			patchedRef: "shared:patched",
+			status:     types.PatchStatusCompleted,
+			createdAt:  old.Add(-time.Hour),
+		},
 	} {
 		require.NoError(t, db.Create(&ImagePatchRecord{
 			BaseModel:       database.BaseModel{ID: record.id, CreatedAt: record.createdAt, UpdatedAt: &record.createdAt},
@@ -343,7 +400,11 @@ func TestPruneHistoryKeepsLatestAndUnfinishedRecords(t *testing.T) {
 	require.NoError(t, db.Model(&ImagePatchRecord{}).Order("id").Pluck("id", &remaining).Error)
 	assert.Equal(t, int64(2), deleted)
 	// b-old-completed stays as the latest completed record for b:patched, which PatchedRefs needs.
-	assert.Equal(t, []string{"a-old-patching", "a-recent-failed", "b-latest-failed", "b-old-completed"}, remaining)
+	// c-old-completed stays as c's latest completed record, which Targets needs, though d reused its patched ref.
+	assert.Equal(t, []string{
+		"a-old-patching", "a-recent-failed", "b-latest-failed", "b-old-completed",
+		"c-latest-failed", "c-old-completed", "d-old-completed",
+	}, remaining)
 }
 
 func TestRecoverInterruptedPatchesFailsLeftoverPatchingRecords(t *testing.T) {
