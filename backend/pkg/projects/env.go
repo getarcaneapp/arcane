@@ -374,7 +374,8 @@ func WithTransientValidationEnvFile(ctx context.Context, projectPath string, eff
 
 		defer func() {
 			// The restore must survive a cancelled request, or the unsaved .env stays on disk.
-			restoreCtx := context.WithoutCancel(ctx)
+			restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
 			var restoreErr error
 			switch {
 			case originalExists:
