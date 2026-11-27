@@ -3,6 +3,7 @@ package patch
 import (
 	"cmp"
 	"context"
+	"database/sql"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -595,6 +596,33 @@ func (s *Service) RecoverInterruptedPatches(ctx context.Context) error {
 		return fmt.Errorf("failed to fail interrupted image patches: %w", err)
 	}
 	return nil
+}
+
+// PruneHistory deletes finished patch records older than retentionDays, keeping each image's latest record
+// (as latestPatchesByImage picks it) and the latest completed record per image and per patched ref,
+// which Targets and PatchedRefs rely on.
+func (s *Service) PruneHistory(ctx context.Context, retentionDays int) (int64, error) {
+	if retentionDays <= 0 {
+		return 0, nil
+	}
+	result := s.db.WithContext(ctx).
+		Where("status IN ?", []string{string(types.PatchStatusCompleted), string(types.PatchStatusFailed)}).
+		Where("COALESCE(updated_at, created_at) < ?", time.Now().Add(-time.Duration(retentionDays)*24*time.Hour)).
+		Where(`EXISTS (SELECT 1 FROM image_patches newer WHERE newer.environment_id = image_patches.environment_id
+			AND newer.original_image_id = image_patches.original_image_id
+			AND (newer.created_at > image_patches.created_at OR (newer.created_at = image_patches.created_at AND newer.id < image_patches.id)))`).
+		Where(`(image_patches.status <> @completed OR (EXISTS (SELECT 1 FROM image_patches newer WHERE newer.environment_id = image_patches.environment_id
+			AND newer.patched_ref = image_patches.patched_ref AND newer.status = @completed
+			AND (newer.created_at > image_patches.created_at OR (newer.created_at = image_patches.created_at AND newer.id < image_patches.id)))
+			AND EXISTS (SELECT 1 FROM image_patches newer WHERE newer.environment_id = image_patches.environment_id
+			AND newer.original_image_id = image_patches.original_image_id AND newer.status = @completed
+			AND (newer.created_at > image_patches.created_at OR (newer.created_at = image_patches.created_at AND newer.id < image_patches.id)))))`,
+			sql.Named("completed", string(types.PatchStatusCompleted))).
+		Delete(&ImagePatchRecord{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to prune image patch history: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 // ListPatches returns the paginated patch history for an environment.

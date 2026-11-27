@@ -254,6 +254,10 @@ func (s *ImageService) RecoverInterruptedPatches(ctx context.Context) error {
 	return s.patch.RecoverInterruptedPatches(ctx)
 }
 
+func (s *ImageService) PrunePatchHistory(ctx context.Context, retentionDays int) (int64, error) {
+	return s.patch.PruneHistory(ctx, retentionDays)
+}
+
 func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.ImageDetailSummary, error) {
