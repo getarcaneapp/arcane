@@ -2189,6 +2189,10 @@ func (s *UpdaterService) CheckProjectUpdates(ctx context.Context, projectID stri
 		return nil, fmt.Errorf("check project updates: %w", waitErr)
 	}
 	if transactionErr := s.deps.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The checks ran unlocked, so the project may be gone; the row lock holds off a delete until this commits.
+		if _, lockErr := projectpkg.LockProjectForSync(tx, projectID); lockErr != nil {
+			return lockErr
+		}
 		var pending []imageupdate.ImageUpdateRecord
 		if findPendingErr := tx.Where("project_id = ? AND has_update = ?", projectID, true).Find(&pending).Error; findPendingErr != nil {
 			return findPendingErr
