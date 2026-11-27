@@ -616,6 +616,33 @@ func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
 		"expected an unmapped proxied route to be denied by default")
 }
 
+func TestProxyPermissionDeniedAnswersInvalidActionWith400(t *testing.T) {
+	matcher := authz.NewPermissionMatcher()
+	matcher.AddActions(http.MethodPost, "/images/updates/check", "action",
+		map[string]string{"all": authz.PermImageUpdatesCheck, "batch": authz.PermImageUpdatesCheck})
+	m := newProxyAuthzMiddleware(matcher)
+	ps := authz.NewPermissionSet()
+	ps.AddEnv(proxyTestEnvID, authz.PermImageUpdatesCheck)
+
+	for _, tc := range []struct{ name, query, want string }{
+		{name: "missing", query: "", want: "invalid action: "},
+		{name: "unknown", query: "?action=explode", want: "invalid action: explode"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			e := echo.New()
+			c := e.NewContext(httptest.NewRequest(http.MethodPost,
+				"/api/agents/"+proxyTestEnvID+"/images/updates/check"+tc.query, http.NoBody), recorder)
+
+			require.False(t, m.proxyPermitted(c, ps, proxyTestEnvID, "/images/updates/check"),
+				"an invalid action must not be treated as an allowed request")
+			require.Equal(t, http.StatusBadRequest, recorder.Code,
+				"the local environment answers 400 for an invalid action, so the proxy must too")
+			require.Contains(t, recorder.Body.String(), tc.want)
+		})
+	}
+}
+
 func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 	m := newProxyAuthzMiddleware(containerMatcher())
 	ps := authz.NewPermissionSet()

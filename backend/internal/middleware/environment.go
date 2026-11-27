@@ -304,6 +304,12 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 
 	perm, ok := m.matcher.Lookup(method, suffix, req.URL.Query()).Get()
 	if !ok {
+		// The route matched but its action value did not: that is a malformed
+		// request (the local environment answers 400), not a permission denial.
+		if param := m.matcher.ActionParam(method, suffix); param != "" {
+			_ = writeProxyError(c, http.StatusBadRequest, "invalid "+param+": "+req.URL.Query().Get(param))
+			return false
+		}
 		slog.WarnContext(ctx, "Denying proxied request with no known permission mapping", "method", method, "path", suffix, "environmentId", envID)
 		return false
 	}
