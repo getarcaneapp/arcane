@@ -1779,3 +1779,19 @@ func TestMigration00126_GroupIdpMappingsUpDown(t *testing.T) {
 	require.NoError(t, rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'group_idp_mappings'`).Scan(&count))
 	assert.Zero(t, count)
 }
+
+func TestMigration00127_ImagePatchesPatchedRefIndexUpDown(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-image-patches-index-migration.db")
+	rawDB.SetMaxOpenConns(1)
+	const countIndex = `SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_image_patches_env_patched_ref'`
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 127))
+	var count int
+	require.NoError(t, rawDB.QueryRowContext(ctx, countIndex).Scan(&count))
+	assert.Equal(t, 1, count)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 126))
+	require.NoError(t, rawDB.QueryRowContext(ctx, countIndex).Scan(&count))
+	assert.Zero(t, count)
+}
