@@ -500,20 +500,12 @@ func ImageVulnerabilitiesScan(envID, imageID string) string {
 	return pathf("/api/agents/%s/images/%s/vulnerabilities/scan", envID, imageID)
 }
 
-func ImageVulnerabilities(envID, imageID string) string {
-	return pathf("/api/agents/%s/images/%s/vulnerabilities", envID, imageID)
-}
-
 func ImageVulnerabilitiesSummary(envID, imageID string) string {
 	return pathf("/api/agents/%s/images/%s/vulnerabilities/summary", envID, imageID)
 }
 
 func ImageVulnerabilitiesList(envID, imageID string) string {
 	return pathf("/api/agents/%s/images/%s/vulnerabilities/list", envID, imageID)
-}
-
-func ImagesVulnerabilitiesSummaries(envID string) string {
-	return pathf("/api/agents/%s/images/vulnerabilities/summaries", envID)
 }
 
 func VulnerabilitiesScannerStatus(envID string) string {

@@ -515,14 +515,6 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 	return b, nil
 }
 
-func (c *Client) PutJSON[T any](ctx context.Context, path string, body any) (*types.ApiResponse[T], error) {
-	return c.DoEnvelope[T](ctx, http.MethodPut, path, body)
-}
-
-func (c *Client) DeleteJSON[T any](ctx context.Context, path string) (*types.ApiResponse[T], error) {
-	return c.DoEnvelope[T](ctx, http.MethodDelete, path, nil)
-}
-
 func decodeResponseStrict[T any](resp *http.Response) (*types.ApiResponse[T], error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
