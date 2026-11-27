@@ -412,16 +412,19 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 		return nil, "", fmt.Errorf("failed to verify ID token: %w", err)
 	}
 
-	var claims struct {
-		Nonce string `json:"nonce"`
-	}
-	if claimsErr := idToken.Claims(&claims); claimsErr != nil {
-		slog.ErrorContext(ctx, "HandleCallback: failed to extract nonce from ID token", "error", claimsErr)
-		return nil, "", fmt.Errorf("failed to verify nonce: %w", claimsErr)
-	}
-	if nonce == "" || claims.Nonce != nonce {
-		slog.ErrorContext(ctx, "HandleCallback: nonce mismatch", "expected", nonce, "got", claims.Nonce)
-		return nil, "", errors.New("nonce verification failed")
+	// Device flow sends no nonce; browser callbacks never reach here with an empty one (decodeOidcState rejects it).
+	if nonce != "" {
+		var claims struct {
+			Nonce string `json:"nonce"`
+		}
+		if claimsErr := idToken.Claims(&claims); claimsErr != nil {
+			slog.ErrorContext(ctx, "HandleCallback: failed to extract nonce from ID token", "error", claimsErr)
+			return nil, "", fmt.Errorf("failed to verify nonce: %w", claimsErr)
+		}
+		if claims.Nonce != nonce {
+			slog.ErrorContext(ctx, "HandleCallback: nonce mismatch", "expected", nonce, "got", claims.Nonce)
+			return nil, "", errors.New("nonce verification failed")
+		}
 	}
 
 	slog.DebugContext(ctx, "HandleCallback: ID token verified successfully", "subject", idToken.Subject, "issuer", idToken.Issuer)
