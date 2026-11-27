@@ -965,21 +965,32 @@ func (s *WebhookService) executeRemoteWebhookAction(ctx context.Context, wh *Web
 	return result, nil
 }
 
+func webhookHandlerOptions(
+	wh *Webhook,
+	resourceType, resourceID, resourceName string,
+	metadata database.JSON,
+	cfg webhookActivityConfig,
+) activitylib.HandlerOptions {
+	return activitylib.HandlerOptions{
+		User:          &types.SystemUser,
+		Metadata:      metadata,
+		EnvironmentID: cmp.Or(wh.EnvironmentID, types.LocalDockerEnvironmentID),
+		Type:          cfg.ActivityType,
+		ResourceType:  resourceType,
+		ResourceID:    resourceID,
+		ResourceName:  resourceName,
+		Step:          cfg.Step,
+		Message:       cfg.StartMessage,
+		Queue:         cfg.Queue,
+	}
+}
+
 func (s *WebhookService) runWebhookActivity(
 	ctx context.Context,
 	opts activitylib.HandlerOptions,
 	cfg webhookActivityConfig,
 	fn func(context.Context) error,
 ) error {
-	if s.activityService == nil {
-		return fn(ctx)
-	}
-
-	opts.Type = cfg.ActivityType
-	opts.Step = cfg.Step
-	opts.Message = cfg.StartMessage
-	opts.Queue = cfg.Queue
-
 	activityID, runtimeCtx := activitylib.StartHandlerActivity(ctx, s.activityService, opts)
 	if cfg.Queue {
 		activitylib.AwaitHandlerActivitySlot(runtimeCtx, s.activityService, activityID, opts.EnvironmentID)
@@ -999,23 +1010,27 @@ func (s *WebhookService) runWebhookActivity(
 		}
 	}
 
+	completed := false
+	defer func() {
+		if completed {
+			return
+		}
+		if recovered := recover(); recovered != nil {
+			if writer != nil {
+				activitylib.FlushWriter(writer)
+			}
+			activitylib.CompleteHandlerActivity(runtimeCtx, s.activityService, activityID, cfg.CompleteMessage, concurrency.PanicToError(recovered))
+			panic(recovered)
+		}
+	}()
+
 	actionErr := fn(actionCtx)
 	if writer != nil {
 		activitylib.FlushWriter(writer)
 	}
+	completed = true
 	activitylib.CompleteHandlerActivity(runtimeCtx, s.activityService, activityID, cfg.CompleteMessage, actionErr)
 	return actionErr
-}
-
-func (s *WebhookService) projectWebhookActivityName(ctx context.Context, projectID string) string {
-	if s.projectService == nil {
-		return projectID
-	}
-	proj, err := s.projectService.GetProjectFromDatabaseByID(ctx, projectID)
-	if err != nil || proj.Name == "" {
-		return projectID
-	}
-	return proj.Name
 }
 
 func (s *WebhookService) executeContainerWebhookAction(ctx context.Context, wh *Webhook, actionType string) (*types.UpdaterResult, error) {
@@ -1053,19 +1068,17 @@ func (s *WebhookService) executeContainerWebhookAction(ctx context.Context, wh *
 		}
 	case WebhookActionTypeRedeploy:
 		actionFn = func(opCtx context.Context) error {
-			_, redeployErr := s.containerService.RedeployContainer(opCtx, containerID, types.SystemUser)
+			// Re-resolve after waiting on the queue slot so a prior recreate does not leave a removed ID.
+			currentID, resolveErr := s.resolveContainerWebhookTargetID(opCtx, wh)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			_, redeployErr := s.containerService.RedeployContainer(opCtx, currentID, types.SystemUser)
 			return redeployErr
 		}
 	}
 
-	opts := activitylib.HandlerOptions{
-		EnvironmentID: cmp.Or(wh.EnvironmentID, types.LocalDockerEnvironmentID),
-		ResourceType:  "container",
-		ResourceID:    containerID,
-		ResourceName:  cmp.Or(wh.TargetRef, containerID),
-		User:          &types.SystemUser,
-		Metadata:      database.JSON{"containerID": containerID},
-	}
+	opts := webhookHandlerOptions(wh, "container", containerID, cmp.Or(wh.TargetRef, containerID), database.JSON{"containerID": containerID}, cfg)
 	if actionErr := s.runWebhookActivity(ctx, opts, cfg, actionFn); actionErr != nil {
 		return nil, s.wrapWebhookActionError(ctx, wh, "container", actionType, actionErr)
 	}
@@ -1174,14 +1187,7 @@ func (s *WebhookService) executeProjectWebhookAction(ctx context.Context, wh *We
 		}
 	}
 
-	opts := activitylib.HandlerOptions{
-		EnvironmentID: cmp.Or(wh.EnvironmentID, types.LocalDockerEnvironmentID),
-		ResourceType:  "project",
-		ResourceID:    wh.TargetID,
-		ResourceName:  s.projectWebhookActivityName(ctx, wh.TargetID),
-		User:          &types.SystemUser,
-		Metadata:      database.JSON{"projectID": wh.TargetID},
-	}
+	opts := webhookHandlerOptions(wh, "project", wh.TargetID, cmp.Or(s.resolveWebhookTargetName(ctx, wh), wh.TargetID), database.JSON{"projectID": wh.TargetID}, cfg)
 	if actionErr := s.runWebhookActivity(ctx, opts, cfg, actionFn); actionErr != nil {
 		return nil, s.wrapWebhookActionError(ctx, wh, "project", actionType, actionErr)
 	}

@@ -46,7 +46,7 @@ func setupWebhookServiceTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&Webhook{}, &event.Event{}))
+	require.NoError(t, db.AutoMigrate(&Webhook{}, &event.Event{}, &activity.Activity{}, &activity.ActivityMessage{}))
 
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
@@ -65,8 +65,9 @@ func initWebhookTokenCryptoForTests() {
 
 func newTestWebhookService(db *database.DB) *WebhookService {
 	return NewWebhookService(WebhookServiceParams{
-		DB:           db,
-		EventService: event.NewEventService(db, &config.Config{}, nil),
+		DB:              db,
+		EventService:    event.NewEventService(db, &config.Config{}, nil),
+		ActivityService: activity.NewActivityService(db, nil),
 	})
 }
 
@@ -564,16 +565,10 @@ func TestCreateWebhook_RequiresTargetActionPermission(t *testing.T) {
 	require.ErrorIs(t, err, ErrWebhookForbidden)
 	_, err = svc.UpdateWebhook(ctx, wh.ID, "env-1", types.Webhook{}, map[string]bool{"enabled": true}, types.Actor{}, allowed)
 	require.NoError(t, err)
-}
-
-func TestCreateWebhook_ProjectUpdateRequiresImageUpdatePermissions(t *testing.T) {
-	ctx := t.Context()
-	db := setupWebhookServiceTestDB(t)
-	svc := newTestWebhookService(db)
 
 	projectsUpdateOnly := authz.NewPermissionSet()
 	projectsUpdateOnly.AddEnv("env-1", authz.PermProjectsUpdate, authz.PermWebhooksCreate, authz.PermWebhooksUpdate)
-	_, _, err := svc.CreateWebhook(ctx, "proj-upd", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", types.Actor{}, projectsUpdateOnly)
+	_, _, err = svc.CreateWebhook(ctx, "proj-upd", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", types.Actor{}, projectsUpdateOnly)
 	require.ErrorIs(t, err, ErrWebhookForbidden)
 
 	applyOnly := authz.NewPermissionSet()
@@ -581,22 +576,21 @@ func TestCreateWebhook_ProjectUpdateRequiresImageUpdatePermissions(t *testing.T)
 	_, _, err = svc.CreateWebhook(ctx, "proj-upd", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", types.Actor{}, applyOnly)
 	require.ErrorIs(t, err, ErrWebhookForbidden)
 
-	allowed := authz.NewPermissionSet()
-	allowed.AddEnv("env-1", authz.PermImageUpdatesCheck, authz.PermImageUpdatesApply)
-	wh, _, err := svc.CreateWebhook(ctx, "proj-upd", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", types.Actor{}, allowed)
+	updateAllowed := authz.NewPermissionSet()
+	updateAllowed.AddEnv("env-1", authz.PermImageUpdatesCheck, authz.PermImageUpdatesApply)
+	updHook, _, err := svc.CreateWebhook(ctx, "proj-upd", WebhookTargetTypeProject, WebhookActionTypeUpdate, "p1", "env-1", types.Actor{}, updateAllowed)
 	require.NoError(t, err)
 
-	_, err = svc.UpdateWebhook(ctx, wh.ID, "env-1", types.Webhook{}, map[string]bool{"enabled": true}, types.Actor{}, projectsUpdateOnly)
+	_, err = svc.UpdateWebhook(ctx, updHook.ID, "env-1", types.Webhook{}, map[string]bool{"enabled": true}, types.Actor{}, projectsUpdateOnly)
 	require.ErrorIs(t, err, ErrWebhookForbidden)
-
-	_, err = svc.UpdateWebhook(ctx, wh.ID, "env-1", types.Webhook{}, map[string]bool{"enabled": true}, types.Actor{}, allowed)
+	_, err = svc.UpdateWebhook(ctx, updHook.ID, "env-1", types.Webhook{}, map[string]bool{"enabled": true}, types.Actor{}, updateAllowed)
 	require.NoError(t, err)
 }
 
 func TestRunWebhookActivity_RecordsAndCompletesActivity(t *testing.T) {
 	ctx := t.Context()
 	db := setupWebhookServiceTestDB(t)
-	require.NoError(t, db.AutoMigrate(&activity.Activity{}, &activity.ActivityMessage{}, &settings.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 
 	localSettings, err := settings.NewSettingsService(settings.SettingsServiceParams{
 		Ctx:    ctx,
@@ -615,17 +609,12 @@ func TestRunWebhookActivity_RecordsAndCompletesActivity(t *testing.T) {
 		ActivityService: actSvc,
 	})
 
-	opts := activitylib.HandlerOptions{
-		EnvironmentID: types.LocalDockerEnvironmentID,
-		ResourceType:  "project",
-		ResourceID:    "proj-1",
-		ResourceName:  "my-stack",
-		User:          &types.SystemUser,
-		Metadata:      database.JSON{"projectID": "proj-1"},
-	}
+	wh := &Webhook{TargetID: "proj-1", EnvironmentID: types.LocalDockerEnvironmentID}
+	redeployCfg := projectWebhookActivities[WebhookActionTypeRedeploy]
+	opts := webhookHandlerOptions(wh, "project", "proj-1", "my-stack", database.JSON{"projectID": "proj-1"}, redeployCfg)
 
 	var sawWriter bool
-	err = svc.runWebhookActivity(ctx, opts, projectWebhookActivities[WebhookActionTypeRedeploy], func(opCtx context.Context) error {
+	err = svc.runWebhookActivity(ctx, opts, redeployCfg, func(opCtx context.Context) error {
 		sawWriter = opCtx.Value(dockertypes.ProgressWriterKey{}) != nil
 		assert.NotEmpty(t, activitylib.IDFromContext(opCtx))
 		return nil
@@ -646,14 +635,8 @@ func TestRunWebhookActivity_RecordsAndCompletesActivity(t *testing.T) {
 	assert.Equal(t, types.SystemUser.Username, *recorded.StartedByUsername)
 
 	wantErr := errors.New("boom")
-	err = svc.runWebhookActivity(ctx, activitylib.HandlerOptions{
-		EnvironmentID: types.LocalDockerEnvironmentID,
-		ResourceType:  "container",
-		ResourceID:    "c-1",
-		ResourceName:  "web",
-		User:          &types.SystemUser,
-		Metadata:      database.JSON{"containerID": "c-1"},
-	}, containerWebhookActivities[WebhookActionTypeRestart], func(_ context.Context) error {
+	restartCfg := containerWebhookActivities[WebhookActionTypeRestart]
+	err = svc.runWebhookActivity(ctx, webhookHandlerOptions(wh, "container", "c-1", "web", database.JSON{"containerID": "c-1"}, restartCfg), restartCfg, func(_ context.Context) error {
 		return wantErr
 	})
 	require.ErrorIs(t, err, wantErr)
@@ -664,6 +647,18 @@ func TestRunWebhookActivity_RecordsAndCompletesActivity(t *testing.T) {
 	assert.Equal(t, types.ActivityStatusFailed, failed.Status)
 	require.NotNil(t, failed.Error)
 	assert.Equal(t, "boom", *failed.Error)
+
+	assert.Panics(t, func() {
+		_ = svc.runWebhookActivity(ctx, webhookHandlerOptions(wh, "project", "proj-panic", "panic-stack", database.JSON{"projectID": "proj-panic"}, redeployCfg), redeployCfg, func(_ context.Context) error {
+			panic("unexpected crash")
+		})
+	})
+
+	var panicked activity.Activity
+	require.NoError(t, db.WithContext(ctx).Where("resource_id = ?", "proj-panic").First(&panicked).Error)
+	assert.Equal(t, types.ActivityStatusFailed, panicked.Status)
+	require.NotNil(t, panicked.Error)
+	assert.Contains(t, *panicked.Error, "unexpected crash")
 }
 
 func TestUpdateWebhook_NotFoundForUnknownID(t *testing.T) {
