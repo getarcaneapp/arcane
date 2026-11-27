@@ -19,6 +19,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/httpx"
 	"getarcane.dev/arcane/v3/pkg/pagination"
+	"getarcane.dev/arcane/v3/pkg/timeouts"
 	"getarcane.dev/types/v3"
 )
 
@@ -103,11 +104,13 @@ func (s *Service) Refresh(ctx context.Context) (types.BackupStorageStats, error)
 	if !s.deps.Docker.LocalDockerEnabled() {
 		return s.Get(ctx)
 	}
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	refreshCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultAgentProxy)
+	defer cancel()
+	dockerClient, err := s.deps.Docker.GetClient(refreshCtx)
 	if err != nil {
 		return types.BackupStorageStats{}, err
 	}
-	targets, err := s.targets(ctx, dockerClient)
+	targets, err := s.targets(refreshCtx, dockerClient)
 	if err != nil {
 		return types.BackupStorageStats{}, err
 	}
@@ -119,11 +122,11 @@ func (s *Service) Refresh(ctx context.Context) (types.BackupStorageStats, error)
 	group.SetLimit(refreshConcurrency)
 	for _, entry := range targets {
 		group.Go(func() error {
-			refreshErr := s.refresh(ctx, dockerClient, entry)
+			refreshErr := s.refresh(refreshCtx, dockerClient, entry)
 			if refreshErr == nil || errors.Is(refreshErr, backup.ErrRepositoryMissing) || errors.Is(refreshErr, backup.ErrRepositoryBusy) {
 				return nil
 			}
-			slog.WarnContext(ctx, "Failed to refresh backup repository stats", "repositoryId", entry.repository.ID, "error", refreshErr)
+			slog.WarnContext(refreshCtx, "Failed to refresh backup repository stats", "repositoryId", entry.repository.ID, "error", refreshErr)
 			mu.Lock()
 			failures = append(failures, fmt.Errorf("%s: %w", entry.repository.ID, refreshErr))
 			mu.Unlock()
