@@ -183,24 +183,6 @@ export async function deleteDestinationViaApi(page: Page, destinationId: string)
 	await removeApiResource(page, `/api/backups/s3/${destinationId}`);
 }
 
-export async function createVolumeViaApi(page: Page, volumeName: string) {
-	const response = await page.request.post('/api/agents/0/volumes', {
-		data: { name: volumeName, driver: 'local' }
-	});
-	if (!response.ok()) {
-		throw new Error(
-			`Failed to create volume ${volumeName}: ${response.status()} ${await response.text()}`
-		);
-	}
-}
-
-export async function removeVolumeViaApi(page: Page, volumeName: string) {
-	await removeApiResource(
-		page,
-		`/api/agents/0/volumes/${encodeURIComponent(volumeName)}?force=true`
-	);
-}
-
 export async function listBackups(page: Page, volumeName: string): Promise<VolumeBackup[]> {
 	const backups = await readApiData<VolumeBackup[]>(
 		await page.request.get(

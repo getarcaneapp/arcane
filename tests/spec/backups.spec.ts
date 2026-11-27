@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from '../fixtures/test.fixture';
 import { setCodeMirrorValue } from '../utils/playwright.util';
-import { removeApiResource } from '../utils/fetch.util';
+import { createVolumeViaApi, removeApiResource, removeVolumeViaApi } from '../utils/fetch.util';
 import {
 	S3_ACCESS_KEY_ID,
 	S3_BUCKET,
@@ -8,10 +8,8 @@ import {
 	S3_SECRET_ACCESS_KEY,
 	createBackupViaApi,
 	createDestinationViaApi,
-	createVolumeViaApi,
 	deleteDestinationViaApi,
 	destinationPayload,
-	removeVolumeViaApi,
 	waitForBackup,
 	type S3Destination
 } from '../utils/backup.util';

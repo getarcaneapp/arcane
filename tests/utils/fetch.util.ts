@@ -281,6 +281,24 @@ export async function removeApiResource(
 	}
 }
 
+export async function createVolumeViaApi(page: Page, volumeName: string) {
+	const response = await page.request.post('/api/agents/0/volumes', {
+		data: { name: volumeName, driver: 'local' }
+	});
+	if (!response.ok()) {
+		throw new Error(
+			`Failed to create volume ${volumeName}: ${response.status()} ${await response.text()}`
+		);
+	}
+}
+
+export async function removeVolumeViaApi(page: Page, volumeName: string) {
+	await removeApiResource(
+		page,
+		`/api/agents/0/volumes/${encodeURIComponent(volumeName)}?force=true`
+	);
+}
+
 export async function waitForActivity(
 	page: Page,
 	activityId: string,

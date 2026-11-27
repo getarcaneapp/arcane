@@ -3,17 +3,21 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '../fixtures/test.fixture';
-import { readApiData, removeApiResource, waitForActivity } from '../utils/fetch.util';
+import {
+	createVolumeViaApi,
+	readApiData,
+	removeApiResource,
+	removeVolumeViaApi,
+	waitForActivity
+} from '../utils/fetch.util';
 import { composeFile } from '../utils/report';
 import {
 	createBackupViaApi,
 	createDestinationViaApi,
-	createVolumeViaApi,
 	deleteDestinationViaApi,
 	listBackups,
 	pick,
 	readManifest,
-	removeVolumeViaApi,
 	requestWithTransientRetry,
 	runInSource,
 	seedFixture,
