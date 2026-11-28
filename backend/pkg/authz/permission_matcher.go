@@ -21,6 +21,7 @@ type (
 		perm        string
 		actionParam string
 		segments    []string // literal segment, or "*" for a path parameter
+		denied      bool     // registered but never proxied
 	}
 )
 
@@ -47,11 +48,20 @@ func (m *PermissionMatcher) AddActions(method, pathTemplate, param string, perms
 	})
 }
 
+// AddDenied records a route that exists but is never proxied, so it answers 403 rather than 404.
+func (m *PermissionMatcher) AddDenied(method, pathTemplate string) {
+	m.routes = append(m.routes, permRoute{
+		method:   strings.ToUpper(method),
+		segments: templateSegments(pathTemplate),
+		denied:   true,
+	})
+}
+
 func (m *PermissionMatcher) Lookup(method, suffixPath string, query url.Values) mo.Option[string] {
 	method = strings.ToUpper(method)
 
 	best, found := m.best(method, pathSegments(suffixPath))
-	if !found {
+	if !found || best.denied {
 		return mo.None[string]()
 	}
 	if best.actionParam == "" {
@@ -73,6 +83,32 @@ func (m *PermissionMatcher) ActionParam(method, suffixPath string) string {
 		return ""
 	}
 	return best.actionParam
+}
+
+// Registered reports whether any route serves the path, and whether one serves
+// it with this method, so an unmapped request can be told apart as 404, 405 or 403.
+func (m *PermissionMatcher) Registered(method, suffixPath string) (bool, bool) {
+	method = strings.ToUpper(method)
+	reqSegs := pathSegments(suffixPath)
+	pathKnown, methodKnown := false, false
+	for i := range m.routes {
+		r := m.routes[i]
+		if len(r.segments) != len(reqSegs) {
+			continue
+		}
+		match := true
+		for j, seg := range r.segments {
+			if seg != "*" && seg != reqSegs[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			pathKnown = true
+			methodKnown = methodKnown || r.method == method
+		}
+	}
+	return pathKnown, methodKnown
 }
 
 func (m *PermissionMatcher) best(method string, reqSegs []string) (permRoute, bool) {

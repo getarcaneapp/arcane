@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -250,6 +251,9 @@ func newRouter(p RouterParams) *echo.Echo {
 
 	permissionMatcher.CollectFromHumaAPI(humaAPI)
 	ws.AddProxiedPermissions(permissionMatcher)
+	// Agent-only sudo routes are absent from the manager API; known here so they answer 403, not 404.
+	permissionMatcher.AddDenied(http.MethodGet, "/templates/variables")
+	permissionMatcher.AddDenied(http.MethodPut, "/templates/variables")
 
 	return finishRouter(e, apiGroup, AgentRouterParams{
 		Context:        p.Context,
