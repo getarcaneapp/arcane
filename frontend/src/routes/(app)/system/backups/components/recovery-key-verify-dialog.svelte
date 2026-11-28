@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge, type BadgeVariant } from '#lib/components/ui/badge/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { AlertIcon, CloudStorageIcon, InfoIcon, ShieldCheckIcon, ShieldXIcon, VolumesIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
-	import type { BackupRepositoryKeyCheck, RecoveryKeyCheckStatus, SystemBackupRecoveryKeyCheck } from '#lib/types/backup.js';
+	import type { RecoveryKeyCheckStatus, SystemBackupRecoveryKeyCheck } from '#lib/types/backup.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { backupDestinationLabel, backupDestinationName } from '#lib/utils/backups.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let { open = $bindable(false), recoveryKeyStored }: { open: boolean; recoveryKeyStored: boolean } = $props();
@@ -17,7 +17,7 @@
 	const statusBadges: Record<RecoveryKeyCheckStatus, { label: () => string; variant: BadgeVariant }> = {
 		valid: { label: m.key_opens, variant: 'green' },
 		invalid: { label: m.wrong_key, variant: 'red' },
-		missing: { label: m.no_backups_yet, variant: 'gray' },
+		missing: { label: m.system_backups_empty_title, variant: 'gray' },
 		error: { label: m.unreachable, variant: 'amber' }
 	};
 	const textSecurity = typeof CSS !== 'undefined' && CSS.supports('-webkit-text-security', 'disc');
@@ -31,13 +31,9 @@
 	const opened = $derived(result?.repositories.filter((item) => item.status === 'valid').length ?? 0);
 
 	function reset(nextOpen: boolean) {
+		open = nextOpen;
 		if (nextOpen) return;
 		recoveryKey = '';
-		result = null;
-	}
-
-	function changeKey(event: Event) {
-		recoveryKey = (event.target as HTMLInputElement).value;
 		result = null;
 	}
 
@@ -45,6 +41,7 @@
 		event?.preventDefault();
 		if (verifying || keyMissing) return;
 		result = null;
+		verifying = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(systemBackupService.verifyRecoveryKey(recoveryKey.trim())),
 			message: m.verify_recovery_key_failed(),
@@ -52,14 +49,9 @@
 				verifying = value;
 			},
 			onSuccess: (data) => {
-				result = data;
+				if (open) result = data;
 			}
 		});
-	}
-
-	function repositoryLocation(item: BackupRepositoryKeyCheck) {
-		if (item.destination === 'local') return m.local();
-		return item.s3DestinationName || item.s3DestinationId || 'S3';
 	}
 </script>
 
@@ -71,32 +63,29 @@
 	contentClass="sm:max-w-160"
 >
 	<form id="verify-recovery-key-form" class="space-y-4 py-2" onsubmit={verify}>
-		<div class="space-y-2.5">
-			<div>
-				<Label for="verify-recovery-key">{m.system_backups_recovery_key()}</Label>
-				<p class="mt-0.5 text-xs text-muted-foreground">
-					{recoveryKeyStored ? m.system_backups_recovery_key_saved_description() : m.system_backups_recovery_key_required()}
-				</p>
-			</div>
-			<Input
-				id="verify-recovery-key"
-				name="verify-recovery-key"
-				type={textSecurity ? 'text' : 'password'}
-				value={recoveryKey}
-				oninput={changeKey}
-				mono
-				autocomplete="off"
-				autocapitalize="none"
-				autocorrect="off"
-				spellcheck={false}
-				data-1p-ignore
-				data-lpignore="true"
-				data-bwignore
-				data-form-type="other"
-				data-protonpass-ignore
-				class="text-security-disc"
-			/>
-		</div>
+		<TextInputWithLabel
+			id="verify-recovery-key"
+			name="verify-recovery-key"
+			label={m.system_backups_recovery_key()}
+			description={recoveryKeyStored
+				? m.system_backups_recovery_key_saved_description()
+				: m.system_backups_recovery_key_required()}
+			type={textSecurity ? 'text' : 'password'}
+			bind:value={recoveryKey}
+			onChange={() => (result = null)}
+			disabled={verifying}
+			mono
+			autocomplete="off"
+			autocapitalize="none"
+			autocorrect="off"
+			spellcheck={false}
+			data-1p-ignore
+			data-lpignore="true"
+			data-bwignore
+			data-form-type="other"
+			data-protonpass-ignore
+			class="text-security-disc"
+		/>
 
 		{#if result}
 			{#if opened === 0 && rejected === 0 && unreachable === 0}
@@ -139,10 +128,10 @@
 							<LocationIcon class="size-4 shrink-0 text-muted-foreground" />
 							<div class="min-w-0">
 								<p class="truncate text-sm font-medium">
-									{item.type === 'system' ? m.system_backups() : m.volume_backups()}
+									{item.type === 'system' ? m.jobs_system_backup_group() : m.system_volume_backups_title()}
 								</p>
 								<p class="truncate text-xs text-muted-foreground" title={item.error}>
-									{repositoryLocation(item)}
+									{backupDestinationName(item) || backupDestinationLabel(item.destination)}
 									{#if item.status === 'valid'}· {item.snapshots === 1
 											? m.snapshot_count_one()
 											: m.snapshot_count({ count: item.snapshots })}{/if}
@@ -158,7 +147,7 @@
 	</form>
 
 	{#snippet footer()}
-		<ArcaneButton action="cancel" customLabel={m.common_close()} onclick={() => (open = false)} disabled={verifying} />
+		<ArcaneButton action="cancel" customLabel={m.common_close()} onclick={() => reset(false)} disabled={verifying} />
 		<ArcaneButton
 			action="confirm"
 			icon={ShieldCheckIcon}

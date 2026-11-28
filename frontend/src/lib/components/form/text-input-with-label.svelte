@@ -22,8 +22,9 @@
 		required = false,
 		'aria-describedby': ariaDescribedby,
 		'aria-errormessage': ariaErrormessage,
-		onChange
-	}: {
+		onChange,
+		...restProps
+	}: Omit<HTMLInputAttributes, 'value' | 'type' | 'size' | 'files' | 'oninput' | 'autocomplete'> & {
 		id?: string;
 		name?: string;
 		value: string | number;
@@ -42,6 +43,7 @@
 		'aria-describedby'?: string;
 		'aria-errormessage'?: string;
 		onChange?: (value: string) => void;
+		mono?: boolean;
 	} = $props();
 
 	function handleInput(e: Event) {
@@ -68,6 +70,7 @@
 	</div>
 
 	<Input
+		{...restProps}
 		{id}
 		{name}
 		{value}

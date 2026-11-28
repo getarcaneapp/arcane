@@ -1391,18 +1391,31 @@ func (s *Service) VerifyRecoveryKey(ctx context.Context, supplied string) (*type
 		return nil, err
 	}
 	defer lease.Release(ctx)
+	runningVolumeBackupsErr := common.Classify(common.ErrConflict, errors.New("wait for the running volume backups to finish before verifying the recovery key"))
 	runningVolumeBackups, err := s.store.CountRunningVolumeBackups(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if runningVolumeBackups > 0 {
-		return nil, common.Classify(common.ErrConflict, errors.New("wait for the running volume backups to finish before verifying the recovery key"))
+		return nil, runningVolumeBackupsErr
 	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	held, releaseRepository, err := s.repository.HoldLocal(ctx)
 	if err != nil {
 		return nil, err
 	}
-	destinations, err := s.s3Destinations.ListAllS3Destinations(ctx)
+	defer releaseRepository()
+	runningVolumeBackups, err = s.store.CountRunningVolumeBackups(held)
+	if err != nil {
+		return nil, err
+	}
+	if runningVolumeBackups > 0 {
+		return nil, runningVolumeBackupsErr
+	}
+	dockerClient, err := s.dockerService.GetClient(held)
+	if err != nil {
+		return nil, err
+	}
+	destinations, err := s.s3Destinations.ListAllS3Destinations(held)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list S3 destinations: %w", err)
 	}
@@ -1410,7 +1423,7 @@ func (s *Service) VerifyRecoveryKey(ctx context.Context, supplied string) (*type
 	check := func(kind types.BackupManagementType, destination types.S3Destination, repository backup.Repository, repositoryErr error) {
 		var snapshots []backup.DiscoveredSnapshot
 		if repositoryErr == nil {
-			snapshots, repositoryErr = s.engine.ListSnapshots(ctx, dockerClient, repository, key)
+			snapshots, repositoryErr = s.engine.ListSnapshots(held, dockerClient, repository, key)
 		}
 		status, message := types.RecoveryKeyCheckValid, ""
 		switch {
@@ -1431,14 +1444,14 @@ func (s *Service) VerifyRecoveryKey(ctx context.Context, supplied string) (*type
 			Snapshots:         len(snapshots),
 		})
 	}
-	systemLocal, err := s.localRepository(ctx, dockerClient, true)
+	systemLocal, err := s.localRepository(held, dockerClient, true)
 	check(types.BackupManagementTypeSystem, types.S3Destination{}, systemLocal, err)
-	volumeLocal, err := s.repository.Local(ctx, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
+	volumeLocal, err := s.repository.Local(held, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
 	check(types.BackupManagementTypeVolume, types.S3Destination{}, volumeLocal, err)
 	for _, destination := range destinations {
-		systemRemote, remoteErr := s.remoteRepository(ctx, destination.ID)
+		systemRemote, remoteErr := s.remoteRepository(held, destination.ID)
 		check(types.BackupManagementTypeSystem, destination, systemRemote, remoteErr)
-		volumeRemote, remoteErr := s.repository.Remote(ctx, destination.ID, "")
+		volumeRemote, remoteErr := s.repository.Remote(held, destination.ID, "")
 		check(types.BackupManagementTypeVolume, destination, volumeRemote, remoteErr)
 	}
 	return &types.SystemBackupRecoveryKeyCheck{Repositories: checks}, nil
