@@ -27,6 +27,10 @@
 
 For setup instructions, configuration details, and development guides, visit the **[official documentation site](https://getarcane.app)**.
 
+## Agent Skills
+
+An agent-agnostic plugin marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) registers [`plugins/arcane`](plugins/arcane), with [agent skills](https://agentskills.io/) for deploying Arcane, the `arcane-cli` client, and managing Compose projects.
+
 ## Sponsors
 
 This project is supported by the following amazing people:
