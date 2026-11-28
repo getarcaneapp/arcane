@@ -933,8 +933,7 @@ func TestProjectService_RedeployProject_RespectsPullPolicy(t *testing.T) {
 	}{
 		{
 			name:              "explicit missing skips pull when image exists locally",
-			composePullPolicy: "missing",
-			defaultPullPolicy: "never",
+			defaultPullPolicy: "always",
 			options:           &types.ProjectDeployOptions{PullPolicy: "missing"},
 			wantPullCount:     0,
 		},
