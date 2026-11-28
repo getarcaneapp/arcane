@@ -1089,7 +1089,7 @@ func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, s
 			},
 		})
 		if pushErr != nil {
-			if pulled.NeedsDeploy {
+			if pulled.Changed {
 				deployErr := s.sync.Deploy(ctx, syncRecord, req.Actor, pulled.Result, plan.Commit)
 				return pushed.Result, errors.Join(pushErr, deployErr)
 			}
