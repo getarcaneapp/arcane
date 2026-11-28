@@ -2143,12 +2143,20 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return common.ErrSelfRedeployBlocked
 	}
 
-	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
-	if pullProjectImagesErr := s.PullProjectImages(ctx, projectID, kit.Ternary(progressWriter == nil, io.Discard, progressWriter), user, nil); pullProjectImagesErr != nil {
-		slog.WarnContext(ctx, "failed to pull project images", "error", pullProjectImagesErr)
-		logWriter := docker.NewLogLineWriter(progressWriter)
-		_, _ = io.WriteString(logWriter, "WARNING: failed to pull project images; deploying with local images:\n"+pullProjectImagesErr.Error()+"\n")
-		_ = logWriter.Close()
+	explicitPullPolicy := ""
+	if options != nil {
+		explicitPullPolicy = projects.NormalizeDeployPullPolicy(options.PullPolicy)
+	}
+	defaultPullPolicy := projects.NormalizeDeployPullPolicy(s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy"))
+	if explicitPullPolicy == "" && defaultPullPolicy != composeTypes.PullPolicyNever && defaultPullPolicy != composeTypes.PullPolicyAlways {
+		progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
+		writer := kit.Ternary(progressWriter == nil, io.Discard, progressWriter)
+		if pullProjectImagesErr := s.pullProjectImages(ctx, proj, writer, user, nil, projects.DefaultRedeployPullImageRefs); pullProjectImagesErr != nil {
+			slog.WarnContext(ctx, "failed to pull project images", "error", pullProjectImagesErr)
+			logWriter := docker.NewLogLineWriter(progressWriter)
+			_, _ = io.WriteString(logWriter, "WARNING: failed to pull project images; deploying with local images:\n"+pullProjectImagesErr.Error()+"\n")
+			_ = logWriter.Close()
+		}
 	}
 
 	return s.deployProject(ctx, projectID, user, options)
@@ -2159,16 +2167,31 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	if err != nil {
 		return err
 	}
+	return s.pullProjectImages(ctx, proj, progressWriter, user, credentials, projects.PullableImageRefs)
+}
 
+func (s *ProjectService) pullProjectImages(
+	ctx context.Context,
+	proj *Project,
+	progressWriter io.Writer,
+	user types.Actor,
+	credentials []types.ContainerRegistryCredential,
+	selectImageRefs func(*composeTypes.Project) []string,
+) error {
 	compProj, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
 	if lerr != nil {
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
+	imageRefs := selectImageRefs(compProj)
+	if len(imageRefs) == 0 {
+		return nil
+	}
+
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
 	var pullErrs []error
-	for _, imageRef := range projects.PullableImageRefs(compProj) {
+	for _, imageRef := range imageRefs {
 		if pullErr := s.imageService.Pull(ctx, image.PullRequest{
 			Ref:         imageRef,
 			Progress:    progressWriter,
