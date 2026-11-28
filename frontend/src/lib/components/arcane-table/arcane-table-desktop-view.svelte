@@ -113,7 +113,7 @@
 	);
 	const mountedEntries = $derived(mountedCount < entries.length ? entries.slice(0, mountedCount) : entries);
 	// Rows past the first chunk mount hidden behind skeleton rows and are revealed together.
-	const pending = $derived(mountedCount < entries.length);
+	const pending = $derived(!shouldVirtualize && mountedCount < entries.length);
 	const placeholderRows = $derived(pending ? Math.min(entries.length - ROW_CHUNK, PLACEHOLDER_ROWS) : 0);
 	const pendingHeight = $derived(
 		pending ? (entries.length - ROW_CHUNK - placeholderRows) * (measuredRowHeight ?? ROW_ESTIMATE_PX) : 0
@@ -123,6 +123,11 @@
 
 	function mountNextChunk() {
 		mountFrame = requestAnimationFrame(() => {
+			// Virtualized rows mount on scroll, so staged mounting has nothing left to do.
+			if (shouldVirtualize) {
+				mountedCount = Infinity;
+				return;
+			}
 			const first = bodyElement?.rows.item(0);
 			const placeholder = bodyElement?.querySelector('tr[aria-hidden]');
 			if (first && placeholder) {
