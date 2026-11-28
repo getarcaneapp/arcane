@@ -186,7 +186,12 @@ func newRouter(p RouterParams) *echo.Echo {
 		}, 5, 5,
 	))
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
-		[]string{"/api/auth/refresh"}, 30, 30,
+		[]string{
+			"/api/auth/refresh",
+			// Each call hits the identity provider; the CLI polls the token path every 5s.
+			"/api/oidc/device/code",
+			"/api/oidc/device/token",
+		}, 30, 30,
 	))
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/auth/federated/token"}, 10, 10,
