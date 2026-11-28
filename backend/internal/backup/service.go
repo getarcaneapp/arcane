@@ -835,9 +835,7 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *mobyClient.C
 	for i, batch := range batches {
 		command := slices.Concat([]string{"forget"}, kit.Ternary(i == len(batches)-1, []string{"--prune"}, nil), []string{"--"}, batch)
 		if _, err = e.runContainer(ctx, dockerClient, repository, password, command); err != nil {
-			if i > 0 {
-				e.queueStats(ctx, dockerClient, repository, password)
-			}
+			e.queueStats(ctx, dockerClient, repository, password)
 			return err
 		}
 	}
