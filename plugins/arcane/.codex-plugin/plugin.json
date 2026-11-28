@@ -1,0 +1,40 @@
+{
+	"name": "arcane",
+	"version": "1.0.0",
+	"description": "Agent skills for deploying Arcane and its remote agents, and managing Docker hosts and Compose projects with the arcane CLI.",
+	"author": {
+		"name": "Kyle Mendell",
+		"url": "https://getarcane.app"
+	},
+	"homepage": "https://getarcane.app",
+	"repository": "https://github.com/getarcaneapp/arcane",
+	"license": "BSD-3-Clause",
+	"keywords": [
+		"arcane",
+		"docker",
+		"docker-compose",
+		"containers",
+		"podman",
+		"self-hosted",
+		"cli",
+		"agent-skills"
+	],
+	"skills": "./skills/",
+	"interface": {
+		"displayName": "Arcane",
+		"shortDescription": "Docker management UI and CLI",
+		"longDescription": "Skills for Arcane, the modern Docker management UI. Covers deploying the manager with Docker Compose (encryption key, projects directory, Docker socket) and adding remote hosts with Arcane agents; the arcane CLI for configuration, API keys, JSON output, containers, images, volume backups, image vulnerability scans, the auto-updater and system prune; and the Compose project lifecycle: create, up/down, redeploy, image upgrades, builds, export/import with volume data, copy or move between agents, destroy, and GitOps syncs.",
+		"developerName": "Kyle Mendell",
+		"category": "Developer Tools",
+		"capabilities": ["Interactive", "Read", "Write"],
+		"websiteURL": "https://getarcane.app",
+		"defaultPrompt": [
+			"Deploy Arcane on this server with Docker Compose",
+			"Upgrade every project that has a newer image",
+			"Export this project with its volumes and move it to another agent"
+		],
+		"brandColor": "#6020D0",
+		"composerIcon": "./assets/logo.png",
+		"logo": "./assets/logo.png"
+	}
+}

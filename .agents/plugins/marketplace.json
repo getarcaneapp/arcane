@@ -1,0 +1,20 @@
+{
+	"name": "arcane",
+	"interface": {
+		"displayName": "Arcane"
+	},
+	"plugins": [
+		{
+			"name": "arcane",
+			"source": {
+				"source": "local",
+				"path": "./plugins/arcane"
+			},
+			"policy": {
+				"installation": "AVAILABLE",
+				"authentication": "ON_INSTALL"
+			},
+			"category": "Developer Tools"
+		}
+	]
+}

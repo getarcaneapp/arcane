@@ -1,0 +1,23 @@
+{
+	"name": "arcane",
+	"version": "1.0.0",
+	"description": "Agent skills for deploying Arcane and its remote agents, and managing Docker hosts and Compose projects with the arcane CLI.",
+	"author": {
+		"name": "Kyle Mendell",
+		"url": "https://getarcane.app"
+	},
+	"homepage": "https://getarcane.app",
+	"repository": "https://github.com/getarcaneapp/arcane",
+	"license": "BSD-3-Clause",
+	"keywords": [
+		"arcane",
+		"docker",
+		"docker-compose",
+		"containers",
+		"podman",
+		"self-hosted",
+		"cli",
+		"agent-skills"
+	],
+	"skills": "./skills/"
+}
