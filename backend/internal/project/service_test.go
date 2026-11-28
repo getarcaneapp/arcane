@@ -918,6 +918,138 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	assert.Equal(t, imageDigest, kit.FromPtr(currentRecord.LatestDigest))
 }
 
+func TestProjectService_RedeployProject_RespectsPullPolicy(t *testing.T) {
+	imageRef := "registry.example.com/team/app:1.2.3"
+	repository := "registry.example.com/team/app"
+	imageID := "sha256:team-app-redeploy"
+	imageDigest := digest.FromString("team-app-redeploy-digest").String()
+
+	tests := []struct {
+		options           *types.ProjectDeployOptions
+		name              string
+		composePullPolicy string
+		defaultPullPolicy string
+		wantPullCount     int
+	}{
+		{
+			name:              "explicit missing skips pull when image exists locally",
+			defaultPullPolicy: "always",
+			options:           &types.ProjectDeployOptions{PullPolicy: "missing"},
+			wantPullCount:     0,
+		},
+		{
+			name:              "explicit never skips pull when image exists locally",
+			defaultPullPolicy: "missing",
+			options:           &types.ProjectDeployOptions{PullPolicy: "never"},
+			wantPullCount:     0,
+		},
+		{
+			name:              "explicit always pulls once",
+			defaultPullPolicy: "missing",
+			options:           &types.ProjectDeployOptions{PullPolicy: "always"},
+			wantPullCount:     1,
+		},
+		{
+			name:              "compose missing skips pull when request omits pullPolicy",
+			composePullPolicy: "missing",
+			defaultPullPolicy: "missing",
+			options:           nil,
+			wantPullCount:     0,
+		},
+		{
+			name:              "default never skips pull when request omits pullPolicy",
+			defaultPullPolicy: "never",
+			options:           nil,
+			wantPullCount:     0,
+		},
+		{
+			name:              "unset compose and request pullPolicy pulls once by default",
+			defaultPullPolicy: "missing",
+			options:           nil,
+			wantPullCount:     1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			db := setupProjectTestDB(t)
+
+			projectsDir := t.TempDir()
+			t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
+
+			settingsService, err := newSettingsServiceForTest(t, ctx, db)
+			require.NoError(t, err)
+			require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
+			require.NoError(t, settingsService.UpdateSetting(ctx, "defaultDeployPullPolicy", tt.defaultPullPolicy))
+
+			pullCount := 0
+			server := newImagePullServerWithObserver(t, map[string]mobyImage.InspectResponse{
+				imageRef: {
+					ID:          imageID,
+					RepoTags:    []string{imageRef},
+					RepoDigests: []string{repository + "@" + imageDigest},
+				},
+			}, func(_, _ string) {
+				pullCount++
+			})
+
+			dockerService := newSettingsDockerService(t, newTestDockerClient(t, server))
+			eventService := event.NewEventService(db, &config.Config{}, nil)
+			imageUpdateService := imageupdate.NewImageUpdateService(imageupdate.ImageUpdateServiceParams{
+				DB:              db,
+				EventService:    eventService,
+				ActivityService: activity.NewActivityService(db, settingsService),
+				DockerService:   dockerService,
+			})
+			imageService := image.NewImageService(image.ImageServiceParams{
+				DB:                 db,
+				DockerService:      dockerService,
+				RegistryService:    newProjectTestRegistryService(db, dockerService, settingsService),
+				ImageUpdateService: imageUpdateService,
+				EventService:       eventService,
+				SettingsService:    settingsService,
+			})
+			svc := NewProjectService(ProjectServiceParams{
+				DB:                       db,
+				SettingsService:          settingsService,
+				EventService:             eventService,
+				ImageService:             imageService,
+				DockerService:            dockerService,
+				BuildService:             testBuildBuilder{},
+				Config:                   loadTestConfig(t),
+				KVService:                kv.NewKVService(db),
+				ContainerRegistryService: newProjectTestRegistryService(db, dockerService, settingsService),
+			})
+			svc.composeCoordinator = projects.NewCoordinator(types.ComposeCommands{
+				Up: func(_ context.Context, _ types.ComposeUpOptions) error {
+					return nil
+				},
+			})
+
+			projectPath := createComposeProjectDir(t, projectsDir, "compose-redeploy")
+			composeContent := fmt.Sprintf("services:\n  app:\n    image: %s\n", imageRef)
+			if tt.composePullPolicy != "" {
+				composeContent += fmt.Sprintf("    pull_policy: %s\n", tt.composePullPolicy)
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(composeContent), 0o644))
+
+			dirName := "compose-redeploy"
+			projectRecord := &Project{
+				ID:      "project-redeploy",
+				Name:    "compose-redeploy",
+				DirName: &dirName,
+				Path:    projectPath,
+				Status:  ProjectStatusRunning,
+			}
+			require.NoError(t, db.Create(projectRecord).Error)
+
+			require.NoError(t, svc.RedeployProject(ctx, projectRecord.ID, types.SystemUser, tt.options))
+			assert.Equal(t, tt.wantPullCount, pullCount)
+		})
+	}
+}
+
 func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)

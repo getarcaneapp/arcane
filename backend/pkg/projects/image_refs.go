@@ -103,11 +103,24 @@ func canonicalImageRef(imageRef string) string {
 }
 
 func PullableImageRefs(project *composeTypes.Project) []string {
+	return pullableImageRefs(project, false)
+}
+
+// DefaultRedeployPullImageRefs returns pullable image references for services
+// and jobs that do not declare an explicit pull_policy in Compose.
+func DefaultRedeployPullImageRefs(project *composeTypes.Project) []string {
+	return pullableImageRefs(project, true)
+}
+
+func pullableImageRefs(project *composeTypes.Project, unsetPullPolicyOnly bool) []string {
 	if project == nil {
 		return nil
 	}
 	return uniqueImageRefs(len(project.Services), func(yield func(string)) {
 		for _, service := range project.Services {
+			if unsetPullPolicyOnly && NormalizePullPolicy(service.PullPolicy) != "" {
+				continue
+			}
 			if service.Build == nil {
 				yield(service.Image)
 			}
@@ -121,6 +134,9 @@ func PullableImageRefs(project *composeTypes.Project) []string {
 			}
 		}
 		for _, job := range project.Jobs {
+			if unsetPullPolicyOnly && NormalizePullPolicy(job.PullPolicy) != "" {
+				continue
+			}
 			if job.Build == nil {
 				yield(job.Image)
 			}
