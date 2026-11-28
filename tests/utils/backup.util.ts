@@ -1,58 +1,12 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { expect, type APIResponse, type Page } from 'playwright/test';
 import { readApiData, removeApiResource } from './fetch.util';
 
 const HELPER_IMAGE = 'public.ecr.aws/docker/library/alpine:3.20';
 
-const FIXTURE_SCRIPT = String.raw`
-set -e
-cd /v
-mkdir -p dir/sub empty "space dir" "glob[1]" sticky setgid deep/a/b/c/d
-printf 'hello\n' > text.txt
-head -c 3000000 /dev/urandom > bin.dat
-: > empty.txt
-printf x > "glob[1]/star*?.txt"
-printf u > "üñí cödé.txt"
-printf d > ./-leading.txt
-printf s > "space dir/file #%.txt"
-printf deep > deep/a/b/c/d/leaf.txt
-printf suid > dir/suid
-printf sgid > dir/sgid
-printf sub > dir/sub/f.txt
-ln -s text.txt rel-link
-ln -s /etc/hostname abs-link
-ln -s missing dangling
-ln -s dir dir-link
-chmod 600 text.txt
-chmod 755 bin.dat
-chmod 444 empty.txt
-chmod 4755 dir/suid
-chmod 2755 dir/sgid
-chmod 1777 sticky
-chmod 2775 setgid
-chmod 700 deep
-chown 1000:1000 text.txt
-chown 12345:54321 bin.dat
-chown -h 1000:1000 rel-link
-chown 65534:65534 dir/sub dir/sub/f.txt
-chown 0:1000 setgid
-chown 1000:1000 /v
-chmod 750 /v
-find /v -exec touch -h -d "2024-01-02 03:04:05" {} +
-`;
-
-const MANIFEST_SCRIPT = String.raw`
-cd /v
-find . | LC_ALL=C sort | while IFS= read -r p; do
-	if [ -L "$p" ]; then
-		printf '%s\tlink\t-\t%s\t-\t%s\t%s\n' "$p" "$(stat -c %u:%g "$p")" "$(stat -c %Y "$p")" "$(readlink "$p")"
-	elif [ -d "$p" ]; then
-		printf '%s\tdir\t%s\t%s\t-\t%s\t-\n' "$p" "$(stat -c %a "$p")" "$(stat -c %u:%g "$p")" "$(stat -c %Y "$p")"
-	else
-		printf '%s\tfile\t%s\t%s\t%s\t%s\t%s\n' "$p" "$(stat -c %a "$p")" "$(stat -c %u:%g "$p")" "$(stat -c %s "$p")" "$(stat -c %Y "$p")" "$(sha256sum "$p" | cut -d' ' -f1)"
-	fi
-done
-`;
+const FIXTURE_SCRIPT = readFileSync(new URL('./backup-fixture.sh', import.meta.url), 'utf8');
+const MANIFEST_SCRIPT = readFileSync(new URL('./backup-manifest.sh', import.meta.url), 'utf8');
 
 export type ManifestEntry = {
 	type: 'file' | 'dir' | 'link';
