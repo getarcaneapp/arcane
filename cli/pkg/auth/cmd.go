@@ -344,6 +344,22 @@ func pollDeviceToken(cmd *cobra.Command, c *client.Client, deviceAuth types.Oidc
 			return types.AuthenticationResponse{}, fmt.Errorf("failed to read token response: %w", postErr)
 		}
 
+		// Rate limited, not rejected: wait as told, then keep polling the same device code.
+		if tokenResp.StatusCode == http.StatusTooManyRequests {
+			wait := pollInterval
+			if secs, atoiErr := strconv.Atoi(tokenResp.Header.Get("Retry-After")); atoiErr == nil && secs > 0 {
+				wait = time.Duration(secs) * time.Second
+			}
+			select {
+			case <-time.After(min(wait, time.Until(expiresAt))):
+			case <-cmd.Context().Done():
+				return types.AuthenticationResponse{}, cmd.Context().Err()
+			}
+			// Drop ticks that piled up during the wait so the next two polls stay a full interval apart.
+			ticker.Reset(pollInterval)
+			continue
+		}
+
 		if tokenResp.StatusCode < 200 || tokenResp.StatusCode >= 300 {
 			trimmed := strings.TrimSpace(string(tokenBody))
 
