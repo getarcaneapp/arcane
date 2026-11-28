@@ -1041,6 +1041,7 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 
 func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, syncRecord *projectpkg.GitOpsSync, req SyncRequest, result *types.GitOpsSyncResult) (*types.GitOpsSyncResult, error) {
 	hadBaseline := syncRecord.BackupSnapshot() != nil
+	pendingBefore := syncRecord.PendingRedeploy
 	pulled := gitopssync.PullResult{Result: result}
 	var pullErr error
 	for range backup.BackupSnapshotMaxRetry {
@@ -1054,16 +1055,16 @@ func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, s
 			return result, err
 		}
 		pulled, pullErr = s.sync.Pull(ctx, syncCtx, gitopssync.PullRequest{
-			Sync:     syncRecord,
-			Actor:    req.Actor,
-			Result:   &types.GitOpsSyncResult{SyncedAt: result.SyncedAt},
-			Expected: plan.Expected,
-			Commit:   plan.Commit,
-			Files:    plan.Files,
-			Removed:  plan.Removed,
+			Sync:        syncRecord,
+			Actor:       req.Actor,
+			Result:      &types.GitOpsSyncResult{SyncedAt: result.SyncedAt},
+			Expected:    plan.Expected,
+			Commit:      plan.Commit,
+			Files:       plan.Files,
+			Removed:     plan.Removed,
+			DeferDeploy: true,
 		})
 		switch {
-		case errors.Is(pullErr, common.ErrRedeployAfterSyncFailed):
 		case errors.Is(pullErr, common.ErrConflict) && !errors.Is(pullErr, common.ErrProjectLocked):
 			continue
 		case pullErr != nil:
@@ -1075,27 +1076,38 @@ func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, s
 			Result: result,
 			Plan:   plan,
 		}); recordErr != nil {
-			return result, errors.Join(pullErr, recordErr)
+			return result, recordErr
 		}
-		pushed, err := s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{
-			Baseline:  plan.Baseline,
-			RunFailed: pullErr != nil,
+		willDeployOnPush := hadBaseline || req.Resolve == types.GitOpsBackupConflictUseArcane
+		pushed, pushErr := s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{
+			Baseline: plan.Baseline,
+			BeforePush: func(pushCtx context.Context) error {
+				if !willDeployOnPush {
+					return nil
+				}
+				return s.sync.MarkPendingRedeploy(pushCtx, syncRecord)
+			},
 		})
-		if err != nil {
-			return pushed.Result, errors.Join(pullErr, err)
+		if pushErr != nil {
+			if pulled.NeedsDeploy {
+				deployErr := s.sync.Deploy(ctx, syncRecord, req.Actor, pulled.Result, plan.Commit)
+				return pushed.Result, errors.Join(pushErr, deployErr)
+			}
+			return pushed.Result, pushErr
 		}
 		var deployErr error
-		if !pulled.Deployed && pushed.Committed && (hadBaseline || req.Resolve == types.GitOpsBackupConflictUseArcane) {
-			deployErr = s.sync.Deploy(ctx, syncRecord, req.Actor, pushed.Result, pushed.Commit)
+		if pulled.NeedsDeploy || (pushed.Committed && willDeployOnPush) {
+			deployErr = s.sync.Deploy(ctx, syncRecord, req.Actor, pushed.Result, cmp.Or(pushed.Commit, plan.Commit))
+		} else if syncRecord.PendingRedeploy && !pendingBefore {
+			s.sync.ClearPendingRedeploy(ctx, syncRecord)
 		}
-		finalErr := errors.Join(pullErr, deployErr)
 		errMsg := cmp.Or(pulled.Result.Error, pushed.Result.Error)
 		return &types.GitOpsSyncResult{
 			SyncedAt: pushed.Result.SyncedAt,
 			Message:  pulled.Result.Message + "; " + pushed.Result.Message,
-			Success:  pushed.Result.Success && finalErr == nil,
+			Success:  pushed.Result.Success && deployErr == nil,
 			Error:    errMsg,
-		}, finalErr
+		}, deployErr
 	}
 	return pulled.Result, pullErr
 }

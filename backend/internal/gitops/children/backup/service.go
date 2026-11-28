@@ -74,9 +74,9 @@ type (
 	}
 
 	PerformOptions struct {
-		Baseline  map[string]string
-		Adopt     bool
-		RunFailed bool
+		Baseline   map[string]string
+		BeforePush func(context.Context) error
+		Adopt      bool
 	}
 
 	PerformResult struct {
@@ -124,7 +124,6 @@ type (
 		startedAt time.Time
 		commit    string
 		committed bool
-		runFailed bool
 	}
 )
 
@@ -596,7 +595,6 @@ func (
 		if recordBackupSuccessErr := s.recordBackupSuccess(ctx, localSync, snapshot, backupRecord{
 			startedAt: startedAt,
 			commit:    checkout.HeadCommit,
-			runFailed: opts.RunFailed,
 		}); recordBackupSuccessErr != nil {
 			return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureSnapshot, "Failed to record backup", recordBackupSuccessErr, false)
 		}
@@ -668,6 +666,12 @@ func (
 		request.Remove = append(request.Remove, legacyManifest)
 	}
 
+	if opts.BeforePush != nil {
+		if beforeErr := opts.BeforePush(ctx); beforeErr != nil {
+			return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureSnapshot, "Failed to record pending redeploy", beforeErr, false)
+		}
+	}
+
 	commit, committed, err := s.repoService.CommitAndPush(ctx, checkout, request, authConfig)
 	if err != nil {
 		if errors.Is(err, git.ErrPushRejected) {
@@ -680,7 +684,6 @@ func (
 		startedAt: startedAt,
 		commit:    commit,
 		committed: committed,
-		runFailed: opts.RunFailed,
 	}); recordCommittedBackupErr != nil {
 		return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureSnapshot, "Failed to record backup", recordCommittedBackupErr, false)
 	}
@@ -715,17 +718,13 @@ func (s *Service) recordBackupSuccess(ctx context.Context, localSync *projectpkg
 		return fmt.Errorf("failed to encode backup snapshot: %w", err)
 	}
 	updates := map[string]any{
-		"last_sync_status":     kit.Ternary(record.runFailed, "failed", "success"),
-		"last_backup_snapshot": string(hashes),
-		"backup_conflict":      false,
-		"synced_files":         projectpkg.EncodeSyncedFiles(paths),
-	}
-	if !record.runFailed {
-		maps.Copy(updates, map[string]any{
-			"last_sync_at":          now,
-			"last_sync_error":       nil,
-			"backup_failure_reason": nil,
-		})
+		"last_sync_status":      "success",
+		"last_sync_at":          now,
+		"last_sync_error":       nil,
+		"last_backup_snapshot":  string(hashes),
+		"backup_conflict":       false,
+		"backup_failure_reason": nil,
+		"synced_files":          projectpkg.EncodeSyncedFiles(paths),
 	}
 	if record.commit != "" {
 		updates["last_sync_commit"] = record.commit

@@ -82,18 +82,19 @@ type (
 	}
 
 	PullRequest struct {
-		Sync     *projectpkg.GitOpsSync
-		Actor    types.Actor
-		Result   *types.GitOpsSyncResult
-		Expected map[string]string
-		Commit   string
-		Files    []projects.SyncFile
-		Removed  []string
+		Sync        *projectpkg.GitOpsSync
+		Actor       types.Actor
+		Result      *types.GitOpsSyncResult
+		Expected    map[string]string
+		Commit      string
+		Files       []projects.SyncFile
+		Removed     []string
+		DeferDeploy bool
 	}
 
 	PullResult struct {
-		Result   *types.GitOpsSyncResult
-		Deployed bool
+		Result      *types.GitOpsSyncResult
+		NeedsDeploy bool
 	}
 
 	Params struct {
@@ -193,8 +194,33 @@ func (s *Service) Pull(ctx, stageCtx context.Context, req PullRequest) (PullResu
 			return recorded.ID == req.Sync.ID+":deploy"
 		}),
 	}
-	res, deployed, err := s.deliver(ctx, stageCtx, req.Sync, req.Actor, req.Result, source, req.Files)
-	return PullResult{Result: res, Deployed: deployed}, err
+	res, needsDeploy, err := s.deliver(ctx, stageCtx, req.Sync, req.Actor, req.Result, source, req.Files)
+	return PullResult{Result: res, NeedsDeploy: needsDeploy}, err
+}
+
+func (s *Service) MarkPendingRedeploy(ctx context.Context, sync *projectpkg.GitOpsSync) error {
+	if sync.TargetType == "swarm_stack" || sync.PendingRedeploy {
+		return nil
+	}
+	if !sync.RedeployAfterSync && !s.projectRunning(ctx, kit.FromPtr(sync.ProjectID)) {
+		return nil
+	}
+	if err := s.setPendingRedeploy(ctx, sync.ID, true); err != nil {
+		return fmt.Errorf("failed to record pending redeploy: %w", err)
+	}
+	sync.PendingRedeploy = true
+	return nil
+}
+
+func (s *Service) ClearPendingRedeploy(ctx context.Context, sync *projectpkg.GitOpsSync) {
+	if !sync.PendingRedeploy {
+		return
+	}
+	if err := s.setPendingRedeploy(ctx, sync.ID, false); err != nil {
+		slog.WarnContext(ctx, "Failed to clear unused pending redeploy after Git sync", "error", err, "syncId", sync.ID)
+		return
+	}
+	sync.PendingRedeploy = false
 }
 
 func (s *Service) Deploy(ctx context.Context, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, commit string) error {
@@ -217,7 +243,7 @@ func (s *Service) Deploy(ctx context.Context, sync *projectpkg.GitOpsSync, actor
 	if !pendingBefore && !shouldRedeploy && !sync.PullImageAfterSync {
 		return nil
 	}
-	if !pendingBefore && shouldRedeploy {
+	if shouldRedeploy {
 		if markErr := s.setPendingRedeploy(ctx, sync.ID, true); markErr != nil {
 			return s.failSync(ctx, result, sync, actor, "Failed to record pending redeploy", markErr)
 		}
@@ -233,7 +259,7 @@ func (s *Service) Deploy(ctx context.Context, sync *projectpkg.GitOpsSync, actor
 	if err = s.deployOnce(ctx, sync, project, actor, source); err != nil {
 		errMsg := err.Error()
 		result.Success = false
-		result.Message = "Backup pushed changes but redeploy failed"
+		result.Message = "Sync completed but redeploy failed"
 		result.Error = &errMsg
 		s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, commit, nil)
 		s.logError(ctx, sync, actor, errMsg)
@@ -261,6 +287,8 @@ func (s *Service) deliver(
 	if sync.PendingRedeploy && !pendingBefore && !errors.Is(err, common.ErrProjectRollbackFailed) && (err != nil || (!changed && !source.replay)) {
 		if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
 			slog.WarnContext(ctx, "Failed to clear unused pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
+		} else {
+			sync.PendingRedeploy = false
 		}
 	}
 	if err != nil {
@@ -276,9 +304,8 @@ func (s *Service) deliver(
 		}
 	}
 
-	deployed := false
-	if project != nil && (changed || source.replay || pendingBefore) {
-		deployed = true
+	needsDeploy := project != nil && (changed || source.replay || pendingBefore)
+	if needsDeploy && !kit.FromPtr(source.pull).DeferDeploy {
 		if err = s.deployOnce(ctx, sync, project, actor, source); err != nil {
 			// The files reached disk, so the row keeps their revision and list.
 			errMsg := err.Error()
@@ -286,7 +313,7 @@ func (s *Service) deliver(
 			result.Error = &errMsg
 			s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, source.commitHash, syncedFiles)
 			s.logError(ctx, sync, actor, errMsg)
-			return result, deployed, err
+			return result, needsDeploy, err
 		}
 	}
 
@@ -309,7 +336,7 @@ func (s *Service) deliver(
 		EnvironmentID: new(sync.EnvironmentID),
 	})
 	slog.InfoContext(ctx, "GitOps sync completed", "syncId", sync.ID, "target", targetName)
-	return result, deployed, nil
+	return result, needsDeploy, nil
 }
 
 func (s *Service) syncTarget(
@@ -589,6 +616,8 @@ func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectp
 		if redeployErr == nil || errors.Is(redeployErr, common.ErrSelfRedeployBlocked) {
 			if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
 				slog.WarnContext(ctx, "Failed to clear pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
+			} else {
+				sync.PendingRedeploy = false
 			}
 		}
 		if redeployErr != nil {
