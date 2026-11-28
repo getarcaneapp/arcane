@@ -159,7 +159,8 @@ func (c Configuration) RusticEnvironment(rootParts ...string) []string {
 		"AWS_REGION="+region,
 	)
 	if !c.ForcePathStyle {
-		environment = append(environment, "RUSTIC_REPO_OPT_ENABLE_VIRTUAL_HOST_STYLE=true")
+		// Rustic maps RUSTIC_REPO_OPT_* to kebab-case, whereas OpenDAL requires snake_case keys via OPENDAL_*.
+		environment = append(environment, "OPENDAL_ENABLE_VIRTUAL_HOST_STYLE=true")
 	}
 	return environment
 }
