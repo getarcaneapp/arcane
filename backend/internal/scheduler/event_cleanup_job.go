@@ -99,22 +99,21 @@ func (j *EventCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, erro
 			"deleted", deletedBuilds)
 	}
 
-	updateRetentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays")
-	if deletedUpdates, err := j.updaterService.PruneHistory(ctx, updateRetentionDays); err != nil {
+	if deletedUpdates, err := j.updaterService.PruneHistory(ctx, retentionDays); err != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("prune auto-update history: %w", err))
 	} else {
 		slog.InfoContext(ctx, "Auto-update history cleanup completed successfully",
 			"jobName", EventCleanupJobName,
-			"retentionDays", updateRetentionDays,
+			"retentionDays", retentionDays,
 			"deleted", deletedUpdates)
 	}
 
-	if deletedPatches, err := j.imageService.PrunePatchHistory(ctx, updateRetentionDays); err != nil {
+	if deletedPatches, err := j.imageService.PrunePatchHistory(ctx, retentionDays); err != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("prune image patch history: %w", err))
 	} else {
 		slog.InfoContext(ctx, "Image patch history cleanup completed successfully",
 			"jobName", EventCleanupJobName,
-			"retentionDays", updateRetentionDays,
+			"retentionDays", retentionDays,
 			"deleted", deletedPatches)
 	}
 

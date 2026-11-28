@@ -22,19 +22,6 @@ func GetRegistryAddress(imageRef string) (string, error) {
 	return kit.Ternary(addr == DefaultRegistryDomain, DefaultRegistryHost, addr), nil
 }
 
-func ExtractRegistryHost(imageRef string) string {
-	if i := strings.IndexByte(imageRef, '@'); i != -1 {
-		imageRef = imageRef[:i]
-	}
-
-	hostCandidate, _, found := strings.Cut(imageRef, "/")
-	if !found {
-		return "docker.io"
-	}
-
-	return kit.Ternary(!strings.Contains(hostCandidate, ".") && !strings.Contains(hostCandidate, ":") && hostCandidate != "localhost", "docker.io", hostCandidate)
-}
-
 func SplitRegistryURL(url string) (host, namespace string) {
 	url = strings.TrimSpace(url)
 	for _, scheme := range []string{"https://", "http://"} {

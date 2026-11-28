@@ -8,20 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExtractRegistryHost(t *testing.T) {
-	t.Run("explicit registry", func(t *testing.T) {
-		assert.Equal(t, "ghcr.io", ExtractRegistryHost("ghcr.io/getarcaneapp/arcane:latest"))
-	})
-
-	t.Run("implicit docker hub", func(t *testing.T) {
-		assert.Equal(t, "docker.io", ExtractRegistryHost("redis:latest"))
-	})
-
-	t.Run("digest reference", func(t *testing.T) {
-		assert.Equal(t, "registry.example.com", ExtractRegistryHost("registry.example.com/team/app@sha256:abcdef"))
-	})
-}
-
 func TestSplitRegistryURL(t *testing.T) {
 	tests := []struct{ in, host, namespace string }{
 		{"ghcr.io", "ghcr.io", ""},
