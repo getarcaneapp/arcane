@@ -18,8 +18,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	"getarcane.dev/arcane/v3/internal/environment"
+	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
+	"getarcane.dev/arcane/v3/pkg/activity"
 	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
 	"getarcane.dev/types/v3"
 )
@@ -32,6 +34,7 @@ type recordingRemoteTransport struct {
 	options      map[string][]types.GlobalProjectBackupOption
 	activities   map[string]types.ActivityStatus
 	failing      string
+	canceled     []string
 	mu           sync.Mutex
 }
 
@@ -75,6 +78,9 @@ func (t *recordingRemoteTransport) ProxyJSONRequestForEnvironment(_ context.Cont
 			return err
 		}
 		return json.Unmarshal(payload, out)
+	case method == http.MethodPost && strings.HasPrefix(path, "/api/agents/0/activities/") && strings.HasSuffix(path, "?action=cancel"):
+		t.canceled = append(t.canceled, env.ID+":"+path)
+		return nil
 	case method == http.MethodGet && strings.HasPrefix(path, "/api/agents/0/activities/"):
 		status := t.activities[env.ID]
 		if status == "" {
@@ -209,6 +215,49 @@ func TestGlobalProjectBackupFansOutToRemoteEnvironments(t *testing.T) {
 	require.Equal(t, types.RunStatusSucceeded, recorded["environment:agent-1"].Status)
 	require.Equal(t, "act-agent-1", recorded["environment:agent-1"].ActivityID)
 	require.Equal(t, types.RunStatusFailed, recorded["environment:agent-failed"].Status)
+	require.Empty(t, recorded["environment:agent-failed"].ActivityID)
 	require.Equal(t, "remote snapshot failed", recorded["environment:agent-failed"].Message)
 	require.Equal(t, types.RunStatusFailed, recorded["environment:agent-offline"].Status)
+
+	// Fresh agent accepts synced global policy with manager-supplied ID.
+	agentDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, agentDB.AutoMigrate(&backup.Policy{}, &s3.S3Destination{}))
+	agentStore := &database.DB{DB: agentDB}
+	agentSvc := NewService(Dependencies{
+		Policies:       backup.NewPolicies(agentStore),
+		S3Destinations: s3.NewS3DestinationService(agentStore, func(context.Context, string) error { return nil }),
+		Config:         &config.Config{AgentEnabled: true, LocalDockerEnabled: true},
+		Authorize:      func(context.Context, types.BackupRequester, ...string) error { return nil },
+		LatestRun:      func(context.Context, string, string) (*types.ProjectBackup, error) { return nil, nil },
+	})
+	synced, err := agentSvc.UpdateGlobalPolicies(t.Context(), types.BackupRequester{UserID: "agent"}, transport.syncRequests["agent-1"].Policies)
+	require.NoError(t, err)
+	require.Len(t, synced.Policies, 1)
+	require.Equal(t, policy.ID, synced.Policies[0].ID)
+
+	// User cancellation forwards cancel to the remote activity.
+	transport.activities["agent-1"] = types.ActivityStatusRunning
+	cancelCtx, cancel := context.WithCancelCause(t.Context())
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel(activity.ErrCanceled)
+	}()
+	terminal, waitErr := svc.waitForRemoteActivity(cancelCtx, environment.Environment{BaseModel: database.BaseModel{ID: "agent-1"}, Name: "agent-1"}, "act-agent-1")
+	require.True(t, terminal)
+	require.ErrorIs(t, waitErr, context.Canceled)
+	require.Contains(t, transport.canceled, "agent-1:/api/agents/0/activities/act-agent-1?action=cancel")
+
+	// Unauthorized caller cannot run a stopContainers policy on remote agents.
+	deniedSvc := NewService(Dependencies{
+		Engine:       engine,
+		Policies:     backup.NewPolicies(db),
+		Config:       &config.Config{LocalDockerEnabled: false},
+		Environments: envService,
+		Authorize: func(context.Context, types.BackupRequester, ...string) error {
+			return errors.New("forbidden")
+		},
+	})
+	_, err = deniedSvc.StartGlobal(t.Context(), types.Actor{ID: "u1"}, types.RunGlobalProjectBackupsRequest{PolicyID: policy.ID})
+	require.ErrorContains(t, err, "forbidden")
 }

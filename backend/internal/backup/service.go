@@ -168,13 +168,14 @@ type (
 	}
 
 	PolicyReconciliation[U any] struct {
-		UpdateID   func(U) string
-		Build      func(ctx context.Context, policy *Policy, update U) error
-		Unregister func(ctx context.Context, policyID string)
-		Reschedule func(ctx context.Context, policy *Policy)
-		Kind       string
-		SubjectID  string
-		Domain     string
+		UpdateID          func(U) string
+		Build             func(ctx context.Context, policy *Policy, update U) error
+		Unregister        func(ctx context.Context, policyID string)
+		Reschedule        func(ctx context.Context, policy *Policy)
+		Kind              string
+		SubjectID         string
+		Domain            string
+		AllowCreateWithID bool
 	}
 
 	ScheduledRemoteRequest struct {
@@ -1196,7 +1197,10 @@ func (p *Policies) Reconcile[U any](ctx context.Context, r PolicyReconciliation[
 			var ok bool
 			policy, ok = byID[updateID]
 			if !ok {
-				return fmt.Errorf("%s backup policy not found", r.Domain)
+				if !r.AllowCreateWithID {
+					return fmt.Errorf("%s backup policy not found", r.Domain)
+				}
+				policy = Policy{BaseModel: database.BaseModel{ID: updateID}, SubjectKind: r.Kind, SubjectID: r.SubjectID}
 			}
 			if _, duplicate := kept[updateID]; duplicate {
 				return fmt.Errorf("duplicate %s backup policy", r.Domain)

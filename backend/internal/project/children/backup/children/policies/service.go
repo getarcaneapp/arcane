@@ -544,9 +544,10 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 
 func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.BackupRequester, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
 	reconcile := backup.PolicyReconciliation[types.UpdateGlobalProjectBackupPolicy]{
-		Kind:     backup.PolicyProject,
-		Domain:   "global project",
-		UpdateID: func(update types.UpdateGlobalProjectBackupPolicy) string { return update.ID },
+		Kind:              backup.PolicyProject,
+		Domain:            "global project",
+		AllowCreateWithID: s.deps.Config.AgentEnabled,
+		UpdateID:          func(update types.UpdateGlobalProjectBackupPolicy) string { return update.ID },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateGlobalProjectBackupPolicy) error {
 			if !update.SelectionMode.Valid() {
 				return common.Classify(common.ErrValidation, errors.New("selectionMode must be all, allowlist, or blocklist"))
@@ -760,6 +761,21 @@ func (s *Service) StartGlobal(ctx context.Context, user types.Actor, request typ
 			return types.BackupRunAccepted{}, common.Classify(common.ErrNotFound, errors.New("global project backup policy not found"))
 		case !policy.Enabled:
 			return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("enable the backup policy before running it"))
+		}
+		if !s.deps.Config.AgentEnabled && policy.StopContainers {
+			remotes, remotesErr := s.deps.Environments.ListActiveRemoteEnvironments(ctx)
+			if remotesErr != nil {
+				return types.BackupRunAccepted{}, remotesErr
+			}
+			for _, remote := range remotes {
+				scoped := globalPolicyDTOForEnvironment(*policy, remote.ID)
+				if scoped.SelectionMode == types.SystemVolumeSelectionAllowlist && len(scoped.ProjectIDs) == 0 {
+					continue
+				}
+				if authErr := s.authorizeRemoteStop(ctx, requester, remote.ID); authErr != nil {
+					return types.BackupRunAccepted{}, authErr
+				}
+			}
 		}
 	}
 	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, globalAdmissionScope, policyID)
@@ -1043,7 +1059,10 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		}
 	}
 	if !s.deps.Config.AgentEnabled && len(remotes) > 0 {
-		s.backUpRemoteEnvironments(ctx, remotePolicy, remotes, previous, finished)
+		s.backUpRemoteEnvironments(ctx, input.Requester, remotePolicy, remotes, previous, finished)
+		if ctx.Err() != nil {
+			return types.SchedulerOutcome{}, ctx.Err()
+		}
 	}
 	return globalOutcome(finished, remoteDisabled), nil
 }
@@ -1081,8 +1100,16 @@ func (s *Service) resumeGlobalTargets(
 	return resumed, nil
 }
 
+func (s *Service) authorizeRemoteStop(ctx context.Context, requester types.BackupRequester, environmentID string) error {
+	return s.deps.Authorize(ctx, types.BackupRequester{
+		UserID:        requester.UserID,
+		APIKeyID:      requester.APIKeyID,
+		EnvironmentID: environmentID,
+	}, StopPermissions...)
+}
+
 func (s *Service) backUpRemoteEnvironments(
-	ctx context.Context, policy backup.Policy, remotes []environment.Environment, previous types.SchedulerRun, finished map[string]types.TargetOutcome,
+	ctx context.Context, requester *types.BackupRequester, policy backup.Policy, remotes []environment.Environment, previous types.SchedulerRun, finished map[string]types.TargetOutcome,
 ) {
 	allPolicies, listPoliciesErr := s.deps.Policies.List(ctx, backup.PolicyProject, "")
 	if listPoliciesErr != nil {
@@ -1119,7 +1146,7 @@ func (s *Service) backUpRemoteEnvironments(
 			if listPoliciesErr == nil {
 				s.syncGlobalPoliciesToEnvironment(ctx, remote, allPolicies)
 			}
-			s.backUpRemoteEnvironment(ctx, remote, policy.ID, scoped, existing, &mu, finished)
+			s.backUpRemoteEnvironment(ctx, requester, remote, policy.ID, scoped, existing, &mu, finished)
 			return nil
 		})
 	}
@@ -1129,6 +1156,7 @@ func (s *Service) backUpRemoteEnvironments(
 
 func (s *Service) backUpRemoteEnvironment(
 	ctx context.Context,
+	requester *types.BackupRequester,
 	remote environment.Environment,
 	policyID string,
 	scoped types.GlobalProjectBackupPolicy,
@@ -1137,13 +1165,20 @@ func (s *Service) backUpRemoteEnvironment(
 	finished map[string]types.TargetOutcome,
 ) {
 	targetID := "environment:" + remote.ID
-	activityID := ""
-	if existing.Status == types.RunStatusRunning {
-		activityID = existing.ActivityID
-	}
+	// Reuse any saved ActivityID whose terminal result is not yet known so retries poll instead of starting duplicates.
+	activityID := existing.ActivityID
 	var runErr error
+	terminal := false
 	if activityID == "" {
-		activityID, runErr = s.startRemoteGlobalBackup(ctx, remote, policyID, scoped)
+		if requester != nil {
+			runErr = s.deps.Engine.Authorize(ctx, *requester)
+			if runErr == nil && scoped.StopContainers {
+				runErr = s.authorizeRemoteStop(ctx, *requester, remote.ID)
+			}
+		}
+		if runErr == nil {
+			activityID, runErr = s.startRemoteGlobalBackup(ctx, remote, policyID, scoped)
+		}
 		if runErr == nil && activityID != "" {
 			mu.Lock()
 			if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
@@ -1158,17 +1193,26 @@ func (s *Service) backUpRemoteEnvironment(
 		}
 	}
 	if runErr == nil && activityID != "" {
-		runErr = s.waitForRemoteActivity(ctx, remote, activityID)
+		terminal, runErr = s.waitForRemoteActivity(ctx, remote, activityID)
+		// Shutdown leaves the remote activity running so startup recovery resumes polling it.
+		if ctx.Err() != nil && !errors.Is(context.Cause(ctx), activity.ErrCanceled) {
+			return
+		}
 	}
 	if runErr != nil {
 		slog.WarnContext(ctx, "Remote environment global project backup failed", "policyId", policyID, "environmentId", remote.ID, "activityId", activityID, "error", runErr)
+	}
+	// Clear ActivityID only after a terminal failure so transient poll errors keep the activity attached for retry.
+	savedActivityID := activityID
+	if runErr != nil && terminal {
+		savedActivityID = ""
 	}
 	outcome := types.TargetOutcome{
 		ResourceType: "environment",
 		ID:           targetID,
 		Status:       kit.Ternary(runErr != nil, types.RunStatusFailed, types.RunStatusSucceeded),
 		Message:      kit.Ternary(runErr != nil, fmt.Sprint(runErr), ""),
-		ActivityID:   activityID,
+		ActivityID:   savedActivityID,
 	}
 	mu.Lock()
 	finished[targetID] = outcome
@@ -1194,25 +1238,42 @@ func (s *Service) startRemoteGlobalBackup(ctx context.Context, remote environmen
 	return accepted.Data.ActivityID, nil
 }
 
-func (s *Service) waitForRemoteActivity(ctx context.Context, remote environment.Environment, activityID string) error {
+func (s *Service) cancelRemoteActivity(ctx context.Context, remote environment.Environment, activityID string) {
+	cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	cancelPath := fmt.Sprintf("/api/agents/0/activities/%s?action=cancel", url.PathEscape(activityID))
+	if err := s.deps.Environments.ProxyJSONRequestForEnvironment(cancelCtx, remote, http.MethodPost, cancelPath, nil, nil); err != nil {
+		slog.WarnContext(cancelCtx, "Failed to cancel remote project backup activity", "environmentId", remote.ID, "activityId", activityID, "error", err)
+	}
+}
+
+func (s *Service) waitForRemoteActivity(ctx context.Context, remote environment.Environment, activityID string) (bool, error) {
 	pollInterval := cmp.Or(s.remotePollInterval, defaultRemotePollInterval)
 	activityPath := fmt.Sprintf("/api/agents/0/activities/%s?limit=1", url.PathEscape(activityID))
 	for {
 		var detail types.ApiResponse[types.ActivityDetail]
 		if err := s.deps.Environments.ProxyJSONRequestForEnvironment(ctx, remote, http.MethodGet, activityPath, nil, &detail); err != nil {
-			return fmt.Errorf("poll remote project backup activity %s: %w", activityID, err)
+			if errors.Is(context.Cause(ctx), activity.ErrCanceled) {
+				s.cancelRemoteActivity(ctx, remote, activityID)
+				return true, ctx.Err()
+			}
+			return false, fmt.Errorf("poll remote project backup activity %s: %w", activityID, err)
 		}
 		switch detail.Data.Activity.Status {
 		case types.ActivityStatusSuccess:
-			return nil
+			return true, nil
 		case types.ActivityStatusFailed, types.ActivityStatusCancelled:
-			return errors.New(cmp.Or(kit.FromPtr(detail.Data.Activity.Error), detail.Data.Activity.LatestMessage, "remote project backup "+string(detail.Data.Activity.Status)))
+			return true, errors.New(cmp.Or(kit.FromPtr(detail.Data.Activity.Error), detail.Data.Activity.LatestMessage, "remote project backup "+string(detail.Data.Activity.Status)))
 		}
 		timer := time.NewTimer(pollInterval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ctx.Err()
+			if errors.Is(context.Cause(ctx), activity.ErrCanceled) {
+				s.cancelRemoteActivity(ctx, remote, activityID)
+				return true, ctx.Err()
+			}
+			return false, ctx.Err()
 		case <-timer.C:
 		}
 	}
