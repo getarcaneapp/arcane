@@ -51,6 +51,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/system/children/backup/children/snapshots"
+	"getarcane.dev/arcane/v3/internal/system/children/backup/children/stats"
 	"getarcane.dev/arcane/v3/internal/system/children/backup/children/volumes"
 	"getarcane.dev/arcane/v3/internal/volume"
 	activitylib "getarcane.dev/arcane/v3/pkg/activity"
@@ -133,6 +134,7 @@ type (
 		resolveRuntimeOptions RuntimeOptionsResolver
 		jobs                  *entityjobs.Registry
 		snapshots             *snapshots.Service
+		stats                 *stats.Service
 		volumes               *volumes.Service
 		environments          *environment.EnvironmentService
 		flow                  *flow.Engine
@@ -208,6 +210,18 @@ func NewService(deps Dependencies) *Service {
 			ProjectRoots:        deps.ProjectFolders,
 			RecoveryEnvironment: func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
 			GitWorkDirectory:    kit.FromPtr(deps.Config).GitWorkDir,
+		}),
+		stats: stats.NewService(stats.Dependencies{
+			Engine:         deps.Engine,
+			Docker:         deps.Docker,
+			Repository:     deps.Repository,
+			S3Destinations: deps.S3Destinations,
+			Settings:       deps.Settings,
+			RecoveryKeys:   deps.RecoveryKeys,
+			SystemRepositories: func(ctx context.Context, dockerClient *mobyClient.Client) ([]backup.Repository, error) {
+				return service.repositories(ctx, dockerClient, true)
+			},
+			History: deps.Store.ListHistory,
 		}),
 		volumes: volumes.NewService(volumes.Dependencies{
 			DB:             deps.DB,
@@ -384,6 +398,26 @@ func (s *Service) remoteRepository(ctx context.Context, destinationID string) (b
 			kit.Ternary(s.config.AgentEnabled, path.Join(backup.EnvironmentSystemRoot, s.settingsService.GetSettingsConfig().InstanceID.Value), "arcane-system-recovery"),
 		),
 	}, nil
+}
+
+func (s *Service) repositories(ctx context.Context, dockerClient *mobyClient.Client, readOnly bool) ([]backup.Repository, error) {
+	local, err := s.localRepository(ctx, dockerClient, readOnly)
+	if err != nil {
+		return nil, err
+	}
+	destinations, err := s.s3Destinations.ListAllS3Destinations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list S3 destinations: %w", err)
+	}
+	repositories := []backup.Repository{local}
+	for _, destination := range destinations {
+		remote, remoteErr := s.remoteRepository(ctx, destination.ID)
+		if remoteErr != nil {
+			return nil, remoteErr
+		}
+		repositories = append(repositories, remote)
+	}
+	return repositories, nil
 }
 
 func (s *Service) recoveryKey(ctx context.Context, supplied string) (string, error) {
@@ -1350,21 +1384,9 @@ func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) 
 		if err != nil {
 			return err
 		}
-		local, localErr := s.localRepository(ctx, dockerClient, false)
-		if localErr != nil {
-			return localErr
-		}
-		systemRepositories = append(systemRepositories, local)
-		destinations, listErr := s.s3Destinations.ListAllS3Destinations(ctx)
-		if listErr != nil {
-			return fmt.Errorf("failed to list S3 destinations for re-key: %w", listErr)
-		}
-		for _, destination := range destinations {
-			remote, remoteErr := s.remoteRepository(ctx, destination.ID)
-			if remoteErr != nil {
-				return remoteErr
-			}
-			systemRepositories = append(systemRepositories, remote)
+		systemRepositories, err = s.repositories(ctx, dockerClient, false)
+		if err != nil {
+			return err
 		}
 		if rekeyErr := s.engine.RekeyRepositories(ctx, dockerClient, systemRepositories, next, previous); rekeyErr != nil {
 			return rekeyErr

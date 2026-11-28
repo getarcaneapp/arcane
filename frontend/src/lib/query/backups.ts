@@ -4,11 +4,12 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { activityService } from '#lib/services/activity-service.js';
 import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 import { systemBackupService } from '#lib/services/system-backup-service.js';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import type { Activity } from '#lib/types/activity.js';
+import type { BackupStorageStats } from '#lib/types/backup.js';
 import type { SearchPaginationSortRequest } from '#lib/types/ui/pagination.js';
 import { hasPermission } from '#lib/utils/auth.js';
-import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
+import { fetchAcrossEnvironments, readEachEnvironment } from '#lib/utils/environments.js';
 
 export function systemBackupHistoryQuery(scope: string, requestOptions: SearchPaginationSortRequest) {
 	return queryOptions({
@@ -31,6 +32,16 @@ export function systemBackupHistoryQuery(scope: string, requestOptions: SearchPa
 				environmentStore.enabled
 			);
 		}
+	});
+}
+
+export function backupStorageStatsQuery(scope: string, environments: EnvironmentRef[]) {
+	return queryOptions({
+		queryKey: queryKeys.systemBackups.storageStats(scope),
+		queryFn: () =>
+			readEachEnvironment(environments, (id, config) => systemBackupService.getStorageStats(id, config), {
+				repositories: []
+			} satisfies BackupStorageStats)
 	});
 }
 

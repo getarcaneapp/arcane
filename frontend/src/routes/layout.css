@@ -912,6 +912,22 @@ input:autofill:active {
 	transition-property: stroke-dashoffset;
 }
 
+@utility bg-saved-hatch {
+	background-image: repeating-linear-gradient(
+		135deg,
+		color-mix(in oklab, var(--success) 60%, transparent) 0 4px,
+		color-mix(in oklab, var(--success) 28%, transparent) 4px 8px
+	);
+}
+
+@utility bg-deduplicated-hatch {
+	background-image: repeating-linear-gradient(
+		45deg,
+		color-mix(in oklab, var(--info) 55%, transparent) 0 4px,
+		color-mix(in oklab, var(--info) 25%, transparent) 4px 8px
+	);
+}
+
 @utility content-visibility-auto {
 	content-visibility: auto;
 	contain-intrinsic-size: auto 4rem;

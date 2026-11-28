@@ -677,6 +677,7 @@ func (s *SystemService) backupStore() systembackup.Store {
 			}
 			query = pagination.ApplyFilter(query, "type", params.Filters["type"])
 			query = pagination.ApplyFilter(query, "resource_type", params.Filters["resourceType"])
+			query = pagination.ApplyFilter(query, "status", params.Filters["status"])
 			var history []types.SystemVolumeBackupHistoryEntry
 			page, err := pagination.PaginateAndSortDB(pagination.QueryParams{
 				SearchQuery: params.SearchQuery,

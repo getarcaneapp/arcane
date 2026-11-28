@@ -71,6 +71,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import BackupScopeFields from './components/backup-scope-fields.svelte';
+	import BackupStorageCard from './components/backup-storage-card.svelte';
 	import SystemBackupScheduleDialog from './components/system-backup-schedule-dialog.svelte';
 	import SystemBackupTable from './components/system-backup-table.svelte';
 
@@ -1035,6 +1036,10 @@
 					</Alert.Description></Alert.Root
 				>
 			{/each}
+
+			{#if hasPermission('system-backups:read', GLOBAL_SCOPE)}
+				<BackupStorageCard environments={environmentStore.enabled} />
+			{/if}
 
 			<Tabs.Root value={activeTab} class="w-full">
 				<TabBar items={backupsTabItems} onValueChange={urlTab.select} />

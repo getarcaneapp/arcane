@@ -252,7 +252,7 @@ func TestAwaitRunWaitsForConflictingRun(t *testing.T) {
 	gate := runs.NewAdmission(runtime.Service(), t.Name())
 	require.NoError(t, gate.Register(runtime))
 	francistest.Start(t, runtime)
-	engine := NewEngine(gate, nil, nil)
+	engine := NewEngine(gate, nil, nil, nil)
 	ctx := t.Context()
 
 	held, admitted, err := engine.TryAcquireRun(ctx, SystemAdmissionScope, SystemAdmissionID)

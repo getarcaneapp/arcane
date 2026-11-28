@@ -7,6 +7,7 @@ import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import type {
+	BackupRepositoryStats,
 	SystemBackupDestination,
 	BackupManagementType,
 	UpdateBackupPolicy,
@@ -223,4 +224,57 @@ export function restorableVolumes(volumes: ProjectBackupVolume[]): ProjectVolume
 	return volumes
 		.filter((volume) => volume.included)
 		.map((volume) => ({ key: volume.key, name: volume.name, kind: volume.kind ?? 'named', included: true }));
+}
+
+export type BackupStorageTotals = {
+	storedBytes: number;
+	rawBytes: number;
+	logicalBytes: number;
+	snapshotCount: number;
+	repositoryCount: number;
+};
+
+export function backupStorageTotals(repositories: BackupRepositoryStats[]): BackupStorageTotals {
+	return repositories.reduce(
+		(totals, repository) => ({
+			storedBytes: totals.storedBytes + repository.storedBytes,
+			rawBytes: totals.rawBytes + repository.rawBytes,
+			logicalBytes: totals.logicalBytes + repository.logicalBytes,
+			snapshotCount: totals.snapshotCount + repository.snapshotCount,
+			repositoryCount: totals.repositoryCount + 1
+		}),
+		{ storedBytes: 0, rawBytes: 0, logicalBytes: 0, snapshotCount: 0, repositoryCount: 0 }
+	);
+}
+
+export type BackupStorageSegments = {
+	totalBytes: number;
+	storedBytes: number;
+	compressionBytes: number;
+	deduplicationBytes: number;
+};
+
+export function backupStorageSegments(
+	stats: Pick<BackupStorageTotals, 'storedBytes' | 'rawBytes' | 'logicalBytes'>
+): BackupStorageSegments {
+	const rawBytes = Math.max(stats.rawBytes, stats.storedBytes);
+	const totalBytes = Math.max(stats.logicalBytes, rawBytes);
+	return {
+		totalBytes,
+		storedBytes: stats.storedBytes,
+		compressionBytes: rawBytes - stats.storedBytes,
+		deduplicationBytes: totalBytes - rawBytes
+	};
+}
+
+export function backupStorageRatios(segments: BackupStorageSegments): { compression: number; deduplication: number } {
+	const rawBytes = segments.storedBytes + segments.compressionBytes;
+	return {
+		compression: segments.storedBytes > 0 ? rawBytes / segments.storedBytes : 1,
+		deduplication: rawBytes > 0 ? segments.totalBytes / rawBytes : 1
+	};
+}
+
+export function backupRepositoryKindLabel(kind: BackupRepositoryStats['kind']): string {
+	return kind === 'system' ? m.system() : m.volumes_and_projects();
 }

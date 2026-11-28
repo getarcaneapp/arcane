@@ -8,6 +8,7 @@ import (
 	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/middleware"
+	"getarcane.dev/arcane/v3/internal/system/children/backup/children/stats"
 	"getarcane.dev/arcane/v3/internal/system/children/backup/children/volumes"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -208,5 +209,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		h.Delete,
 	)
 
+	stats.RegisterRoutes(api, stats.NewHandler(kit.FromPtr(h.service).stats))
 	volumes.RegisterRoutes(api, volumes.NewHandler(kit.FromPtr(h.service).volumes, h.appCtx))
 }

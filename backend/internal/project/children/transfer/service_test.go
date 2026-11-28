@@ -438,7 +438,7 @@ func TestProjectTransfer(t *testing.T) {
 			return "arcane-backups"
 		},
 		Activities: activities,
-		Backups: backup.NewEngine(admission, nil, func(_ context.Context, requester types.BackupRequester) error {
+		Backups: backup.NewEngine(admission, nil, nil, func(_ context.Context, requester types.BackupRequester) error {
 			mu.Lock()
 			defer mu.Unlock()
 			if slices.Contains(denied, requester.Permission) {
@@ -941,7 +941,7 @@ func TestCreateTransferResource(t *testing.T) {
 				Environment: func(environmentID string) Environment {
 					return kit.Ternary(environmentID == "remote", target, source)
 				},
-				Backups: backup.NewEngine(nil, nil, func(_ context.Context, requester types.BackupRequester) error {
+				Backups: backup.NewEngine(nil, nil, nil, func(_ context.Context, requester types.BackupRequester) error {
 					if slices.Contains(tc.denied, requester.Permission) {
 						return errors.New("permission denied")
 					}

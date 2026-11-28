@@ -12,6 +12,7 @@ import type {
 	UpdateSystemVolumeBackupPolicy,
 	SystemVolumeBackupOption,
 	BackupRunAccepted,
+	BackupStorageStats,
 	RunSystemVolumeBackupsRequest
 } from '#lib/types/backup.js';
 import type { MessageResponse, Paginated } from '#lib/types/base.js';
@@ -54,6 +55,20 @@ class SystemBackupService extends BaseAPIService {
 			params: transformPaginationParams(options)
 		});
 		return response.data;
+	}
+
+	async getStorageStats(environmentId: string, config?: APIRequestConfig): Promise<BackupStorageStats> {
+		const response = await this.api.get<{ data: BackupStorageStats }>(`/agents/${environmentId}/backups/stats`, config);
+		return response.data.data;
+	}
+
+	async refreshStorageStats(environmentId: string, config?: APIRequestConfig): Promise<BackupStorageStats> {
+		const response = await this.api.post<{ data: BackupStorageStats }>(
+			`/agents/${environmentId}/backups/stats/refresh`,
+			undefined,
+			config
+		);
+		return response.data.data;
 	}
 
 	async getSystemVolumeConfig(): Promise<SystemVolumeBackupPolicyCollection> {

@@ -129,10 +129,14 @@ type (
 	Engine struct {
 		imageService *image.ImageService
 		admission    *runs.Admission
+		db           *database.DB
 		repositories map[string]chan struct{}
+		queuedStats  map[string]*queuedStats
 		// held parks admission a manual start won until the run that won it takes it over.
 		held      map[types.SchedulerAdmissionKey]heldLease
 		Authorize func(context.Context, types.BackupRequester) error
+		ctx       context.Context
+		cancel    context.CancelFunc
 		mu        sync.Mutex
 	}
 
@@ -349,12 +353,17 @@ func NewResourceRequester(ctx context.Context, requestedBy types.Actor, environm
 	}
 }
 
-func NewEngine(admission *runs.Admission, imageService *image.ImageService, authorize func(context.Context, types.BackupRequester) error) *Engine {
+func NewEngine(admission *runs.Admission, imageService *image.ImageService, db *database.DB, authorize func(context.Context, types.BackupRequester) error) *Engine {
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:forbidigo // Queued stats refreshes outlive requests and stop with the engine.
 	return &Engine{
 		imageService: imageService,
 		admission:    admission,
+		db:           db,
 		Authorize:    authorize,
+		ctx:          ctx,
+		cancel:       cancel,
 		repositories: make(map[string]chan struct{}),
+		queuedStats:  make(map[string]*queuedStats),
 		held:         make(map[types.SchedulerAdmissionKey]heldLease),
 	}
 }
@@ -416,6 +425,11 @@ func (e *Engine) Stop(ctx context.Context) error {
 	e.mu.Lock()
 	held := e.held
 	e.held = make(map[types.SchedulerAdmissionKey]heldLease)
+	e.cancel()
+	for id, queued := range e.queuedStats {
+		queued.timer.Stop()
+		delete(e.queuedStats, id)
+	}
 	e.mu.Unlock()
 	for _, held := range held {
 		held.lease.Release(ctx)
@@ -443,6 +457,7 @@ func (e *Engine) CreateSnapshot(ctx context.Context, dockerClient *mobyClient.Cl
 	if decoded.ID == "" {
 		return Snapshot{}, errors.New("rustic did not return a snapshot ID")
 	}
+	e.queueStats(ctx, dockerClient, repository, password)
 	return Snapshot{ID: decoded.ID, Size: decoded.Summary.TotalBytesProcessed}, nil
 }
 
@@ -779,7 +794,7 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *mobyClient.C
 		requested = append(requested, strings.ToLower(id))
 	}
 	requested = kit.Unique(requested)
-	unlock, err := e.lockRepository(ctx, repository.ID)
+	_, unlock, err := e.lockRepository(ctx, repository.ID, true)
 	if err != nil {
 		return err
 	}
@@ -810,16 +825,21 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *mobyClient.C
 		return nil
 	}
 	if len(listed) == 0 {
-		_, err = e.runContainer(ctx, dockerClient, repository, password, []string{"prune"})
-		return err
+		if _, err = e.runContainer(ctx, dockerClient, repository, password, []string{"prune"}); err != nil {
+			return err
+		}
+		e.queueStats(ctx, dockerClient, repository, password)
+		return nil
 	}
 	batches := slices.Collect(slices.Chunk(listed, DeletionBatchSize))
 	for i, batch := range batches {
 		command := slices.Concat([]string{"forget"}, kit.Ternary(i == len(batches)-1, []string{"--prune"}, nil), []string{"--"}, batch)
 		if _, err = e.runContainer(ctx, dockerClient, repository, password, command); err != nil {
+			e.queueStats(ctx, dockerClient, repository, password)
 			return err
 		}
 	}
+	e.queueStats(ctx, dockerClient, repository, password)
 	return nil
 }
 
@@ -827,8 +847,11 @@ func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *mob
 	if strings.TrimSpace(newPassword) == "" {
 		return errors.New("new repository password is required")
 	}
-	_, err := e.run(ctx, dockerClient, repository, currentPassword, []string{"key", "password", "--new-password", newPassword})
-	return err
+	if _, err := e.run(ctx, dockerClient, repository, currentPassword, []string{"key", "password", "--new-password", newPassword}); err != nil {
+		return err
+	}
+	e.queueStats(ctx, dockerClient, repository, newPassword)
+	return nil
 }
 
 func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, newPassword string, currentPasswords ...string) (string, error) {
@@ -915,7 +938,7 @@ func (e *Engine) Replicate(ctx context.Context, dockerClient *mobyClient.Client,
 }
 
 func (e *Engine) run(ctx context.Context, dockerClient *mobyClient.Client, repository Repository, password string, command []string, extraMounts ...mobyMount.Mount) (string, error) {
-	unlock, err := e.lockRepository(ctx, repository.ID)
+	_, unlock, err := e.lockRepository(ctx, repository.ID, true)
 	if err != nil {
 		return "", err
 	}
@@ -1049,38 +1072,39 @@ func AcceptedBackupID(run types.SchedulerRun) string {
 	return strings.TrimPrefix(run.Outcome.Targets[index].ID, "accepted:")
 }
 
-func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) {
+func (e *Engine) lockRepository(ctx context.Context, id string, wait bool) (context.Context, func(), error) {
 	if strings.TrimSpace(id) == "" {
-		return nil, errors.New("backup repository ID is required")
+		return nil, nil, errors.New("backup repository ID is required")
 	}
 	if ctx.Value(heldRepository{engine: e, id: id}) != nil {
-		return func() {}, nil
+		return ctx, func() {}, nil
 	}
-	e.mu.Lock()
-	lock := e.repositories[id]
-	if lock == nil {
-		lock = make(chan struct{}, 1)
-		e.repositories[id] = lock
-	}
-	e.mu.Unlock()
+	lock := e.repositoryLock(id)
 	select {
 	case lock <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	default:
+		if !wait {
+			return nil, nil, ErrRepositoryBusy
+		}
+		select {
+		case lock <- struct{}{}:
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		<-lock
-		return nil, err
+		return nil, nil, err
 	}
-	return func() { <-lock }, nil
+	return context.WithValue(ctx, heldRepository{engine: e, id: id}, true), sync.OnceFunc(func() { <-lock }), nil
 }
 
 func (e *Engine) HoldRepository(ctx context.Context, id string) (context.Context, func(), error) {
-	unlock, err := e.lockRepository(ctx, id)
-	if err != nil {
-		return nil, nil, err
-	}
-	return context.WithValue(ctx, heldRepository{engine: e, id: id}, true), sync.OnceFunc(unlock), nil
+	return e.lockRepository(ctx, id, true)
+}
+
+func (e *Engine) TryHoldRepository(ctx context.Context, id string) (context.Context, func(), error) {
+	return e.lockRepository(ctx, id, false)
 }
 
 func ValidatePolicyUpdate(ctx context.Context, domain string, update types.UpdateBackupPolicy, s3Service *s3.S3DestinationService) (types.UpdateBackupPolicy, error) {
@@ -1632,6 +1656,26 @@ func (r *VolumeRepository) Remote(ctx context.Context, destinationID, instanceID
 	}, nil
 }
 
+func (r *VolumeRepository) Repositories(ctx context.Context, dockerClient *mobyClient.Client, opts LocalRepositoryOptions) ([]Repository, error) {
+	local, err := r.Local(ctx, dockerClient, opts)
+	if err != nil {
+		return nil, err
+	}
+	destinations, err := r.deps.S3Destinations.ListAllS3Destinations(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list S3 destinations: %w", err)
+	}
+	repositories := []Repository{local}
+	for _, destination := range destinations {
+		remote, remoteErr := r.Remote(ctx, destination.ID, "")
+		if remoteErr != nil {
+			return nil, remoteErr
+		}
+		repositories = append(repositories, remote)
+	}
+	return repositories, nil
+}
+
 func (r *VolumeRepository) Password(ctx context.Context, dockerClient *mobyClient.Client, repositories ...Repository) (string, error) {
 	key, err := r.deps.RecoveryKeys.Get(ctx, RecoveryKeyConfigID)
 	if errors.Is(err, ErrRecoveryKeyNotConfigured) {
@@ -1688,21 +1732,9 @@ func (r *VolumeRepository) Rekey(ctx context.Context, previousKey, newKey string
 	if err != nil {
 		return err
 	}
-	local, err := r.Local(ctx, dockerClient, LocalRepositoryOptions{})
+	repositories, err := r.Repositories(ctx, dockerClient, LocalRepositoryOptions{})
 	if err != nil {
 		return err
-	}
-	repositories := []Repository{local}
-	destinations, listErr := r.deps.S3Destinations.ListAllS3Destinations(ctx)
-	if listErr != nil {
-		return fmt.Errorf("failed to list S3 destinations for re-key: %w", listErr)
-	}
-	for _, destination := range destinations {
-		remote, remoteErr := r.Remote(ctx, destination.ID, "")
-		if remoteErr != nil {
-			return remoteErr
-		}
-		repositories = append(repositories, remote)
 	}
 	if rekeyErr := r.deps.Engine.RekeyRepositories(ctx, dockerClient, repositories, newKey, previousKey, r.legacyPassword); rekeyErr != nil {
 		return rekeyErr

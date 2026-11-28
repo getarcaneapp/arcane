@@ -154,7 +154,7 @@ type (
 )
 
 func provideBackupEngine(p backupEngineParams) *backup.Engine {
-	engine := backup.NewEngine(p.Admission, p.ImageService, func(ctx context.Context, requester types.BackupRequester) error {
+	engine := backup.NewEngine(p.Admission, p.ImageService, p.DB, func(ctx context.Context, requester types.BackupRequester) error {
 		if p.Config.AgentEnabled && requester.UserID == "agent" && requester.APIKeyID == "" {
 			return nil
 		}

@@ -304,7 +304,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		cli, _ := mobyClient.New(mobyClient.WithHost("tcp://127.0.0.1:1"), mobyClient.WithAPIVersion("1.41"))
 		return cli
 	}())
-	engine := backup.NewEngine(gate, nil, func(context.Context, types.BackupRequester) error {
+	engine := backup.NewEngine(gate, nil, nil, func(context.Context, types.BackupRequester) error {
 		return nil
 	})
 	service := NewSystemService(SystemServiceParams{
