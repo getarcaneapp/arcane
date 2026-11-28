@@ -612,8 +612,13 @@ func TestProxyPermissionDeniedDefaultDeniesUnmappedRoute(t *testing.T) {
 
 	c := newProxyRequestContext(http.MethodPost, "/api/agents/"+proxyTestEnvID+"/unknown/resource")
 
-	allowed, _, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/unknown/resource")
+	allowed, status, _ := m.proxyPermitted(c, ps, proxyTestEnvID, "/unknown/resource")
 	require.False(t, allowed, "expected an unmapped proxied route to be denied by default")
+	require.Equal(t, http.StatusNotFound, status, "a route that does not exist is not a permission denial")
+
+	allowed, status, _ = m.proxyPermitted(c, ps, proxyTestEnvID, "/containers")
+	require.False(t, allowed)
+	require.Equal(t, http.StatusMethodNotAllowed, status, "a known path under another method is not a permission denial")
 }
 
 func TestEnvironmentMiddleware_AnswersInvalidActionWithOneError(t *testing.T) {

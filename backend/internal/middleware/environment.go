@@ -316,6 +316,14 @@ func (m *EnvironmentMiddleware) proxyPermitted(c *echo.Context, ps *authz.Permis
 		if param := m.matcher.ActionParam(method, suffix); param != "" {
 			return false, http.StatusBadRequest, "invalid " + param + ": " + req.URL.Query().Get(param)
 		}
+		// Still refused, but a route that does not exist is not a permission problem.
+		pathKnown, methodKnown := m.matcher.Registered(method, suffix)
+		if !pathKnown {
+			return false, http.StatusNotFound, "Not found"
+		}
+		if !methodKnown {
+			return false, http.StatusMethodNotAllowed, "Method not allowed"
+		}
 		slog.WarnContext(ctx, "Denying proxied request with no known permission mapping", "method", method, "path", suffix, "environmentId", envID)
 		return false, http.StatusForbidden, proxyForbiddenMessage
 	}
