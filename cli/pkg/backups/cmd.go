@@ -630,17 +630,21 @@ func (opts policiesUpdateOptions) requestFromFlags(cmd *cobra.Command, c *client
 		return req, fmt.Errorf("failed to get current backup policies: %w", err)
 	}
 
-	req.Policies = make([]types.UpdateBackupPolicy, len(current.Policies))
+	req.Policies = make([]types.UpdateSystemBackupPolicy, len(current.Policies))
 	targetIndex := -1
 	for i, p := range current.Policies {
-		req.Policies[i] = types.UpdateBackupPolicy{
-			ID:              p.ID,
-			Enabled:         p.Enabled,
-			Schedule:        p.Schedule,
-			RetentionCount:  p.RetentionCount,
-			LocalEnabled:    p.LocalEnabled,
-			S3Enabled:       p.S3Enabled,
-			S3DestinationID: p.S3DestinationID,
+		req.Policies[i] = types.UpdateSystemBackupPolicy{
+			SelectionMode:  p.SelectionMode,
+			EnvironmentIDs: p.EnvironmentIDs,
+			UpdateBackupPolicy: types.UpdateBackupPolicy{
+				ID:              p.ID,
+				Enabled:         p.Enabled,
+				Schedule:        p.Schedule,
+				RetentionCount:  p.RetentionCount,
+				LocalEnabled:    p.LocalEnabled,
+				S3Enabled:       p.S3Enabled,
+				S3DestinationID: p.S3DestinationID,
+			},
 		}
 		if opts.id != "" && p.ID == opts.id {
 			targetIndex = i
@@ -659,11 +663,13 @@ func (opts policiesUpdateOptions) requestFromFlags(cmd *cobra.Command, c *client
 			return req, errors.New("--schedule is required when creating a new backup policy")
 		}
 		// New policies default to local storage unless --local was set explicitly.
-		req.Policies = append(req.Policies, types.UpdateBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.local})
+		req.Policies = append(req.Policies, types.UpdateSystemBackupPolicy{
+			UpdateBackupPolicy: types.UpdateBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.local},
+		})
 		targetIndex = len(req.Policies) - 1
 	}
 
-	return req, opts.applyFlags(cmd, c, &req.Policies[targetIndex])
+	return req, opts.applyFlags(cmd, c, &req.Policies[targetIndex].UpdateBackupPolicy)
 }
 
 func (opts policiesUpdateOptions) applyFlags(cmd *cobra.Command, c *client.Client, target *types.UpdateBackupPolicy) error {

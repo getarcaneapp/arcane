@@ -4904,5 +4904,17 @@
   "rules_checked_against_project_volumes": "Rules are checked against each selected project's volumes at every run.",
   "all_project_volumes_description": "Include every volume of each project, including volumes added later.",
   "loading_backups": "Loading backups",
-  "loading_backups_description": "Checking stored snapshots, which can take a while for S3 destinations. The rest of the page is ready to use."
+  "loading_backups_description": "Checking stored snapshots, which can take a while for S3 destinations. The rest of the page is ready to use.",
+  "system_selection": "System selection",
+  "rules_checked_against_systems": "Rules are checked against active environments at every run.",
+  "all_systems": "All systems",
+  "all_systems_description": "Include the manager and every active agent, including agents added later.",
+  "include_only_selected_systems": "Back up only the checked environments.",
+  "include_all_except_selected_systems": "Back up every environment except the checked ones.",
+  "included_systems": "Included systems",
+  "excluded_systems": "Excluded systems",
+  "checked_systems_included": "Only checked environments are included when this backup runs.",
+  "checked_systems_excluded": "Checked environments are skipped when this backup runs.",
+  "search_systems": "Search systems...",
+  "no_matching_systems": "No matching systems."
 }

@@ -3,10 +3,15 @@ package policies
 import (
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"slices"
+	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -20,6 +25,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
+	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
@@ -28,6 +34,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
 )
@@ -39,6 +46,7 @@ type (
 		S3Destinations *s3.S3DestinationService
 		Settings       *settings.SettingsService
 		Config         *config.Config
+		Environments   *environment.EnvironmentService
 		ProjectName    func(ctx context.Context, projectID string) (string, error)
 		ListProjects   func(ctx context.Context) ([]types.ProjectReference, error)
 		ProjectVolumes func(ctx context.Context, projectID string, keys []string) ([]types.ProjectVolume, error)
@@ -61,11 +69,12 @@ type (
 	}
 
 	Service struct {
-		deps      Dependencies
-		jobs      *entityjobs.Registry
-		flow      *flow.Engine
-		scheduled *flow.Workflow
-		global    *flow.Workflow
+		deps               Dependencies
+		jobs               *entityjobs.Registry
+		flow               *flow.Engine
+		scheduled          *flow.Workflow
+		global             *flow.Workflow
+		remotePollInterval time.Duration
 	}
 
 	scheduledRun struct {
@@ -73,15 +82,17 @@ type (
 	}
 
 	globalRun struct {
-		Requester *types.BackupRequester `json:"requester,omitempty"`
-		PolicyID  string                 `json:"policyId"`
-		Claim     string                 `json:"claim,omitempty"`
+		Requester *types.BackupRequester           `json:"requester,omitempty"`
+		Policy    *types.GlobalProjectBackupPolicy `json:"policy,omitempty"`
+		PolicyID  string                           `json:"policyId"`
+		Claim     string                           `json:"claim,omitempty"`
 	}
 )
 
 const (
-	globalAdmissionScope     = "global-project-backup"
-	optionVolumesConcurrency = 8
+	globalAdmissionScope      = "global-project-backup"
+	optionVolumesConcurrency  = 8
+	defaultRemotePollInterval = 2 * time.Second
 )
 
 var (
@@ -201,12 +212,21 @@ func (s *Service) UpdatePolicies(ctx context.Context, requester types.BackupRequ
 				SubjectID:       projectID,
 				Schedule:        normalized.Schedule,
 				S3DestinationID: normalized.S3DestinationID,
-				Options:         backup.PolicyOptions{Volumes: volumes, SelectionMode: "", ProjectIDs: nil, VolumeSelection: "", ProjectVolumes: nil, VolumeNames: nil, IgnoreAnonymous: false},
-				RetentionCount:  normalized.RetentionCount,
-				Enabled:         normalized.Enabled,
-				StopContainers:  *cmp.Or(update.StopContainers, new(true)),
-				LocalEnabled:    normalized.LocalEnabled,
-				S3Enabled:       normalized.S3Enabled,
+				Options: backup.PolicyOptions{
+					Volumes:         volumes,
+					SelectionMode:   "",
+					EnvironmentIDs:  nil,
+					ProjectIDs:      nil,
+					VolumeSelection: "",
+					ProjectVolumes:  nil,
+					VolumeNames:     nil,
+					IgnoreAnonymous: false,
+				},
+				RetentionCount: normalized.RetentionCount,
+				Enabled:        normalized.Enabled,
+				StopContainers: *cmp.Or(update.StopContainers, new(true)),
+				LocalEnabled:   normalized.LocalEnabled,
+				S3Enabled:      normalized.S3Enabled,
 			}
 			return nil
 		},
@@ -286,7 +306,7 @@ func (s *Service) Managed(ctx context.Context) (map[string]bool, error) {
 		managed[policyID] = true
 	}
 	for _, policy := range globals {
-		for _, project := range selectProjects(policy, references) {
+		for _, project := range selectProjects(policy, s.localEnvironmentID(), references) {
 			managed[seriesID(policy.ID, project.ID)] = true
 		}
 	}
@@ -435,14 +455,60 @@ func seriesID(policyID, projectID string) string {
 	return types.GlobalProjectPolicyPrefix + policyID + ":" + projectID
 }
 
-func selectProjects(policy backup.Policy, references []types.ProjectReference) []types.ProjectReference {
+func (s *Service) localEnvironmentID() string {
+	if s.deps.Config.AgentEnabled {
+		return ""
+	}
+	return environment.LocalEnvironmentID
+}
+
+func parseProjectKey(raw string) (envID, projectID string) {
+	if env, id, ok := strings.Cut(raw, ":"); ok && env != "" && id != "" {
+		return env, id
+	}
+	return "", raw
+}
+
+func matchesProjectSelection(policy backup.Policy, envID, projectID string) bool {
+	listed := slices.ContainsFunc(policy.Options.ProjectIDs, func(entry string) bool {
+		entryEnv, entryID := parseProjectKey(entry)
+		if entryID != projectID {
+			return false
+		}
+		return entryEnv == envID || (entryEnv == "" && (envID == "" || envID == environment.LocalEnvironmentID))
+	})
+	return policy.Options.SelectionMode.Selects(listed)
+}
+
+func selectProjects(policy backup.Policy, envID string, references []types.ProjectReference) []types.ProjectReference {
 	selected := make([]types.ProjectReference, 0, len(references))
 	for _, project := range references {
-		if policy.Options.SelectionMode.Selects(slices.Contains(policy.Options.ProjectIDs, project.ID)) {
+		if matchesProjectSelection(policy, envID, project.ID) {
 			selected = append(selected, project)
 		}
 	}
 	return selected
+}
+
+func scopeProjectIDsForEnvironment(projectIDs []string, envID string) []string {
+	var scoped []string
+	for _, entry := range projectIDs {
+		entryEnv, entryID := parseProjectKey(entry)
+		if entryEnv == envID {
+			scoped = append(scoped, entryID)
+		}
+	}
+	return scoped
+}
+
+func scopeProjectVolumesForEnvironment(volumes []types.GlobalProjectVolume, envID string) []types.GlobalProjectVolume {
+	var scoped []types.GlobalProjectVolume
+	for _, volume := range volumes {
+		if volume.EnvironmentID == envID {
+			scoped = append(scoped, types.GlobalProjectVolume{ProjectID: volume.ProjectID, Key: volume.Key})
+		}
+	}
+	return scoped
 }
 
 func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackupPolicyCollection, error) {
@@ -479,9 +545,10 @@ func (s *Service) GlobalPolicies(ctx context.Context) (types.GlobalProjectBackup
 
 func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.BackupRequester, updates []types.UpdateGlobalProjectBackupPolicy) (types.GlobalProjectBackupPolicyCollection, error) {
 	reconcile := backup.PolicyReconciliation[types.UpdateGlobalProjectBackupPolicy]{
-		Kind:     backup.PolicyProject,
-		Domain:   "global project",
-		UpdateID: func(update types.UpdateGlobalProjectBackupPolicy) string { return update.ID },
+		Kind:              backup.PolicyProject,
+		Domain:            "global project",
+		AllowCreateWithID: s.deps.Config.AgentEnabled,
+		UpdateID:          func(update types.UpdateGlobalProjectBackupPolicy) string { return update.ID },
 		Build: func(ctx context.Context, policy *backup.Policy, update types.UpdateGlobalProjectBackupPolicy) error {
 			if !update.SelectionMode.Valid() {
 				return common.Classify(common.ErrValidation, errors.New("selectionMode must be all, allowlist, or blocklist"))
@@ -503,7 +570,7 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.Back
 			slices.Sort(projectIDs)
 			volumes := kit.Unique(update.Volumes)
 			slices.SortFunc(volumes, func(a, b types.GlobalProjectVolume) int {
-				return cmp.Or(cmp.Compare(a.ProjectID, b.ProjectID), cmp.Compare(a.Key, b.Key))
+				return cmp.Or(cmp.Compare(a.EnvironmentID, b.EnvironmentID), cmp.Compare(a.ProjectID, b.ProjectID), cmp.Compare(a.Key, b.Key))
 			})
 			*policy = backup.Policy{ //exhaustruct:enforce
 				BaseModel:       policy.BaseModel,
@@ -514,6 +581,7 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.Back
 				Options: backup.PolicyOptions{
 					Volumes:         nil,
 					SelectionMode:   update.SelectionMode,
+					EnvironmentIDs:  nil,
 					ProjectIDs:      kit.Ternary(update.SelectionMode == types.SystemVolumeSelectionAll, nil, projectIDs),
 					VolumeSelection: volumeSelection,
 					ProjectVolumes:  kit.Ternary(volumeSelection == types.SystemVolumeSelectionAll, nil, volumes),
@@ -536,15 +604,102 @@ func (s *Service) UpdateGlobalPolicies(ctx context.Context, requester types.Back
 	if runErr := s.deps.Policies.Reconcile(ctx, reconcile, updates); runErr != nil {
 		return types.GlobalProjectBackupPolicyCollection{}, runErr
 	}
+	if !s.deps.Config.AgentEnabled {
+		s.syncGlobalPoliciesToRemotes(ctx)
+	}
 	return s.GlobalPolicies(ctx)
 }
 
 func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBackupOption, error) {
-	references, err := s.deps.ListProjects(ctx)
+	var options []types.GlobalProjectBackupOption
+	if s.deps.Config.LocalDockerEnabled || s.deps.Config.AgentEnabled {
+		localTag := types.EnvironmentTag{}
+		if !s.deps.Config.AgentEnabled {
+			localTag = types.EnvironmentTag{
+				EnvironmentID:   environment.LocalEnvironmentID,
+				EnvironmentName: s.deps.Environments.ResolveEnvironmentName(ctx, environment.LocalEnvironmentID),
+			}
+		}
+		localOptions, err := s.localGlobalOptions(ctx, localTag)
+		if err != nil {
+			return nil, err
+		}
+		options = append(options, localOptions...)
+	}
+	if !s.deps.Config.AgentEnabled {
+		remotes, err := s.deps.Environments.ListActiveRemoteEnvironments(ctx)
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to list remote environments for global project backup options", "error", err)
+		} else if len(remotes) > 0 {
+			remoteResults := make([][]types.GlobalProjectBackupOption, len(remotes))
+			var group errgroup.Group
+			group.SetLimit(optionVolumesConcurrency)
+			for i, remote := range remotes {
+				group.Go(func() error {
+					var response types.ApiResponse[[]types.GlobalProjectBackupOption]
+					if proxyErr := s.deps.Environments.ProxyJSONRequestForEnvironment(ctx, remote, http.MethodGet, "/api/backups/projects/options", nil, &response); proxyErr != nil {
+						slog.WarnContext(ctx, "Failed to list project backup options from a remote environment", "environmentId", remote.ID, "error", proxyErr)
+						return nil
+					}
+					envTag := types.EnvironmentTag{
+						EnvironmentID:   remote.ID,
+						EnvironmentName: environment.DisplayName(remote.ID, remote.Name),
+					}
+					tagged := make([]types.GlobalProjectBackupOption, len(response.Data))
+					for j, option := range response.Data {
+						tagged[j] = types.GlobalProjectBackupOption{ //exhaustruct:enforce
+							EnvironmentTag: envTag,
+							ID:             option.ID,
+							Name:           option.Name,
+							Volumes:        option.Volumes,
+							Available:      option.Available,
+						}
+					}
+					remoteResults[i] = tagged
+					return nil
+				})
+			}
+			// Every goroutine logs its own proxy error and returns nil so one unreachable agent does not abort the rest.
+			_ = group.Wait()
+			for _, batch := range remoteResults {
+				options = append(options, batch...)
+			}
+		}
+	}
+	policies, err := s.deps.Policies.List(ctx, backup.PolicyProject, "")
 	if err != nil {
 		return nil, err
 	}
-	policies, err := s.deps.Policies.List(ctx, backup.PolicyProject, "")
+	for _, policy := range policies {
+		for _, entry := range policy.Options.ProjectIDs {
+			entryEnv, projectID := parseProjectKey(entry)
+			envID := entryEnv
+			if envID == "" && !s.deps.Config.AgentEnabled {
+				envID = environment.LocalEnvironmentID
+			}
+			if !slices.ContainsFunc(options, func(option types.GlobalProjectBackupOption) bool {
+				return option.ID == projectID && (option.EnvironmentID == envID || (option.EnvironmentID == "" && envID == ""))
+			}) {
+				var envTag types.EnvironmentTag
+				if envID != "" {
+					envTag = types.EnvironmentTag{
+						EnvironmentID:   envID,
+						EnvironmentName: s.deps.Environments.ResolveEnvironmentName(ctx, envID),
+					}
+				}
+				options = append(options, types.GlobalProjectBackupOption{
+					EnvironmentTag: envTag,
+					ID:             projectID,
+					Name:           projectID,
+				})
+			}
+		}
+	}
+	return options, nil
+}
+
+func (s *Service) localGlobalOptions(ctx context.Context, envTag types.EnvironmentTag) ([]types.GlobalProjectBackupOption, error) {
+	references, err := s.deps.ListProjects(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -558,10 +713,11 @@ func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBacku
 				slog.WarnContext(ctx, "Failed to list the volumes of a project for backup selection", "projectId", project.ID, "error", volumeErr)
 			}
 			options[i] = types.GlobalProjectBackupOption{ //exhaustruct:enforce
-				ID:        project.ID,
-				Name:      project.Name,
-				Volumes:   slices.DeleteFunc(volumes, func(volume types.ProjectVolume) bool { return !volume.Included && !volume.Missing }),
-				Available: volumeErr == nil,
+				EnvironmentTag: envTag,
+				ID:             project.ID,
+				Name:           project.Name,
+				Volumes:        slices.DeleteFunc(volumes, func(volume types.ProjectVolume) bool { return !volume.Included && !volume.Missing }),
+				Available:      volumeErr == nil,
 			}
 			return ctx.Err()
 		})
@@ -569,32 +725,63 @@ func (s *Service) GlobalOptions(ctx context.Context) ([]types.GlobalProjectBacku
 	if waitErr := group.Wait(); waitErr != nil {
 		return nil, waitErr
 	}
-	for _, policy := range policies {
-		for _, projectID := range policy.Options.ProjectIDs {
-			if !slices.ContainsFunc(options, func(option types.GlobalProjectBackupOption) bool { return option.ID == projectID }) {
-				options = append(options, types.GlobalProjectBackupOption{ID: projectID, Name: projectID})
-			}
-		}
-	}
 	return options, nil
 }
 
-func (s *Service) StartGlobal(ctx context.Context, user types.Actor, policyID string) (types.BackupRunAccepted, error) {
+func (s *Service) StartGlobal(ctx context.Context, user types.Actor, request types.RunGlobalProjectBackupsRequest) (types.BackupRunAccepted, error) {
 	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsCreate)
 	if err := s.deps.Engine.Authorize(ctx, requester); err != nil {
 		return types.BackupRunAccepted{}, err
 	}
-	if !s.deps.Config.LocalDockerEnabled {
-		return types.BackupRunAccepted{}, common.ErrLocalDockerDisabled
-	}
-	policy, err := s.deps.Policies.Get(ctx, backup.PolicyProject, "", policyID)
-	switch {
-	case err != nil:
-		return types.BackupRunAccepted{}, err
-	case policy == nil:
-		return types.BackupRunAccepted{}, common.Classify(common.ErrNotFound, errors.New("global project backup policy not found"))
-	case !policy.Enabled:
-		return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("enable the backup policy before running it"))
+	policyID := request.PolicyID
+	var forwarded *types.GlobalProjectBackupPolicy
+	if s.deps.Config.AgentEnabled && request.Policy != nil {
+		if !s.deps.Config.LocalDockerEnabled {
+			return types.BackupRunAccepted{}, common.ErrLocalDockerDisabled
+		}
+		policyID = cmp.Or(policyID, request.Policy.ID)
+		if policyID == "" {
+			return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("policyId is required"))
+		}
+		if !request.Policy.SelectionMode.Valid() {
+			return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("selectionMode must be all, allowlist, or blocklist"))
+		}
+		if !cmp.Or(request.Policy.VolumeSelection, types.SystemVolumeSelectionAll).Valid() {
+			return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("volumeSelectionMode must be all, allowlist, or blocklist"))
+		}
+		forwarded = request.Policy
+	} else {
+		if s.deps.Config.AgentEnabled && !s.deps.Config.LocalDockerEnabled {
+			return types.BackupRunAccepted{}, common.ErrLocalDockerDisabled
+		}
+		policy, err := s.deps.Policies.Get(ctx, backup.PolicyProject, "", policyID)
+		switch {
+		case err != nil:
+			return types.BackupRunAccepted{}, err
+		case policy == nil:
+			return types.BackupRunAccepted{}, common.Classify(common.ErrNotFound, errors.New("global project backup policy not found"))
+		case !policy.Enabled:
+			return types.BackupRunAccepted{}, common.Classify(common.ErrValidation, errors.New("enable the backup policy before running it"))
+		}
+		if !s.deps.Config.AgentEnabled && policy.StopContainers {
+			remotes, remotesErr := s.deps.Environments.ListActiveRemoteEnvironments(ctx)
+			if remotesErr != nil {
+				return types.BackupRunAccepted{}, remotesErr
+			}
+			for _, remote := range remotes {
+				scoped := globalPolicyDTOForEnvironment(*policy, remote.ID)
+				if scoped.SelectionMode == types.SystemVolumeSelectionAllowlist && len(scoped.ProjectIDs) == 0 {
+					continue
+				}
+				if authErr := s.deps.Authorize(ctx, types.BackupRequester{
+					UserID:        requester.UserID,
+					APIKeyID:      requester.APIKeyID,
+					EnvironmentID: remote.ID,
+				}, StopPermissions...); authErr != nil {
+					return types.BackupRunAccepted{}, authErr
+				}
+			}
+		}
 	}
 	lease, admitted, err := s.deps.Engine.TryAcquireRun(ctx, globalAdmissionScope, policyID)
 	switch {
@@ -605,6 +792,7 @@ func (s *Service) StartGlobal(ctx context.Context, user types.Actor, policyID st
 	}
 	input := globalRun{
 		Requester: &requester,
+		Policy:    forwarded,
 		PolicyID:  policyID,
 		Claim:     uuid.NewV7().String(),
 	}
@@ -644,7 +832,7 @@ func (s *Service) rescheduleGlobal(ctx context.Context, policy *backup.Policy) {
 			Metadata: database.JSON{"action": "scheduled_project_backups", "policyId": policyID, "schedule": policy.Schedule},
 		},
 		ScheduleFn:  s.deps.Policies.Schedule(policyID, policy.Schedule),
-		ShouldRunFn: func(context.Context) bool { return s.deps.Config.LocalDockerEnabled },
+		ShouldRunFn: func(context.Context) bool { return !s.deps.Config.AgentEnabled },
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.backUpGlobal(ctx, globalRun{PolicyID: policyID}, previous)
 		},
@@ -658,6 +846,134 @@ func (s *Service) runGlobal(ctx context.Context, t flow.Task) (any, error) {
 	}
 	previous, _ := jobcontext.Run(ctx)
 	return s.backUpGlobal(ctx, input, previous)
+}
+
+func policyFromGlobalDTO(dto types.GlobalProjectBackupPolicy) *backup.Policy {
+	return &backup.Policy{ //exhaustruct:enforce
+		BaseModel:       database.BaseModel{ID: dto.ID, CreatedAt: time.Time{}, UpdatedAt: nil},
+		SubjectKind:     backup.PolicyProject,
+		SubjectID:       "",
+		Schedule:        dto.Schedule,
+		S3DestinationID: dto.S3DestinationID,
+		Options: backup.PolicyOptions{ //exhaustruct:enforce
+			Volumes:         nil,
+			SelectionMode:   cmp.Or(dto.SelectionMode, types.SystemVolumeSelectionAll),
+			EnvironmentIDs:  nil,
+			ProjectIDs:      dto.ProjectIDs,
+			VolumeSelection: cmp.Or(dto.VolumeSelection, types.SystemVolumeSelectionAll),
+			ProjectVolumes:  dto.Volumes,
+			VolumeNames:     nil,
+			IgnoreAnonymous: false,
+		},
+		RetentionCount: dto.RetentionCount,
+		Enabled:        true,
+		StopContainers: dto.StopContainers,
+		LocalEnabled:   dto.LocalEnabled,
+		S3Enabled:      dto.S3Enabled,
+	}
+}
+
+func globalPolicyDTOForEnvironment(policy backup.Policy, envID string) types.GlobalProjectBackupPolicy {
+	selectionMode := cmp.Or(policy.Options.SelectionMode, types.SystemVolumeSelectionAll)
+	volumeSelection := cmp.Or(policy.Options.VolumeSelection, types.SystemVolumeSelectionAll)
+	return types.GlobalProjectBackupPolicy{ //exhaustruct:enforce
+		LastRun:           nil,
+		ID:                policy.ID,
+		Schedule:          policy.Schedule,
+		S3DestinationID:   policy.S3DestinationID,
+		S3DestinationName: "",
+		SelectionMode:     selectionMode,
+		ProjectIDs:        kit.Ternary(selectionMode == types.SystemVolumeSelectionAll, nil, scopeProjectIDsForEnvironment(policy.Options.ProjectIDs, envID)),
+		VolumeSelection:   volumeSelection,
+		Volumes:           kit.Ternary(volumeSelection == types.SystemVolumeSelectionAll, nil, scopeProjectVolumesForEnvironment(policy.Options.ProjectVolumes, envID)),
+		RetentionCount:    policy.RetentionCount,
+		Enabled:           policy.Enabled,
+		StopContainers:    policy.StopContainers,
+		LocalEnabled:      policy.LocalEnabled,
+		S3Enabled:         policy.S3Enabled,
+	}
+}
+
+func updateGlobalPolicyForEnvironment(policy backup.Policy, envID string) types.UpdateGlobalProjectBackupPolicy {
+	dto := globalPolicyDTOForEnvironment(policy, envID)
+	return types.UpdateGlobalProjectBackupPolicy{ //exhaustruct:enforce
+		StopContainers:  new(dto.StopContainers),
+		SelectionMode:   dto.SelectionMode,
+		ProjectIDs:      dto.ProjectIDs,
+		VolumeSelection: dto.VolumeSelection,
+		Volumes:         dto.Volumes,
+		UpdateBackupPolicy: types.UpdateBackupPolicy{ //exhaustruct:enforce
+			ID:              dto.ID,
+			Schedule:        dto.Schedule,
+			S3DestinationID: dto.S3DestinationID,
+			RetentionCount:  dto.RetentionCount,
+			Enabled:         dto.Enabled,
+			StopContainers:  dto.StopContainers,
+			LocalEnabled:    dto.LocalEnabled,
+			S3Enabled:       dto.S3Enabled,
+		},
+	}
+}
+
+func (s *Service) syncGlobalPoliciesToEnvironment(ctx context.Context, remote environment.Environment, all []backup.Policy) {
+	updates := make([]types.UpdateGlobalProjectBackupPolicy, 0, len(all))
+	for _, policy := range all {
+		updates = append(updates, updateGlobalPolicyForEnvironment(policy, remote.ID))
+	}
+	body, err := json.Marshal(types.UpdateGlobalProjectBackupPolicies{Policies: updates})
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to encode global project backup policies for remote environment", "environmentId", remote.ID, "error", err)
+		return
+	}
+	if err = s.deps.Environments.ProxyJSONRequestForEnvironment(ctx, remote, http.MethodPut, "/api/backups/projects/config", body, nil); err != nil {
+		slog.WarnContext(ctx, "Failed to sync global project backup policies to remote environment", "environmentId", remote.ID, "error", err)
+	}
+}
+
+func (s *Service) syncGlobalPoliciesToRemotes(ctx context.Context) {
+	all, err := s.deps.Policies.List(ctx, backup.PolicyProject, "")
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to load global project backup policies for remote sync", "error", err)
+		return
+	}
+	remotes, err := s.deps.Environments.ListActiveRemoteEnvironments(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to list remote environments for global project backup policy sync", "error", err)
+		return
+	}
+	if len(remotes) == 0 {
+		return
+	}
+	var group errgroup.Group
+	group.SetLimit(optionVolumesConcurrency)
+	for _, remote := range remotes {
+		group.Go(func() error {
+			s.syncGlobalPoliciesToEnvironment(ctx, remote, all)
+			return nil
+		})
+	}
+	// Every goroutine logs its own sync error and returns nil so one unreachable agent does not abort the rest.
+	_ = group.Wait()
+}
+
+func (s *Service) retainPolicy(ctx context.Context, policy *backup.Policy, projectID, series string, forwarded bool) {
+	if !forwarded {
+		s.retain(ctx, policy, projectID, series)
+		return
+	}
+	if policy.RetentionCount > 0 {
+		if err := s.deps.Expire(ctx, series, policy.RetentionCount); err != nil {
+			slog.ErrorContext(ctx, "Project backup retention failed", "projectId", projectID, "policyId", series, "error", err)
+		}
+	}
+}
+
+func (s *Service) loadGlobalPolicy(ctx context.Context, input globalRun) (*backup.Policy, bool, error) {
+	if s.deps.Config.AgentEnabled && input.Policy != nil {
+		return policyFromGlobalDTO(*input.Policy), true, nil
+	}
+	policy, err := s.deps.Policies.Get(ctx, backup.PolicyProject, "", input.PolicyID)
+	return policy, false, err
 }
 
 func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
@@ -674,7 +990,6 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 	}
 	defer lease.Release(context.WithoutCancel(ctx))
 	finished := make(map[string]types.TargetOutcome)
-	var resumed []string
 	report := func(projectID string, backupErr error) error {
 		status, message := types.RunStatusSucceeded, ""
 		switch {
@@ -688,6 +1003,79 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		finished[projectID] = outcome
 		return jobcontext.Progress(ctx, outcome)
 	}
+	resumed, err := s.resumeGlobalTargets(ctx, input, previous, finished, report)
+	if err != nil {
+		return types.SchedulerOutcome{}, err
+	}
+	policy, forwarded, err := s.loadGlobalPolicy(ctx, input)
+	if err != nil {
+		return types.SchedulerOutcome{}, err
+	}
+	if policy == nil || !policy.Enabled {
+		return canceled, nil
+	}
+	// Preserve the manager's policy before local S3 checks run so remote agents keep their own S3 decision.
+	remotePolicy := *policy
+	var remotes []environment.Environment
+	if !s.deps.Config.AgentEnabled {
+		var remotesErr error
+		if remotes, remotesErr = s.deps.Environments.ListActiveRemoteEnvironments(ctx); remotesErr != nil {
+			slog.WarnContext(ctx, "Failed to list remote environments for the global project backup", "policyId", policy.ID, "error", remotesErr)
+		}
+	}
+	sharedPolicy := len(remotes) > 0
+	for _, projectID := range resumed {
+		s.retainPolicy(ctx, policy, projectID, seriesID(input.PolicyID, projectID), forwarded)
+	}
+	remoteDisabled := false
+	localEnvID := s.localEnvironmentID()
+	if s.deps.Config.LocalDockerEnabled {
+		references, listErr := s.deps.ListProjects(ctx)
+		if listErr != nil {
+			return types.SchedulerOutcome{}, listErr
+		}
+		for _, project := range selectProjects(*policy, localEnvID, references) {
+			if _, done := finished[project.ID]; done {
+				continue
+			}
+			series := seriesID(input.PolicyID, project.ID)
+			backupErr := s.deps.BackUp(ctx, ScheduledBackup{
+				Requester: input.Requester,
+				ProjectID: project.ID,
+				SeriesID:  series,
+				Read: func(ctx context.Context) (types.CreateProjectBackupRequest, error) {
+					request, disabled, readErr := s.globalSettings(ctx, input, project.ID, sharedPolicy)
+					remoteDisabled = remoteDisabled || disabled
+					return request, readErr
+				},
+				Retain: func(ctx context.Context) { s.retainPolicy(ctx, policy, project.ID, series, forwarded) },
+			})
+			switch {
+			case errors.Is(backupErr, errPolicyGone):
+				return canceled, nil
+			case errors.Is(backupErr, backup.ErrRemoteOnlyDisabled) && !sharedPolicy:
+				return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+			case ctx.Err() != nil:
+				return types.SchedulerOutcome{}, ctx.Err()
+			}
+			if reportErr := report(project.ID, backupErr); reportErr != nil {
+				return types.SchedulerOutcome{}, reportErr
+			}
+		}
+	}
+	if !s.deps.Config.AgentEnabled && len(remotes) > 0 {
+		s.backUpRemoteEnvironments(ctx, input.Requester, remotePolicy, remotes, previous, finished)
+		if ctx.Err() != nil {
+			return types.SchedulerOutcome{}, ctx.Err()
+		}
+	}
+	return globalOutcome(finished, remoteDisabled), nil
+}
+
+func (s *Service) resumeGlobalTargets(
+	ctx context.Context, input globalRun, previous types.SchedulerRun, finished map[string]types.TargetOutcome, report func(string, error) error,
+) ([]string, error) {
+	var resumed []string
 	for _, target := range previous.Outcome.Targets {
 		if target.ResourceType != backup.ProjectTargetType {
 			continue
@@ -702,78 +1090,222 @@ func (s *Service) backUpGlobal(ctx context.Context, input globalRun, previous ty
 		resumeErr := s.deps.Resume(ctx, previous, input.Requester, target.RecoveryData)
 		switch {
 		case ctx.Err() != nil:
-			return types.SchedulerOutcome{}, ctx.Err()
+			return nil, ctx.Err()
 		case errors.Is(resumeErr, actor.ErrJobRejected):
-			return types.SchedulerOutcome{}, resumeErr
+			return nil, resumeErr
 		case errors.Is(resumeErr, backup.ErrBackupSettled):
 			continue
 		case resumeErr == nil:
 			resumed = append(resumed, target.ID)
 		}
 		if reportErr := report(target.ID, resumeErr); reportErr != nil {
-			return types.SchedulerOutcome{}, reportErr
+			return nil, reportErr
 		}
 	}
-	policy, err := s.deps.Policies.Get(ctx, backup.PolicyProject, "", input.PolicyID)
-	if err != nil {
-		return types.SchedulerOutcome{}, err
-	}
-	if policy == nil || !policy.Enabled {
-		return canceled, nil
-	}
-	for _, projectID := range resumed {
-		s.retain(ctx, policy, projectID, seriesID(input.PolicyID, projectID))
-	}
-	references, err := s.deps.ListProjects(ctx)
-	if err != nil {
-		return types.SchedulerOutcome{}, err
-	}
-	remoteDisabled := false
-	for _, project := range selectProjects(*policy, references) {
-		if _, done := finished[project.ID]; done {
-			continue
-		}
-		series := seriesID(input.PolicyID, project.ID)
-		backupErr := s.deps.BackUp(ctx, ScheduledBackup{
-			Requester: input.Requester,
-			ProjectID: project.ID,
-			SeriesID:  series,
-			Read: func(ctx context.Context) (types.CreateProjectBackupRequest, error) {
-				request, disabled, readErr := s.globalSettings(ctx, input, project.ID)
-				remoteDisabled = remoteDisabled || disabled
-				return request, readErr
-			},
-			Retain: func(ctx context.Context) { s.retain(ctx, policy, project.ID, series) },
-		})
-		switch {
-		case errors.Is(backupErr, errPolicyGone):
-			return canceled, nil
-		case errors.Is(backupErr, backup.ErrRemoteOnlyDisabled):
-			return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
-		case ctx.Err() != nil:
-			return types.SchedulerOutcome{}, ctx.Err()
-		}
-		if reportErr := report(project.ID, backupErr); reportErr != nil {
-			return types.SchedulerOutcome{}, reportErr
-		}
-	}
-	return globalOutcome(finished, remoteDisabled), nil
+	return resumed, nil
 }
 
-func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID string) (types.CreateProjectBackupRequest, bool, error) {
+func (s *Service) backUpRemoteEnvironments(
+	ctx context.Context, requester *types.BackupRequester, policy backup.Policy, remotes []environment.Environment, previous types.SchedulerRun, finished map[string]types.TargetOutcome,
+) {
+	allPolicies, listPoliciesErr := s.deps.Policies.List(ctx, backup.PolicyProject, "")
+	if listPoliciesErr != nil {
+		slog.WarnContext(ctx, "Failed to load global project backup policies before remote fan-out", "policyId", policy.ID, "error", listPoliciesErr)
+	}
+	var mu sync.Mutex
+	var group errgroup.Group
+	group.SetLimit(optionVolumesConcurrency)
+	for _, remote := range remotes {
+		targetID := "environment:" + remote.ID
+		var existing types.TargetOutcome
+		if idx := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
+			return target.ID == targetID
+		}); idx >= 0 {
+			existing = previous.Outcome.Targets[idx]
+		}
+		if existing.Status == types.RunStatusSucceeded {
+			mu.Lock()
+			finished[targetID] = existing
+			mu.Unlock()
+			continue
+		}
+		scoped := globalPolicyDTOForEnvironment(policy, remote.ID)
+		if scoped.SelectionMode == types.SystemVolumeSelectionAllowlist && len(scoped.ProjectIDs) == 0 {
+			if listPoliciesErr == nil {
+				group.Go(func() error {
+					s.syncGlobalPoliciesToEnvironment(ctx, remote, allPolicies)
+					return nil
+				})
+			}
+			continue
+		}
+		group.Go(func() error {
+			if listPoliciesErr == nil {
+				s.syncGlobalPoliciesToEnvironment(ctx, remote, allPolicies)
+			}
+			s.backUpRemoteEnvironment(ctx, requester, remote, policy.ID, scoped, existing, &mu, finished)
+			return nil
+		})
+	}
+	// Every goroutine records its own remote outcome and returns nil so one unreachable agent does not abort the rest.
+	_ = group.Wait()
+}
+
+func (s *Service) backUpRemoteEnvironment(
+	ctx context.Context,
+	requester *types.BackupRequester,
+	remote environment.Environment,
+	policyID string,
+	scoped types.GlobalProjectBackupPolicy,
+	existing types.TargetOutcome,
+	mu *sync.Mutex,
+	finished map[string]types.TargetOutcome,
+) {
+	targetID := "environment:" + remote.ID
+	// Reuse any saved ActivityID whose terminal result is not yet known so retries poll instead of starting duplicates.
+	activityID := existing.ActivityID
+	var runErr error
+	terminal := false
+	if activityID == "" {
+		if requester != nil {
+			runErr = s.deps.Engine.Authorize(ctx, *requester)
+			if runErr == nil && scoped.StopContainers {
+				runErr = s.deps.Authorize(ctx, types.BackupRequester{
+					UserID:        requester.UserID,
+					APIKeyID:      requester.APIKeyID,
+					EnvironmentID: remote.ID,
+				}, StopPermissions...)
+			}
+		}
+		if runErr == nil {
+			activityID, runErr = s.startRemoteGlobalBackup(ctx, remote, policyID, scoped)
+		}
+		if runErr == nil && activityID != "" {
+			mu.Lock()
+			if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
+				ResourceType: "environment",
+				ID:           targetID,
+				Status:       types.RunStatusRunning,
+				ActivityID:   activityID,
+			}); progressErr != nil {
+				slog.WarnContext(ctx, "Failed to record running remote project backup activity", "policyId", policyID, "environmentId", remote.ID, "activityId", activityID, "error", progressErr)
+			}
+			mu.Unlock()
+		}
+	}
+	if runErr == nil && activityID != "" {
+		terminal, runErr = s.waitForRemoteActivity(ctx, remote, activityID)
+		// Shutdown leaves the remote activity running so startup recovery resumes polling it.
+		if ctx.Err() != nil && !errors.Is(context.Cause(ctx), activity.ErrCanceled) {
+			return
+		}
+	}
+	if runErr != nil {
+		slog.WarnContext(ctx, "Remote environment global project backup failed", "policyId", policyID, "environmentId", remote.ID, "activityId", activityID, "error", runErr)
+	}
+	// Clear ActivityID only after a terminal failure so transient poll errors keep the activity attached for retry.
+	savedActivityID := activityID
+	if runErr != nil && terminal {
+		savedActivityID = ""
+	}
+	outcome := types.TargetOutcome{
+		ResourceType: "environment",
+		ID:           targetID,
+		Status:       kit.Ternary(runErr != nil, types.RunStatusFailed, types.RunStatusSucceeded),
+		Message:      kit.Ternary(runErr != nil, fmt.Sprint(runErr), ""),
+		ActivityID:   savedActivityID,
+	}
+	mu.Lock()
+	finished[targetID] = outcome
+	progressErr := jobcontext.Progress(ctx, outcome)
+	mu.Unlock()
+	if progressErr != nil {
+		slog.WarnContext(ctx, "Failed to record a remote environment global project backup", "policyId", policyID, "environmentId", remote.ID, "error", progressErr)
+	}
+}
+
+func (s *Service) startRemoteGlobalBackup(ctx context.Context, remote environment.Environment, policyID string, scoped types.GlobalProjectBackupPolicy) (string, error) {
+	body, err := json.Marshal(types.RunGlobalProjectBackupsRequest{
+		PolicyID: policyID,
+		Policy:   &scoped,
+	})
+	if err != nil {
+		return "", err
+	}
+	var accepted types.ApiResponse[types.BackupRunAccepted]
+	if proxyErr := s.deps.Environments.ProxyJSONRequestForEnvironment(ctx, remote, http.MethodPost, "/api/backups/projects/run", body, &accepted); proxyErr != nil {
+		return "", proxyErr
+	}
+	return accepted.Data.ActivityID, nil
+}
+
+func (s *Service) cancelRemoteActivity(ctx context.Context, remote environment.Environment, activityID string) {
+	cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	cancelPath := fmt.Sprintf("/api/agents/0/activities/%s?action=cancel", url.PathEscape(activityID))
+	if err := s.deps.Environments.ProxyJSONRequestForEnvironment(cancelCtx, remote, http.MethodPost, cancelPath, nil, nil); err != nil {
+		slog.WarnContext(cancelCtx, "Failed to cancel remote project backup activity", "environmentId", remote.ID, "activityId", activityID, "error", err)
+	}
+}
+
+func (s *Service) waitForRemoteActivity(ctx context.Context, remote environment.Environment, activityID string) (bool, error) {
+	pollInterval := cmp.Or(s.remotePollInterval, defaultRemotePollInterval)
+	activityPath := fmt.Sprintf("/api/agents/0/activities/%s?limit=1", url.PathEscape(activityID))
+	for {
+		var detail types.ApiResponse[types.ActivityDetail]
+		if err := s.deps.Environments.ProxyJSONRequestForEnvironment(ctx, remote, http.MethodGet, activityPath, nil, &detail); err != nil {
+			if errors.Is(context.Cause(ctx), activity.ErrCanceled) {
+				s.cancelRemoteActivity(ctx, remote, activityID)
+				return true, ctx.Err()
+			}
+			// A 404 confirms the completed activity was cleared or pruned on the agent; release the saved ID so retry can recover.
+			if statusErr, ok := errors.AsType[*agent.StatusError](err); (ok && statusErr.StatusCode == http.StatusNotFound) || errors.Is(err, common.ErrNotFound) {
+				return true, fmt.Errorf("poll remote project backup activity %s: %w", activityID, err)
+			}
+			return false, fmt.Errorf("poll remote project backup activity %s: %w", activityID, err)
+		}
+		switch detail.Data.Activity.Status {
+		case types.ActivityStatusSuccess:
+			return true, nil
+		case types.ActivityStatusFailed, types.ActivityStatusCancelled:
+			return true, errors.New(cmp.Or(kit.FromPtr(detail.Data.Activity.Error), detail.Data.Activity.LatestMessage, "remote project backup "+string(detail.Data.Activity.Status)))
+		}
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			if errors.Is(context.Cause(ctx), activity.ErrCanceled) {
+				s.cancelRemoteActivity(ctx, remote, activityID)
+				return true, ctx.Err()
+			}
+			return false, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID string, sharedPolicy bool) (types.CreateProjectBackupRequest, bool, error) {
 	if input.Requester != nil {
 		if err := s.deps.Engine.Authorize(ctx, *input.Requester); err != nil {
 			return types.CreateProjectBackupRequest{}, false, err
 		}
 	}
-	policy, err := s.deps.Policies.Get(ctx, backup.PolicyProject, "", input.PolicyID)
-	if err != nil {
-		return types.CreateProjectBackupRequest{}, false, err
+	forwarded := s.deps.Config.AgentEnabled && input.Policy != nil
+	var policy *backup.Policy
+	if forwarded {
+		policy = policyFromGlobalDTO(*input.Policy)
+	} else {
+		var err error
+		policy, err = s.deps.Policies.Get(ctx, backup.PolicyProject, "", input.PolicyID)
+		if err != nil {
+			return types.CreateProjectBackupRequest{}, false, err
+		}
+		if policy == nil || !policy.Enabled {
+			return types.CreateProjectBackupRequest{}, false, errPolicyGone
+		}
 	}
-	if policy == nil || !policy.Enabled {
-		return types.CreateProjectBackupRequest{}, false, errPolicyGone
-	}
-	if !policy.Options.SelectionMode.Selects(slices.Contains(policy.Options.ProjectIDs, projectID)) {
+	envID := s.localEnvironmentID()
+	if !matchesProjectSelection(*policy, envID, projectID) {
 		return types.CreateProjectBackupRequest{}, false, errProjectSkipped
 	}
 	own, err := s.deps.Policies.HasEnabled(ctx, backup.PolicyProject, projectID)
@@ -783,11 +1315,19 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 	if own {
 		return types.CreateProjectBackupRequest{}, false, errProjectSkipped
 	}
-	volumes, err := s.globalVolumes(ctx, policy.Options, projectID)
+	volumes, err := s.globalVolumes(ctx, policy.Options, envID, projectID)
 	if err != nil {
 		return types.CreateProjectBackupRequest{}, false, err
 	}
-	disabled, err := s.checkRemote(ctx, policy)
+	var disabled bool
+	if forwarded || sharedPolicy {
+		disabled, err = s.deps.Policies.ObserveRemote(ctx, policy, backup.RemoteCheck{
+			S3Destinations: s.deps.S3Destinations,
+			Settings:       s.deps.Settings,
+		})
+	} else {
+		disabled, err = s.checkRemote(ctx, policy)
+	}
 	if err != nil {
 		return types.CreateProjectBackupRequest{}, disabled, err
 	}
@@ -799,7 +1339,7 @@ func (s *Service) globalSettings(ctx context.Context, input globalRun, projectID
 	}, disabled, nil
 }
 
-func (s *Service) globalVolumes(ctx context.Context, options backup.PolicyOptions, projectID string) ([]string, error) {
+func (s *Service) globalVolumes(ctx context.Context, options backup.PolicyOptions, envID, projectID string) ([]string, error) {
 	selection := cmp.Or(options.VolumeSelection, types.SystemVolumeSelectionAll)
 	if selection == types.SystemVolumeSelectionAll {
 		return nil, nil
@@ -810,7 +1350,12 @@ func (s *Service) globalVolumes(ctx context.Context, options backup.PolicyOption
 	}
 	keys := make([]string, 0, len(resolved))
 	for _, volume := range resolved {
-		listed := slices.Contains(options.ProjectVolumes, types.GlobalProjectVolume{ProjectID: projectID, Key: volume.Key})
+		listed := slices.ContainsFunc(options.ProjectVolumes, func(entry types.GlobalProjectVolume) bool {
+			if entry.ProjectID != projectID || entry.Key != volume.Key {
+				return false
+			}
+			return entry.EnvironmentID == envID || (entry.EnvironmentID == "" && (envID == "" || envID == environment.LocalEnvironmentID))
+		})
 		if volume.Included && selection.Selects(listed) {
 			keys = append(keys, volume.Key)
 		}

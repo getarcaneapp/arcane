@@ -312,7 +312,7 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 		SubjectID:       volumeName,
 		Schedule:        policy.Schedule,
 		S3DestinationID: policy.S3DestinationID,
-		Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil, VolumeSelection: "", ProjectVolumes: nil, VolumeNames: nil, IgnoreAnonymous: false},
+		Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", EnvironmentIDs: nil, ProjectIDs: nil, VolumeSelection: "", ProjectVolumes: nil, VolumeNames: nil, IgnoreAnonymous: false},
 		RetentionCount:  policy.RetentionCount,
 		Enabled:         true,
 		StopContainers:  policy.StopContainers,

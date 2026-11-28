@@ -339,9 +339,9 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN", storedKey)
 
-	collection, err := service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{
-		{Enabled: true, Schedule: "0 2 * * *", RetentionCount: 5, LocalEnabled: true},
-		{Enabled: true, Schedule: "0 14 * * *", RetentionCount: 30, LocalEnabled: true},
+	collection, err := service.backup.UpdatePolicies(t.Context(), []types.UpdateSystemBackupPolicy{
+		{UpdateBackupPolicy: types.UpdateBackupPolicy{Enabled: true, Schedule: "0 2 * * *", RetentionCount: 5, LocalEnabled: true}},
+		{UpdateBackupPolicy: types.UpdateBackupPolicy{Enabled: true, Schedule: "0 14 * * *", RetentionCount: 30, LocalEnabled: true}},
 	})
 	require.NoError(t, err)
 	require.True(t, collection.RecoveryKeyStored)
@@ -349,8 +349,8 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.Len(t, jobScheduler.jobs, 2)
 
 	firstID := collection.Policies[0].ID
-	collection, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{
-		ID: firstID, Enabled: true, Schedule: "*/30 * * * *", RetentionCount: 9, LocalEnabled: true,
+	collection, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateSystemBackupPolicy{{
+		UpdateBackupPolicy: types.UpdateBackupPolicy{ID: firstID, Enabled: true, Schedule: "*/30 * * * *", RetentionCount: 9, LocalEnabled: true},
 	}})
 	require.NoError(t, err)
 	require.Len(t, collection.Policies, 1)
@@ -414,8 +414,10 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 		Policies:       backup.NewPolicies(db),
 	})
 
-	_, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{
-		Enabled: true, Schedule: "0 2 * * *", RetentionCount: 7, LocalEnabled: true,
+	_, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateSystemBackupPolicy{{
+		UpdateBackupPolicy: types.UpdateBackupPolicy{
+			Enabled: true, Schedule: "0 2 * * *", RetentionCount: 7, LocalEnabled: true,
+		},
 	}})
 	require.ErrorContains(t, err, "configure a recovery key")
 }

@@ -260,7 +260,7 @@ func TestBackUpRemoteEnvironments(t *testing.T) {
 		recorded[target.ID] = target
 		return nil
 	})
-	service.backUpRemoteEnvironments(ctx, run, "")
+	service.backUpRemoteEnvironments(ctx, run, "", types.SystemVolumeSelectionAll, nil)
 
 	require.Equal(t, []string{"POST /api/backups", "POST /api/backups"}, transport.paths)
 	require.Equal(t, map[string]types.CreateSystemBackupRequest{
@@ -282,6 +282,30 @@ func TestBackUpRemoteEnvironments(t *testing.T) {
 		"environment:env-offline": {ResourceType: "environment", ID: "environment:env-offline", Status: types.RunStatusFailed, Message: "agent is not connected"},
 	}, recorded)
 
+	scopedTransport := &recordingTransport{calls: map[string]types.CreateSystemBackupRequest{}}
+	service.environments = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+		DB:              db,
+		RemoteTransport: scopedTransport,
+	})
+	service.backUpRemoteEnvironments(t.Context(), run, "", types.SystemVolumeSelectionAllowlist, []string{"env-new"})
+	require.Equal(t, []string{"env-new"}, func() []string {
+		ids := make([]string, 0, len(scopedTransport.calls))
+		for id := range scopedTransport.calls {
+			ids = append(ids, id)
+		}
+		return ids
+	}())
+
+	blocklistTransport := &recordingTransport{calls: map[string]types.CreateSystemBackupRequest{}}
+	service.environments = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
+		DB:              db,
+		RemoteTransport: blocklistTransport,
+	})
+	service.backUpRemoteEnvironments(t.Context(), run, "", types.SystemVolumeSelectionBlocklist, []string{"env-offline", "env-done"})
+	require.Contains(t, blocklistTransport.calls, "env-new")
+	require.NotContains(t, blocklistTransport.calls, "env-offline")
+	require.NotContains(t, blocklistTransport.calls, "env-done")
+
 	agentTransport := &recordingTransport{calls: map[string]types.CreateSystemBackupRequest{}}
 	agentService := NewService(Dependencies{
 		Config:       &config.Config{AgentEnabled: true},
@@ -291,6 +315,6 @@ func TestBackUpRemoteEnvironments(t *testing.T) {
 		DB:              db,
 		RemoteTransport: agentTransport,
 	})
-	agentService.backUpRemoteEnvironments(t.Context(), run, "")
+	agentService.backUpRemoteEnvironments(t.Context(), run, "", types.SystemVolumeSelectionAll, nil)
 	require.Empty(t, agentTransport.calls)
 }

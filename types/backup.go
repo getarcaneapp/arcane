@@ -83,15 +83,17 @@ type (
 	}
 
 	SystemBackupPolicy struct {
-		LastRun           *SystemBackupRun `json:"lastRun,omitempty"`
-		ID                string           `json:"id"`
-		Schedule          string           `json:"schedule"`
-		S3DestinationID   string           `json:"s3DestinationId,omitempty"`
-		S3DestinationName string           `json:"s3DestinationName,omitempty"`
-		RetentionCount    int              `json:"retentionCount"`
-		Enabled           bool             `json:"enabled"`
-		LocalEnabled      bool             `json:"localEnabled"`
-		S3Enabled         bool             `json:"s3Enabled"`
+		LastRun           *SystemBackupRun          `json:"lastRun,omitempty"`
+		ID                string                    `json:"id"`
+		Schedule          string                    `json:"schedule"`
+		S3DestinationID   string                    `json:"s3DestinationId,omitempty"`
+		S3DestinationName string                    `json:"s3DestinationName,omitempty"`
+		SelectionMode     SystemVolumeSelectionMode `json:"selectionMode"`
+		EnvironmentIDs    []string                  `json:"environmentIds"`
+		RetentionCount    int                       `json:"retentionCount"`
+		Enabled           bool                      `json:"enabled"`
+		LocalEnabled      bool                      `json:"localEnabled"`
+		S3Enabled         bool                      `json:"s3Enabled"`
 	}
 
 	UpdateBackupPolicy struct {
@@ -105,6 +107,12 @@ type (
 		S3Enabled       bool   `json:"s3Enabled"`
 	}
 
+	UpdateSystemBackupPolicy struct {
+		SelectionMode  SystemVolumeSelectionMode `json:"selectionMode,omitempty"`
+		EnvironmentIDs []string                  `json:"environmentIds,omitempty"`
+		UpdateBackupPolicy
+	}
+
 	SystemBackupPolicyCollection struct {
 		Policies          []SystemBackupPolicy `json:"policies"`
 		RecoveryKeyStored bool                 `json:"recoveryKeyStored"`
@@ -113,7 +121,13 @@ type (
 	}
 
 	UpdateSystemBackupPolicies struct {
-		Policies []UpdateBackupPolicy `json:"policies"`
+		Policies []UpdateSystemBackupPolicy `json:"policies"`
+	}
+
+	SystemBackupOption struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Available bool   `json:"available"`
 	}
 
 	SystemBackupRecoveryKeyStatus struct {
@@ -125,11 +139,13 @@ type (
 	}
 
 	CreateSystemBackupRequest struct {
-		ID              string                  `json:"id,omitempty"`
-		Destination     SystemBackupDestination `json:"destination,omitempty"`
-		S3DestinationID string                  `json:"s3DestinationId,omitempty"`
-		RecoveryKey     string                  `json:"recoveryKey,omitempty"`
-		PolicyID        string                  `json:"policyId,omitempty"`
+		ID              string                    `json:"id,omitempty"`
+		Destination     SystemBackupDestination   `json:"destination,omitempty"`
+		S3DestinationID string                    `json:"s3DestinationId,omitempty"`
+		RecoveryKey     string                    `json:"recoveryKey,omitempty"`
+		PolicyID        string                    `json:"policyId,omitempty"`
+		SelectionMode   SystemVolumeSelectionMode `json:"selectionMode,omitempty"`
+		EnvironmentIDs  []string                  `json:"environmentIds,omitempty"`
 	}
 
 	RestoreSystemBackupFilesRequest struct {

@@ -75,6 +75,20 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
+			OperationID: "list-system-backup-options",
+			Method:      http.MethodGet,
+			Path:        "/backups/options",
+			Summary:     "List environments available to system backups",
+			Tags: []string{
+				"System Backups",
+			},
+		},
+		authz.PermSystemBackupsRead,
+		h.ListOptions,
+	)
+	middleware.RegisterWithPermission(
+		api,
+		huma.Operation{
 			OperationID: "update-system-backup-policies",
 			Method:      http.MethodPut,
 			Path:        "/backups/policies",

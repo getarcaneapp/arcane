@@ -268,6 +268,7 @@ func (s *Service) UpdateConfig(ctx context.Context, updates []types.UpdateSystem
 				Options: backup.PolicyOptions{ //exhaustruct:enforce
 					Volumes:         nil,
 					SelectionMode:   normalized.SelectionMode,
+					EnvironmentIDs:  nil,
 					ProjectIDs:      nil,
 					VolumeSelection: "",
 					ProjectVolumes:  nil,
