@@ -355,6 +355,8 @@ func pollDeviceToken(cmd *cobra.Command, c *client.Client, deviceAuth types.Oidc
 			case <-cmd.Context().Done():
 				return types.AuthenticationResponse{}, cmd.Context().Err()
 			}
+			// Drop ticks that piled up during the wait so the next two polls stay a full interval apart.
+			ticker.Reset(pollInterval)
 			continue
 		}
 

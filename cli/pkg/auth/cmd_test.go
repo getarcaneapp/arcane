@@ -17,13 +17,15 @@ func TestPollDeviceToken_ResumesAfterRateLimit(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
+		body := `{"success":true,"token":"tok"}`
 		if calls == 1 {
 			w.Header().Set("Retry-After", "1")
 			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
-			return
+			body = `{"error":"rate limit exceeded"}`
 		}
-		_, _ = w.Write([]byte(`{"success":true,"token":"tok"}`))
+		if _, writeErr := w.Write([]byte(body)); writeErr != nil {
+			t.Errorf("write response: %v", writeErr)
+		}
 	}))
 	defer srv.Close()
 
@@ -34,7 +36,11 @@ func TestPollDeviceToken_ResumesAfterRateLimit(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())
 
-	result, err := pollDeviceToken(cmd, c, types.OidcDeviceAuthResponse{DeviceCode: "code", Interval: 1, ExpiresIn: 30})
+	result, err := pollDeviceToken(cmd, c, types.OidcDeviceAuthResponse{
+		DeviceCode: "code",
+		Interval:   1,
+		ExpiresIn:  30,
+	})
 	if err != nil {
 		t.Fatalf("expected polling to resume after 429, got: %v", err)
 	}
