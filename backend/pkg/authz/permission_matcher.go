@@ -48,6 +48,15 @@ func (m *PermissionMatcher) AddActions(method, pathTemplate, param string, perms
 	})
 }
 
+// AddDenied records a route that exists but is never proxied, so it answers 403 rather than 404.
+func (m *PermissionMatcher) AddDenied(method, pathTemplate string) {
+	m.routes = append(m.routes, permRoute{
+		method:   strings.ToUpper(method),
+		segments: templateSegments(pathTemplate),
+		denied:   true,
+	})
+}
+
 func (m *PermissionMatcher) Lookup(method, suffixPath string, query url.Values) mo.Option[string] {
 	method = strings.ToUpper(method)
 

@@ -59,7 +59,7 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 				continue
 			}
 			// Sudo-only routes stay unproxied, but are known so they answer 403 rather than 404.
-			m.routes = append(m.routes, permRoute{method: method, segments: templateSegments(suffix), denied: true})
+			m.AddDenied(method, suffix)
 		}
 	}
 }
