@@ -164,12 +164,14 @@
 	const localDockerDisabled = $derived(
 		policyCollection.localDockerEnabled === false || isLocalDockerDisabled(environmentStore.getLocalEnvironment())
 	);
-	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && !localDockerDisabled);
+	const hasRemoteEnvironments = $derived(environmentStore.enabled.some((env) => env.id !== LOCAL_DOCKER_ENVIRONMENT_ID));
+	const canManageAnyBackups = $derived(!localDockerDisabled || hasRemoteEnvironments);
+	const canCreateBackups = $derived(hasPermission('system-backups:create', GLOBAL_SCOPE) && canManageAnyBackups);
 	// Saving sends a whole list of schedules, which only loads with system-backups:read.
 	const canUpdateBackupPolicies = $derived(
 		hasPermission('system-backups:update', GLOBAL_SCOPE) &&
 			hasPermission('system-backups:read', GLOBAL_SCOPE) &&
-			!localDockerDisabled
+			canManageAnyBackups
 	);
 	const canManageRecoveryKey = $derived(isGlobalAdmin());
 	// Discovery restores snapshots through the manager's Docker, even for S3 destinations.
@@ -178,8 +180,16 @@
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const backupTypeOptions = $derived([
 		{ label: m.system(), value: 'system', description: m.arcane_only_backup_description() },
-		{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }
+		...(localDockerDisabled
+			? []
+			: [{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }])
 	]);
+
+	function selectionIncludesLocal(mode: SystemVolumeSelectionMode, ids: string[]): boolean {
+		if (mode === 'allowlist') return ids.includes(LOCAL_DOCKER_ENVIRONMENT_ID);
+		if (mode === 'blocklist') return !ids.includes(LOCAL_DOCKER_ENVIRONMENT_ID);
+		return true;
+	}
 	const configurationOptions = $derived([
 		{
 			label: m.system_backups_custom_configuration(),
@@ -221,7 +231,16 @@
 		}
 		return '';
 	});
-	const invalid = $derived(Boolean(actionKeyInvalid || destinationError));
+	const localDockerScopeBlocked = $derived.by(() => {
+		if (action !== 'create' || !localDockerDisabled) return false;
+		if (backupType === 'volume') return true;
+		if (backupConfiguration === 'custom') {
+			return selectionIncludesLocal(selectionMode, environmentIds);
+		}
+		const selectedPolicy = policyCollection.policies.find((item) => item.id === backupConfiguration);
+		return selectedPolicy ? selectionIncludesLocal(selectedPolicy.selectionMode, selectedPolicy.environmentIds) : false;
+	});
+	const invalid = $derived(Boolean(actionKeyInvalid || destinationError || localDockerScopeBlocked));
 
 	function openSchedule(type: ScheduleType = 'system', id?: string) {
 		scheduleSession += 1;
@@ -306,8 +325,8 @@
 		backupConfiguration = 'custom';
 		destination = 'local';
 		stopContainers = false;
-		selectionMode = 'all';
-		environmentIds = [];
+		selectionMode = localDockerDisabled ? 'blocklist' : 'all';
+		environmentIds = localDockerDisabled ? [LOCAL_DOCKER_ENVIRONMENT_ID] : [];
 		volumeNames = [];
 		ignoreAnonymous = true;
 		s3DestinationId =
@@ -737,7 +756,7 @@
 </script>
 
 {#snippet addScheduleAction(type: ScheduleType)}
-	{#if canUpdateBackupPolicies}
+	{#if canUpdateBackupPolicies && (type !== 'volume' || !localDockerDisabled)}
 		<ArcaneButton
 			action="create"
 			customLabel={m.volume_backup_add_schedule()}
@@ -1124,6 +1143,7 @@
 											onRun={() => runPolicy('system', policy.id)}
 											runDisabled={isReadOnly ||
 												!canCreateBackups ||
+												(localDockerDisabled && selectionIncludesLocal(policy.selectionMode, policy.environmentIds)) ||
 												!policyCollection.recoveryKeyStored ||
 												backupActivity.activeIds.length > 0 ||
 												runningPolicyId !== null}
@@ -1176,10 +1196,11 @@
 											resourceType="volume"
 											showStopContainers
 											onEdit={() => openSchedule('volume', policy.id)}
-											editDisabled={isReadOnly || !canUpdateBackupPolicies}
+											editDisabled={isReadOnly || !canUpdateBackupPolicies || localDockerDisabled}
 											onRun={() => runPolicy('volume', policy.id)}
 											runDisabled={isReadOnly ||
 												!canCreateBackups ||
+												localDockerDisabled ||
 												backupActivity.activeIds.length > 0 ||
 												runningPolicyId !== null}
 											running={runningPolicyId === policy.id}
@@ -1215,6 +1236,7 @@
 					projectPolicies={projectPolicyCollection.policies}
 					volumePolicies={systemVolumePolicyCollection.policies}
 					recoveryKeyStored={policyCollection.recoveryKeyStored}
+					{localDockerDisabled}
 					destinations={data.destinations}
 					volumeOptions={systemVolumeOptions}
 					volumeOptionsLoading={systemVolumeOptionsLoading}

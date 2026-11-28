@@ -1,13 +1,27 @@
 <script lang="ts" module>
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { GlobalProjectVolume } from '#lib/types/project.js';
 
+	export function projectOptionValue(option: { environmentId?: string; id: string }): string {
+		return option.environmentId ? `${option.environmentId}:${option.id}` : option.id;
+	}
+
+	export function normalizeProjectSelectionId(value: string): string {
+		return value.includes(':') ? value : `${LOCAL_DOCKER_ENVIRONMENT_ID}:${value}`;
+	}
+
 	export function projectVolumeValue(volume: GlobalProjectVolume): string {
-		return JSON.stringify([volume.projectId, volume.key]);
+		return JSON.stringify([volume.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID, volume.projectId, volume.key]);
 	}
 
 	export function parseProjectVolumeValue(value: string): GlobalProjectVolume {
-		const [projectId, key] = JSON.parse(value) as [string, string];
-		return { projectId, key };
+		const parsed = JSON.parse(value) as [string, string] | [string, string, string];
+		if (parsed.length === 3) {
+			const [environmentId, projectId, key] = parsed;
+			return environmentId ? { environmentId, projectId, key } : { projectId, key };
+		}
+		const [projectId, key] = parsed;
+		return { environmentId: LOCAL_DOCKER_ENVIRONMENT_ID, projectId, key };
 	}
 </script>
 
@@ -121,10 +135,11 @@
 		if (kind === 'projectVolume') {
 			const saved = selected.map(parseProjectVolumeValue);
 			return (options as GlobalProjectBackupOption[]).flatMap((project) => {
+				const projectEnv = project.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID;
 				const group = project.environmentName ? `${project.environmentName} · ${project.name}` : project.name;
 				return [
 					...project.volumes.map((volume) => ({
-						value: projectVolumeValue({ projectId: project.id, key: volume.key }),
+						value: projectVolumeValue({ environmentId: projectEnv, projectId: project.id, key: volume.key }),
 						label: volume.key,
 						detail: volume.name === volume.key ? undefined : volume.name,
 						group,
@@ -133,9 +148,14 @@
 						available: true
 					})),
 					...saved
-						.filter((volume) => volume.projectId === project.id && !project.volumes.some((live) => live.key === volume.key))
+						.filter(
+							(volume) =>
+								volume.projectId === project.id &&
+								(volume.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID) === projectEnv &&
+								!project.volumes.some((live) => live.key === volume.key)
+						)
 						.map((volume) => ({
-							value: projectVolumeValue(volume),
+							value: projectVolumeValue({ ...volume, environmentId: projectEnv }),
 							label: volume.key,
 							group,
 							anonymous: false,
@@ -147,8 +167,9 @@
 		}
 		return options.map((option) => {
 			if ('id' in option) {
+				const isProject = 'volumes' in option;
 				return {
-					value: option.id,
+					value: isProject ? projectOptionValue(option) : option.id,
 					label: option.name,
 					group: 'environmentName' in option ? option.environmentName : undefined,
 					anonymous: false,

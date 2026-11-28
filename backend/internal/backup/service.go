@@ -1315,6 +1315,34 @@ func (p *Policies) DisableRemote(ctx context.Context, policy *Policy, field stri
 	return result.Error == nil && result.RowsAffected > 0, result.Error
 }
 
+// ObserveRemote checks this instance's S3 repository without mutating a shared policy.
+func (p *Policies) ObserveRemote(ctx context.Context, policy *Policy, check RemoteCheck) (bool, error) {
+	if !policy.S3Enabled {
+		return false, nil
+	}
+	remote := ScheduledRemoteRequest{
+		DestinationID: policy.S3DestinationID,
+		Root:          check.Root,
+		Tables:        check.Tables,
+	}
+	if check.Root == "" {
+		remote = ScheduledRemoteRequest{
+			DestinationID: policy.S3DestinationID,
+			Root:          path.Join(VolumeRoot, check.Settings.GetSettingsConfig().InstanceID.Value),
+			Tables:        VolumeRepositoryTables,
+		}
+	}
+	err := CheckScheduledRemote(ctx, p.db, check.S3Destinations, remote)
+	if !errors.Is(err, ErrRemoteRepositoryMissing) {
+		return false, err
+	}
+	policy.S3Enabled = false
+	if !policy.LocalEnabled {
+		return true, ErrRemoteOnlyDisabled
+	}
+	return true, nil
+}
+
 func (p *Policies) CheckRemote(ctx context.Context, policy *Policy, check RemoteCheck) (bool, error) {
 	var remoteErr error
 	if policy.S3Enabled {

@@ -5,8 +5,10 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -25,10 +27,12 @@ import (
 type recordingRemoteTransport struct {
 	environment.RemoteTransport
 
-	runRequests map[string]types.RunGlobalProjectBackupsRequest
-	options     map[string][]types.GlobalProjectBackupOption
-	failing     string
-	mu          sync.Mutex
+	runRequests  map[string]types.RunGlobalProjectBackupsRequest
+	syncRequests map[string]types.UpdateGlobalProjectBackupPolicies
+	options      map[string][]types.GlobalProjectBackupOption
+	activities   map[string]types.ActivityStatus
+	failing      string
+	mu           sync.Mutex
 }
 
 func (t *recordingRemoteTransport) ProxyJSONRequestForEnvironment(_ context.Context, env environment.Environment, method, path string, body []byte, out any) error {
@@ -37,8 +41,8 @@ func (t *recordingRemoteTransport) ProxyJSONRequestForEnvironment(_ context.Cont
 	if env.ID == t.failing {
 		return errors.New("agent is not connected")
 	}
-	switch method + " " + path {
-	case http.MethodGet + " /api/backups/projects/options":
+	switch {
+	case method == http.MethodGet && path == "/api/backups/projects/options":
 		payload, err := json.Marshal(types.ApiResponse[[]types.GlobalProjectBackupOption]{
 			Success: true,
 			Data:    t.options[env.ID],
@@ -47,13 +51,53 @@ func (t *recordingRemoteTransport) ProxyJSONRequestForEnvironment(_ context.Cont
 			return err
 		}
 		return json.Unmarshal(payload, out)
-	case http.MethodPost + " /api/backups/projects/run":
+	case method == http.MethodPut && path == "/api/backups/projects/config":
+		var req types.UpdateGlobalProjectBackupPolicies
+		if err := json.Unmarshal(body, &req); err != nil {
+			return err
+		}
+		t.syncRequests[env.ID] = req
+		return nil
+	case method == http.MethodPost && path == "/api/backups/projects/run":
 		var req types.RunGlobalProjectBackupsRequest
 		if err := json.Unmarshal(body, &req); err != nil {
 			return err
 		}
 		t.runRequests[env.ID] = req
-		return nil
+		if out == nil {
+			return nil
+		}
+		payload, err := json.Marshal(types.ApiResponse[types.BackupRunAccepted]{
+			Success: true,
+			Data:    types.BackupRunAccepted{ActivityID: "act-" + env.ID, Status: "running"},
+		})
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(payload, out)
+	case method == http.MethodGet && strings.HasPrefix(path, "/api/agents/0/activities/"):
+		status := t.activities[env.ID]
+		if status == "" {
+			status = types.ActivityStatusSuccess
+		}
+		var errMsg *string
+		if status == types.ActivityStatusFailed {
+			errMsg = new("remote snapshot failed")
+		}
+		payload, err := json.Marshal(types.ApiResponse[types.ActivityDetail]{
+			Success: true,
+			Data: types.ActivityDetail{
+				Activity: types.Activity{
+					ID:     "act-" + env.ID,
+					Status: status,
+					Error:  errMsg,
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(payload, out)
 	default:
 		return errors.New("unexpected proxy request: " + method + " " + path)
 	}
@@ -65,7 +109,7 @@ func TestGlobalProjectBackupFansOutToRemoteEnvironments(t *testing.T) {
 	require.NoError(t, gormDB.AutoMigrate(&backup.Policy{}, &environment.Environment{}))
 	db := &database.DB{DB: gormDB}
 
-	for _, id := range []string{"agent-1", "agent-offline"} {
+	for _, id := range []string{"agent-1", "agent-failed", "agent-offline"} {
 		require.NoError(t, gormDB.Create(&environment.Environment{
 			BaseModel: database.BaseModel{ID: id},
 			Name:      id,
@@ -90,7 +134,7 @@ func TestGlobalProjectBackupFansOutToRemoteEnvironments(t *testing.T) {
 		LocalEnabled:   true,
 		Options: backup.PolicyOptions{
 			SelectionMode: types.SystemVolumeSelectionBlocklist,
-			ProjectIDs:    []string{"excluded-proj"},
+			ProjectIDs:    []string{"agent-1:excluded-proj", "0:local-excluded"},
 		},
 	}
 	require.NoError(t, gormDB.Create(&policy).Error)
@@ -103,10 +147,15 @@ func TestGlobalProjectBackupFansOutToRemoteEnvironments(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 
 	transport := &recordingRemoteTransport{
-		failing:     "agent-offline",
-		runRequests: map[string]types.RunGlobalProjectBackupsRequest{},
+		failing:      "agent-offline",
+		runRequests:  map[string]types.RunGlobalProjectBackupsRequest{},
+		syncRequests: map[string]types.UpdateGlobalProjectBackupPolicies{},
 		options: map[string][]types.GlobalProjectBackupOption{
 			"agent-1": {{ID: "remote-proj-1", Name: "remote-app", Available: true}},
+		},
+		activities: map[string]types.ActivityStatus{
+			"agent-1":      types.ActivityStatusSuccess,
+			"agent-failed": types.ActivityStatusFailed,
 		},
 	}
 	envService := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
@@ -131,10 +180,11 @@ func TestGlobalProjectBackupFansOutToRemoteEnvironments(t *testing.T) {
 			return nil
 		},
 	})
+	svc.remotePollInterval = time.Millisecond
 
 	options, err := svc.GlobalOptions(t.Context())
 	require.NoError(t, err)
-	require.Len(t, options, 3) // local-proj-1, remote-proj-1, excluded-proj (unavailable)
+	require.Len(t, options, 4) // local-proj-1, remote-proj-1, agent-1:excluded-proj, 0:local-excluded
 	require.Equal(t, "local-proj-1", options[0].ID)
 	require.Equal(t, environment.LocalEnvironmentID, options[0].EnvironmentID)
 	require.Equal(t, "remote-proj-1", options[1].ID)
@@ -153,7 +203,12 @@ func TestGlobalProjectBackupFansOutToRemoteEnvironments(t *testing.T) {
 	require.Equal(t, policy.ID, transport.runRequests["agent-1"].PolicyID)
 	require.NotNil(t, transport.runRequests["agent-1"].Policy)
 	require.Equal(t, types.SystemVolumeSelectionBlocklist, transport.runRequests["agent-1"].Policy.SelectionMode)
+	// Scoped to agent-1 only: local-excluded is filtered out and agent-1 prefix is stripped.
 	require.Equal(t, []string{"excluded-proj"}, transport.runRequests["agent-1"].Policy.ProjectIDs)
+	require.Contains(t, transport.syncRequests, "agent-1")
 	require.Equal(t, types.RunStatusSucceeded, recorded["environment:agent-1"].Status)
+	require.Equal(t, "act-agent-1", recorded["environment:agent-1"].ActivityID)
+	require.Equal(t, types.RunStatusFailed, recorded["environment:agent-failed"].Status)
+	require.Equal(t, "remote snapshot failed", recorded["environment:agent-failed"].Message)
 	require.Equal(t, types.RunStatusFailed, recorded["environment:agent-offline"].Status)
 }

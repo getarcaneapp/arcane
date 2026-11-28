@@ -9,6 +9,7 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { projectBackupOptionsQuery, systemBackupOptionsQuery } from '#lib/query/backups.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		UpdateBackupPolicy,
 		S3Destination,
@@ -19,11 +20,20 @@
 		UpdateSystemBackupPolicy,
 		UpdateSystemVolumeBackupPolicy
 	} from '#lib/types/backup.js';
-	import type { GlobalProjectBackupPolicy, UpdateGlobalProjectBackupPolicy } from '#lib/types/project.js';
+	import type {
+		GlobalProjectBackupOption,
+		GlobalProjectBackupPolicy,
+		UpdateGlobalProjectBackupPolicy
+	} from '#lib/types/project.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { backupPolicyUpdateFromPolicy } from '#lib/utils/backups.js';
 
-	import BackupScopeFields, { parseProjectVolumeValue, projectVolumeValue } from './backup-scope-fields.svelte';
+	import BackupScopeFields, {
+		normalizeProjectSelectionId,
+		parseProjectVolumeValue,
+		projectOptionValue,
+		projectVolumeValue
+	} from './backup-scope-fields.svelte';
 
 	type BackupType = 'system' | 'project' | 'volume';
 
@@ -35,6 +45,7 @@
 		projectPolicies,
 		volumePolicies,
 		recoveryKeyStored,
+		localDockerDisabled = false,
 		destinations,
 		volumeOptions,
 		volumeOptionsLoading,
@@ -50,6 +61,7 @@
 		projectPolicies: GlobalProjectBackupPolicy[];
 		volumePolicies: SystemVolumeBackupPolicy[];
 		recoveryKeyStored: boolean;
+		localDockerDisabled?: boolean;
 		destinations: S3Destination[];
 		volumeOptions: SystemVolumeBackupOption[];
 		volumeOptionsLoading: boolean;
@@ -69,6 +81,13 @@
 	);
 	const initialScope = untrack(() => {
 		if (initialType === 'system') {
+			if (!policyId && localDockerDisabled) {
+				return {
+					selectionMode: 'blocklist' as SystemVolumeSelectionMode,
+					selected: [LOCAL_DOCKER_ENVIRONMENT_ID],
+					ignoreAnonymous: true
+				};
+			}
 			return {
 				selectionMode: initialSystemPolicy?.selectionMode,
 				selected: initialSystemPolicy?.environmentIds,
@@ -78,7 +97,7 @@
 		if (initialType === 'project') {
 			return {
 				selectionMode: initialProjectPolicy?.selectionMode,
-				selected: initialProjectPolicy?.projectIds,
+				selected: (initialProjectPolicy?.projectIds ?? []).map(normalizeProjectSelectionId),
 				ignoreAnonymous: true
 			};
 		}
@@ -92,7 +111,7 @@
 	let selectedVolumes = $state<string[]>((initialProjectPolicy?.volumes ?? []).map(projectVolumeValue));
 	const systemOptionsQuery = createQuery(() => ({ ...systemBackupOptionsQuery(), enabled: backupType === 'system' }));
 	const projectOptionsQuery = createQuery(() => ({ ...projectBackupOptionsQuery(), enabled: backupType === 'project' }));
-	const projectVolumeOptions = $derived((projectOptionsQuery.data ?? []).filter((project) => projectSelected(project.id)));
+	const projectVolumeOptions = $derived((projectOptionsQuery.data ?? []).filter((project) => projectSelected(project)));
 	const scopeOptions = $derived.by(() => {
 		if (backupType === 'system') return systemOptionsQuery.data ?? [];
 		if (backupType === 'project') return projectOptionsQuery.data ?? [];
@@ -111,26 +130,34 @@
 	const typeOptions = $derived([
 		{ label: m.system(), value: 'system', description: m.arcane_only_backup_description() },
 		{ label: m.project(), value: 'project', description: m.back_up_selected_projects() },
-		{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }
+		...(localDockerDisabled
+			? []
+			: [{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }])
 	]);
 
 	function changeType(value: string) {
 		if (editing) return;
 		backupType = value as BackupType;
 		if (backupType === 'volume') void onLoadVolumeOptions();
-		selectionMode = 'all';
-		selected = [];
+		if (backupType === 'system' && localDockerDisabled) {
+			selectionMode = 'blocklist';
+			selected = [LOCAL_DOCKER_ENVIRONMENT_ID];
+		} else {
+			selectionMode = 'all';
+			selected = [];
+		}
 		ignoreAnonymous = true;
 		volumeSelectionMode = 'all';
 		selectedVolumes = [];
 	}
 
-	function projectSelected(projectId: string): boolean {
+	function projectSelected(project: GlobalProjectBackupOption): boolean {
+		const key = projectOptionValue(project);
 		switch (selectionMode) {
 			case 'allowlist':
-				return selected.includes(projectId);
+				return selected.includes(key);
 			case 'blocklist':
-				return !selected.includes(projectId);
+				return !selected.includes(key);
 			default:
 				return true;
 		}

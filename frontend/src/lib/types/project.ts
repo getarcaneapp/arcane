@@ -360,6 +360,7 @@ export type UpdateGlobalProjectBackupPolicy = UpdateBackupPolicy & {
 };
 
 export interface GlobalProjectVolume {
+	environmentId?: string;
 	projectId: string;
 	key: string;
 }

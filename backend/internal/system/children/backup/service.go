@@ -153,9 +153,19 @@ type (
 	}
 
 	systemBackupRecovery struct {
-		BackupID     string `json:"backupId"`
-		LocalEnabled bool   `json:"localEnabled"`
-		S3Enabled    bool   `json:"s3Enabled"`
+		BackupID        string                        `json:"backupId"`
+		Destination     types.SystemBackupDestination `json:"destination,omitempty"`
+		S3DestinationID string                        `json:"s3DestinationId,omitempty"`
+		LocalEnabled    bool                          `json:"localEnabled"`
+		S3Enabled       bool                          `json:"s3Enabled"`
+		SkipLocal       bool                          `json:"skipLocal,omitempty"`
+	}
+
+	remoteBackupSummary struct {
+		failures  []types.TargetOutcome
+		attempted int
+		succeeded int
+		failed    int
 	}
 
 	preparedSystemBackup struct {
@@ -628,28 +638,39 @@ func selectsEnvironment(mode types.SystemVolumeSelectionMode, environmentIDs []s
 	return cmp.Or(mode, types.SystemVolumeSelectionAll).Selects(slices.Contains(environmentIDs, environmentID))
 }
 
-func (s *Service) backUpRemoteEnvironments(ctx context.Context, run *types.SystemBackupRun, suppliedKey string, mode types.SystemVolumeSelectionMode, environmentIDs []string) {
-	if s.config.AgentEnabled || s.environments == nil {
-		return
+func (s *Service) backUpRemoteEnvironments(
+	ctx context.Context, run *types.SystemBackupRun, suppliedKey string, mode types.SystemVolumeSelectionMode, environmentIDs []string,
+) remoteBackupSummary {
+	if s.config.AgentEnabled {
+		return remoteBackupSummary{}
 	}
 	recoveryKey, err := s.recoveryKey(ctx, suppliedKey)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to load the recovery key for remote environment system backups", "backupId", run.ID, "error", err)
-		return
+		return remoteBackupSummary{
+			failed:   1,
+			failures: []types.TargetOutcome{{ResourceType: "environment", ID: "environment:recovery-key", Status: types.RunStatusFailed, Message: err.Error()}},
+		}
 	}
 	remotes, err := s.environments.ListActiveRemoteEnvironments(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to list remote environments for the system backup", "backupId", run.ID, "error", err)
-		return
+		return remoteBackupSummary{
+			failed:   1,
+			failures: []types.TargetOutcome{{ResourceType: "environment", ID: "environment:list", Status: types.RunStatusFailed, Message: err.Error()}},
+		}
 	}
 	previous, _ := jobcontext.Run(ctx)
+	var summary remoteBackupSummary
 	for _, remote := range remotes {
 		if !selectsEnvironment(mode, environmentIDs, remote.ID) {
 			continue
 		}
+		summary.attempted++
 		if slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 			return target.ID == "environment:"+remote.ID && target.Status == types.RunStatusSucceeded
 		}) {
+			summary.succeeded++
 			continue
 		}
 		body, startErr := json.Marshal(types.CreateSystemBackupRequest{
@@ -664,15 +685,42 @@ func (s *Service) backUpRemoteEnvironments(ctx context.Context, run *types.Syste
 		if startErr != nil {
 			slog.WarnContext(ctx, "Failed to start the system backup on a remote environment", "backupId", run.ID, "environmentId", remote.ID, "error", startErr)
 		}
-		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
+		outcome := types.TargetOutcome{
 			ResourceType: "environment",
 			ID:           "environment:" + remote.ID,
 			Status:       kit.Ternary(startErr != nil, types.RunStatusFailed, types.RunStatusSucceeded),
 			Message:      kit.Ternary(startErr != nil, fmt.Sprint(startErr), ""),
-		}); progressErr != nil {
+		}
+		if startErr != nil {
+			summary.failed++
+			summary.failures = append(summary.failures, outcome)
+		} else {
+			summary.succeeded++
+		}
+		if progressErr := jobcontext.Progress(ctx, outcome); progressErr != nil {
 			slog.WarnContext(ctx, "Failed to record a remote environment system backup", "backupId", run.ID, "environmentId", remote.ID, "error", progressErr)
 		}
 	}
+	return summary
+}
+
+func remoteOnlyOutcome(summary remoteBackupSummary, successMessage string) (types.SchedulerOutcome, error) {
+	if summary.failed > 0 && summary.succeeded == 0 {
+		message := fmt.Sprintf("Failed to start system backup on %d remote environments", summary.failed)
+		return types.SchedulerOutcome{
+			Status:  types.RunStatusFailed,
+			Message: message,
+			Targets: summary.failures,
+		}, errors.New(message)
+	}
+	if summary.failed > 0 {
+		return types.SchedulerOutcome{
+			Status:  types.RunStatusPartial,
+			Message: fmt.Sprintf("%d of %d remote system backups failed", summary.failed, summary.attempted),
+			Targets: summary.failures,
+		}, nil
+	}
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: successMessage}, nil
 }
 
 func (s *Service) ListBackups(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error) {
@@ -1394,19 +1442,13 @@ func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) 
 }
 
 func (s *Service) ListOptions(ctx context.Context) ([]types.SystemBackupOption, error) {
-	resolveName := func(envID string) string {
-		if s.environments != nil {
-			return s.environments.ResolveEnvironmentName(ctx, envID)
-		}
-		return environment.DisplayName(envID, "")
-	}
 	options := []types.SystemBackupOption{{
 		ID:        environment.LocalEnvironmentID,
-		Name:      resolveName(environment.LocalEnvironmentID),
+		Name:      s.environments.ResolveEnvironmentName(ctx, environment.LocalEnvironmentID),
 		Available: s.dockerService.LocalDockerEnabled(),
 	}}
 	known := map[string]struct{}{environment.LocalEnvironmentID: {}}
-	if !s.config.AgentEnabled && s.environments != nil {
+	if !s.config.AgentEnabled {
 		remotes, err := s.environments.ListActiveRemoteEnvironments(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("list remote environments for system backups: %w", err)
@@ -1431,7 +1473,7 @@ func (s *Service) ListOptions(ctx context.Context) ([]types.SystemBackupOption, 
 			}
 			options = append(options, types.SystemBackupOption{
 				ID:        envID,
-				Name:      resolveName(envID),
+				Name:      s.environments.ResolveEnvironmentName(ctx, envID),
 				Available: false,
 			})
 			known[envID] = struct{}{}
@@ -1570,19 +1612,6 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 	if policy == nil || !policy.Enabled {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
-	remoteDisabled, disableErr := s.policies.CheckRemote(ctx, policy, backup.RemoteCheck{
-		S3Destinations: s.s3Destinations,
-		Settings:       s.settingsService,
-		Root:           "arcane-system-recovery",
-		Tables:         []string{"system_backup_runs"},
-		Reschedule:     s.rescheduleSystemBackupPolicy,
-	})
-	if errors.Is(disableErr, backup.ErrRemoteOnlyDisabled) {
-		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
-	}
-	if disableErr != nil {
-		return types.SchedulerOutcome{}, disableErr
-	}
 	if !selectsEnvironment(policy.Options.SelectionMode, policy.Options.EnvironmentIDs, environment.LocalEnvironmentID) {
 		selected, s3DestinationID, destErr := backup.ResolveDestination(ctx, backup.DestinationRequest{
 			Class:           common.ErrValidation,
@@ -1601,12 +1630,41 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 			S3DestinationID: s3DestinationID,
 			PolicyID:        policy.ID,
 		}
-		s.backUpRemoteEnvironments(ctx, run, "", policy.Options.SelectionMode, policy.Options.EnvironmentIDs)
-		slog.InfoContext(ctx, "Scheduled Arcane system backup completed for remote environments", "backupId", run.ID, "policyId", policy.ID)
-		if remoteDisabled {
-			return types.SchedulerOutcome{Status: types.RunStatusPartial, Message: backup.RemoteDisabledMessage}, nil
+		recoveryData, marshalErr := json.Marshal(systemBackupRecovery{
+			BackupID:        run.ID,
+			Destination:     run.Destination,
+			S3DestinationID: run.S3DestinationID,
+			LocalEnabled:    selected.Local,
+			S3Enabled:       selected.Remote,
+			SkipLocal:       true,
+		})
+		if marshalErr != nil {
+			return types.SchedulerOutcome{}, marshalErr
 		}
-		return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled Arcane system backup created successfully"}, nil
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
+			ResourceType: "system_backup",
+			ID:           policy.ID,
+			Status:       types.RunStatusRunning,
+			RecoveryData: recoveryData,
+		}); progressErr != nil {
+			return types.SchedulerOutcome{}, progressErr
+		}
+		summary := s.backUpRemoteEnvironments(ctx, run, "", policy.Options.SelectionMode, policy.Options.EnvironmentIDs)
+		slog.InfoContext(ctx, "Scheduled Arcane system backup completed for remote environments", "backupId", run.ID, "policyId", policy.ID, "succeeded", summary.succeeded, "failed", summary.failed)
+		return remoteOnlyOutcome(summary, "Scheduled Arcane system backup created successfully")
+	}
+	remoteDisabled, disableErr := s.policies.CheckRemote(ctx, policy, backup.RemoteCheck{
+		S3Destinations: s.s3Destinations,
+		Settings:       s.settingsService,
+		Root:           "arcane-system-recovery",
+		Tables:         []string{"system_backup_runs"},
+		Reschedule:     s.rescheduleSystemBackupPolicy,
+	})
+	if errors.Is(disableErr, backup.ErrRemoteOnlyDisabled) {
+		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+	}
+	if disableErr != nil {
+		return types.SchedulerOutcome{}, disableErr
 	}
 	run, runErr := func() (*types.SystemBackupRun, error) {
 		prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerScheduled, types.CreateSystemBackupRequest{PolicyID: policy.ID})
@@ -1641,6 +1699,32 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 }
 
 func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.SchedulerRun, policyID string) (types.SchedulerOutcome, error) {
+	if index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
+		return target.ID == policyID && len(target.RecoveryData) > 0
+	}); index >= 0 {
+		var checkpoint systemBackupRecovery
+		if decodeErr := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &checkpoint); decodeErr != nil {
+			return types.SchedulerOutcome{}, decodeErr
+		}
+		if checkpoint.SkipLocal {
+			current, policyErr := s.policies.Get(ctx, backup.PolicySystem, "", policyID)
+			if policyErr != nil {
+				return types.SchedulerOutcome{}, policyErr
+			}
+			var mode types.SystemVolumeSelectionMode
+			var environmentIDs []string
+			if current != nil {
+				mode, environmentIDs = current.Options.SelectionMode, current.Options.EnvironmentIDs
+			}
+			summary := s.backUpRemoteEnvironments(ctx, &types.SystemBackupRun{
+				ID:              checkpoint.BackupID,
+				Destination:     checkpoint.Destination,
+				S3DestinationID: checkpoint.S3DestinationID,
+				PolicyID:        policyID,
+			}, "", mode, environmentIDs)
+			return remoteOnlyOutcome(summary, "Scheduled Arcane system backup created successfully")
+		}
+	}
 	outcome, err := s.reconcileBackup(ctx, previous, policyID, "", func(ctx context.Context) (*runs.Lease, error) {
 		return s.engine.AwaitRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID)
 	})
@@ -2254,12 +2338,12 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		return nil, err
 	}
 	if input.SkipLocal {
-		s.backUpRemoteEnvironments(ctx, &types.SystemBackupRun{
+		summary := s.backUpRemoteEnvironments(ctx, &types.SystemBackupRun{
 			ID:              runID,
 			Destination:     input.Destination,
 			S3DestinationID: input.S3DestinationID,
 		}, key, input.SelectionMode, input.EnvironmentIDs)
-		return succeeded, nil
+		return remoteOnlyOutcome(summary, "Arcane system backup created successfully")
 	}
 	run, err := s.store.Run(ctx, runID)
 	if err != nil {

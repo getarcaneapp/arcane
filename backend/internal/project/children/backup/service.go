@@ -1179,9 +1179,6 @@ func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBac
 	}
 	var orphaned []string
 	for _, candidate := range candidates {
-		if s.deps.Config.AgentEnabled && strings.HasPrefix(candidate.PolicyID, types.GlobalProjectPolicyPrefix) {
-			continue
-		}
 		if !managed[candidate.PolicyID] {
 			orphaned = append(orphaned, candidate.ID)
 		}

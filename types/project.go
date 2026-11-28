@@ -203,8 +203,9 @@ type (
 	}
 
 	GlobalProjectVolume struct {
-		ProjectID string `json:"projectId" minLength:"1"`
-		Key       string `json:"key" minLength:"1" doc:"Volume key in the project's compose file"`
+		EnvironmentID string `json:"environmentId,omitempty" doc:"Environment owning the project; empty matches the local environment"`
+		ProjectID     string `json:"projectId" minLength:"1"`
+		Key           string `json:"key" minLength:"1" doc:"Volume key in the project's compose file"`
 	}
 
 	RestoreProjectBackupRequest struct {
