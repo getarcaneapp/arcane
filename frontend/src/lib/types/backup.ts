@@ -54,6 +54,8 @@ export type SystemBackupPolicy = {
 	schedule: string;
 	s3DestinationId?: string;
 	s3DestinationName?: string;
+	selectionMode: SystemVolumeSelectionMode;
+	environmentIds: string[];
 	retentionCount: number;
 	enabled: boolean;
 	localEnabled: boolean;
@@ -71,6 +73,17 @@ export type UpdateBackupPolicy = {
 	s3Enabled: boolean;
 };
 
+export type UpdateSystemBackupPolicy = UpdateBackupPolicy & {
+	selectionMode: SystemVolumeSelectionMode;
+	environmentIds: string[];
+};
+
+export type SystemBackupOption = {
+	id: string;
+	name: string;
+	available: boolean;
+};
+
 export type SystemBackupPolicyCollection = {
 	policies: SystemBackupPolicy[];
 	recoveryKeyStored: boolean;
@@ -86,6 +99,8 @@ export type CreateSystemBackupRequest = {
 	s3DestinationId?: string;
 	recoveryKey?: string;
 	policyId?: string;
+	selectionMode?: SystemVolumeSelectionMode;
+	environmentIds?: string[];
 };
 
 export type BackupManagementType = 'system' | 'volume' | 'project';

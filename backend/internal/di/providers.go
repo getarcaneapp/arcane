@@ -119,18 +119,19 @@ type (
 	projectModuleParams struct {
 		fx.In
 
-		Ctx       context.Context
-		Scheduler types.DynamicScheduler
-		Admission *runs.Admission
-		Service   *project.ProjectService
-		Activity  *activity.ActivityService
-		Engine    *flow.Engine
-		Transport environment.RemoteTransport
-		Tunnels   *agent.TunnelRegistry
-		Backups   *backup.Engine
-		Webhooks  *webhook.WebhookService
-		Volumes   *volume.VolumeService
-		Networks  *network.NetworkService
+		Ctx          context.Context
+		Scheduler    types.DynamicScheduler
+		Admission    *runs.Admission
+		Service      *project.ProjectService
+		Activity     *activity.ActivityService
+		Engine       *flow.Engine
+		Environments *environment.EnvironmentService
+		Transport    environment.RemoteTransport
+		Tunnels      *agent.TunnelRegistry
+		Backups      *backup.Engine
+		Webhooks     *webhook.WebhookService
+		Volumes      *volume.VolumeService
+		Networks     *network.NetworkService
 
 		Repository     *backup.VolumeRepository
 		Policies       *backup.Policies
@@ -239,6 +240,7 @@ func provideProjectModule(p projectModuleParams) (*project.Module, error) {
 			Ctx:            p.Ctx,
 			Scheduler:      p.Scheduler,
 			Admission:      p.Admission,
+			Environments:   p.Environments,
 			Engine:         p.Backups,
 			Repository:     p.Repository,
 			Policies:       p.Policies,

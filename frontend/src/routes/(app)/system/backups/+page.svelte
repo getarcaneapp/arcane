@@ -37,8 +37,12 @@
 	} from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import { projectBackupConfigQuery, systemBackupHistoryQuery } from '#lib/query/backups.js';
-	import { systemVolumeBackupOptionsQuery } from '#lib/query/backups.js';
+	import {
+		projectBackupConfigQuery,
+		systemBackupHistoryQuery,
+		systemBackupOptionsQuery,
+		systemVolumeBackupOptionsQuery
+	} from '#lib/query/backups.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
@@ -103,6 +107,10 @@
 	}));
 	const projectPolicyCollection = $derived(projectPolicyQuery.data ?? data.projectPolicyCollection);
 	let systemVolumePolicyCollection = $derived(data.systemVolumePolicyCollection);
+	const systemOptionsQuery = createQuery(() => ({
+		...systemBackupOptionsQuery(),
+		enabled: actionOpen && action === 'create' && backupType === 'system' && backupConfiguration === 'custom'
+	}));
 	const systemVolumeOptionsQuery = createQuery(() => ({
 		...systemVolumeBackupOptionsQuery(),
 		enabled: false
@@ -128,6 +136,7 @@
 	let s3DestinationId = $state('');
 	let stopContainers = $state(false);
 	let selectionMode = $state<SystemVolumeSelectionMode>('all');
+	let environmentIds = $state<string[]>([]);
 	let volumeNames = $state<string[]>([]);
 	let ignoreAnonymous = $state(true);
 	let recoveryKey = $state('');
@@ -296,6 +305,7 @@
 		destination = 'local';
 		stopContainers = false;
 		selectionMode = 'all';
+		environmentIds = [];
 		volumeNames = [];
 		ignoreAnonymous = true;
 		s3DestinationId =
@@ -431,6 +441,9 @@
 		backupType = value as 'system' | 'volume';
 		backupConfiguration = 'custom';
 		destination = 'local';
+		selectionMode = 'all';
+		environmentIds = [];
+		volumeNames = [];
 		s3DestinationId = data.destinations[0]?.id ?? '';
 		if (backupType === 'volume') void loadSystemVolumeOptions();
 	}
@@ -568,7 +581,13 @@
 		if (backupType === 'system') {
 			let request: CreateSystemBackupRequest = { policyId: backupConfiguration, recoveryKey };
 			if (backupConfiguration === 'custom') {
-				request = { destination, s3DestinationId: customS3DestinationId, recoveryKey };
+				request = {
+					destination,
+					s3DestinationId: customS3DestinationId,
+					recoveryKey,
+					selectionMode,
+					environmentIds
+				};
 			}
 			const result = await systemBackupService.create(request);
 			backupActivity.accepted(extractActivityId(result));
@@ -874,6 +893,20 @@
 					label={m.volume_backup_s3_destination_label()}
 					error={destinationError || null}
 					options={s3Options}
+				/>
+			{/if}
+			{#if action === 'create' && backupType === 'system' && backupConfiguration === 'custom'}
+				<BackupScopeFields
+					idPrefix="manual-system-backup"
+					kind="system"
+					{selectionMode}
+					selected={environmentIds}
+					options={systemOptionsQuery.data ?? []}
+					loading={systemOptionsQuery.isFetching}
+					onChange={(values) => {
+						selectionMode = values.selectionMode ?? selectionMode;
+						environmentIds = values.selected ?? environmentIds;
+					}}
 				/>
 			{/if}
 			{#if action === 'create' && backupType === 'volume' && backupConfiguration === 'custom'}

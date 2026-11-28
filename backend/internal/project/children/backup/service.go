@@ -35,6 +35,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
 	dockerInternal "getarcane.dev/arcane/v3/internal/docker"
+	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	"getarcane.dev/arcane/v3/internal/project/children/backup/children/policies"
 	"getarcane.dev/arcane/v3/internal/s3"
@@ -82,6 +83,7 @@ type (
 		DeleteVolume       func(ctx context.Context, name string, user types.Actor) error
 		Activities         activity.MessageAppender
 		Config             *config.Config
+		Environments       *environment.EnvironmentService
 		Ctx                context.Context
 		Scheduler          types.DynamicScheduler
 		Admission          *runs.Admission
@@ -210,6 +212,7 @@ func NewService(deps Dependencies) *Service {
 			S3Destinations: deps.S3Destinations,
 			Settings:       deps.Settings,
 			Config:         deps.Config,
+			Environments:   deps.Environments,
 			ProjectName:    deps.ProjectName,
 			ListProjects:   deps.ListProjects,
 			ProjectVolumes: s.projectVolumes,
@@ -1176,6 +1179,9 @@ func (s *Service) expiredUnmanaged(ctx context.Context, sweep types.UnmanagedBac
 	}
 	var orphaned []string
 	for _, candidate := range candidates {
+		if s.deps.Config.AgentEnabled && strings.HasPrefix(candidate.PolicyID, types.GlobalProjectPolicyPrefix) {
+			continue
+		}
 		if !managed[candidate.PolicyID] {
 			orphaned = append(orphaned, candidate.ID)
 		}

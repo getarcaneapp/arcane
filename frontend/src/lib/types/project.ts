@@ -365,6 +365,8 @@ export interface GlobalProjectVolume {
 }
 
 export interface GlobalProjectBackupOption {
+	environmentId?: string;
+	environmentName?: string;
 	id: string;
 	name: string;
 	volumes: ProjectVolume[];

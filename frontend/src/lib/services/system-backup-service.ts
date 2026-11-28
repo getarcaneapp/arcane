@@ -3,11 +3,12 @@ import type {
 	BackupRestoreSelection,
 	CreateSystemBackupRequest,
 	SystemBackupDestination,
+	SystemBackupOption,
 	SystemVolumeBackupHistoryEntry,
 	SystemBackupPolicyCollection,
 	SystemBackupRecoveryKey,
 	SystemBackupRun,
-	UpdateBackupPolicy,
+	UpdateSystemBackupPolicy,
 	SystemVolumeBackupPolicyCollection,
 	UpdateSystemVolumeBackupPolicy,
 	SystemVolumeBackupOption,
@@ -99,8 +100,12 @@ class SystemBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/backups/policies'));
 	}
 
-	async updatePolicies(policies: UpdateBackupPolicy[]): Promise<SystemBackupPolicyCollection> {
+	async updatePolicies(policies: UpdateSystemBackupPolicy[]): Promise<SystemBackupPolicyCollection> {
 		return this.handleResponse(this.api.put('/backups/policies', { policies }));
+	}
+
+	async listSystemOptions(): Promise<SystemBackupOption[]> {
+		return this.handleResponse(this.api.get('/backups/options'));
 	}
 
 	async generateRecoveryKey(): Promise<SystemBackupRecoveryKey> {

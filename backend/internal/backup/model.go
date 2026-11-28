@@ -30,6 +30,7 @@ type (
 	PolicyOptions struct {
 		Volumes         []string                        `json:"volumes"`
 		SelectionMode   types.SystemVolumeSelectionMode `json:"selectionMode"`
+		EnvironmentIDs  []string                        `json:"environmentIds"`
 		ProjectIDs      []string                        `json:"projectIds"`
 		VolumeSelection types.SystemVolumeSelectionMode `json:"volumeSelectionMode"`
 		ProjectVolumes  []types.GlobalProjectVolume     `json:"projectVolumes"`

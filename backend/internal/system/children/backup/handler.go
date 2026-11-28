@@ -56,6 +56,10 @@ type (
 		Body types.SystemBackupPolicyCollection
 	}
 
+	SystemBackupOptionsOutput struct {
+		Body []types.SystemBackupOption
+	}
+
 	UpdateSystemBackupPoliciesInput struct {
 		Body types.UpdateSystemBackupPolicies
 	}
@@ -171,6 +175,14 @@ func (h *Handler) GetPolicies(ctx context.Context, _ *struct{}) (*SystemBackupPo
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return &SystemBackupPoliciesOutput{Body: *policies}, nil
+}
+
+func (h *Handler) ListOptions(ctx context.Context, _ *struct{}) (*SystemBackupOptionsOutput, error) {
+	options, err := h.service.ListOptions(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &SystemBackupOptionsOutput{Body: options}, nil
 }
 
 func (h *Handler) UpdatePolicies(ctx context.Context, input *UpdateSystemBackupPoliciesInput) (*SystemBackupPoliciesOutput, error) {

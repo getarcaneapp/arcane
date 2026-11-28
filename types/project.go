@@ -190,10 +190,12 @@ type (
 	}
 
 	RunGlobalProjectBackupsRequest struct {
-		PolicyID string `json:"policyId"`
+		Policy   *GlobalProjectBackupPolicy `json:"policy,omitempty" doc:"Policy snapshot forwarded by the manager when running on a remote agent"`
+		PolicyID string                     `json:"policyId"`
 	}
 
 	GlobalProjectBackupOption struct {
+		EnvironmentTag
 		ID        string          `json:"id"`
 		Name      string          `json:"name"`
 		Volumes   []ProjectVolume `json:"volumes" doc:"Volumes a backup of the project can include, with ones not created yet marked missing"`

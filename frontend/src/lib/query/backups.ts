@@ -41,6 +41,13 @@ export function systemBackupPoliciesQuery() {
 	});
 }
 
+export function systemBackupOptionsQuery() {
+	return queryOptions({
+		queryKey: queryKeys.systemBackups.systemOptions(),
+		queryFn: () => systemBackupService.listSystemOptions()
+	});
+}
+
 export function systemVolumeBackupConfigQuery() {
 	return queryOptions({
 		queryKey: queryKeys.systemBackups.systemVolumeConfig(),

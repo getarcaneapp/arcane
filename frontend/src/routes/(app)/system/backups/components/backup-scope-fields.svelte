@@ -22,7 +22,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { SystemVolumeBackupOption, SystemVolumeSelectionMode } from '#lib/types/backup.js';
+	import type { SystemBackupOption, SystemVolumeBackupOption, SystemVolumeSelectionMode } from '#lib/types/backup.js';
 	import type { GlobalProjectBackupOption } from '#lib/types/project.js';
 
 	let {
@@ -36,11 +36,11 @@
 		onChange
 	}: {
 		idPrefix: string;
-		kind: 'project' | 'volume' | 'projectVolume';
+		kind: 'system' | 'project' | 'volume' | 'projectVolume';
 		selectionMode: SystemVolumeSelectionMode;
 		selected: string[];
 		ignoreAnonymous?: boolean;
-		options: SystemVolumeBackupOption[] | GlobalProjectBackupOption[];
+		options: SystemBackupOption[] | SystemVolumeBackupOption[] | GlobalProjectBackupOption[];
 		loading?: boolean;
 		onChange: (values: { selectionMode?: SystemVolumeSelectionMode; selected?: string[]; ignoreAnonymous?: boolean }) => void;
 	} = $props();
@@ -62,6 +62,21 @@
 	};
 	const text = $derived.by(() => {
 		switch (kind) {
+			case 'system':
+				return {
+					mode: m.system_selection(),
+					modeDescription: m.rules_checked_against_systems(),
+					all: m.all_systems(),
+					allDescription: m.all_systems_description(),
+					allowlistDescription: m.include_only_selected_systems(),
+					blocklistDescription: m.include_all_except_selected_systems(),
+					included: m.included_systems(),
+					excluded: m.excluded_systems(),
+					allowlistHelp: m.checked_systems_included(),
+					blocklistHelp: m.checked_systems_excluded(),
+					search: m.search_systems(),
+					empty: m.no_matching_systems()
+				};
 			case 'project':
 				return {
 					mode: m.project_selection(),
@@ -105,33 +120,44 @@
 	const items = $derived.by((): ScopeItem[] => {
 		if (kind === 'projectVolume') {
 			const saved = selected.map(parseProjectVolumeValue);
-			return (options as GlobalProjectBackupOption[]).flatMap((project) => [
-				...project.volumes.map((volume) => ({
-					value: projectVolumeValue({ projectId: project.id, key: volume.key }),
-					label: volume.key,
-					detail: volume.name === volume.key ? undefined : volume.name,
-					group: project.name,
-					anonymous: false,
-					missing: volume.missing ?? false,
-					available: true
-				})),
-				...saved
-					.filter((volume) => volume.projectId === project.id && !project.volumes.some((live) => live.key === volume.key))
-					.map((volume) => ({
-						value: projectVolumeValue(volume),
+			return (options as GlobalProjectBackupOption[]).flatMap((project) => {
+				const group = project.environmentName ? `${project.environmentName} · ${project.name}` : project.name;
+				return [
+					...project.volumes.map((volume) => ({
+						value: projectVolumeValue({ projectId: project.id, key: volume.key }),
 						label: volume.key,
-						group: project.name,
+						detail: volume.name === volume.key ? undefined : volume.name,
+						group,
 						anonymous: false,
-						missing: false,
-						available: false
-					}))
-			]);
+						missing: volume.missing ?? false,
+						available: true
+					})),
+					...saved
+						.filter((volume) => volume.projectId === project.id && !project.volumes.some((live) => live.key === volume.key))
+						.map((volume) => ({
+							value: projectVolumeValue(volume),
+							label: volume.key,
+							group,
+							anonymous: false,
+							missing: false,
+							available: false
+						}))
+				];
+			});
 		}
-		return options.map((option) =>
-			'id' in option
-				? { value: option.id, label: option.name, anonymous: false, missing: false, available: option.available }
-				: { value: option.name, label: option.name, anonymous: option.anonymous, missing: false, available: option.available }
-		);
+		return options.map((option) => {
+			if ('id' in option) {
+				return {
+					value: option.id,
+					label: option.name,
+					group: 'environmentName' in option ? option.environmentName : undefined,
+					anonymous: false,
+					missing: false,
+					available: option.available
+				};
+			}
+			return { value: option.name, label: option.name, anonymous: option.anonymous, missing: false, available: option.available };
+		});
 	});
 	const filteredOptions = $derived.by(() => {
 		const term = search.trim().toLowerCase();

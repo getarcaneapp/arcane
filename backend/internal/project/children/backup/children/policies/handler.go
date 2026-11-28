@@ -97,7 +97,7 @@ func (h *Handler) RunGlobal(ctx context.Context, input *RunGlobalInput) (*handle
 	if err != nil {
 		return nil, err
 	}
-	accepted, err := h.service.StartGlobal(activity.ActivityRuntimeContext(ctx, h.appCtx), *user, input.Body.PolicyID)
+	accepted, err := h.service.StartGlobal(activity.ActivityRuntimeContext(ctx, h.appCtx), *user, input.Body)
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}

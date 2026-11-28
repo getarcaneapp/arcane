@@ -9,6 +9,7 @@ import (
 
 	"getarcane.dev/arcane/v3/internal/activity"
 	"getarcane.dev/arcane/v3/internal/backup"
+	"getarcane.dev/arcane/v3/internal/environment"
 	"getarcane.dev/arcane/v3/internal/middleware"
 	projectbackup "getarcane.dev/arcane/v3/internal/project/children/backup"
 	"getarcane.dev/arcane/v3/internal/project/children/bundle"
@@ -42,6 +43,7 @@ type (
 		Ctx            context.Context
 		Scheduler      types.DynamicScheduler
 		Admission      *runs.Admission
+		Environments   *environment.EnvironmentService
 		Engine         *backup.Engine
 		Repository     *backup.VolumeRepository
 		Policies       *backup.Policies
@@ -117,6 +119,7 @@ func New(p ModuleParams) *Module {
 		DeleteVolume: base.DeleteVolume,
 		Activities:   p.Activity,
 		Config:       p.Service.config,
+		Environments: p.Backups.Environments,
 		Ctx:          p.Backups.Ctx,
 		Scheduler:    p.Backups.Scheduler,
 		Admission:    p.Backups.Admission,
