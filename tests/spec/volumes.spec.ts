@@ -1,6 +1,10 @@
 import { waitForDialogReady } from '../utils/playwright.util';
 import { test, expect, type Page } from '../fixtures/test.fixture';
-import { removeApiResource, fetchVolumeCountsWithRetry } from '../utils/fetch.util';
+import {
+	createVolumeViaApi,
+	fetchVolumeCountsWithRetry,
+	removeVolumeViaApi
+} from '../utils/fetch.util';
 import { VolumeUsageCounts } from 'types/volumes.type';
 import { openRowActionsMenu, sortByColumn } from '../utils/table-actions.util';
 
@@ -58,24 +62,6 @@ async function createVolumeViaUI(page: Page, volumeName: string) {
 	await expect(
 		page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 	).toBeVisible();
-}
-
-async function createVolumeViaApi(page: Page, volumeName: string) {
-	const response = await page.request.post('/api/agents/0/volumes', {
-		data: {
-			name: volumeName,
-			driver: 'local'
-		}
-	});
-	if (!response.ok()) {
-		throw new Error(
-			`Failed to create volume ${volumeName}: ${response.status()} ${await response.text()}`
-		);
-	}
-}
-
-async function removeVolumeViaApi(page: Page, volumeName: string) {
-	await removeApiResource(page, `/api/agents/0/volumes/${encodeURIComponent(volumeName)}`);
 }
 
 async function gotoVolumeDetail(page: Page, volumeName: string) {

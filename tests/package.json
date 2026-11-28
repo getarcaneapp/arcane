@@ -10,7 +10,7 @@
 	},
 	"devDependencies": {
 		"@axe-core/playwright": "^4.14.1",
-		"@types/node": "^26.6.7",
+		"@types/node": "^26.6.11",
 		"playwright": "^1.65.1",
 		"typescript": "^7.0.2",
 		"vite": "catalog:",

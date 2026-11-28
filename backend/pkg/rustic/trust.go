@@ -124,13 +124,17 @@ func TrustMounts(ctx context.Context, dockerClient *mobyClient.Client, directory
 		slog.WarnContext(ctx, "Arcane's data directory is not a bind or named volume mount; Rustic runs without Arcane's CA certificates", "path", bundlePath)
 		return nil, nil
 	}
+	volumeOptions := resolved.VolumeOptions
+	if volumeOptions != nil {
+		volumeOptions = &mobyMount.VolumeOptions{Subpath: volumeOptions.Subpath, NoCopy: true}
+	}
 	mounts, err := volumes.BindSubpaths(ctx, dockerClient, []mobyMount.Mount{{
 		Type:          resolved.Type,
 		Source:        resolved.Source,
 		Target:        resolved.Target,
 		ReadOnly:      true,
 		BindOptions:   resolved.BindOptions,
-		VolumeOptions: resolved.VolumeOptions,
+		VolumeOptions: volumeOptions,
 	}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount CA certificates for Rustic container: %w", err)

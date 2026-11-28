@@ -537,9 +537,6 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			DB:            db,
 			DockerService: newUnreachableDockerService(t),
 		})
-		projectSvc.RegistryCredentialsProvider = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-			DB: db,
-		}).GetEnabledRegistryCredentials
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 			DB:              db,
 			EventService:    event.NewEventService(db, &config.Config{}, nil),
@@ -600,14 +597,10 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			EventService:    event.NewEventService(db, &config.Config{}, nil),
 			SettingsService: settingsService,
 		})
-		envSvc := environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-			DB: db,
-		})
 		projectSvc := project.NewProjectService(project.ProjectServiceParams{
 			DB:            db,
 			DockerService: newUnreachableDockerService(t),
 		})
-		projectSvc.RegistryCredentialsProvider = envSvc.GetEnabledRegistryCredentials
 		svc, svcErr := NewUpdaterService(UpdaterServiceParams{
 			DB:              db,
 			EventService:    event.NewEventService(db, &config.Config{}, nil),
@@ -2404,9 +2397,6 @@ func newGateTestUpdater(t *testing.T, db *database.DB, server *httptest.Server, 
 		DB:            db,
 		DockerService: newUnreachableDockerService(t),
 	})
-	projectSvc.RegistryCredentialsProvider = environment.NewEnvironmentService(environment.EnvironmentServiceParams{
-		DB: db,
-	}).GetEnabledRegistryCredentials
 	svc, err := NewUpdaterService(UpdaterServiceParams{
 		DB:                   db,
 		EventService:         eventSvc,

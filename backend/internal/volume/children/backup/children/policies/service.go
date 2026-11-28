@@ -139,7 +139,7 @@ func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, u
 				SubjectID:       volumeName,
 				Schedule:        normalized.Schedule,
 				S3DestinationID: normalized.S3DestinationID,
-				Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil, VolumeNames: nil, IgnoreAnonymous: false},
+				Options:         backup.PolicyOptions{Volumes: nil, SelectionMode: "", ProjectIDs: nil, VolumeSelection: "", ProjectVolumes: nil, VolumeNames: nil, IgnoreAnonymous: false},
 				RetentionCount:  normalized.RetentionCount,
 				Enabled:         normalized.Enabled,
 				StopContainers:  normalized.StopContainers,

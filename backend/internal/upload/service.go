@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -320,6 +321,35 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 	write := func(w io.Writer) error {
 		if _, err := io.CopyN(w, source, size); err != nil {
 			return fmt.Errorf("write uploaded file: %w", err)
+		}
+		return nil
+	}
+	return s.WriteSession(ctx, WriteSessionOptions{
+		Kind:     kind,
+		Filename: filename,
+		Write:    write,
+	})
+}
+
+// IngestStream stores a source of unknown size, stopping at the size limit for the kind.
+func (s *UploadService) IngestStream(ctx context.Context, kind, filename string, source io.Reader) (*types.UploadSession, error) {
+	limit := int64(math.MaxInt64 - 1)
+	if kind == types.UploadKindImage {
+		limit = int64(s.settingsService.GetIntSetting(ctx, "maxImageUploadSize")) * 1024 * 1024
+	}
+	return s.ingestLimited(ctx, kind, filename, source, limit)
+}
+
+func (s *UploadService) ingestLimited(ctx context.Context, kind, filename string, source io.Reader, limit int64) (*types.UploadSession, error) {
+	write := func(w io.Writer) error {
+		written, err := io.Copy(w, io.LimitReader(source, limit+1))
+		switch {
+		case err != nil:
+			return fmt.Errorf("write uploaded file: %w", err)
+		case written == 0:
+			return fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
+		case written > limit:
+			return fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, limit/(1024*1024))
 		}
 		return nil
 	}

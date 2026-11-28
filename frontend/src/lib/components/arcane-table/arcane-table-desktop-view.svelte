@@ -1,6 +1,10 @@
+<script module lang="ts">
+	const settledWidthsCache = new Map<string, Record<string, number>>();
+</script>
+
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
 	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
-	import { untrack, type Component, type Snippet } from 'svelte';
+	import { onDestroy, untrack, type Component, type Snippet } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
@@ -92,6 +96,7 @@
 
 	const VIRTUALIZE_THRESHOLD = 100;
 	const ROW_ESTIMATE_PX = 44;
+	const ROW_CHUNK = 10;
 	let measuredRowHeight = $state<number | null>(null);
 	let tableElement = $state<HTMLTableElement | null>(null);
 	let bodyElement = $state<HTMLTableSectionElement | null>(null);
@@ -101,6 +106,39 @@
 		getTableDisplayEntries(flatRows, rowIndex, groupedRows, groupCollapsedState, hasExpand ? expandedRows : undefined)
 	);
 	const shouldVirtualize = $derived(entries.length > VIRTUALIZE_THRESHOLD);
+	let mountedCount = $state(
+		untrack(() => initialScrollTop > 0 || entries.length <= ROW_CHUNK || shouldVirtualize) ? Infinity : ROW_CHUNK
+	);
+	const mountedEntries = $derived(mountedCount < entries.length ? entries.slice(0, mountedCount) : entries);
+	const pendingHeight = $derived((entries.length - mountedEntries.length) * (measuredRowHeight ?? ROW_ESTIMATE_PX));
+	let mountFrame = 0;
+	let mountTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function mountNextChunk() {
+		mountFrame = requestAnimationFrame(() => {
+			const first = bodyElement?.rows.item(0);
+			const spacer = bodyElement?.rows.item(bodyElement.rows.length - 1);
+			if (first && spacer && spacer !== first && spacer.ariaHidden === 'true') {
+				measuredRowHeight =
+					(spacer.getBoundingClientRect().top - first.getBoundingClientRect().top) / (bodyElement!.rows.length - 1);
+			}
+			mountTimer = setTimeout(() => {
+				const next = mountedCount + ROW_CHUNK;
+				if (next < entries.length) {
+					mountedCount = next;
+					mountNextChunk();
+				} else {
+					mountedCount = Infinity;
+				}
+			});
+		});
+	}
+
+	if (untrack(() => mountedCount) !== Infinity) mountNextChunk();
+	onDestroy(() => {
+		cancelAnimationFrame(mountFrame);
+		clearTimeout(mountTimer);
+	});
 	// Widths in px from an auto-layout pass, locked so overflowing tables scroll instead of squashing.
 	let lockedColumns = $state<{ key: string; widths: number[] } | null>(null);
 	const columnKey = $derived(
@@ -113,7 +151,11 @@
 	let settledWidths = $state<{ key: string; widths: Record<string, number> }>({ key: '', widths: {} });
 	let layoutWidth = $state(0);
 	const settleKey = $derived(`${columnKey}:${layoutWidth}`);
-	const minWidths = $derived(settledWidths.key === settleKey && flatRows.length > 0 ? settledWidths.widths : {});
+	const minWidths = $derived.by(() => {
+		if (flatRows.length === 0) return {};
+		if (settledWidths.key === settleKey) return settledWidths.widths;
+		return settledWidthsCache.get(settleKey) ?? {};
+	});
 
 	$effect(() => {
 		const container = scrollElement;
@@ -128,6 +170,7 @@
 	$effect(() => {
 		const tableNode = tableElement;
 		const key = settleKey;
+		const allMounted = mountedEntries === entries;
 		if (!tableNode || columnWidths || flatRows.length === 0) return;
 		const frame = requestAnimationFrame(() => {
 			const previous = settledWidths.key === key ? settledWidths.widths : {};
@@ -142,6 +185,7 @@
 				}
 			}
 			if (grew || settledWidths.key !== key) settledWidths = { key, widths: next };
+			if (allMounted) settledWidthsCache.set(key, next);
 		});
 		return () => cancelAnimationFrame(frame);
 	});
@@ -509,9 +553,14 @@
 			{:else if shouldVirtualize}
 				{@render virtualRows()}
 			{:else}
-				{#each entries as entry (entry.key)}
+				{#each mountedEntries as entry (entry.key)}
 					{@render displayEntry(entry)}
 				{/each}
+				{#if pendingHeight > 0}
+					<tr aria-hidden="true">
+						<td colspan={columnsCount} class="h-(--pad) border-0 p-0" style="--pad: {pendingHeight}px"></td>
+					</tr>
+				{/if}
 			{/if}
 		</Table.Body>
 	</Table.Root>

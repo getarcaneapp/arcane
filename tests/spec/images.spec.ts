@@ -3,7 +3,8 @@ import {
 	fetchImageCountsWithRetry,
 	fetchImagesWithRetry,
 	readApiData,
-	readList
+	readList,
+	waitForActivity
 } from '../utils/fetch.util';
 import {
 	ImageSummary,
@@ -342,18 +343,7 @@ test.describe('Management', () => {
 					.getByRole('listitem')
 					.filter({ hasText: `Image ${reference} pulled successfully` })
 			).toBeVisible();
-			await expect
-				.poll(
-					async () => {
-						const detail = await readApiData<{ activity: { status: string } }>(
-							await page.request.get(`/api/agents/0/activities/${activityId}`),
-							'Get image pull activity'
-						);
-						return detail.activity.status;
-					},
-					{ timeout: 60_000 }
-				)
-				.toBe('success');
+			await waitForActivity(page, activityId as string, 60_000);
 		});
 
 		test('should call remove API on row action remove click and confirmation', async ({ page }) => {

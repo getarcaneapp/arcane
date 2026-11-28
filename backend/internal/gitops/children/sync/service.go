@@ -542,12 +542,8 @@ func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectp
 			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployErr))
 		}
 	case sync.PullImageAfterSync:
-		credentials, credentialsErr := s.projectService.ResolveRegistryCredentials(ctx)
-		if credentialsErr != nil {
-			slog.WarnContext(ctx, "failed to resolve registry credentials for post-sync pull", "error", credentialsErr, "projectId", project.ID)
-		}
 		slog.InfoContext(ctx, "Pulling project images after Git sync (project not running)", "projectName", project.Name, "projectId", project.ID)
-		if pullErr := s.projectService.PullProjectImages(ctx, project.ID, io.Discard, actor, credentials); pullErr != nil {
+		if pullErr := s.projectService.PullProjectImages(ctx, project.ID, io.Discard, actor, nil); pullErr != nil {
 			slog.ErrorContext(ctx, "failed to pull project images after Git sync", "error", pullErr, "projectId", project.ID)
 			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("post-sync image pull failed: %w", pullErr))
 		}

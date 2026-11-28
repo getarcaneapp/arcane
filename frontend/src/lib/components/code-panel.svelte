@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import type {
@@ -8,12 +8,12 @@
 		DiagnosticSummary,
 		EditorContext
 	} from '#lib/components/code-editor/analysis/types.js';
+	import { getEditorStatusHost, hasEditorStatusHost } from '#lib/components/code-editor/status-context.js';
 	import MarkdownContent from '#lib/components/markdown-content.svelte';
-	import SegmentToggle from '#lib/components/segment-toggle.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
-	import { AlertIcon, CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
+	import { AlertIcon, CodeIcon, EyeOnIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	let {
@@ -88,10 +88,15 @@
 	const showMarkdownPreview = $derived(
 		isMarkdown && markdownView === 'preview' && !outlineOpen && !diffOpen && !commandPaletteOpen
 	);
-	const markdownViewOptions = $derived([
-		{ value: 'preview', label: m.preview() },
-		{ value: 'raw', label: m.common_raw() }
-	]);
+	const statusHost = hasEditorStatusHost() ? getEditorStatusHost() : null;
+
+	onMount(() => {
+		if (!statusHost || variant !== 'plain') return;
+		statusHost.actions = markdownViewToggle;
+		return () => {
+			if (statusHost.actions === markdownViewToggle) statusHost.actions = null;
+		};
+	});
 
 	function selectMarkdownView(view: string) {
 		markdownChoice = { file: title, view };
@@ -128,12 +133,19 @@
 </script>
 
 {#snippet markdownViewToggle()}
-	<SegmentToggle
-		label={m.markdown_view()}
-		options={markdownViewOptions}
-		current={showMarkdownPreview ? 'preview' : 'raw'}
-		onSelect={selectMarkdownView}
-	/>
+	{#if isMarkdown}
+		<ArcaneButton
+			action="base"
+			tone={showMarkdownPreview ? 'outline-primary' : 'ghost'}
+			size="icon"
+			class={variant === 'plain' ? 'size-6 pointer-coarse:min-h-touch-target pointer-coarse:min-w-touch-target' : undefined}
+			showLabel={false}
+			icon={EyeOnIcon}
+			customLabel={m.preview()}
+			aria-pressed={showMarkdownPreview}
+			onclick={() => selectMarkdownView(showMarkdownPreview ? 'raw' : 'preview')}
+		/>
+	{/if}
 {/snippet}
 
 {#snippet markdownPreview()}
@@ -224,8 +236,8 @@
 
 {#if variant === 'plain'}
 	<div class="relative z-(--arcane-z-content) flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
-		{#if isMarkdown}
-			<div class="flex shrink-0 justify-end px-2 pb-1.5">
+		{#if isMarkdown && !statusHost}
+			<div class="flex shrink-0 justify-end px-2 pb-1">
 				{@render markdownViewToggle()}
 			</div>
 		{/if}
@@ -239,9 +251,7 @@
 			</Card.Title>
 			<Card.Action>
 				<div class="flex items-center gap-1 pt-1">
-					{#if isMarkdown}
-						{@render markdownViewToggle()}
-					{/if}
+					{@render markdownViewToggle()}
 					<ArcaneButton
 						action="base"
 						tone={outlineOpen ? 'outline-primary' : 'ghost'}

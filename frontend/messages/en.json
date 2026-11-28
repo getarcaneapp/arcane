@@ -4859,7 +4859,6 @@
   "agent_profiling_upgrade_required": "Upgrade this agent to collect profiling dumps and pprof profiles.",
   "project_backups_empty_description": "Back up this project to keep a copy of its files and volume data.",
   "preview": "Preview",
-  "markdown_view": "Markdown view",
   "markdown_render_failed": "Markdown could not be rendered.",
   "show_swarm_task_hostnames": "Show Swarm Task Hostnames",
   "search_and_sort_use_docker_names": "Search and sort use Docker names.",
@@ -4903,5 +4902,7 @@
   "no_oidc_ldap_group_mappings": "No OIDC or LDAP group claim mappings configured.",
   "group_details": "Group details",
   "loading_backups": "Loading backups",
-  "loading_backups_description": "Checking stored snapshots, which can take a while for S3 destinations. The rest of the page is ready to use."
+  "loading_backups_description": "Checking stored snapshots, which can take a while for S3 destinations. The rest of the page is ready to use.",
+  "rules_checked_against_project_volumes": "Rules are checked against each selected project's volumes at every run.",
+  "all_project_volumes_description": "Include every volume of each project, including volumes added later."
 }

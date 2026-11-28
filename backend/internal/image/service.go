@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"log/slog"
 	"maps"
 	"net/url"
@@ -253,6 +254,10 @@ func (s *ImageService) RecoverInterruptedPatches(ctx context.Context) error {
 	return s.patch.RecoverInterruptedPatches(ctx)
 }
 
+func (s *ImageService) PrunePatchHistory(ctx context.Context, retentionDays int) (int64, error) {
+	return s.patch.PruneHistory(ctx, retentionDays)
+}
+
 func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.ImageDetailSummary, error) {
@@ -456,38 +461,32 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 
 	slog.DebugContext(ctx, "Attempting to pull image", "image", imageName, "externalCredCount", len(externalCreds))
 
-	pullOptions, err := s.PullOptionsWithAuth(ctx, imageName, externalCreds)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to get registry authentication for image; proceeding without auth", "image", imageName, "error", err.Error())
-		pullOptions = mobyClient.ImagePullOptions{}
-	}
-
-	initialHasAuth := pullOptions.RegistryAuth != ""
-	retriedWithoutAuth := false
-
 	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", imageName)()
-	reader, err := dockerClient.ImagePull(ctx, imageName, pullOptions)
-	if err != nil && ShouldRetryAnonymousPull(pullOptions, err) {
-		retriedWithoutAuth = true
-		slog.WarnContext(ctx, "Docker ImagePull failed with registry auth; retrying anonymously", "image", imageName, "error", err.Error())
-		pullOptions = mobyClient.ImagePullOptions{}
+	var streamErr, rejectedErr error
+	for pullOptions := range s.PullOptionsWithAuth(ctx, imageName, externalCreds) {
+		var reader mobyClient.ImagePullResponse
 		reader, err = dockerClient.ImagePull(ctx, imageName, pullOptions)
+		streamErr = nil
+		if err == nil {
+			logWriter := docker.NewLogLineWriter(progressWriter)
+			streamErr = docker.RenderJSONMessageStream(reader, logWriter)
+			_ = logWriter.Close()
+			_ = reader.Close()
+		}
+		attemptErr := errors.Join(err, streamErr)
+		if !ShouldRetryAnonymousPull(pullOptions, attemptErr) {
+			if attemptErr != nil && pullOptions.RegistryAuth == "" && rejectedErr != nil {
+				err, streamErr = rejectedErr, nil
+			}
+			break
+		}
+		slog.WarnContext(ctx, "Docker ImagePull failed with registry auth; trying the next credential", "image", imageName, "error", attemptErr.Error())
+		if rejectedErr == nil {
+			rejectedErr = attemptErr
+		}
 	}
 	if err != nil {
-		slog.ErrorContext(
-			ctx,
-			"Docker ImagePull failed",
-			"image",
-			imageName,
-			"hasAuth",
-			pullOptions.RegistryAuth != "",
-			"initialHasAuth",
-			initialHasAuth,
-			"retriedWithoutAuth",
-			retriedWithoutAuth,
-			"error",
-			err.Error(),
-		)
+		slog.ErrorContext(ctx, "Docker ImagePull failed", "image", imageName, "error", err.Error())
 		s.eventService.LogErrorEvent(ctx, event.ResourceEvent{
 			Type:          event.EventTypeImageError,
 			ResourceType:  "image",
@@ -499,11 +498,7 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 		}, err)
 		return fmt.Errorf("failed to initiate image pull for %s: %w", imageName, err)
 	}
-	defer func() { _ = reader.Close() }()
 
-	logWriter := docker.NewLogLineWriter(progressWriter)
-	streamErr := docker.RenderJSONMessageStream(reader, logWriter)
-	_ = logWriter.Close()
 	if streamErr != nil {
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
 			slog.DebugContext(ctx, "image pull stream canceled", "image", imageName, "err", streamErr)
@@ -830,36 +825,37 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 }
 
-func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) (mobyClient.ImagePullOptions, error) {
-	registryHost := arcaneregistry.ExtractRegistryHost(imageRef)
-
-	usableCreds := slices.DeleteFunc(slices.Clone(externalCreds), func(cred types.ContainerRegistryCredential) bool {
-		return !cred.Enabled || cred.Username == "" || cred.Token == ""
-	})
-	matchingCreds, err := arcaneregistry.MatchingForImage(imageRef, usableCreds, func(cred types.ContainerRegistryCredential) string { return cred.URL })
-	if err != nil {
-		return mobyClient.ImagePullOptions{}, fmt.Errorf("failed to match external credentials: %w", err)
-	}
-	if len(matchingCreds) > 0 {
-		cred := matchingCreds[0]
-		authStr, encodeErr := arcaneregistry.EncodeAuthHeader(cred.Username, cred.Token, arcaneregistry.NormalizeRegistryURL(cred.URL))
-		if encodeErr != nil {
-			return mobyClient.ImagePullOptions{}, fmt.Errorf("failed to create auth header: %w", encodeErr)
+func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string, externalCreds []types.ContainerRegistryCredential) iter.Seq[mobyClient.ImagePullOptions] {
+	return func(yield func(mobyClient.ImagePullOptions) bool) {
+		usableCreds := slices.DeleteFunc(slices.Clone(externalCreds), func(cred types.ContainerRegistryCredential) bool {
+			return !cred.Enabled || cred.Username == "" || cred.Token == ""
+		})
+		matchingCreds, err := arcaneregistry.MatchingForImage(imageRef, usableCreds, func(cred types.ContainerRegistryCredential) string { return cred.URL })
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to match external credentials for image pull", "image", imageRef, "error", err)
+		}
+		for _, cred := range matchingCreds {
+			authStr, encodeErr := arcaneregistry.EncodeAuthHeader(cred.Username, cred.Token, arcaneregistry.NormalizeRegistryURL(cred.URL))
+			if encodeErr != nil {
+				slog.WarnContext(ctx, "Failed to create auth header for image pull", "image", imageRef, "error", encodeErr)
+				continue
+			}
+			if !yield(mobyClient.ImagePullOptions{RegistryAuth: authStr}) {
+				return
+			}
 		}
 
-		slog.DebugContext(ctx, "Using external credentials for image pull", "registry", registryHost, "username", cred.Username)
-		return mobyClient.ImagePullOptions{RegistryAuth: authStr}, nil
+		for authStr, authErr := range s.registryService.GetRegistryAuthsForImage(ctx, imageRef) {
+			if authErr != nil {
+				slog.WarnContext(ctx, "Failed to get registry credentials for image pull", "image", imageRef, "error", authErr)
+				break
+			}
+			if !yield(mobyClient.ImagePullOptions{RegistryAuth: authStr}) {
+				return
+			}
+		}
+		yield(mobyClient.ImagePullOptions{})
 	}
-
-	authStr, err := s.registryService.GetRegistryAuthForImage(ctx, imageRef)
-	if err != nil {
-		return mobyClient.ImagePullOptions{}, fmt.Errorf("failed to get registry credentials: %w", err)
-	}
-	if authStr != "" {
-		slog.DebugContext(ctx, "Using database credentials for image pull", "registry", registryHost)
-	}
-
-	return mobyClient.ImagePullOptions{RegistryAuth: authStr}, nil
 }
 
 func ShouldRetryAnonymousPull(pullOptions mobyClient.ImagePullOptions, pullErr error) bool {
@@ -871,7 +867,7 @@ func ShouldRetryAnonymousPull(pullOptions mobyClient.ImagePullOptions, pullErr e
 		"authentication required",
 		"incorrect username or password",
 		"no basic auth credentials",
-		"access denied",
+		"denied",
 	}, func(indicator string) bool { return strings.Contains(strings.ToLower(pullErr.Error()), indicator) })
 }
 

@@ -22,7 +22,7 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { backupPolicyUpdateFromPolicy } from '#lib/utils/backups.js';
 
-	import BackupScopeFields from './backup-scope-fields.svelte';
+	import BackupScopeFields, { parseProjectVolumeValue, projectVolumeValue } from './backup-scope-fields.svelte';
 
 	type BackupType = 'system' | 'project' | 'volume';
 
@@ -60,10 +60,16 @@
 
 	const editing = untrack(() => Boolean(policyId));
 	let backupType = $state<BackupType>(untrack(() => initialType));
+	const initialProjectPolicy = untrack(() =>
+		initialType === 'project' ? projectPolicies.find((item) => item.id === policyId) : undefined
+	);
 	const initialScope = untrack(() => {
 		if (initialType === 'project') {
-			const policy = projectPolicies.find((item) => item.id === policyId);
-			return { selectionMode: policy?.selectionMode, selected: policy?.projectIds, ignoreAnonymous: true };
+			return {
+				selectionMode: initialProjectPolicy?.selectionMode,
+				selected: initialProjectPolicy?.projectIds,
+				ignoreAnonymous: true
+			};
 		}
 		const policy = volumePolicies.find((item) => item.id === policyId);
 		return { selectionMode: policy?.selectionMode, selected: policy?.volumeNames, ignoreAnonymous: policy?.ignoreAnonymous };
@@ -71,7 +77,10 @@
 	let selectionMode = $state<SystemVolumeSelectionMode>(initialScope.selectionMode ?? 'all');
 	let selected = $state<string[]>([...(initialScope.selected ?? [])]);
 	let ignoreAnonymous = $state(initialScope.ignoreAnonymous ?? true);
+	let volumeSelectionMode = $state<SystemVolumeSelectionMode>(initialProjectPolicy?.volumeSelectionMode ?? 'all');
+	let selectedVolumes = $state<string[]>((initialProjectPolicy?.volumes ?? []).map(projectVolumeValue));
 	const projectOptionsQuery = createQuery(() => ({ ...projectBackupOptionsQuery(), enabled: backupType === 'project' }));
+	const projectVolumeOptions = $derived((projectOptionsQuery.data ?? []).filter((project) => projectSelected(project.id)));
 	const typeOptions = $derived([
 		{ label: m.system(), value: 'system', description: m.arcane_only_backup_description() },
 		{ label: m.project(), value: 'project', description: m.back_up_selected_projects() },
@@ -85,6 +94,19 @@
 		selectionMode = 'all';
 		selected = [];
 		ignoreAnonymous = true;
+		volumeSelectionMode = 'all';
+		selectedVolumes = [];
+	}
+
+	function projectSelected(projectId: string): boolean {
+		switch (selectionMode) {
+			case 'allowlist':
+				return selected.includes(projectId);
+			case 'blocklist':
+				return !selected.includes(projectId);
+			default:
+				return true;
+		}
 	}
 
 	function volumePayload(policy: SystemVolumeBackupPolicy): UpdateSystemVolumeBackupPolicy {
@@ -110,7 +132,19 @@
 		return {
 			...backupPolicyUpdateFromPolicy(policy, true),
 			selectionMode: policy.selectionMode,
-			projectIds: policy.projectIds
+			projectIds: policy.projectIds,
+			volumeSelectionMode: policy.volumeSelectionMode,
+			volumes: policy.volumes
+		};
+	}
+
+	function extendProjectUpdate(update: UpdateBackupPolicy): UpdateGlobalProjectBackupPolicy {
+		return {
+			...update,
+			selectionMode,
+			projectIds: selected,
+			volumeSelectionMode,
+			volumes: selectedVolumes.map(parseProjectVolumeValue)
 		};
 	}
 
@@ -160,6 +194,20 @@
 			ignoreAnonymous = values.ignoreAnonymous ?? ignoreAnonymous;
 		}}
 	/>
+	{#if backupType === 'project'}
+		<BackupScopeFields
+			idPrefix="system-project-volume-backup-schedule"
+			kind="projectVolume"
+			selectionMode={volumeSelectionMode}
+			selected={selectedVolumes}
+			options={projectVolumeOptions}
+			loading={projectOptionsQuery.isFetching}
+			onChange={(values) => {
+				volumeSelectionMode = values.selectionMode ?? volumeSelectionMode;
+				selectedVolumes = values.selected ?? selectedVolumes;
+			}}
+		/>
+	{/if}
 {/snippet}
 
 {#if backupType === 'system'}
@@ -203,7 +251,7 @@
 		beforeFields={TypeField}
 		afterFields={Scope}
 		policyPayload={projectPayload}
-		extendUpdate={(update): UpdateGlobalProjectBackupPolicy => ({ ...update, selectionMode, projectIds: selected })}
+		extendUpdate={extendProjectUpdate}
 		updatePolicies={updateProjectPolicies}
 		messages={{
 			saved: m.backup_schedules_saved(),

@@ -59,6 +59,16 @@ function ensureProjectsDirIsContainerWritable(projectsDir: string) {
 	);
 }
 
+function rusticImage() {
+	const source = fs.readFileSync(
+		path.resolve(__dirname, '../../backend/pkg/rustic/image.go'),
+		'utf8'
+	);
+	const image = /DefaultImage\s*=\s*"([^"]+)"/.exec(source)?.[1];
+	if (!image) throw new Error('rustic.DefaultImage not found in backend/pkg/rustic/image.go');
+	return image;
+}
+
 async function globalSetup() {
 	console.log('\nStarting global setup...');
 
@@ -73,7 +83,8 @@ async function globalSetup() {
 		for (const image of [
 			'public.ecr.aws/docker/library/busybox:1.37',
 			'public.ecr.aws/docker/library/alpine:3.20',
-			'public.ecr.aws/nginx/nginx:stable-alpine'
+			'public.ecr.aws/nginx/nginx:stable-alpine',
+			rusticImage()
 		]) {
 			try {
 				execFileSync('docker', ['image', 'inspect', image], { stdio: 'ignore' });

@@ -1,6 +1,11 @@
 import { stat } from 'node:fs/promises';
 import { test, expect, type Page, type Locator } from '../fixtures/test.fixture';
-import { readApiData, removeApiResource, type Paginated } from '../utils/fetch.util';
+import {
+	readApiData,
+	removeApiResource,
+	waitForActivity,
+	type Paginated
+} from '../utils/fetch.util';
 import { ContainerSummary } from '../types/containers.type';
 import {
 	openRowActionsMenu,
@@ -521,15 +526,6 @@ test.describe('Lifecycle', () => {
 		labels?: Record<string, string>;
 	};
 
-	type ActivityDetail = {
-		activity: {
-			id: string;
-			type: string;
-			status: string;
-			error?: string;
-		};
-	};
-
 	type ActionResult = {
 		message?: string;
 		activityId?: string;
@@ -612,24 +608,9 @@ test.describe('Lifecycle', () => {
 	}
 
 	async function expectActivitySucceeded(page: Page, activityId: string, expectedType: string) {
-		await expect
-			.poll(
-				async () => {
-					const detail = await readApiData<ActivityDetail>(
-						await page.request.get(`/api/agents/0/activities/${activityId}`),
-						`Get activity ${activityId}`
-					);
-					return detail.activity.status;
-				},
-				{ message: `Expected ${expectedType} activity ${activityId} to succeed`, timeout: 20_000 }
-			)
-			.toBe('success');
-		const detail = await readApiData<ActivityDetail>(
-			await page.request.get(`/api/agents/0/activities/${activityId}`),
-			`Get completed activity ${activityId}`
-		);
-		expect(detail.activity.type).toBe(expectedType);
-		expect(detail.activity.error).toBeFalsy();
+		const activity = await waitForActivity(page, activityId, 20_000);
+		expect(activity.type).toBe(expectedType);
+		expect(activity.error).toBeFalsy();
 	}
 
 	// Header actions render inline or inside the "More actions" menu depending on placement.

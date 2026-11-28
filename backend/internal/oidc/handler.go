@@ -169,7 +169,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 		}
 	}
 
-	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri, origin, mobileRedirectURI)
+	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, origin, mobileRedirectURI)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to generate OIDC auth URL: " + err.Error())
 	}

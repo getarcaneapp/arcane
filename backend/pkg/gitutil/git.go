@@ -345,6 +345,17 @@ func getKnownHostsPaths(
 	}
 }
 
+// URLHasPassword reports whether the URL, in the form the client connects with, embeds a password.
+func URLHasPassword(rawURL string) bool {
+	normalized, err := normalizeURL(rawURL)
+	if err != nil {
+		// Unsupported schemes can still carry a password.
+		normalized = rawURL
+	}
+	endpoint, err := transport.NewEndpoint(normalized)
+	return err == nil && endpoint.Password != ""
+}
+
 func RepositoryAttribute(rawURL string) attribute.KeyValue {
 	endpoint, err := transport.NewEndpoint(rawURL)
 	if err != nil {
@@ -676,7 +687,7 @@ func ValidatePath(repoPath, requestedPath string) error {
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
-	if strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".."+string(filepath.Separator)) {
+	if !filepath.IsLocal(rel) {
 		return errors.New("path traversal attempt detected")
 	}
 
