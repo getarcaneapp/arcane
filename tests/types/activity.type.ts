@@ -7,4 +7,6 @@ export type Activity = {
 	resourceType?: string;
 	resourceId?: string;
 	resourceName?: string;
+	error?: string;
+	latestMessage?: string;
 };
