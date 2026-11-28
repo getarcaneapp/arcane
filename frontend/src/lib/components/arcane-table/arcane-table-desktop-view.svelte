@@ -116,6 +116,12 @@
 
 	function mountNextChunk() {
 		mountFrame = requestAnimationFrame(() => {
+			const first = bodyElement?.rows.item(0);
+			const spacer = bodyElement?.rows.item(bodyElement.rows.length - 1);
+			if (first && spacer && spacer !== first && spacer.ariaHidden === 'true') {
+				measuredRowHeight =
+					(spacer.getBoundingClientRect().top - first.getBoundingClientRect().top) / (bodyElement!.rows.length - 1);
+			}
 			mountTimer = setTimeout(() => {
 				const next = mountedCount + ROW_CHUNK;
 				if (next < entries.length) {
