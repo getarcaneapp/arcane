@@ -37,7 +37,11 @@ func WatchAccess(ctx context.Context, revoke func(), check func(context.Context)
 			return
 		case <-ticker.C:
 			// A failed lookup also revokes: an unverifiable session must not keep a shell open.
-			if err := check(ctx); err != nil && ctx.Err() == nil {
+			checkCtx, checkCancel := context.WithTimeout(ctx, writeWait)
+			err := check(checkCtx)
+			checkCancel()
+			// A slow lookup times out and revokes too.
+			if err != nil && ctx.Err() == nil {
 				slog.InfoContext(ctx, "Closing websocket after access check failed", "error", err)
 				revoke()
 				return

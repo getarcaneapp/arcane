@@ -174,9 +174,11 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 	}
 	connID := defaultWebSocketMetrics.RegisterConnection(info)
 	h.conns.Store(conn, struct{}{})
-	// Only session logins are re-checked; the request context ends when the handler returns.
+	// Hub-served sockets outlive the request, so the watcher stops on unregister instead.
+	watchCtx, stopWatch := context.WithCancel(context.WithoutCancel(req.Context()))
+	// Only session logins are re-checked.
 	if sessionID, _ := c.Get(string(middleware.ContextKeyCurrentSessionID)).(string); sessionID != "" {
-		go wshub.WatchAccess(req.Context(), func() {
+		go wshub.WatchAccess(watchCtx, func() {
 			_ = conn.Close(websocket.StatusPolicyViolation, "session ended")
 		}, func(ctx context.Context) error {
 			return h.authService.CheckSessionActive(ctx, userID, sessionID)
@@ -197,6 +199,7 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 			attribute.String("user_agent.original", info.UserAgent),
 		))
 	return conn, func() {
+		stopWatch()
 		h.conns.Delete(conn)
 		defaultWebSocketMetrics.UnregisterConnection(connID)
 		span.End()
