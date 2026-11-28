@@ -24,6 +24,7 @@
 	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { LoadingState } from '#lib/components/states/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -32,6 +33,7 @@
 	import {
 		TrashIcon,
 		AddIcon,
+		BackupIcon,
 		ClockIcon,
 		VolumesIcon,
 		InfoIcon,
@@ -515,6 +517,10 @@
 	</RowActionsMenu>
 {/snippet}
 
+{#snippet BackupsLoadingState()}
+	<LoadingState icon={BackupIcon} title={m.loading_backups()} description={m.loading_backups_description()} />
+{/snippet}
+
 {#snippet ToolbarActions()}
 	{#if canBackupVolume}
 		<div class="flex items-center gap-2">
@@ -692,6 +698,8 @@
 		rowActions={RowActions}
 		mobileCard={BackupMobileCardSnippet}
 		customToolbarActions={ToolbarActions}
+		loadingState={BackupsLoadingState}
+		loading={backupsQuery.isPending}
 	/>
 </div>
 

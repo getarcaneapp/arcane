@@ -15,7 +15,7 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import { EmptyState } from '#lib/components/states/index.js';
+	import { EmptyState, LoadingState } from '#lib/components/states/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
@@ -93,7 +93,9 @@
 		...systemBackupHistoryQuery(pageState.scope, pageState.requestOptions),
 		placeholderData: (previous) => previous
 	}));
-	const backups = $derived(backupsQuery.data ?? data.backups);
+	const backups = $derived(
+		backupsQuery.data ?? { data: [], pagination: { currentPage: 1, totalPages: 1, totalItems: 0, itemsPerPage: 20 } }
+	);
 	let policyCollection = $derived(data.policyCollection);
 	// Observed rather than taken from the load: a global run can disable a schedule's S3 destination, and saving sends
 	// the whole list, so a stale copy would turn it back on.
@@ -729,13 +731,27 @@
 {/snippet}
 
 {#snippet backupsEmptyState()}
-	<EmptyState
-		icon={BackupIcon}
-		title={m.system_backups_empty_title()}
-		description={m.system_backups_empty_description()}
-		actionLabel={isReadOnly || !canCreateBackups ? undefined : m.common_create()}
-		onAction={() => openAction('create')}
-	/>
+	{#if backupsQuery.error && !backupsQuery.data}
+		<EmptyState
+			icon={AlertIcon}
+			title={m.volumes_backup_load_failed()}
+			description={extractApiErrorMessage(backupsQuery.error)}
+			actionLabel={m.common_retry()}
+			onAction={() => backupsQuery.refetch()}
+		/>
+	{:else}
+		<EmptyState
+			icon={BackupIcon}
+			title={m.system_backups_empty_title()}
+			description={m.system_backups_empty_description()}
+			actionLabel={isReadOnly || !canCreateBackups ? undefined : m.common_create()}
+			onAction={() => openAction('create')}
+		/>
+	{/if}
+{/snippet}
+
+{#snippet backupsLoadingState()}
+	<LoadingState icon={BackupIcon} title={m.loading_backups()} description={m.loading_backups_description()} />
 {/snippet}
 
 {#snippet recoveryKeySummary()}
@@ -1042,6 +1058,9 @@
 				<Tabs.Content value="backups" class="mt-6">
 					<SystemBackupTable
 						emptyState={backupsEmptyState}
+						loadingState={backupsLoadingState}
+						loading={backupsQuery.isPending}
+						refreshError={backupsQuery.error}
 						{backups}
 						{localDockerDisabled}
 						bind:requestOptions={pageState.requestOptions}

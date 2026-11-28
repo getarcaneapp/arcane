@@ -55,7 +55,10 @@
 		onOpenVolume,
 		onOpenProject,
 		onRestoreProjectAsNew,
-		emptyState
+		emptyState,
+		loadingState,
+		loading,
+		refreshError
 	}: {
 		backups: EnvironmentPage<Paginated<SystemVolumeBackupHistoryEntry>>;
 		localDockerDisabled: boolean;
@@ -70,6 +73,9 @@
 		onOpenProject: (backup: BackupRow) => void;
 		onRestoreProjectAsNew: (backup: BackupRow) => void;
 		emptyState?: Snippet;
+		loadingState?: Snippet;
+		loading: boolean;
+		refreshError: unknown;
 	} = $props();
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -201,6 +207,9 @@
 
 <ArcaneTable
 	{emptyState}
+	{loadingState}
+	{loading}
+	{refreshError}
 	persistKey="arcane-system-backups-table"
 	items={backups}
 	bind:requestOptions

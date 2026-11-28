@@ -94,7 +94,8 @@
 		onGroupToggle,
 		imageNameFilterOptions,
 		expandedRowContent,
-		emptyState
+		emptyState,
+		loadingState
 	}: {
 		items: Paginated<TData> & { failedEnvironments?: EnvironmentFailure[]; excludedEnvironments?: EnvironmentRef[] };
 		requestOptions: SearchPaginationSortRequest;
@@ -143,6 +144,7 @@
 		imageNameFilterOptions?: string[];
 		expandedRowContent?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
 		emptyState?: Snippet;
+		loadingState?: Snippet;
 	} = $props();
 
 	const DEFAULT_LIMIT = 20;
@@ -756,6 +758,7 @@
 	const shellClass = $derived(unstyled ? 'flex h-full min-h-0 flex-col' : 'flex h-full min-h-0 flex-col gap-3');
 	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'w-full shrink-0');
 
+	const showSkeleton = $derived(loading && !loadingState);
 	const failedEnvironments = $derived(items.failedEnvironments ?? []);
 	const excludedEnvironments = $derived(items.excludedEnvironments ?? []);
 	const hasTableIssues = $derived(failedEnvironments.length > 0 || excludedEnvironments.length > 0 || Boolean(refreshError));
@@ -858,7 +861,9 @@
 {/snippet}
 
 {#snippet EmptySnippet()}
-	{#if !isFiltered && emptyState}
+	{#if loading && loadingState}
+		{@render loadingState()}
+	{:else if !isFiltered && emptyState}
 		{@render emptyState()}
 	{:else}
 		<TableEmpty onClear={isFiltered ? resetFilters : undefined} />
@@ -878,7 +883,7 @@
 		{expandedRowContent}
 		{expandedRows}
 		onToggleRowExpanded={toggleRowExpanded}
-		{loading}
+		loading={showSkeleton}
 		virtualize={mobileVirtualized}
 		{selectedIdSet}
 		{selectionDisabled}
@@ -948,7 +953,7 @@
 					{expandedRowContent}
 					{expandedRows}
 					onToggleRowExpanded={toggleRowExpanded}
-					{loading}
+					loading={showSkeleton}
 					empty={EmptySnippet}
 				/>
 			</div>
@@ -980,7 +985,7 @@
 					{expandedRows}
 					onToggleRowExpanded={toggleRowExpanded}
 					scrollElement={desktopScrollEl}
-					{loading}
+					loading={showSkeleton}
 					{wrapText}
 					empty={EmptySnippet}
 				/>
