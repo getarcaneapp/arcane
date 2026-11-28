@@ -33,6 +33,7 @@
 		InfoIcon,
 		LockIcon,
 		ResetIcon,
+		ShieldCheckIcon,
 		UploadIcon
 	} from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
@@ -71,6 +72,7 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import BackupScopeFields from './components/backup-scope-fields.svelte';
+	import RecoveryKeyVerifyDialog from './components/recovery-key-verify-dialog.svelte';
 	import SystemBackupScheduleDialog from './components/system-backup-schedule-dialog.svelte';
 	import SystemBackupTable from './components/system-backup-table.svelte';
 
@@ -119,6 +121,7 @@
 	let editingScheduleId = $state<string | undefined>();
 	let keyOpen = $state(false);
 	let importKeyOpen = $state(false);
+	let verifyKeyOpen = $state(false);
 	let importKeyInput = $state('');
 	let importingKey = $state(false);
 	let actionOpen = $state(false);
@@ -709,6 +712,13 @@
 						label: m.system_backups_import_recovery_key(),
 						icon: UploadIcon,
 						onclick: () => openImportKey()
+					},
+					{
+						id: 'recovery-key-verify',
+						label: m.verify_recovery_key(),
+						icon: ShieldCheckIcon,
+						onclick: () => (verifyKeyOpen = true),
+						disabled: localDockerDisabled
 					}
 				]
 			});
@@ -1201,6 +1211,7 @@
 
 		{@render recoveryKeyDialog()}
 		{@render importKeyDialog()}
+		<RecoveryKeyVerifyDialog bind:open={verifyKeyOpen} recoveryKeyStored={policyCollection.recoveryKeyStored} />
 		{@render actionDialog()}
 		{@render restoreFilesDialog()}
 		<ProjectRestoreAsNewDialog

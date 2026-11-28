@@ -279,6 +279,7 @@ const (
 	VolumeRoot                     = "arcane-volume-backups"
 	EnvironmentSystemRoot          = "arcane-environment-recovery"
 	rusticRepositoryMissingMessage = "No repository config file found"
+	rusticWrongPasswordMessage     = "No suitable key found"
 	DeletionBatchSize              = 500
 	dataDirectory                  = "data"
 
@@ -303,6 +304,7 @@ var (
 	ErrRemoteRepositoryMissing = errors.New("S3 backup storage is missing")
 	ErrRemoteOnlyDisabled      = errors.New("the policy's only destination is missing its S3 repository, so the policy was disabled")
 	ErrRepositoryMissing       = errors.New("the backup repository does not exist")
+	ErrWrongRepositoryPassword = errors.New("the key does not open the backup repository")
 
 	VolumeRepositoryTables = []string{"volume_backups", "project_backups"}
 )
@@ -691,6 +693,9 @@ func (e *Engine) ListSnapshots(ctx context.Context, dockerClient *mobyClient.Cli
 	output, err := e.run(ctx, dockerClient, repository, password, append([]string{"snapshots", "--json", "--"}, ids...))
 	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
 		return nil, fmt.Errorf("%w: %w", ErrRepositoryMissing, err)
+	}
+	if err != nil && strings.Contains(err.Error(), rusticWrongPasswordMessage) {
+		return nil, fmt.Errorf("%w: %w", ErrWrongRepositoryPassword, err)
 	}
 	if err != nil {
 		return nil, err

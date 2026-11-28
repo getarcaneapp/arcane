@@ -119,6 +119,20 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	)
 	middleware.RegisterWithPermission(
 		api,
+		middleware.RequireGlobalAdmin(api, huma.Operation{
+			OperationID: "verify-system-backup-recovery-key",
+			Method:      http.MethodPost,
+			Path:        "/backups/recovery/key/verify",
+			Summary:     "Verify a recovery key opens the Arcane backup repositories",
+			Tags: []string{
+				"System Backups",
+			},
+		}),
+		authz.PermSystemBackupsRecoveryKey,
+		h.VerifyRecoveryKey,
+	)
+	middleware.RegisterWithPermission(
+		api,
 		huma.Operation{
 			OperationID:   "create-system-backup",
 			DefaultStatus: http.StatusAccepted,

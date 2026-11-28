@@ -76,6 +76,14 @@ type (
 		Body types.SystemBackupRecoveryKey
 	}
 
+	VerifySystemBackupRecoveryKeyInput struct {
+		Body types.SystemBackupRecoveryKey
+	}
+
+	VerifySystemBackupRecoveryKeyOutput struct {
+		Body types.SystemBackupRecoveryKeyCheck
+	}
+
 	CreateSystemBackupInput struct {
 		Body types.CreateSystemBackupRequest
 	}
@@ -227,6 +235,15 @@ func (h *Handler) SetRecoveryKey(ctx context.Context, input *SetSystemBackupReco
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &SystemBackupRecoveryKeyOutput{Body: *status}, nil
+}
+
+func (h *Handler) VerifyRecoveryKey(ctx context.Context, input *VerifySystemBackupRecoveryKeyInput) (*VerifySystemBackupRecoveryKeyOutput, error) {
+	check, err := h.service.VerifyRecoveryKey(ctx, input.Body.RecoveryKey)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return &VerifySystemBackupRecoveryKeyOutput{Body: *check}, nil
 }
 
 func (h *Handler) Discover(ctx context.Context, input *DiscoverSystemBackupsInput) (*handlerutil.Out[int], error) {

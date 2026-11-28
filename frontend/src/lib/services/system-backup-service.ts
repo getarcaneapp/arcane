@@ -6,6 +6,7 @@ import type {
 	SystemVolumeBackupHistoryEntry,
 	SystemBackupPolicyCollection,
 	SystemBackupRecoveryKey,
+	SystemBackupRecoveryKeyCheck,
 	SystemBackupRun,
 	UpdateBackupPolicy,
 	SystemVolumeBackupPolicyCollection,
@@ -109,6 +110,10 @@ class SystemBackupService extends BaseAPIService {
 
 	async setRecoveryKey(recoveryKey: string): Promise<{ configured: boolean }> {
 		return this.handleResponse(this.api.put('/backups/recovery/key', { recoveryKey }));
+	}
+
+	async verifyRecoveryKey(recoveryKey: string): Promise<SystemBackupRecoveryKeyCheck> {
+		return this.handleResponse(this.api.post('/backups/recovery/key/verify', { recoveryKey }));
 	}
 
 	async create(input: CreateSystemBackupRequest): Promise<SystemBackupRun> {
