@@ -1261,6 +1261,31 @@ func TestAuthenticateLocalPrimary_LdapUsers(t *testing.T) {
 	}
 }
 
+func TestCheckSessionActive(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	s := &AuthService{
+		userService: user.NewUserService(user.UserServiceParams{
+			DB:                   db,
+			RoleService:          role.NewRoleService(db),
+			RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+		}),
+		sessionService: session.NewSessionService(db),
+		tokens:         NewTokenCache(),
+	}
+	require.NoError(t, db.Create(&user.User{ID: "u-live", Username: "live"}).Error)
+	exp := time.Now().Add(5 * time.Minute)
+	revoked, _ := createTestSession(t, db, "u-live", exp)
+	kept, _ := createTestSession(t, db, "u-live", exp)
+
+	require.NoError(t, s.CheckSessionActive(t.Context(), "u-live", revoked.ID))
+	require.NoError(t, s.RevokeSession(t.Context(), revoked.ID))
+	require.ErrorIs(t, s.CheckSessionActive(t.Context(), "u-live", revoked.ID), common.ErrSessionRevoked)
+
+	require.NoError(t, s.CheckSessionActive(t.Context(), "u-live", kept.ID))
+	require.NoError(t, db.Model(&user.User{}).Where("id = ?", "u-live").Update("disabled", true).Error)
+	require.ErrorIs(t, s.CheckSessionActive(t.Context(), "u-live", kept.ID), ErrUserDisabled)
+}
+
 func TestVerifyToken_RejectsDisabledUser(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := user.NewUserService(user.UserServiceParams{

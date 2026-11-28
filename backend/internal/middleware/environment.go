@@ -29,9 +29,13 @@ type (
 	// Sudo permission sets (internal agent proxies) bypass authorization.
 	AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool)
 
+	// SessionCheck fails once a session may no longer keep a proxied WebSocket open.
+	SessionCheck func(ctx context.Context, userID, sessionID string) error
+
 	EnvironmentMiddleware struct {
 		resolver      EnvResolver
 		authValidator AuthValidator
+		sessionCheck  SessionCheck
 		registry      *agent.TunnelRegistry
 		matcher       *authz.PermissionMatcher
 		// checkOrigin is the local WebSocket Origin validator, so proxied upgrades cannot ride a cross-origin session.
@@ -51,6 +55,7 @@ type (
 	EnvironmentProxyConfig struct {
 		Resolver      EnvResolver
 		AuthValidator AuthValidator
+		SessionCheck  SessionCheck
 		Matcher       *authz.PermissionMatcher
 		Registry      *agent.TunnelRegistry
 		CheckOrigin   func(*http.Request) bool
@@ -81,6 +86,7 @@ func NewEnvironmentProxyMiddleware(cfg EnvironmentProxyConfig) echo.MiddlewareFu
 		paramName:     cfg.ParamName,
 		resolver:      cfg.Resolver,
 		authValidator: cfg.AuthValidator,
+		sessionCheck:  cfg.SessionCheck,
 		registry:      cfg.Registry,
 		matcher:       cfg.Matcher,
 		checkOrigin:   cfg.CheckOrigin,
@@ -205,7 +211,16 @@ func (m *EnvironmentMiddleware) forward(c *echo.Context, tunnel *agent.AgentTunn
 	if httpx.IsWebSocketUpgradeRequest(req) {
 		wsHeaders := http.Header{HeaderForwardedPermissions: req.Header.Values(HeaderForwardedPermissions)}
 		agent.SetAgentToken(wsHeaders, kit.FromPtr(route.accessToken))
-		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), wsHeaders, m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
+		// Cancelling the request context ends both proxy pumps.
+		wsCtx, wsCancel := context.WithCancel(ctx)
+		defer wsCancel()
+		if sessionID, _ := c.Get(string(ContextKeyCurrentSessionID)).(string); sessionID != "" {
+			userID, _ := c.Get(string(ContextKeyUserID)).(string)
+			go ws.WatchAccess(wsCtx, wsCancel, func(checkCtx context.Context) error {
+				return m.sessionCheck(checkCtx, userID, sessionID)
+			})
+		}
+		if proxyErr := ws.ProxyHTTP(c.Response(), req.WithContext(wsCtx), agent.HTTPToWebSocketURL(target), wsHeaders, m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}
 		return false, nil

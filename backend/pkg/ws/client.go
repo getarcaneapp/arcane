@@ -23,10 +23,11 @@ type (
 )
 
 const (
-	writeWait        = 10 * time.Second
-	pingPeriod       = 54 * time.Second
-	maxMessageSize   = 64 * 1024
-	clientSendBuffer = 256
+	writeWait         = 10 * time.Second
+	pingPeriod        = 54 * time.Second
+	accessCheckPeriod = time.Minute
+	maxMessageSize    = 64 * 1024
+	clientSendBuffer  = 256
 )
 
 func NewClient(conn *websocket.Conn, sendBuffer int) *Client {

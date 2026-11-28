@@ -43,6 +43,7 @@ type (
 	WebSocketHandler struct {
 		// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
 		ctx                context.Context
+		authService        *auth.AuthService
 		projectService     *project.ProjectService
 		containerService   *container.ContainerService
 		swarmService       *swarm.SwarmService
@@ -93,6 +94,7 @@ type (
 		SystemService      *system.SystemService
 		DiagnosticsService *diagnostics.DiagnosticsService
 		AuthMiddleware     *auth.AuthMiddleware
+		AuthService        *auth.AuthService
 		SettingsService    *settings.SettingsService
 		Config             *config.Config
 	}
@@ -107,6 +109,7 @@ func NewWebSocketHandler(p HandlerParams) {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(p.AppCtx))
 	handler := &WebSocketHandler{
 		ctx:                ctx,
+		authService:        p.AuthService,
 		projectService:     p.ProjectService,
 		containerService:   p.ContainerService,
 		swarmService:       p.SwarmService,
@@ -171,6 +174,18 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 	}
 	connID := defaultWebSocketMetrics.RegisterConnection(info)
 	h.conns.Store(conn, struct{}{})
+	// Hub-served sockets outlive the request, so the watcher stops on unregister instead.
+	watchCtx, stopWatch := context.WithCancel(context.WithoutCancel(req.Context()))
+	// Only session logins are re-checked.
+	if sessionID, _ := c.Get(string(middleware.ContextKeyCurrentSessionID)).(string); sessionID != "" {
+		go wshub.WatchAccess(watchCtx, func() {
+			if closeErr := conn.Close(websocket.StatusPolicyViolation, "session ended"); closeErr != nil {
+				slog.DebugContext(watchCtx, "Failed to close websocket after session ended", "error", closeErr)
+			}
+		}, func(ctx context.Context) error {
+			return h.authService.CheckSessionActive(ctx, userID, sessionID)
+		})
+	}
 	// The HTTP tracing middleware skips upgrades, so this is a root span unless the client sent a traceparent.
 	parent := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
 	_, span := otel.Tracer(logging.InstrumentationName).Start(parent, "websocket "+kind,
@@ -186,6 +201,7 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 			attribute.String("user_agent.original", info.UserAgent),
 		))
 	return conn, func() {
+		stopWatch()
 		h.conns.Delete(conn)
 		defaultWebSocketMetrics.UnregisterConnection(connID)
 		span.End()
