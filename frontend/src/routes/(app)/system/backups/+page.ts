@@ -20,8 +20,8 @@ export const load: PageLoad = async ({ parent }) => {
 		pagination: { page: 1, limit: 20 },
 		sort: { column: 'createdAt', direction: 'desc' }
 	} satisfies SearchPaginationSortRequest);
-	const [backups, policyCollection, destinations, projectPolicyCollection, systemVolumePolicyCollection] = await Promise.all([
-		queryClient.query(systemBackupHistoryQuery(environmentStore.shownKey, requestOptions)),
+	void queryClient.prefetchQuery(systemBackupHistoryQuery(environmentStore.shownKey, requestOptions));
+	const [policyCollection, destinations, projectPolicyCollection, systemVolumePolicyCollection] = await Promise.all([
 		canReadBackups
 			? queryClient.query(systemBackupPoliciesQuery())
 			: { policies: [], recoveryKeyStored: false, localDockerEnabled: true },
@@ -30,7 +30,6 @@ export const load: PageLoad = async ({ parent }) => {
 		canReadBackups ? queryClient.query(systemVolumeBackupConfigQuery()) : { policies: [] }
 	]);
 	return {
-		backups,
 		policyCollection,
 		destinations,
 		projectPolicyCollection,
