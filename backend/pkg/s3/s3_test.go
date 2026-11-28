@@ -48,7 +48,7 @@ func TestConfigurationRusticEnvironment(t *testing.T) {
 		"RUSTIC_REPO_OPT_ENDPOINT=https://s3.example.com",
 		"RUSTIC_REPO_OPT_REGION=us-east-1",
 		"AWS_REGION=us-east-1",
-		"RUSTIC_REPO_OPT_ENABLE_VIRTUAL_HOST_STYLE=true",
+		"OPENDAL_ENABLE_VIRTUAL_HOST_STYLE=true",
 	}, configuration.RusticEnvironment("arcane-volume-backups", "instance-1"))
 
 	regional := Configuration{
