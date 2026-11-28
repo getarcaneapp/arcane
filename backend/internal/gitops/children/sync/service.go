@@ -91,6 +91,11 @@ type (
 		Removed  []string
 	}
 
+	PullResult struct {
+		Result   *types.GitOpsSyncResult
+		Deployed bool
+	}
+
 	Params struct {
 		DB             *database.DB
 		RepoService    *gitrepo.GitRepositoryService
@@ -170,14 +175,15 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 			return result, s.failSync(ctx, result, sync, actor, "Failed to walk directory", err)
 		}
 	}
-	return s.deliver(ctx, stageCtx, sync, actor, result, source, syncFiles)
+	res, _, err := s.deliver(ctx, stageCtx, sync, actor, result, source, syncFiles)
+	return res, err
 }
 
-func (s *Service) Pull(ctx, stageCtx context.Context, req PullRequest) (*types.GitOpsSyncResult, error) {
+func (s *Service) Pull(ctx, stageCtx context.Context, req PullRequest) (PullResult, error) {
 	if len(req.Files) == 0 && len(req.Removed) == 0 && !req.Sync.PendingRedeploy && req.Sync.EnvContent == nil {
 		req.Result.Success = true
 		req.Result.Message = "No repository changes to pull"
-		return req.Result, nil
+		return PullResult{Result: req.Result}, nil
 	}
 	run, _ := jobcontext.Run(ctx)
 	source := &preparedSyncSource{
@@ -187,7 +193,53 @@ func (s *Service) Pull(ctx, stageCtx context.Context, req PullRequest) (*types.G
 			return recorded.ID == req.Sync.ID+":deploy"
 		}),
 	}
-	return s.deliver(ctx, stageCtx, req.Sync, req.Actor, req.Result, source, req.Files)
+	res, deployed, err := s.deliver(ctx, stageCtx, req.Sync, req.Actor, req.Result, source, req.Files)
+	return PullResult{Result: res, Deployed: deployed}, err
+}
+
+func (s *Service) Deploy(ctx context.Context, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, commit string) error {
+	if sync.TargetType == "swarm_stack" {
+		return nil
+	}
+	projectID := kit.FromPtr(sync.ProjectID)
+	if projectID == "" {
+		return nil
+	}
+	project, found, err := s.projectService.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return s.failSync(ctx, result, sync, actor, "Failed to load project for redeploy", fmt.Errorf("failed to get project %s: %w", projectID, err))
+	}
+	if !found {
+		return nil
+	}
+	pendingBefore := sync.PendingRedeploy
+	shouldRedeploy := sync.RedeployAfterSync || s.projectRunning(ctx, project.ID)
+	if !pendingBefore && !shouldRedeploy && !sync.PullImageAfterSync {
+		return nil
+	}
+	if !pendingBefore && shouldRedeploy {
+		if markErr := s.setPendingRedeploy(ctx, sync.ID, true); markErr != nil {
+			return s.failSync(ctx, result, sync, actor, "Failed to record pending redeploy", markErr)
+		}
+		sync.PendingRedeploy = true
+	}
+	run, _ := jobcontext.Run(ctx)
+	source := &preparedSyncSource{
+		commitHash: commit,
+		replay: slices.ContainsFunc(run.Outcome.Targets, func(recorded types.TargetOutcome) bool {
+			return recorded.ID == sync.ID+":deploy"
+		}),
+	}
+	if err = s.deployOnce(ctx, sync, project, actor, source); err != nil {
+		errMsg := err.Error()
+		result.Success = false
+		result.Message = "Backup pushed changes but redeploy failed"
+		result.Error = &errMsg
+		s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, commit, nil)
+		s.logError(ctx, sync, actor, errMsg)
+		return err
+	}
+	return nil
 }
 
 func (s *Service) deliver(
@@ -197,11 +249,11 @@ func (s *Service) deliver(
 	result *types.GitOpsSyncResult,
 	source *preparedSyncSource,
 	syncFiles []projects.SyncFile,
-) (*types.GitOpsSyncResult, error) {
+) (*types.GitOpsSyncResult, bool, error) {
 	pendingBefore := sync.PendingRedeploy
 	if sync.TargetType != "swarm_stack" && !pendingBefore && (sync.RedeployAfterSync || s.projectRunning(ctx, kit.FromPtr(sync.ProjectID))) {
 		if markErr := s.setPendingRedeploy(ctx, sync.ID, true); markErr != nil {
-			return result, s.failSync(ctx, result, sync, actor, "Failed to record pending redeploy", markErr)
+			return result, false, s.failSync(ctx, result, sync, actor, "Failed to record pending redeploy", markErr)
 		}
 		sync.PendingRedeploy = true
 	}
@@ -212,7 +264,7 @@ func (s *Service) deliver(
 		}
 	}
 	if err != nil {
-		return result, err
+		return result, false, err
 	}
 	switch {
 	case source.pull != nil:
@@ -224,7 +276,9 @@ func (s *Service) deliver(
 		}
 	}
 
+	deployed := false
 	if project != nil && (changed || source.replay || pendingBefore) {
+		deployed = true
 		if err = s.deployOnce(ctx, sync, project, actor, source); err != nil {
 			// The files reached disk, so the row keeps their revision and list.
 			errMsg := err.Error()
@@ -232,7 +286,7 @@ func (s *Service) deliver(
 			result.Error = &errMsg
 			s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, source.commitHash, syncedFiles)
 			s.logError(ctx, sync, actor, errMsg)
-			return result, err
+			return result, deployed, err
 		}
 	}
 
@@ -255,7 +309,7 @@ func (s *Service) deliver(
 		EnvironmentID: new(sync.EnvironmentID),
 	})
 	slog.InfoContext(ctx, "GitOps sync completed", "syncId", sync.ID, "target", targetName)
-	return result, nil
+	return result, deployed, nil
 }
 
 func (s *Service) syncTarget(

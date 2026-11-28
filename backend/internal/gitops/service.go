@@ -1029,7 +1029,8 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 	}
 
 	if syncRecord.Mode == types.GitOpsSyncModeBackup {
-		return s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.Resolve == types.GitOpsBackupConflictUseArcane})
+		pushed, backupErr := s.backup.Perform(syncCtx, syncRecord, req.Actor, result, backup.PerformOptions{Adopt: req.Resolve == types.GitOpsBackupConflictUseArcane})
+		return pushed.Result, backupErr
 	}
 	if syncRecord.Mode == types.GitOpsSyncModeBidirectional && kit.FromPtr(syncRecord.ProjectID) != "" {
 		return s.performBidirectional(ctx, syncCtx, syncRecord, req, result)
@@ -1039,7 +1040,8 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, req SyncRequest) (s
 }
 
 func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, syncRecord *projectpkg.GitOpsSync, req SyncRequest, result *types.GitOpsSyncResult) (*types.GitOpsSyncResult, error) {
-	pulled := result
+	hadBaseline := syncRecord.BackupSnapshot() != nil
+	pulled := gitopssync.PullResult{Result: result}
 	var pullErr error
 	for range backup.BackupSnapshotMaxRetry {
 		plan, err := s.backup.Plan(syncCtx, backup.PlanRequest{
@@ -1065,7 +1067,7 @@ func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, s
 		case errors.Is(pullErr, common.ErrConflict) && !errors.Is(pullErr, common.ErrProjectLocked):
 			continue
 		case pullErr != nil:
-			return pulled, pullErr
+			return pulled.Result, pullErr
 		}
 		if recordErr := s.backup.RecordPull(syncCtx, backup.RecordPullRequest{
 			Sync:   syncRecord,
@@ -1080,16 +1082,22 @@ func (s *GitOpsSyncService) performBidirectional(ctx, syncCtx context.Context, s
 			RunFailed: pullErr != nil,
 		})
 		if err != nil {
-			return pushed, errors.Join(pullErr, err)
+			return pushed.Result, errors.Join(pullErr, err)
 		}
+		var deployErr error
+		if !pulled.Deployed && pushed.Committed && (hadBaseline || req.Resolve == types.GitOpsBackupConflictUseArcane) {
+			deployErr = s.sync.Deploy(ctx, syncRecord, req.Actor, pushed.Result, pushed.Commit)
+		}
+		finalErr := errors.Join(pullErr, deployErr)
+		errMsg := cmp.Or(pulled.Result.Error, pushed.Result.Error)
 		return &types.GitOpsSyncResult{
-			SyncedAt: pushed.SyncedAt,
-			Message:  pulled.Message + "; " + pushed.Message,
-			Success:  pushed.Success && pullErr == nil,
-			Error:    pulled.Error,
-		}, pullErr
+			SyncedAt: pushed.Result.SyncedAt,
+			Message:  pulled.Result.Message + "; " + pushed.Result.Message,
+			Success:  pushed.Result.Success && finalErr == nil,
+			Error:    errMsg,
+		}, finalErr
 	}
-	return pulled, pullErr
+	return pulled.Result, pullErr
 }
 
 func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id string) (*types.GitOpsSyncStatus, error) {

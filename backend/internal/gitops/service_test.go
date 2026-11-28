@@ -29,6 +29,7 @@ import (
 	kit "kit.getarcane.app"
 
 	"getarcane.dev/arcane/v3/internal/activity"
+	"getarcane.dev/arcane/v3/internal/build"
 	"getarcane.dev/arcane/v3/internal/common"
 	"getarcane.dev/arcane/v3/internal/config"
 	"getarcane.dev/arcane/v3/internal/database"
@@ -37,8 +38,10 @@ import (
 	"getarcane.dev/arcane/v3/internal/event"
 	"getarcane.dev/arcane/v3/internal/gitops/children/backup"
 	"getarcane.dev/arcane/v3/internal/gitrepo"
+	"getarcane.dev/arcane/v3/internal/image"
 	"getarcane.dev/arcane/v3/internal/imageupdate"
 	projectpkg "getarcane.dev/arcane/v3/internal/project"
+	registryInternal "getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/scheduler/entityjobs"
 	"getarcane.dev/arcane/v3/internal/scheduler/flow/flowtest"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
@@ -144,12 +147,32 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T, scheduler types.DynamicSc
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+	dockerService := newGitOpsTestDockerService(t, settingsService)
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
+		DB: db,
+	})
+	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:              db,
-		SettingsService: settingsService,
+		DockerService:   dockerService,
 		EventService:    eventService,
-		DockerService:   newGitOpsTestDockerService(t, settingsService),
-		Config:          loadTestConfig(t),
+		SettingsService: settingsService,
+		RegistryService: registryService,
+	})
+	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+		DB:                       db,
+		SettingsService:          settingsService,
+		EventService:             eventService,
+		DockerService:            dockerService,
+		ImageService:             imageService,
+		ContainerRegistryService: registryService,
+		LifecycleService: projectpkg.NewLifecycleService(projectpkg.LifecycleServiceParams{
+			DB:              db,
+			SettingsService: settingsService,
+			EventService:    eventService,
+			DockerService:   dockerService,
+			ImageService:    imageService,
+		}),
+		Config: loadTestConfig(t),
 	})
 
 	return NewGitOpsSyncService(GitOpsSyncServiceParams{
@@ -220,14 +243,44 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+	dockerService := newGitOpsTestDockerService(t, settingsService)
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
+		DB: db,
+	})
+	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:              db,
-		SettingsService: settingsService,
+		DockerService:   dockerService,
 		EventService:    eventService,
-		DockerService:   newGitOpsTestDockerService(t, settingsService),
-		Config:          loadTestConfig(t),
+		SettingsService: settingsService,
+		RegistryService: registryService,
 	})
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
+	buildService, err := build.NewBuildService(build.BuildServiceParams{
+		DB:              db,
+		LocalSettings:   settingsService,
+		DockerService:   dockerService,
+		RegistryService: registryService,
+		GitRepository:   repoService,
+		EventService:    eventService,
+	})
+	require.NoError(t, err)
+	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+		DB:                       db,
+		SettingsService:          settingsService,
+		EventService:             eventService,
+		DockerService:            dockerService,
+		ImageService:             imageService,
+		ContainerRegistryService: registryService,
+		BuildService:             buildService,
+		LifecycleService: projectpkg.NewLifecycleService(projectpkg.LifecycleServiceParams{
+			DB:              db,
+			SettingsService: settingsService,
+			EventService:    eventService,
+			DockerService:   dockerService,
+			ImageService:    imageService,
+		}),
+		Config: loadTestConfig(t),
+	})
 
 	testScheduler := &gitOpsSyncTestScheduler{}
 	service := NewGitOpsSyncService(GitOpsSyncServiceParams{
@@ -1149,7 +1202,15 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 
 	ctx := t.Context()
 	db := setupGitOpsProjectTestDB(t)
-	require.NoError(t, db.AutoMigrate(&projectpkg.GitOpsSync{}, &projectpkg.ProjectTag{}, &gitrepo.GitRepository{}, &environment.Environment{}, &activity.Activity{}, &activity.ActivityMessage{}))
+	require.NoError(t, db.AutoMigrate(
+		&projectpkg.GitOpsSync{},
+		&projectpkg.ProjectTag{},
+		&gitrepo.GitRepository{},
+		&environment.Environment{},
+		&activity.Activity{},
+		&activity.ActivityMessage{},
+		&registryInternal.ContainerRegistry{},
+	))
 
 	settingsService, err := newGitOpsSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
@@ -1158,14 +1219,44 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 	require.NoError(t, settingsService.UpdateSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := event.NewEventService(db, loadTestConfig(t), nil)
-	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+	dockerService := newGitOpsTestDockerService(t, settingsService)
+	registryService := registryInternal.NewContainerRegistryService(registryInternal.ContainerRegistryServiceParams{
+		DB: db,
+	})
+	imageService := image.NewImageService(image.ImageServiceParams{
 		DB:              db,
-		SettingsService: settingsService,
+		DockerService:   dockerService,
 		EventService:    eventService,
-		DockerService:   newGitOpsTestDockerService(t, settingsService),
-		Config:          loadTestConfig(t),
+		SettingsService: settingsService,
+		RegistryService: registryService,
 	})
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
+	buildService, err := build.NewBuildService(build.BuildServiceParams{
+		DB:              db,
+		LocalSettings:   settingsService,
+		DockerService:   dockerService,
+		RegistryService: registryService,
+		GitRepository:   repoService,
+		EventService:    eventService,
+	})
+	require.NoError(t, err)
+	projectService := projectpkg.NewProjectService(projectpkg.ProjectServiceParams{
+		DB:                       db,
+		SettingsService:          settingsService,
+		EventService:             eventService,
+		DockerService:            dockerService,
+		ImageService:             imageService,
+		ContainerRegistryService: registryService,
+		BuildService:             buildService,
+		LifecycleService: projectpkg.NewLifecycleService(projectpkg.LifecycleServiceParams{
+			DB:              db,
+			SettingsService: settingsService,
+			EventService:    eventService,
+			DockerService:   dockerService,
+			ImageService:    imageService,
+		}),
+		Config: loadTestConfig(t),
+	})
 
 	scheduler := &gitOpsBackupTestScheduler{}
 	service := NewGitOpsSyncService(GitOpsSyncServiceParams{
@@ -2761,4 +2852,48 @@ func TestGitOpsCreateSync_LinksExistingProjectInEveryMode(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestGitOpsBidirectional_RedeploysAfterLocalComposeEditPush(t *testing.T) {
+	env := setupGitOpsBackupTestService(t)
+	syncRecord := env.createBackup(t, types.GitOpsSync{
+		Mode:              types.GitOpsSyncModeBidirectional,
+		RedeployAfterSync: true,
+	})
+	initial := env.reload(t, syncRecord.ID)
+	require.Equal(t, "success", kit.FromPtr(initial.LastSyncStatus))
+	assert.False(t, initial.PendingRedeploy)
+
+	// No changes since initial sync: does not trigger a redeploy.
+	headBefore := env.remoteHead(t)
+	noop, err := env.service.PerformSync(t.Context(), SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.SystemUser,
+	})
+	require.NoError(t, err)
+	assert.True(t, noop.Success)
+	assert.Equal(t, headBefore, env.remoteHead(t))
+	assert.False(t, env.reload(t, syncRecord.ID).PendingRedeploy)
+
+	// Editing the compose file in Arcane pushes the change and attempts to redeploy.
+	updatedCompose := "services:\n  app:\n    image: nginx:1.29-alpine\n"
+	writeBackupProjectFile(t, env.projectPath, "compose.yaml", updatedCompose)
+
+	result, err := env.service.PerformSync(t.Context(), SyncRequest{
+		EnvironmentID: "0",
+		SyncID:        syncRecord.ID,
+		Actor:         types.SystemUser,
+	})
+	require.ErrorIs(t, err, common.ErrRedeployAfterSyncFailed)
+	assert.False(t, result.Success)
+	assert.NotEqual(t, headBefore, env.remoteHead(t))
+	assertFileContents(t, filepath.Join(env.checkoutRemote(t), "backups", "demo"), map[string]string{
+		"compose.yaml": updatedCompose,
+	})
+
+	stored := env.reload(t, syncRecord.ID)
+	assert.True(t, stored.PendingRedeploy)
+	assert.Equal(t, "failed", kit.FromPtr(stored.LastSyncStatus))
+	assert.False(t, stored.BackupPending)
 }
