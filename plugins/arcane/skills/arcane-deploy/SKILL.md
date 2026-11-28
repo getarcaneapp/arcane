@@ -10,9 +10,9 @@ description: >-
 
 # Deploying Arcane
 
-References: `docker/examples/` (`compose.basic.yaml`, `compose.agent.yaml`,
-`compose.proxy.yaml`, `compose.podman-*.yaml`, `quadlet/`),
-`backend/internal/config/config.go`, https://getarcane.app.
+References (in the Arcane repo, https://github.com/getarcaneapp/arcane):
+[`docker/examples/`](https://github.com/getarcaneapp/arcane/tree/main/docker/examples)
+and https://getarcane.app. The essential compose files are inlined below.
 
 ## Manager
 
@@ -40,23 +40,30 @@ volumes:
 - `ARCANE_ENCRYPTION_KEY` must be at least 32 characters in production
   (or a `hex:`/`base64:` 32-byte key; `ARCANE_ENCRYPTION_KEY_FILE` also
   works). Keep it stable: it protects stored secrets. Generate one with
-  `openssl rand -base64 32` or `arcane generate secret --format env`.
+  `openssl rand -base64 32` or `arcane-cli generate secret --format env`.
 - Mount the projects directory at the same path on host and in the
   container so Compose relative paths resolve.
 - `PUID`/`PGID` run Arcane as a host user; the Docker socket group is
   mapped automatically.
 - Mounting the Docker socket gives Arcane root-equivalent control of the
-  host. Expose port 3552 only behind TLS (see `compose.proxy.yaml`).
+  host. Put port 3552 behind your own HTTPS reverse proxy before exposing
+  it. `compose.proxy.yaml` is a different thing: it fronts the Docker
+  socket with a restricted socket proxy; it doesn't add HTTPS.
 
 Health: the image's healthcheck runs `./arcane health`; the API answers
 `GET /api/health`.
 
 ## Remote hosts (agents)
 
-Create an agent in the manager (or `arcane agents create --name <host>`) to get a token,
-then on the remote host use `compose.agent.yaml`:
+Create an agent in the manager (or `arcane-cli agents create --name <host>`) to get a token,
+then on the remote host run the agent image (from
+[`compose.agent.yaml`](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.agent.yaml)):
 
 ```yaml
+image: getarcaneapp/agent:latest
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
+  - agent-data:/app/data
 environment:
   - ARCANE_AGENT=true
   - ARCANE_AGENT_TOKEN=arc_...
@@ -64,9 +71,13 @@ environment:
   - ARCANE_AGENT_TRANSPORT=auto # grpc preferred, websocket fallback
 ```
 
-Check it with `arcane agents list` and `arcane agents test <id>`.
+Check it with `arcane-cli agents list` and `arcane-cli agents test <id>`.
 
 ## Podman
 
-Use `compose.podman-rootful.yaml` or `compose.podman-rootless.yaml`, or
-the Quadlet units in `docker/examples/quadlet/`.
+Download
+[`compose.podman-rootful.yaml`](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.podman-rootful.yaml)
+or
+[`compose.podman-rootless.yaml`](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.podman-rootless.yaml),
+or use the
+[Quadlet units](https://github.com/getarcaneapp/arcane/tree/main/docker/examples/quadlet).

@@ -29,7 +29,7 @@ For setup instructions, configuration details, and development guides, visit the
 
 ## Agent Skills
 
-An agent-agnostic plugin marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) registers [`plugins/arcane`](plugins/arcane), with [agent skills](https://agentskills.io/) for deploying Arcane, the `arcane` CLI, and managing Compose projects.
+An agent-agnostic plugin marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json) registers [`plugins/arcane`](plugins/arcane), with [agent skills](https://agentskills.io/) for deploying Arcane, the `arcane-cli` client, and managing Compose projects.
 
 ## Sponsors
 
