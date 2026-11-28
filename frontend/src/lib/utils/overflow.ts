@@ -17,11 +17,9 @@ export function trackOverflow(onChange: (overflow: ScrollOverflow) => void): Att
 			resizes.observe(node);
 			for (const child of node.children) resizes.observe(child);
 		};
-		const mutations = new MutationObserver(() => {
-			observeAll();
-			measure();
-		});
-		mutations.observe(node, { childList: true, subtree: true });
+		// Re-observing fires the ResizeObserver, which measures after layout instead of forcing one per mutation.
+		const mutations = new MutationObserver(observeAll);
+		mutations.observe(node, { childList: true });
 		observeAll();
 		const frame = requestAnimationFrame(measure);
 		node.addEventListener('scroll', measure, { passive: true });
