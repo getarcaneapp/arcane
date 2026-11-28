@@ -137,10 +137,13 @@ func createAuthValidator(deps api.HandlerDeps, mgrDeps api.ManagerHandlerDeps) m
 		if err != nil || token == "" {
 			return nil, nil, false
 		}
-		u, _, err := verify(ctx, token)
+		u, sessionID, err := verify(ctx, token)
 		if err != nil || u == nil || deps.AuthService.RequirePasswordChanged(u, "") != nil {
 			return nil, nil, false
 		}
+		// Lets the proxy re-check the session while a WebSocket stays open.
+		c.Set(string(middleware.ContextKeyUserID), u.ID)
+		c.Set(string(middleware.ContextKeyCurrentSessionID), sessionID)
 		return resolveUser(ctx, u.Actor()), u.Actor(), true
 	}
 }
@@ -222,6 +225,7 @@ func newRouter(p RouterParams) *echo.Echo {
 		ParamName:     "id",
 		Resolver:      envResolver,
 		AuthValidator: createAuthValidator(p.HandlerDeps, p.ManagerDeps),
+		SessionCheck:  p.HandlerDeps.AuthService.CheckSessionActive,
 		Matcher:       permissionMatcher,
 		Registry:      p.TunnelRegistry,
 		CheckOrigin:   httpx.ValidateWebSocketOrigin(p.Config.GetAppURL()),

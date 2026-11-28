@@ -771,6 +771,22 @@ func (s *AuthService) verifyTokenClaims(ctx context.Context, tokenHash string, c
 	return dbUser, userSession.ID, nil
 }
 
+// CheckSessionActive fails once the session is revoked or expired, or its user is disabled or deleted.
+func (s *AuthService) CheckSessionActive(ctx context.Context, userID, sessionID string) error {
+	localUser, err := s.userService.GetUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if localUser.Disabled {
+		return ErrUserDisabled
+	}
+	userSession, err := s.sessionService.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	return session.ValidateActive(userSession)
+}
+
 func (s *AuthService) RequirePasswordChanged(localUser *user.User, operationID string) error {
 	if !localUser.RequiresPasswordChange || buildables.HasBuildFeature("autologin") || slices.Contains(passwordChangeAllowedOperations, operationID) {
 		return nil

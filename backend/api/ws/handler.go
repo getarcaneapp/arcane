@@ -43,6 +43,7 @@ type (
 	WebSocketHandler struct {
 		// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
 		ctx                context.Context
+		authService        *auth.AuthService
 		projectService     *project.ProjectService
 		containerService   *container.ContainerService
 		swarmService       *swarm.SwarmService
@@ -93,6 +94,7 @@ type (
 		SystemService      *system.SystemService
 		DiagnosticsService *diagnostics.DiagnosticsService
 		AuthMiddleware     *auth.AuthMiddleware
+		AuthService        *auth.AuthService
 		SettingsService    *settings.SettingsService
 		Config             *config.Config
 	}
@@ -107,6 +109,7 @@ func NewWebSocketHandler(p HandlerParams) {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(p.AppCtx))
 	handler := &WebSocketHandler{
 		ctx:                ctx,
+		authService:        p.AuthService,
 		projectService:     p.ProjectService,
 		containerService:   p.ContainerService,
 		swarmService:       p.SwarmService,
@@ -171,6 +174,14 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 	}
 	connID := defaultWebSocketMetrics.RegisterConnection(info)
 	h.conns.Store(conn, struct{}{})
+	// Only session logins are re-checked; the request context ends when the handler returns.
+	if sessionID, _ := c.Get(string(middleware.ContextKeyCurrentSessionID)).(string); sessionID != "" {
+		go wshub.WatchAccess(req.Context(), func() {
+			_ = conn.Close(websocket.StatusPolicyViolation, "session ended")
+		}, func(ctx context.Context) error {
+			return h.authService.CheckSessionActive(ctx, userID, sessionID)
+		})
+	}
 	// The HTTP tracing middleware skips upgrades, so this is a root span unless the client sent a traceparent.
 	parent := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
 	_, span := otel.Tracer(logging.InstrumentationName).Start(parent, "websocket "+kind,

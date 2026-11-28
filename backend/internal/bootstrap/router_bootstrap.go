@@ -157,6 +157,7 @@ func finishRouter(e *echo.Echo, apiGroup *echo.Group, p AgentRouterParams) *echo
 		SystemService:      p.HandlerDeps.System.Service(),
 		DiagnosticsService: p.HandlerDeps.Diagnostics,
 		AuthMiddleware:     p.AuthMiddleware,
+		AuthService:        p.HandlerDeps.AuthService,
 		SettingsService:    p.HandlerDeps.Settings.Service(),
 		Config:             p.Config,
 	})
