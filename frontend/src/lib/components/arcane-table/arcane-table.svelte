@@ -2,7 +2,7 @@
 	import { createTable, createTableState, renderComponent, renderSnippet } from '@tanstack/svelte-table';
 	import type { ColumnFiltersState, RowSelectionState, SortingState, ColumnVisibilityState } from '@tanstack/table-core';
 	import { PersistedState } from 'runed';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import type { Component } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -177,7 +177,11 @@
 
 	const enablePersist = $derived(!!persistKey);
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
-	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
+	const prefs = untrack(() =>
+		persistKey
+			? new PersistedState<CompactTablePrefs>(persistKey, { v: [], f: [], g: '', l: getEffectiveLimit() }, { syncTabs: false })
+			: null
+	);
 
 	const expandedRows = new SvelteSet<string>();
 
@@ -294,58 +298,6 @@
 	const canPrev = $derived(currentPage > 1);
 	const canNext = $derived(totalPages < 0 ? (items.pagination?.hasNextPage ?? false) : currentPage < totalPages);
 	const emptyFirstPage = $derived(items.pagination?.totalItems === 0 && currentPage === 1);
-
-	onMount(() => {
-		if (persistKey && !prefs) {
-			prefs = new PersistedState<CompactTablePrefs>(
-				persistKey,
-				{ v: [], f: [], g: '', l: getEffectiveLimit() },
-				{ syncTabs: false }
-			);
-		}
-
-		if (!enablePersist) {
-			preferencesReady = true;
-			return;
-		}
-		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
-		if (snapshot.viewMode) viewMode = snapshot.viewMode;
-		if (!restoreAllPageSize && snapshot.limit === TABLE_PAGE_SIZE_ALL) {
-			snapshot.limit = DEFAULT_LIMIT;
-		}
-
-		const patchedVisibility = { ...columnVisibility };
-		applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
-		columnVisibility = patchedVisibility;
-
-		const effectiveSearch = (requestOptions?.search ?? '').trim() || snapshot.search;
-		if (effectiveSearch !== globalFilter()) setGlobalFilter(effectiveSearch);
-
-		const persistedSort = snapshot.sort;
-		if (
-			persistedSort &&
-			(patchedVisibility[persistedSort.column] ?? defaultColumnVisibility[persistedSort.column]) === false &&
-			hiddenSortFallback
-		) {
-			snapshot.sort = hiddenSortFallback;
-			if (snapshot.sort !== persistedSort && prefs) prefs.current = { ...prefs.current, s: encodeSort(snapshot.sort) };
-		}
-		const restoredOptions = restoreTableRequestOptions(requestOptions, snapshot, getEffectiveLimit());
-		if (restoredOptions !== requestOptions) {
-			requestOptions = restoredOptions;
-		}
-
-		if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
-			mobileFieldVisibility = buildMobileVisibility(mobileFields, snapshot.mobileVisibility);
-		}
-
-		if (snapshot.customSettings && Object.keys(snapshot.customSettings).length > 0) {
-			customSettings = { ...snapshot.customSettings };
-		}
-
-		preferencesReady = true;
-		persistCustomSettings(customSettings);
-	});
 
 	function updatePagination(patch: Partial<{ page: number; limit: number }>) {
 		const prev = requestOptions?.pagination ?? {
@@ -742,6 +694,52 @@
 	}
 
 	onDestroy(() => clearTimeout(persistTimeout));
+
+	function restorePreferences() {
+		if (!prefs) {
+			preferencesReady = true;
+			return;
+		}
+		const snapshot = extractPersistedPreferences(prefs.current, getEffectiveLimit());
+		if (snapshot.viewMode) viewMode = snapshot.viewMode;
+		if (!restoreAllPageSize && snapshot.limit === TABLE_PAGE_SIZE_ALL) {
+			snapshot.limit = DEFAULT_LIMIT;
+		}
+
+		const patchedVisibility = { ...columnVisibility };
+		applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
+		columnVisibility = patchedVisibility;
+
+		const effectiveSearch = (requestOptions?.search ?? '').trim() || snapshot.search;
+		if (effectiveSearch !== globalFilter()) setGlobalFilter(effectiveSearch);
+
+		const persistedSort = snapshot.sort;
+		if (
+			persistedSort &&
+			(patchedVisibility[persistedSort.column] ?? defaultColumnVisibility[persistedSort.column]) === false &&
+			hiddenSortFallback
+		) {
+			snapshot.sort = hiddenSortFallback;
+			if (snapshot.sort !== persistedSort) prefs.current = { ...prefs.current, s: encodeSort(snapshot.sort) };
+		}
+		const restoredOptions = restoreTableRequestOptions(requestOptions, snapshot, getEffectiveLimit());
+		if (restoredOptions !== requestOptions) {
+			requestOptions = restoredOptions;
+		}
+
+		if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
+			mobileFieldVisibility = buildMobileVisibility(mobileFields, snapshot.mobileVisibility);
+		}
+
+		if (snapshot.customSettings && Object.keys(snapshot.customSettings).length > 0) {
+			customSettings = { ...snapshot.customSettings };
+		}
+
+		preferencesReady = true;
+		persistCustomSettings(customSettings);
+	}
+
+	untrack(restorePreferences);
 
 	const mobileVirtualized = $derived(table.getRowModel().rows.length > 100);
 	const mobilePageScroll = $derived(isMobile.current && isNarrowViewport.current && !mobileVirtualized);

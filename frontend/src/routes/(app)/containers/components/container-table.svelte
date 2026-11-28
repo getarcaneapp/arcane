@@ -233,8 +233,8 @@
 	let hideExposedPorts = $derived.by(() => {
 		return (customSettings['hideExposedPorts'] as boolean) ?? false;
 	});
-	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
-	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
+	const collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
+	let collapsedGroups = $derived(collapsedGroupsState.current);
 	let columnVisibility = $state<Record<string, boolean>>({});
 	let viewMode = $state<TableViewMode>('list');
 	const backendGroupedRows = $derived(
@@ -347,10 +347,12 @@
 		killTarget = container;
 	}
 
-	onMount(() => {
-		updateTableMounted = true;
-		const unsubscribeActivities = activityStore.subscribeActivities(updateActivities.observe);
-		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
+	let tablePreferencesReady = $state(false);
+
+	function setTablePreferencesReady(ready: boolean) {
+		const wasReady = tablePreferencesReady;
+		tablePreferencesReady = ready;
+		if (!ready || wasReady) return;
 
 		const persistedInternal = (customSettings['showInternalContainers'] as boolean) ?? false;
 		const persistedHidden = (customSettings['showHiddenContainers'] as boolean) ?? false;
@@ -369,6 +371,12 @@
 			};
 		}
 		requestOptions = withSupportedSort(requestOptions);
+	}
+
+	onMount(() => {
+		updateTableMounted = true;
+		const unsubscribeActivities = activityStore.subscribeActivities(updateActivities.observe);
+		if (!resourceSortSupported) tablePreferences?.persistSort(requestOptions?.sort);
 
 		return () => {
 			updateTableMounted = false;
@@ -388,7 +396,6 @@
 	}
 
 	function toggleGroup(groupName: string) {
-		if (!collapsedGroupsState) return;
 		collapsedGroupsState.current = {
 			...collapsedGroupsState.current,
 			// Groups with no recorded state render collapsed, so toggle from that default
@@ -1229,6 +1236,7 @@
 	bind:customSettings
 	bind:columnVisibility
 	bind:viewMode
+	bind:preferencesReady={() => tablePreferencesReady, setTablePreferencesReady}
 	{withoutFilters}
 	{loading}
 	{onRetry}
