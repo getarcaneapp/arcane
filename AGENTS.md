@@ -5,6 +5,7 @@ Arcane is a container management platform primarily supporting Docker and Podman
 ## Ground rules
 
 - Follow [AI_POLICY.md](AI_POLICY.md), including the maintainer exemption. Outside contributors must disclose AI use and meet its dev and human verification rules.
+- Read and follow [CONTRIBUTING.md](CONTRIBUTING.md) before opening issues, discussions, or pull requests. Feature requests go in Discussions, never issues.
 - Never run state-changing git commands: no stage, commit, push, tag, stash, branch, or worktree.
 - Do not start, restart, or rebuild the dev stack unless the user asks.
 - Search the owning domain and existing helpers before adding functions, services, API clients, components, or utils. Update existing logic and its callers directly.
