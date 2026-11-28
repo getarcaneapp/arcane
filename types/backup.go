@@ -124,6 +124,22 @@ type (
 		RecoveryKey string `json:"recoveryKey"`
 	}
 
+	RecoveryKeyCheckStatus string
+
+	SystemBackupRecoveryKeyCheck struct {
+		Repositories []BackupRepositoryKeyCheck `json:"repositories"`
+	}
+
+	BackupRepositoryKeyCheck struct {
+		Type              BackupManagementType    `json:"type" enum:"system,volume"`
+		Destination       SystemBackupDestination `json:"destination" enum:"local,s3"`
+		S3DestinationID   string                  `json:"s3DestinationId,omitempty"`
+		S3DestinationName string                  `json:"s3DestinationName,omitempty"`
+		Status            RecoveryKeyCheckStatus  `json:"status" enum:"valid,invalid,missing,error"`
+		Error             string                  `json:"error,omitempty"`
+		Snapshots         int                     `json:"snapshots"`
+	}
+
 	CreateSystemBackupRequest struct {
 		ID              string                  `json:"id,omitempty"`
 		Destination     SystemBackupDestination `json:"destination,omitempty"`
@@ -268,6 +284,11 @@ const (
 	SystemBackupDestinationLocal   SystemBackupDestination = "local"
 	SystemBackupDestinationS3      SystemBackupDestination = "s3"
 	SystemBackupDestinationLocalS3 SystemBackupDestination = "local_s3"
+
+	RecoveryKeyCheckValid   RecoveryKeyCheckStatus = "valid"
+	RecoveryKeyCheckInvalid RecoveryKeyCheckStatus = "invalid"
+	RecoveryKeyCheckMissing RecoveryKeyCheckStatus = "missing"
+	RecoveryKeyCheckError   RecoveryKeyCheckStatus = "error"
 
 	SystemBackupStatusRunning    = "running"
 	SystemBackupStatusSucceeded  = "succeeded"

@@ -81,6 +81,22 @@ export type SystemBackupRecoveryKey = {
 	recoveryKey: string;
 };
 
+export type RecoveryKeyCheckStatus = 'valid' | 'invalid' | 'missing' | 'error';
+
+export type BackupRepositoryKeyCheck = {
+	type: 'system' | 'volume';
+	destination: 'local' | 's3';
+	s3DestinationId?: string;
+	s3DestinationName?: string;
+	status: RecoveryKeyCheckStatus;
+	error?: string;
+	snapshots: number;
+};
+
+export type SystemBackupRecoveryKeyCheck = {
+	repositories: BackupRepositoryKeyCheck[];
+};
+
 export type CreateSystemBackupRequest = {
 	destination?: SystemBackupDestination;
 	s3DestinationId?: string;
