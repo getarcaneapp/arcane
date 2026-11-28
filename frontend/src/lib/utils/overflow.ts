@@ -17,13 +17,15 @@ export function trackOverflow(onChange: (overflow: ScrollOverflow) => void): Att
 			resizes.observe(node);
 			for (const child of node.children) resizes.observe(child);
 		};
+		let frame = requestAnimationFrame(measure);
+		// Nested changes can alter the scroll size without resizing an observed box. Re-observing once per
+		// frame fires the ResizeObserver, which measures after layout instead of forcing one per mutation.
 		const mutations = new MutationObserver(() => {
-			observeAll();
-			measure();
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(observeAll);
 		});
 		mutations.observe(node, { childList: true, subtree: true });
 		observeAll();
-		const frame = requestAnimationFrame(measure);
 		node.addEventListener('scroll', measure, { passive: true });
 		return () => {
 			cancelAnimationFrame(frame);

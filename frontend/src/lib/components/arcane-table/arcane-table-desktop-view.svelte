@@ -4,7 +4,7 @@
 
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
 	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
-	import { onDestroy, untrack, type Component, type Snippet } from 'svelte';
+	import { flushSync, onDestroy, untrack, type Component, type Snippet } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
@@ -97,6 +97,8 @@
 	const VIRTUALIZE_THRESHOLD = 100;
 	const ROW_ESTIMATE_PX = 44;
 	const ROW_CHUNK = 10;
+	const CHUNK_BUDGET_MS = 8;
+	const PLACEHOLDER_ROWS = 15;
 	let measuredRowHeight = $state<number | null>(null);
 	let tableElement = $state<HTMLTableElement | null>(null);
 	let bodyElement = $state<HTMLTableSectionElement | null>(null);
@@ -110,35 +112,45 @@
 		untrack(() => initialScrollTop > 0 || entries.length <= ROW_CHUNK || shouldVirtualize) ? Infinity : ROW_CHUNK
 	);
 	const mountedEntries = $derived(mountedCount < entries.length ? entries.slice(0, mountedCount) : entries);
-	const pendingHeight = $derived((entries.length - mountedEntries.length) * (measuredRowHeight ?? ROW_ESTIMATE_PX));
+	// Rows past the first chunk mount hidden behind skeleton rows and are revealed together.
+	const pending = $derived(!shouldVirtualize && mountedCount < entries.length);
+	const placeholderRows = $derived(pending ? Math.min(entries.length - ROW_CHUNK, PLACEHOLDER_ROWS) : 0);
+	const pendingHeight = $derived(
+		pending ? (entries.length - ROW_CHUNK - placeholderRows) * (measuredRowHeight ?? ROW_ESTIMATE_PX) : 0
+	);
 	let mountFrame = 0;
-	let mountTimer: ReturnType<typeof setTimeout> | undefined;
+	let painted = false;
 
 	function mountNextChunk() {
 		mountFrame = requestAnimationFrame(() => {
-			const first = bodyElement?.rows.item(0);
-			const spacer = bodyElement?.rows.item(bodyElement.rows.length - 1);
-			if (first && spacer && spacer !== first && spacer.ariaHidden === 'true') {
-				measuredRowHeight =
-					(spacer.getBoundingClientRect().top - first.getBoundingClientRect().top) / (bodyElement!.rows.length - 1);
+			// Virtualized rows mount on scroll, so staged mounting has nothing left to do.
+			if (shouldVirtualize) {
+				mountedCount = Infinity;
+				return;
 			}
-			mountTimer = setTimeout(() => {
-				const next = mountedCount + ROW_CHUNK;
-				if (next < entries.length) {
-					mountedCount = next;
-					mountNextChunk();
-				} else {
-					mountedCount = Infinity;
-				}
-			});
+			const first = bodyElement?.rows.item(0);
+			const placeholder = bodyElement?.querySelector('tr[aria-hidden]');
+			if (first && placeholder) {
+				measuredRowHeight = (placeholder.getBoundingClientRect().top - first.getBoundingClientRect().top) / ROW_CHUNK;
+			}
+			// The first frame only measures, so the initial rows paint before more are mounted.
+			if (painted) {
+				// Mount as many rows as fit in the frame budget, so the rest never drops frames.
+				const deadline = performance.now() + CHUNK_BUDGET_MS;
+				do {
+					const next = mountedCount + 1;
+					flushSync(() => {
+						mountedCount = next < entries.length ? next : Infinity;
+					});
+				} while (mountedCount !== Infinity && performance.now() < deadline);
+			}
+			painted = true;
+			if (mountedCount !== Infinity) mountNextChunk();
 		});
 	}
 
 	if (untrack(() => mountedCount) !== Infinity) mountNextChunk();
-	onDestroy(() => {
-		cancelAnimationFrame(mountFrame);
-		clearTimeout(mountTimer);
-	});
+	onDestroy(() => cancelAnimationFrame(mountFrame));
 	// Widths in px from an auto-layout pass, locked so overflowing tables scroll instead of squashing.
 	let lockedColumns = $state<{ key: string; widths: number[] } | null>(null);
 	const columnKey = $derived(
@@ -406,9 +418,14 @@
 	</Table.Row>
 {/snippet}
 
-{#snippet skeletonRows()}
-	{#each Array.from({ length: 8 }, (_, i) => i) as r (r)}
-		<Table.Row variant="static">
+{#snippet skeletonRows(count: number, rowHeight?: number)}
+	{#each Array.from({ length: count }, (_, i) => i) as r (r)}
+		<Table.Row
+			variant="static"
+			aria-hidden="true"
+			class={rowHeight ? 'h-(--row)' : undefined}
+			style={rowHeight ? `--row: ${rowHeight}px` : undefined}
+		>
 			{#each Array.from({ length: columnsCount }, (_, i) => i) as c (c)}
 				<Table.Cell>
 					<Skeleton class="h-4 w-full max-w-35" />
@@ -545,9 +562,10 @@
 		style={lockedTableWidth ? `--table-width: ${lockedTableWidth}px` : undefined}
 	>
 		{@render tableHeader()}
-		<Table.Body bind:ref={bodyElement}>
+		<!-- nth-child(n+11) is every row past ROW_CHUNK -->
+		<Table.Body bind:ref={bodyElement} class={cn(pending && '[&>tr:nth-child(n+11):not([aria-hidden])]:hidden')}>
 			{#if loading && entries.length === 0}
-				{@render skeletonRows()}
+				{@render skeletonRows(8)}
 			{:else if entries.length === 0}
 				{@render emptyState()}
 			{:else if shouldVirtualize}
@@ -556,6 +574,7 @@
 				{#each mountedEntries as entry (entry.key)}
 					{@render displayEntry(entry)}
 				{/each}
+				{@render skeletonRows(placeholderRows, measuredRowHeight ?? ROW_ESTIMATE_PX)}
 				{#if pendingHeight > 0}
 					<tr aria-hidden="true">
 						<td colspan={columnsCount} class="h-(--pad) border-0 p-0" style="--pad: {pendingHeight}px"></td>
