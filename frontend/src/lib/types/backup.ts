@@ -88,6 +88,7 @@ export type BackupRepositoryKeyCheck = {
 	destination: 'local' | 's3';
 	s3DestinationId?: string;
 	s3DestinationName?: string;
+	instanceId?: string;
 	status: RecoveryKeyCheckStatus;
 	error?: string;
 	snapshots: number;

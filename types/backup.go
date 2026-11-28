@@ -135,6 +135,7 @@ type (
 		Destination       SystemBackupDestination `json:"destination" enum:"local,s3"`
 		S3DestinationID   string                  `json:"s3DestinationId,omitempty"`
 		S3DestinationName string                  `json:"s3DestinationName,omitempty"`
+		InstanceID        string                  `json:"instanceId,omitempty"`
 		Status            RecoveryKeyCheckStatus  `json:"status" enum:"valid,invalid,missing,error"`
 		Error             string                  `json:"error,omitempty"`
 		Snapshots         int                     `json:"snapshots"`

@@ -61,6 +61,7 @@ import (
 	"getarcane.dev/arcane/v3/pkg/logging"
 	"getarcane.dev/arcane/v3/pkg/pagination"
 	"getarcane.dev/arcane/v3/pkg/projects"
+	s3util "getarcane.dev/arcane/v3/pkg/s3"
 	"getarcane.dev/arcane/v3/pkg/selfcontainer"
 	"getarcane.dev/types/v3"
 )
@@ -1420,7 +1421,7 @@ func (s *Service) VerifyRecoveryKey(ctx context.Context, supplied string) (*type
 		return nil, fmt.Errorf("failed to list S3 destinations: %w", err)
 	}
 	checks := make([]types.BackupRepositoryKeyCheck, 0, 2+2*len(destinations))
-	check := func(kind types.BackupManagementType, destination types.S3Destination, repository backup.Repository, repositoryErr error) {
+	check := func(kind types.BackupManagementType, destination types.S3Destination, instanceID string, repository backup.Repository, repositoryErr error) {
 		var snapshots []backup.DiscoveredSnapshot
 		if repositoryErr == nil {
 			snapshots, repositoryErr = s.engine.ListSnapshots(held, dockerClient, repository, key)
@@ -1439,20 +1440,34 @@ func (s *Service) VerifyRecoveryKey(ctx context.Context, supplied string) (*type
 			Destination:       kit.Ternary(destination.ID == "", types.SystemBackupDestinationLocal, types.SystemBackupDestinationS3),
 			S3DestinationID:   destination.ID,
 			S3DestinationName: destination.Name,
+			InstanceID:        instanceID,
 			Status:            status,
 			Error:             message,
 			Snapshots:         len(snapshots),
 		})
 	}
 	systemLocal, err := s.localRepository(held, dockerClient, true)
-	check(types.BackupManagementTypeSystem, types.S3Destination{}, systemLocal, err)
+	check(types.BackupManagementTypeSystem, types.S3Destination{}, "", systemLocal, err)
 	volumeLocal, err := s.repository.Local(held, dockerClient, backup.LocalRepositoryOptions{ReadOnly: true})
-	check(types.BackupManagementTypeVolume, types.S3Destination{}, volumeLocal, err)
+	check(types.BackupManagementTypeVolume, types.S3Destination{}, "", volumeLocal, err)
+	ownInstance := s.settingsService.GetSettingsConfig().InstanceID.Value
 	for _, destination := range destinations {
 		systemRemote, remoteErr := s.remoteRepository(held, destination.ID)
-		check(types.BackupManagementTypeSystem, destination, systemRemote, remoteErr)
-		volumeRemote, remoteErr := s.repository.Remote(held, destination.ID, "")
-		check(types.BackupManagementTypeVolume, destination, volumeRemote, remoteErr)
+		check(types.BackupManagementTypeSystem, destination, "", systemRemote, remoteErr)
+		configuration, rootsErr := s.s3Destinations.Configuration(held, destination.ID)
+		var roots []string
+		if rootsErr == nil {
+			roots, rootsErr = s3util.ListRepositoryRoots(held, configuration, backup.VolumeRoot)
+		}
+		if rootsErr != nil {
+			check(types.BackupManagementTypeVolume, destination, "", backup.Repository{}, fmt.Errorf("failed to list volume backup repositories: %w", rootsErr))
+			continue
+		}
+		roots = slices.DeleteFunc(roots, func(root string) bool { return root == ownInstance })
+		for _, root := range slices.Insert(roots, 0, ownInstance) {
+			volumeRemote, volumeErr := s.repository.Remote(held, destination.ID, root)
+			check(types.BackupManagementTypeVolume, destination, kit.Ternary(root == ownInstance, "", root), volumeRemote, volumeErr)
+		}
 	}
 	return &types.SystemBackupRecoveryKeyCheck{Repositories: checks}, nil
 }

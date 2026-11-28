@@ -4909,7 +4909,7 @@
   "verify_recovery_key_description": "Check that a recovery key opens the system and volume backup repositories on this instance and in every S3 destination. Nothing is changed.",
   "verify_recovery_key_failed": "Failed to verify the recovery key",
   "recovery_key_opens_all_repositories": "This key opens every backup repository that has backups.",
-  "recovery_key_rejected_by_repositories": "This key does not open {count} of your backup repositories. They can only be opened with the key they were created with.",
+  "recovery_key_rejected_by_repositories": "This key does not open {count} of your backup repositories. They only open with the recovery key they currently use.",
   "recovery_key_unchecked_repositories": "{count} backup repositories could not be reached, so the key was not checked against them.",
   "recovery_key_no_repositories": "There are no backups yet, so there is nothing to check this key against.",
   "key_opens": "Opens",
@@ -4917,6 +4917,7 @@
   "unreachable": "Unreachable",
   "snapshot_count": "{count} snapshots",
   "snapshot_count_one": "1 snapshot",
-  "recovery_key_rejected_by_repositories_one": "This key does not open one of your backup repositories. It can only be opened with the key it was created with.",
-  "recovery_key_unchecked_repositories_one": "1 backup repository could not be reached, so the key was not checked against it."
+  "recovery_key_rejected_by_repositories_one": "This key does not open one of your backup repositories. It only opens with the recovery key it currently uses.",
+  "recovery_key_unchecked_repositories_one": "1 backup repository could not be reached, so the key was not checked against it.",
+  "instance_id": "Instance {id}"
 }

@@ -25,6 +25,7 @@
 	let recoveryKey = $state('');
 	let verifying = $state(false);
 	let result = $state<SystemBackupRecoveryKeyCheck | null>(null);
+	let session = 0;
 	const keyMissing = $derived(!recoveryKeyStored && !recoveryKey.trim());
 	const rejected = $derived(result?.repositories.filter((item) => item.status === 'invalid').length ?? 0);
 	const unreachable = $derived(result?.repositories.filter((item) => item.status === 'error').length ?? 0);
@@ -33,6 +34,7 @@
 	function reset(nextOpen: boolean) {
 		open = nextOpen;
 		if (nextOpen) return;
+		session += 1;
 		recoveryKey = '';
 		result = null;
 	}
@@ -42,6 +44,7 @@
 		if (verifying || keyMissing) return;
 		result = null;
 		verifying = true;
+		const requestSession = session;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(systemBackupService.verifyRecoveryKey(recoveryKey.trim())),
 			message: m.verify_recovery_key_failed(),
@@ -49,7 +52,7 @@
 				verifying = value;
 			},
 			onSuccess: (data) => {
-				if (open) result = data;
+				if (requestSession === session) result = data;
 			}
 		});
 	}
@@ -120,7 +123,7 @@
 			{/if}
 
 			<ul class="divide-y rounded-md border" data-testid="recovery-key-verify-results">
-				{#each result.repositories as item (`${item.type}:${item.destination}:${item.s3DestinationId ?? ''}`)}
+				{#each result.repositories as item (`${item.type}:${item.destination}:${item.s3DestinationId ?? ''}:${item.instanceId ?? ''}`)}
 					{@const badge = statusBadges[item.status]}
 					{@const LocationIcon = item.destination === 'local' ? VolumesIcon : CloudStorageIcon}
 					<li class="flex items-center justify-between gap-3 px-3 py-2.5">
@@ -132,6 +135,7 @@
 								</p>
 								<p class="truncate text-xs text-muted-foreground" title={item.error}>
 									{backupDestinationName(item) || backupDestinationLabel(item.destination)}
+									{#if item.instanceId}· {m.instance_id({ id: item.instanceId })}{/if}
 									{#if item.status === 'valid'}· {item.snapshots === 1
 											? m.snapshot_count_one()
 											: m.snapshot_count({ count: item.snapshots })}{/if}
