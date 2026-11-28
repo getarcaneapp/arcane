@@ -74,9 +74,15 @@ type (
 	}
 
 	PerformOptions struct {
-		Baseline  map[string]string
-		Adopt     bool
-		RunFailed bool
+		Baseline   map[string]string
+		BeforePush func(context.Context) error
+		Adopt      bool
+	}
+
+	PerformResult struct {
+		Result    *types.GitOpsSyncResult
+		Commit    string
+		Committed bool
 	}
 
 	PlanRequest struct {
@@ -118,7 +124,6 @@ type (
 		startedAt time.Time
 		commit    string
 		committed bool
-		runFailed bool
 	}
 )
 
@@ -289,18 +294,18 @@ func (s *Service) loadBackupProject(ctx context.Context, localSync *projectpkg.G
 	return project, nil
 }
 
-func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, opts PerformOptions) (*types.GitOpsSyncResult, error) {
+func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, opts PerformOptions) (PerformResult, error) {
 	project, err := s.loadBackupProject(ctx, localSync, actor, result)
 	if err != nil {
-		return result, err
+		return PerformResult{Result: result}, err
 	}
 	authConfig, err := s.repoService.GetAuthConfig(ctx, localSync.Repository)
 	if err != nil {
-		return result, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureAuth, "Failed to get authentication config", err, false)
+		return PerformResult{Result: result}, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureAuth, "Failed to get authentication config", err, false)
 	}
 	identity, err := s.repoService.GetCommitIdentity(ctx, localSync.Repository)
 	if err != nil {
-		return result, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureAuth, "Failed to load commit identity", err, false)
+		return PerformResult{Result: result}, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureAuth, "Failed to load commit identity", err, false)
 	}
 
 	startedAt := time.Now()
@@ -313,7 +318,7 @@ func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync,
 	baseline := kit.Ternary(opts.Baseline != nil, opts.Baseline, localSync.BackupSnapshot())
 	snapshot, err := s.snapshotLiveProject(ctx, localSync, project, slices.Collect(maps.Keys(baseline)))
 	if err != nil {
-		return result, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to snapshot project files", err, false)
+		return PerformResult{Result: result}, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to snapshot project files", err, false)
 	}
 
 	lock := s.branchLock(localSync.RepositoryID, localSync.Branch)
@@ -321,14 +326,14 @@ func (s *Service) Perform(ctx context.Context, localSync *projectpkg.GitOpsSync,
 	defer lock.Unlock()
 
 	for attempt := 1; attempt <= BackupPushAttempts; attempt++ {
-		retry, commitBackupErr := s.commitBackup(ctx, localSync, project, actor, result, authConfig, identity, snapshot, baseline, opts, startedAt)
+		outcome, retry, commitBackupErr := s.commitBackup(ctx, localSync, project, actor, result, authConfig, identity, snapshot, baseline, opts, startedAt)
 		if retry {
 			slog.InfoContext(ctx, "git backup push rejected; retrying with a fresh checkout", "syncId", localSync.ID, "attempt", attempt, "error", commitBackupErr)
 			continue
 		}
-		return result, commitBackupErr
+		return outcome, commitBackupErr
 	}
-	return result, s.failBackup(
+	return PerformResult{Result: result}, s.failBackup(
 		ctx,
 		localSync,
 		result,
@@ -571,33 +576,33 @@ func (
 	opts PerformOptions,
 	startedAt time.Time,
 ) (
+	PerformResult,
 	bool,
 	error,
 ) {
 	checkout, err := s.repoService.CheckoutForWrite(ctx, localSync.Repository.URL, localSync.Branch, authConfig)
 	if err != nil {
-		return false, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to prepare repository checkout", err, false)
+		return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to prepare repository checkout", err, false)
 	}
 	defer s.repoService.Discard(ctx, checkout.RepoPath)
 
 	analysis, err := analyzeBackup(ctx, checkout.RepoPath, localSync.BackupDirectory, snapshot, baseline, opts.Adopt)
 	if err != nil {
-		return false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureRepository, "Failed to read remote backup", err, false)
+		return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureRepository, "Failed to read remote backup", err, false)
 	}
 	switch analysis.state {
 	case BackupPreviewClean:
 		if recordBackupSuccessErr := s.recordBackupSuccess(ctx, localSync, snapshot, backupRecord{
 			startedAt: startedAt,
 			commit:    checkout.HeadCommit,
-			runFailed: opts.RunFailed,
 		}); recordBackupSuccessErr != nil {
-			return false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureSnapshot, "Failed to record backup", recordBackupSuccessErr, false)
+			return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureSnapshot, "Failed to record backup", recordBackupSuccessErr, false)
 		}
 		result.Success = true
 		result.Message = "Repository already contains the current files for project " + project.Name
-		return false, nil
+		return PerformResult{Result: result, Commit: checkout.HeadCommit}, false, nil
 	case BackupPreviewConflict:
-		return false, s.failBackup(
+		return PerformResult{Result: result}, false, s.failBackup(
 			ctx,
 			localSync,
 			result,
@@ -616,7 +621,7 @@ func (
 			true,
 		)
 	case BackupPreviewOccupied:
-		return false, s.failBackup(
+		return PerformResult{Result: result}, false, s.failBackup(
 			ctx,
 			localSync,
 			result,
@@ -661,21 +666,26 @@ func (
 		request.Remove = append(request.Remove, legacyManifest)
 	}
 
+	if opts.BeforePush != nil {
+		if beforeErr := opts.BeforePush(ctx); beforeErr != nil {
+			return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureSnapshot, "Failed to record pending redeploy", beforeErr, false)
+		}
+	}
+
 	commit, committed, err := s.repoService.CommitAndPush(ctx, checkout, request, authConfig)
 	if err != nil {
 		if errors.Is(err, git.ErrPushRejected) {
-			return true, err
+			return PerformResult{Result: result}, true, err
 		}
-		return false, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to push backup", err, false)
+		return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, backupFailureReason(err), "Failed to push backup", err, false)
 	}
 
 	if recordCommittedBackupErr := s.recordBackupSuccess(ctx, localSync, snapshot, backupRecord{
 		startedAt: startedAt,
 		commit:    commit,
 		committed: committed,
-		runFailed: opts.RunFailed,
 	}); recordCommittedBackupErr != nil {
-		return false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureSnapshot, "Failed to record backup", recordCommittedBackupErr, false)
+		return PerformResult{Result: result}, false, s.failBackup(ctx, localSync, result, actor, types.GitOpsBackupFailureSnapshot, "Failed to record backup", recordCommittedBackupErr, false)
 	}
 	result.Success = true
 	result.Message = fmt.Sprintf("Backed up %d file(s) for project %s to %s", len(snapshot.files), project.Name, localSync.BackupDirectory)
@@ -694,7 +704,7 @@ func (
 		slog.WarnContext(ctx, "Failed to record git backup audit event", "syncId", localSync.ID, "commit", commit, "error", eventErr)
 	}
 	slog.InfoContext(ctx, "Git backup completed", "syncId", localSync.ID, "project", project.Name, "commit", commit, "committed", committed)
-	return false, nil
+	return PerformResult{Result: result, Commit: commit, Committed: committed}, false, nil
 }
 
 func (s *Service) recordBackupSuccess(ctx context.Context, localSync *projectpkg.GitOpsSync, snapshot *backupSnapshot, record backupRecord) error {
@@ -708,17 +718,13 @@ func (s *Service) recordBackupSuccess(ctx context.Context, localSync *projectpkg
 		return fmt.Errorf("failed to encode backup snapshot: %w", err)
 	}
 	updates := map[string]any{
-		"last_sync_status":     kit.Ternary(record.runFailed, "failed", "success"),
-		"last_backup_snapshot": string(hashes),
-		"backup_conflict":      false,
-		"synced_files":         projectpkg.EncodeSyncedFiles(paths),
-	}
-	if !record.runFailed {
-		maps.Copy(updates, map[string]any{
-			"last_sync_at":          now,
-			"last_sync_error":       nil,
-			"backup_failure_reason": nil,
-		})
+		"last_sync_status":      "success",
+		"last_sync_at":          now,
+		"last_sync_error":       nil,
+		"last_backup_snapshot":  string(hashes),
+		"backup_conflict":       false,
+		"backup_failure_reason": nil,
+		"synced_files":          projectpkg.EncodeSyncedFiles(paths),
 	}
 	if record.commit != "" {
 		updates["last_sync_commit"] = record.commit

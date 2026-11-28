@@ -82,13 +82,20 @@ type (
 	}
 
 	PullRequest struct {
-		Sync     *projectpkg.GitOpsSync
-		Actor    types.Actor
-		Result   *types.GitOpsSyncResult
-		Expected map[string]string
-		Commit   string
-		Files    []projects.SyncFile
-		Removed  []string
+		Sync        *projectpkg.GitOpsSync
+		Actor       types.Actor
+		Result      *types.GitOpsSyncResult
+		Expected    map[string]string
+		Commit      string
+		Files       []projects.SyncFile
+		Removed     []string
+		DeferDeploy bool
+	}
+
+	PullResult struct {
+		Result      *types.GitOpsSyncResult
+		Changed     bool
+		NeedsDeploy bool
 	}
 
 	Params struct {
@@ -170,14 +177,15 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 			return result, s.failSync(ctx, result, sync, actor, "Failed to walk directory", err)
 		}
 	}
-	return s.deliver(ctx, stageCtx, sync, actor, result, source, syncFiles)
+	res, _, _, err := s.deliver(ctx, stageCtx, sync, actor, result, source, syncFiles)
+	return res, err
 }
 
-func (s *Service) Pull(ctx, stageCtx context.Context, req PullRequest) (*types.GitOpsSyncResult, error) {
+func (s *Service) Pull(ctx, stageCtx context.Context, req PullRequest) (PullResult, error) {
 	if len(req.Files) == 0 && len(req.Removed) == 0 && !req.Sync.PendingRedeploy && req.Sync.EnvContent == nil {
 		req.Result.Success = true
 		req.Result.Message = "No repository changes to pull"
-		return req.Result, nil
+		return PullResult{Result: req.Result}, nil
 	}
 	run, _ := jobcontext.Run(ctx)
 	source := &preparedSyncSource{
@@ -187,7 +195,78 @@ func (s *Service) Pull(ctx, stageCtx context.Context, req PullRequest) (*types.G
 			return recorded.ID == req.Sync.ID+":deploy"
 		}),
 	}
-	return s.deliver(ctx, stageCtx, req.Sync, req.Actor, req.Result, source, req.Files)
+	res, changed, needsDeploy, err := s.deliver(ctx, stageCtx, req.Sync, req.Actor, req.Result, source, req.Files)
+	return PullResult{Result: res, Changed: changed, NeedsDeploy: needsDeploy}, err
+}
+
+func (s *Service) MarkPendingRedeploy(ctx context.Context, sync *projectpkg.GitOpsSync) error {
+	if sync.TargetType == "swarm_stack" || sync.PendingRedeploy {
+		return nil
+	}
+	if !sync.RedeployAfterSync && !s.projectRunning(ctx, kit.FromPtr(sync.ProjectID)) {
+		return nil
+	}
+	if err := s.setPendingRedeploy(ctx, sync.ID, true); err != nil {
+		return fmt.Errorf("failed to record pending redeploy: %w", err)
+	}
+	sync.PendingRedeploy = true
+	return nil
+}
+
+func (s *Service) ClearPendingRedeploy(ctx context.Context, sync *projectpkg.GitOpsSync) {
+	if !sync.PendingRedeploy {
+		return
+	}
+	if err := s.setPendingRedeploy(ctx, sync.ID, false); err != nil {
+		slog.WarnContext(ctx, "Failed to clear unused pending redeploy after Git sync", "error", err, "syncId", sync.ID)
+		return
+	}
+	sync.PendingRedeploy = false
+}
+
+func (s *Service) Deploy(ctx context.Context, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, commit string) error {
+	if sync.TargetType == "swarm_stack" {
+		return nil
+	}
+	projectID := kit.FromPtr(sync.ProjectID)
+	if projectID == "" {
+		return nil
+	}
+	project, found, err := s.projectService.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return s.failSync(ctx, result, sync, actor, "Failed to load project for redeploy", fmt.Errorf("failed to get project %s: %w", projectID, err))
+	}
+	if !found {
+		return nil
+	}
+	pendingBefore := sync.PendingRedeploy
+	shouldRedeploy := sync.RedeployAfterSync || s.projectRunning(ctx, project.ID)
+	if !pendingBefore && !shouldRedeploy && !sync.PullImageAfterSync {
+		return nil
+	}
+	if shouldRedeploy {
+		if markErr := s.setPendingRedeploy(ctx, sync.ID, true); markErr != nil {
+			return s.failSync(ctx, result, sync, actor, "Failed to record pending redeploy", markErr)
+		}
+		sync.PendingRedeploy = true
+	}
+	run, _ := jobcontext.Run(ctx)
+	source := &preparedSyncSource{
+		commitHash: commit,
+		replay: slices.ContainsFunc(run.Outcome.Targets, func(recorded types.TargetOutcome) bool {
+			return recorded.ID == sync.ID+":deploy"
+		}),
+	}
+	if err = s.deployOnce(ctx, sync, project, actor, source); err != nil {
+		errMsg := err.Error()
+		result.Success = false
+		result.Message = "Sync completed but redeploy failed"
+		result.Error = &errMsg
+		s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, commit, nil)
+		s.logError(ctx, sync, actor, errMsg)
+		return err
+	}
+	return nil
 }
 
 func (s *Service) deliver(
@@ -197,11 +276,11 @@ func (s *Service) deliver(
 	result *types.GitOpsSyncResult,
 	source *preparedSyncSource,
 	syncFiles []projects.SyncFile,
-) (*types.GitOpsSyncResult, error) {
+) (*types.GitOpsSyncResult, bool, bool, error) {
 	pendingBefore := sync.PendingRedeploy
 	if sync.TargetType != "swarm_stack" && !pendingBefore && (sync.RedeployAfterSync || s.projectRunning(ctx, kit.FromPtr(sync.ProjectID))) {
 		if markErr := s.setPendingRedeploy(ctx, sync.ID, true); markErr != nil {
-			return result, s.failSync(ctx, result, sync, actor, "Failed to record pending redeploy", markErr)
+			return result, false, false, s.failSync(ctx, result, sync, actor, "Failed to record pending redeploy", markErr)
 		}
 		sync.PendingRedeploy = true
 	}
@@ -209,10 +288,12 @@ func (s *Service) deliver(
 	if sync.PendingRedeploy && !pendingBefore && !errors.Is(err, common.ErrProjectRollbackFailed) && (err != nil || (!changed && !source.replay)) {
 		if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
 			slog.WarnContext(ctx, "Failed to clear unused pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
+		} else {
+			sync.PendingRedeploy = false
 		}
 	}
 	if err != nil {
-		return result, err
+		return result, false, false, err
 	}
 	switch {
 	case source.pull != nil:
@@ -224,7 +305,8 @@ func (s *Service) deliver(
 		}
 	}
 
-	if project != nil && (changed || source.replay || pendingBefore) {
+	needsDeploy := project != nil && (changed || source.replay || pendingBefore)
+	if needsDeploy && !kit.FromPtr(source.pull).DeferDeploy {
 		if err = s.deployOnce(ctx, sync, project, actor, source); err != nil {
 			// The files reached disk, so the row keeps their revision and list.
 			errMsg := err.Error()
@@ -232,7 +314,7 @@ func (s *Service) deliver(
 			result.Error = &errMsg
 			s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, source.commitHash, syncedFiles)
 			s.logError(ctx, sync, actor, errMsg)
-			return result, err
+			return result, changed, needsDeploy, err
 		}
 	}
 
@@ -255,7 +337,7 @@ func (s *Service) deliver(
 		EnvironmentID: new(sync.EnvironmentID),
 	})
 	slog.InfoContext(ctx, "GitOps sync completed", "syncId", sync.ID, "target", targetName)
-	return result, nil
+	return result, changed, needsDeploy, nil
 }
 
 func (s *Service) syncTarget(
@@ -535,6 +617,8 @@ func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectp
 		if redeployErr == nil || errors.Is(redeployErr, common.ErrSelfRedeployBlocked) {
 			if clearErr := s.setPendingRedeploy(ctx, sync.ID, false); clearErr != nil {
 				slog.WarnContext(ctx, "Failed to clear pending redeploy after Git sync", "error", clearErr, "syncId", sync.ID)
+			} else {
+				sync.PendingRedeploy = false
 			}
 		}
 		if redeployErr != nil {
