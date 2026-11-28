@@ -634,10 +634,6 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	return run, progress("remote", types.RunStatusSucceeded, snapshot.ID)
 }
 
-func selectsEnvironment(mode types.SystemVolumeSelectionMode, environmentIDs []string, environmentID string) bool {
-	return cmp.Or(mode, types.SystemVolumeSelectionAll).Selects(slices.Contains(environmentIDs, environmentID))
-}
-
 func (s *Service) backUpRemoteEnvironments(
 	ctx context.Context, run *types.SystemBackupRun, suppliedKey string, mode types.SystemVolumeSelectionMode, environmentIDs []string,
 ) remoteBackupSummary {
@@ -663,7 +659,7 @@ func (s *Service) backUpRemoteEnvironments(
 	previous, _ := jobcontext.Run(ctx)
 	var summary remoteBackupSummary
 	for _, remote := range remotes {
-		if !selectsEnvironment(mode, environmentIDs, remote.ID) {
+		if !cmp.Or(mode, types.SystemVolumeSelectionAll).Selects(slices.Contains(environmentIDs, remote.ID)) {
 			continue
 		}
 		summary.attempted++
@@ -1612,7 +1608,7 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (type
 	if policy == nil || !policy.Enabled {
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
-	if !selectsEnvironment(policy.Options.SelectionMode, policy.Options.EnvironmentIDs, environment.LocalEnvironmentID) {
+	if !cmp.Or(policy.Options.SelectionMode, types.SystemVolumeSelectionAll).Selects(slices.Contains(policy.Options.EnvironmentIDs, environment.LocalEnvironmentID)) {
 		selected, s3DestinationID, destErr := backup.ResolveDestination(ctx, backup.DestinationRequest{
 			Class:           common.ErrValidation,
 			S3Destinations:  s.s3Destinations,
@@ -1814,7 +1810,8 @@ func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *back
 		ScheduleFn: s.policies.Schedule(policyID, policy.Schedule),
 		// Manager backups need the manager's Docker; remote-only policies can run without it.
 		ShouldRunFn: func(context.Context) bool {
-			return s.dockerService.LocalDockerEnabled() || !selectsEnvironment(policy.Options.SelectionMode, policy.Options.EnvironmentIDs, environment.LocalEnvironmentID)
+			return s.dockerService.LocalDockerEnabled() ||
+				!cmp.Or(policy.Options.SelectionMode, types.SystemVolumeSelectionAll).Selects(slices.Contains(policy.Options.EnvironmentIDs, environment.LocalEnvironmentID))
 		},
 		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.resumeScheduledBackup(ctx, previous, policyID)
@@ -1894,7 +1891,7 @@ func (s *Service) StartBackup(ctx context.Context, user types.Actor, request typ
 	if err != nil {
 		return nil, err
 	}
-	includeLocal := s.config.AgentEnabled || selectsEnvironment(selectionMode, environmentIDs, environment.LocalEnvironmentID)
+	includeLocal := s.config.AgentEnabled || cmp.Or(selectionMode, types.SystemVolumeSelectionAll).Selects(slices.Contains(environmentIDs, environment.LocalEnvironmentID))
 	// Reject before a run is saved; manager backups need the manager's Docker even for S3-only backups.
 	if includeLocal && !s.dockerService.LocalDockerEnabled() {
 		return nil, common.ErrLocalDockerDisabled

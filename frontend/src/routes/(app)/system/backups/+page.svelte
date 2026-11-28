@@ -109,10 +109,6 @@
 	}));
 	const projectPolicyCollection = $derived(projectPolicyQuery.data ?? data.projectPolicyCollection);
 	let systemVolumePolicyCollection = $derived(data.systemVolumePolicyCollection);
-	const systemOptionsQuery = createQuery(() => ({
-		...systemBackupOptionsQuery(),
-		enabled: actionOpen && action === 'create' && backupType === 'system' && backupConfiguration === 'custom'
-	}));
 	const systemVolumeOptionsQuery = createQuery(() => ({
 		...systemVolumeBackupOptionsQuery(),
 		enabled: false
@@ -134,6 +130,10 @@
 	let selected = $state<EnvironmentRow<SystemVolumeBackupHistoryEntry> | null>(null);
 	let backupType = $state<'system' | 'volume'>('system');
 	let backupConfiguration = $state('custom');
+	const systemOptionsQuery = createQuery(() => ({
+		...systemBackupOptionsQuery(),
+		enabled: actionOpen && action === 'create' && backupType === 'system' && backupConfiguration === 'custom'
+	}));
 	let destination = $state<SystemBackupDestination>('local');
 	let s3DestinationId = $state('');
 	let stopContainers = $state(false);
@@ -185,9 +185,10 @@
 			: [{ label: m.resource_volume_cap(), value: 'volume', description: m.system_backups_type_volume_description() }])
 	]);
 
-	function selectionIncludesLocal(mode: SystemVolumeSelectionMode, ids: string[]): boolean {
-		if (mode === 'allowlist') return ids.includes(LOCAL_DOCKER_ENVIRONMENT_ID);
-		if (mode === 'blocklist') return !ids.includes(LOCAL_DOCKER_ENVIRONMENT_ID);
+	function selectionIncludesLocal(mode?: SystemVolumeSelectionMode, ids?: string[]): boolean {
+		const list = ids ?? [];
+		if (mode === 'allowlist') return list.includes(LOCAL_DOCKER_ENVIRONMENT_ID);
+		if (mode === 'blocklist') return !list.includes(LOCAL_DOCKER_ENVIRONMENT_ID);
 		return true;
 	}
 	const configurationOptions = $derived([

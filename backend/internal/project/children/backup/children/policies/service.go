@@ -34,6 +34,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	"getarcane.dev/arcane/v3/pkg/authz"
 	"getarcane.dev/types/v3"
 )
@@ -772,7 +773,11 @@ func (s *Service) StartGlobal(ctx context.Context, user types.Actor, request typ
 				if scoped.SelectionMode == types.SystemVolumeSelectionAllowlist && len(scoped.ProjectIDs) == 0 {
 					continue
 				}
-				if authErr := s.authorizeRemoteStop(ctx, requester, remote.ID); authErr != nil {
+				if authErr := s.deps.Authorize(ctx, types.BackupRequester{
+					UserID:        requester.UserID,
+					APIKeyID:      requester.APIKeyID,
+					EnvironmentID: remote.ID,
+				}, StopPermissions...); authErr != nil {
 					return types.BackupRunAccepted{}, authErr
 				}
 			}
@@ -891,13 +896,13 @@ func globalPolicyDTOForEnvironment(policy backup.Policy, envID string) types.Glo
 
 func updateGlobalPolicyForEnvironment(policy backup.Policy, envID string) types.UpdateGlobalProjectBackupPolicy {
 	dto := globalPolicyDTOForEnvironment(policy, envID)
-	return types.UpdateGlobalProjectBackupPolicy{
+	return types.UpdateGlobalProjectBackupPolicy{ //exhaustruct:enforce
 		StopContainers:  new(dto.StopContainers),
 		SelectionMode:   dto.SelectionMode,
 		ProjectIDs:      dto.ProjectIDs,
 		VolumeSelection: dto.VolumeSelection,
 		Volumes:         dto.Volumes,
-		UpdateBackupPolicy: types.UpdateBackupPolicy{
+		UpdateBackupPolicy: types.UpdateBackupPolicy{ //exhaustruct:enforce
 			ID:              dto.ID,
 			Schedule:        dto.Schedule,
 			S3DestinationID: dto.S3DestinationID,
@@ -1100,14 +1105,6 @@ func (s *Service) resumeGlobalTargets(
 	return resumed, nil
 }
 
-func (s *Service) authorizeRemoteStop(ctx context.Context, requester types.BackupRequester, environmentID string) error {
-	return s.deps.Authorize(ctx, types.BackupRequester{
-		UserID:        requester.UserID,
-		APIKeyID:      requester.APIKeyID,
-		EnvironmentID: environmentID,
-	}, StopPermissions...)
-}
-
 func (s *Service) backUpRemoteEnvironments(
 	ctx context.Context, requester *types.BackupRequester, policy backup.Policy, remotes []environment.Environment, previous types.SchedulerRun, finished map[string]types.TargetOutcome,
 ) {
@@ -1173,7 +1170,11 @@ func (s *Service) backUpRemoteEnvironment(
 		if requester != nil {
 			runErr = s.deps.Engine.Authorize(ctx, *requester)
 			if runErr == nil && scoped.StopContainers {
-				runErr = s.authorizeRemoteStop(ctx, *requester, remote.ID)
+				runErr = s.deps.Authorize(ctx, types.BackupRequester{
+					UserID:        requester.UserID,
+					APIKeyID:      requester.APIKeyID,
+					EnvironmentID: remote.ID,
+				}, StopPermissions...)
 			}
 		}
 		if runErr == nil {
@@ -1256,6 +1257,10 @@ func (s *Service) waitForRemoteActivity(ctx context.Context, remote environment.
 			if errors.Is(context.Cause(ctx), activity.ErrCanceled) {
 				s.cancelRemoteActivity(ctx, remote, activityID)
 				return true, ctx.Err()
+			}
+			// A 404 confirms the completed activity was cleared or pruned on the agent; release the saved ID so retry can recover.
+			if statusErr, ok := errors.AsType[*agent.StatusError](err); (ok && statusErr.StatusCode == http.StatusNotFound) || errors.Is(err, common.ErrNotFound) {
+				return true, fmt.Errorf("poll remote project backup activity %s: %w", activityID, err)
 			}
 			return false, fmt.Errorf("poll remote project backup activity %s: %w", activityID, err)
 		}

@@ -22,6 +22,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/scheduler/jobcontext"
 	"getarcane.dev/arcane/v3/internal/scheduler/runs"
 	"getarcane.dev/arcane/v3/pkg/activity"
+	"getarcane.dev/arcane/v3/pkg/agent"
 	francistest "getarcane.dev/arcane/v3/pkg/francis/testing"
 	"getarcane.dev/types/v3"
 )
@@ -33,6 +34,7 @@ type recordingRemoteTransport struct {
 	syncRequests map[string]types.UpdateGlobalProjectBackupPolicies
 	options      map[string][]types.GlobalProjectBackupOption
 	activities   map[string]types.ActivityStatus
+	pollErr      map[string]error
 	failing      string
 	canceled     []string
 	mu           sync.Mutex
@@ -82,6 +84,9 @@ func (t *recordingRemoteTransport) ProxyJSONRequestForEnvironment(_ context.Cont
 		t.canceled = append(t.canceled, env.ID+":"+path)
 		return nil
 	case method == http.MethodGet && strings.HasPrefix(path, "/api/agents/0/activities/"):
+		if err := t.pollErr[env.ID]; err != nil {
+			return err
+		}
 		status := t.activities[env.ID]
 		if status == "" {
 			status = types.ActivityStatusSuccess
@@ -247,6 +252,19 @@ func TestGlobalProjectBackupFansOutToRemoteEnvironments(t *testing.T) {
 	require.True(t, terminal)
 	require.ErrorIs(t, waitErr, context.Canceled)
 	require.Contains(t, transport.canceled, "agent-1:/api/agents/0/activities/act-agent-1?action=cancel")
+
+	// Pruned/missing remote activity (404) is terminal so ActivityID is cleared, while transient errors keep it attached.
+	transport.pollErr = map[string]error{
+		"agent-1": &agent.StatusError{StatusCode: http.StatusNotFound, Body: []byte("not found")},
+	}
+	terminal, waitErr = svc.waitForRemoteActivity(t.Context(), environment.Environment{BaseModel: database.BaseModel{ID: "agent-1"}, Name: "agent-1"}, "act-agent-1")
+	require.True(t, terminal)
+	require.Error(t, waitErr)
+	transport.pollErr["agent-1"] = &agent.TransportError{Err: errors.New("temporary disconnect")}
+	terminal, waitErr = svc.waitForRemoteActivity(t.Context(), environment.Environment{BaseModel: database.BaseModel{ID: "agent-1"}, Name: "agent-1"}, "act-agent-1")
+	require.False(t, terminal)
+	require.Error(t, waitErr)
+	delete(transport.pollErr, "agent-1")
 
 	// Unauthorized caller cannot run a stopContainers policy on remote agents.
 	deniedSvc := NewService(Dependencies{
