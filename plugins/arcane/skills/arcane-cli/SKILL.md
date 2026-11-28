@@ -34,7 +34,8 @@ back to the user or commit `arcanecli.yml`.
 ## Global flags
 
 - `--output json` (or `--json`) for machine-readable output
-- `--agent <id>` to target one remote agent (`arcane-cli agents list`)
+- `--agent <id>` to target one agent (`arcane-cli agents list`); use
+  `--agent 0` for the manager's local Docker host
 - `--yes` auto-confirms destructive prompts; only use it when the user
   asked for that exact action
 - `--request-timeout <duration>`

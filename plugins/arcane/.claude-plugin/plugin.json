@@ -1,7 +1,7 @@
 {
 	"name": "arcane",
 	"version": "1.0.0",
-	"description": "Agent skills for deploying Arcane and its remote agents, and managing Docker hosts and Compose projects with the arcane CLI.",
+	"description": "Agent skills for deploying Arcane and its remote agents, and managing Docker hosts and Compose projects with arcane-cli.",
 	"author": {
 		"name": "Kyle Mendell",
 		"url": "https://getarcane.app"

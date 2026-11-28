@@ -4,19 +4,25 @@ description: >-
   Deploy the Arcane Docker management UI and its remote agents with Docker
   Compose: the manager compose file, ARCANE_ENCRYPTION_KEY, projects
   directory mounts, PUID/PGID, the agent compose file with
-  ARCANE_AGENT_TOKEN, and the Podman and reverse-proxy examples. Use when
-  installing Arcane or adding a host for it to manage.
+  ARCANE_AGENT_TOKEN, and the Podman and Docker socket-proxy examples. Use
+  when installing Arcane or adding a host for it to manage.
 ---
 
 # Deploying Arcane
 
-References (in the Arcane repo, https://github.com/getarcaneapp/arcane):
-[`docker/examples/`](https://github.com/getarcaneapp/arcane/tree/main/docker/examples)
-and https://getarcane.app. The essential compose files are inlined below.
+References (on `getarcaneapp/arcane` `main`):
+[compose.basic.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.basic.yaml),
+[compose.agent.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.agent.yaml),
+[compose.proxy.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.proxy.yaml)
+(Docker socket proxy, not HTTPS),
+[compose.podman-rootful.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.podman-rootful.yaml),
+[compose.podman-rootless.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.podman-rootless.yaml),
+[quadlet/](https://github.com/getarcaneapp/arcane/tree/main/docker/examples/quadlet),
+https://getarcane.app.
 
 ## Manager
 
-Start from `docker/examples/compose.basic.yaml`:
+Start from [compose.basic.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.basic.yaml):
 
 ```yaml
 services:
@@ -46,9 +52,11 @@ volumes:
 - `PUID`/`PGID` run Arcane as a host user; the Docker socket group is
   mapped automatically.
 - Mounting the Docker socket gives Arcane root-equivalent control of the
-  host. Put port 3552 behind your own HTTPS reverse proxy before exposing
-  it. `compose.proxy.yaml` is a different thing: it fronts the Docker
-  socket with a restricted socket proxy; it doesn't add HTTPS.
+  host. Expose port 3552 only behind TLS; see
+  [TLS](https://getarcane.app/docs/networking/tls) and
+  [reverse proxy](https://getarcane.app/docs/networking/reverse-proxy).
+  [compose.proxy.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.proxy.yaml)
+  is a Docker socket proxy only — it does not terminate HTTPS.
 
 Health: the image's healthcheck runs `./arcane health`; the API answers
 `GET /api/health`.
@@ -57,7 +65,7 @@ Health: the image's healthcheck runs `./arcane health`; the API answers
 
 Create an agent in the manager (or `arcane-cli agents create --name <host>`) to get a token,
 then on the remote host run the agent image (from
-[`compose.agent.yaml`](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.agent.yaml)):
+[compose.agent.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.agent.yaml)):
 
 ```yaml
 image: getarcaneapp/agent:latest
@@ -76,8 +84,8 @@ Check it with `arcane-cli agents list` and `arcane-cli agents test <id>`.
 ## Podman
 
 Download
-[`compose.podman-rootful.yaml`](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.podman-rootful.yaml)
+[compose.podman-rootful.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.podman-rootful.yaml)
 or
-[`compose.podman-rootless.yaml`](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.podman-rootless.yaml),
+[compose.podman-rootless.yaml](https://github.com/getarcaneapp/arcane/blob/main/docker/examples/compose.podman-rootless.yaml),
 or use the
 [Quadlet units](https://github.com/getarcaneapp/arcane/tree/main/docker/examples/quadlet).
