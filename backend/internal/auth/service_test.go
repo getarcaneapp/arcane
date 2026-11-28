@@ -1263,13 +1263,15 @@ func TestAuthenticateLocalPrimary_LdapUsers(t *testing.T) {
 
 func TestCheckSessionActive(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	s := newTestAuthService()
-	s.userService = user.NewUserService(user.UserServiceParams{
-		DB:                   db,
-		RoleService:          role.NewRoleService(db),
-		RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
-	})
-	s.sessionService = session.NewSessionService(db)
+	s := &AuthService{
+		userService: user.NewUserService(user.UserServiceParams{
+			DB:                   db,
+			RoleService:          role.NewRoleService(db),
+			RevokeSessionsExcept: session.RevokeAllUserSessionsExceptInDB,
+		}),
+		sessionService: session.NewSessionService(db),
+		tokens:         NewTokenCache(),
+	}
 	require.NoError(t, db.Create(&user.User{ID: "u-live", Username: "live"}).Error)
 	exp := time.Now().Add(5 * time.Minute)
 	revoked, _ := createTestSession(t, db, "u-live", exp)

@@ -179,7 +179,9 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 	// Only session logins are re-checked.
 	if sessionID, _ := c.Get(string(middleware.ContextKeyCurrentSessionID)).(string); sessionID != "" {
 		go wshub.WatchAccess(watchCtx, func() {
-			_ = conn.Close(websocket.StatusPolicyViolation, "session ended")
+			if closeErr := conn.Close(websocket.StatusPolicyViolation, "session ended"); closeErr != nil {
+				slog.DebugContext(watchCtx, "Failed to close websocket after session ended", "error", closeErr)
+			}
 		}, func(ctx context.Context) error {
 			return h.authService.CheckSessionActive(ctx, userID, sessionID)
 		})
